@@ -2818,38 +2818,44 @@
   flex-direction: column;
 }
 
-.capabilities-panel .popover-heading {
-  padding: 5px 8px 8px;
-  font-size: 12px;
+/* 顶行：左「工具/Skill」分段切换，右「自动/全部/清空」快捷模式——次级视觉，不抢列表。 */
+.capabilities-toolbar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0 7px;
 }
 
 .capabilities-tabs {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 3px;
-  padding: 3px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 2px;
+  padding: 2px;
   border: 1px solid var(--biny-border);
-  border-radius: 8px;
+  border-radius: 7px;
   background: var(--biny-surface);
 }
 
-.capabilities-tabs button,
-.capability-mode-button {
-  min-height: 28px;
-  border-radius: 6px;
+.capabilities-tabs button {
+  display: inline-flex;
+  min-height: 22px;
+  align-items: center;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
   color: var(--biny-text-secondary);
   font: inherit;
-  font-size: 12px;
+  font-size: 11.5px;
+  cursor: pointer;
 }
 
-.capabilities-tabs button:hover,
-.capability-mode-button:hover {
+.capabilities-tabs button:hover {
   color: var(--biny-text);
-  background: var(--biny-surface-hover);
 }
 
-.capabilities-tabs button.is-selected,
-.capability-mode-button.is-selected {
+.capabilities-tabs button.is-selected {
   color: var(--biny-text);
   background: var(--biny-surface-hover);
   box-shadow: 0 1px 3px var(--biny-shadow-soft);
@@ -2894,20 +2900,31 @@
 }
 
 .capability-mode-row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 4px;
-  margin-bottom: 7px;
+  display: inline-flex;
+  min-width: 0;
+  flex: 0 0 auto;
+  gap: 2px;
 }
 
 .capability-mode-button {
-  min-height: 26px;
-  border: 1px solid transparent;
+  min-height: 22px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  color: var(--biny-text-tertiary);
+  font: inherit;
   font-size: 11px;
+  cursor: pointer;
+}
+
+.capability-mode-button:hover {
+  color: var(--biny-text);
+  background: var(--biny-surface-hover);
 }
 
 .capability-mode-button.is-selected {
-  border-color: color-mix(in srgb, var(--biny-focus) 35%, var(--biny-border));
+  color: var(--biny-focus);
+  background: color-mix(in srgb, var(--biny-focus) 12%, transparent);
 }
 
 .capabilities-list {

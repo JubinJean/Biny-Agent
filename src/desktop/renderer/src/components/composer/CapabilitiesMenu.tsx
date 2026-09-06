@@ -52,20 +52,21 @@ export function CapabilitiesMenu({ anchorRef, open, onChange, selection, skills,
   return (
     <ComposerPopover anchorRef={anchorRef} className={`t-dropdown composer-popover biny-composer-popover capabilities-menu ${presenceClass(presence.phase)}`} phase={presence.phase}>
       <div className="capabilities-panel">
-        <div className="popover-heading">本条消息使用的能力</div>
-        <div aria-label="能力类型" className="capabilities-tabs" role="tablist">
-          <button aria-selected={tab === "tools"} className={tab === "tools" ? "is-selected" : ""} onClick={() => setTab("tools")} role="tab" type="button">工具 <span>{String(tools.length)}</span></button>
-          <button aria-selected={tab === "skills"} className={tab === "skills" ? "is-selected" : ""} onClick={() => setTab("skills")} role="tab" type="button">Skill <span>{String(skills.length)}</span></button>
+        <div className="capabilities-toolbar">
+          <div aria-label="能力类型" className="capabilities-tabs" role="tablist">
+            <button aria-selected={tab === "tools"} className={tab === "tools" ? "is-selected" : ""} onClick={() => setTab("tools")} role="tab" type="button">工具 <span>{String(tools.length)}</span></button>
+            <button aria-selected={tab === "skills"} className={tab === "skills" ? "is-selected" : ""} onClick={() => setTab("skills")} role="tab" type="button">Skill <span>{String(skills.length)}</span></button>
+          </div>
+          <div aria-label="能力选择模式" className="capability-mode-row" role="radiogroup">
+            <ModeButton label="自动" selected={selection[tab] === "auto"} onClick={() => onChange({ ...selection, [tab]: "auto" })} />
+            <ModeButton label="全部" selected={selection[tab] === "all"} onClick={() => onChange({ ...selection, [tab]: "all" })} />
+            <ModeButton label="清空" selected={Array.isArray(selection[tab]) && selection[tab].length === 0} onClick={() => onChange({ ...selection, [tab]: [] })} />
+          </div>
         </div>
         <label className="capabilities-search">
           <Icon name="search" size={13} />
           <input aria-label={tab === "tools" ? "搜索工具" : "搜索 Skill"} onChange={(event) => setQuery(event.target.value)} placeholder={tab === "tools" ? "搜索工具" : "搜索 Skill"} type="search" value={query} />
         </label>
-        <div aria-label="能力选择模式" className="capability-mode-row" role="radiogroup">
-          <ModeButton label="自动" selected={selection[tab] === "auto"} onClick={() => onChange({ ...selection, [tab]: "auto" })} />
-          <ModeButton label="全部" selected={selection[tab] === "all"} onClick={() => onChange({ ...selection, [tab]: "all" })} />
-          <ModeButton label="清空" selected={Array.isArray(selection[tab]) && selection[tab].length === 0} onClick={() => onChange({ ...selection, [tab]: [] })} />
-        </div>
         <div className="capabilities-list" role="listbox" aria-label={tab === "tools" ? "工具列表" : "Skill 列表"} aria-multiselectable="true">
           {tab === "tools" && !toolsSupported ? (
             <p className="capabilities-empty">当前模型的能力声明不支持工具调用，切换支持工具的模型后生效。</p>
