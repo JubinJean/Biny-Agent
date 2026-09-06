@@ -4794,11 +4794,6 @@
   cursor: pointer;
 }
 
-.biny-root .settings-tabs .settings-nav-list button.is-selected {
-  color: var(--biny-text);
-  background: var(--biny-surface-selected);
-}
-
 .biny-streaming-state {
   display: none;
 }
@@ -7917,18 +7912,20 @@
   --settings-extension-tabs-height: 36px;
 }
 
-.settings-modal.is-full-page .settings-content.is-extension-settings {
+/* 扩展页（MCP / 技能 / 插件）是宽内容页：铺满内容区，不进 728px 居中窄列，
+   只保留滚动区自身的内边距。 */
+.settings-modal.is-full-page .settings-scroll.is-extension > .settings-extension-view {
   display: flex;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
   min-height: 0;
+  flex: 1 1 0;
+  height: 0;
+  margin: 0;
   flex-direction: column;
   overflow: hidden;
-  /* 扩展列表本身负责滚动，不能继承普通设置页给内容预留的底部空白。 */
   padding-bottom: 0;
-}
-
-.settings-modal.is-full-page .settings-content.is-extension-settings > header {
-  flex: 0 0 auto;
-  padding-inline: max(28px, calc((100% - var(--settings-content-max)) / 2));
 }
 
 /* MCP、技能和插件共用设置页的控件密度，避免页面切换时出现明显缩放跳变。 */
@@ -8008,19 +8005,6 @@
 .settings-modal.is-extension-settings .biny-mcp-link-button {
   width: 30px;
   height: 30px;
-}
-
-.settings-content > .settings-extension-view {
-  display: flex;
-  width: min(var(--settings-content-max), calc(100% - 56px));
-  min-width: 0;
-  min-height: 0;
-  flex: 1 1 0;
-  height: 0;
-  margin: 0 auto;
-  flex-direction: column;
-  overflow: hidden;
-  padding-bottom: 0;
 }
 
 .settings-skill-auto-card {
@@ -9066,7 +9050,6 @@
 }
 
 @media (max-width: 700px) {
-  .settings-content > .settings-extension-view,
   .settings-modal.is-extension-settings .biny-mcp-page {
     width: calc(100% - 32px);
   }
@@ -9412,5 +9395,245 @@
   .biny-skill-draft-notice-icon .biny-skill-draft-notice-icon-glyph,
   .biny-skill-draft-notice-icon.is-installed .biny-skill-draft-notice-icon-glyph {
     animation: none;
+  }
+}
+
+/* ===================== 扩展设置页统一参数（MCP / 技能 / 插件） ===================== */
+/* 与设置壳同一套几何与状态语言：控件高 2.25rem（紧凑 2rem）、圆角 12px/8px、
+   焦点环 3px 主色、过渡 150ms。放在文件末尾以覆盖上方扩展页专用规则。 */
+
+.settings-modal.is-full-page.is-extension-settings {
+  --settings-extension-control-height: calc(2.25 * var(--st-rem, 13px));
+  --settings-extension-tabs-height: calc(2.25 * var(--st-rem, 13px));
+}
+
+/* —— 工具栏控件 —— */
+.settings-modal.is-full-page .biny-mcp-search,
+.settings-modal.is-full-page .biny-mcp-category,
+.settings-modal.is-full-page .settings-extension-search {
+  height: var(--settings-extension-control-height);
+  min-height: 0;
+  border-radius: var(--st-radius, 12px);
+}
+
+.settings-modal.is-full-page .biny-mcp-category select {
+  border-radius: calc(var(--st-radius, 12px) - 4px);
+}
+
+/* 分段标签条：外层 12px、内层选中片 8px。 */
+.settings-modal.is-full-page .biny-mcp-tabs,
+.settings-modal.is-full-page .settings-plugin-tabs,
+.settings-modal.is-full-page .biny-mcp-segmented {
+  border-radius: var(--st-radius, 12px);
+}
+
+.settings-modal.is-full-page .biny-mcp-tabs button,
+.settings-modal.is-full-page .settings-plugin-tabs button,
+.settings-modal.is-full-page .biny-mcp-segmented button {
+  height: auto;
+  min-height: calc(var(--st-control-h-sm, 26px));
+  border-radius: calc(var(--st-radius, 12px) - 4px);
+}
+
+/* —— 卡片 —— */
+.settings-modal.is-full-page .biny-mcp-market-card,
+.settings-modal.is-full-page .biny-mcp-installed-card,
+.settings-modal.is-full-page .biny-mcp-details,
+.settings-modal.is-full-page .biny-mcp-test-result,
+.settings-modal.is-full-page .biny-mcp-oauth-note,
+.settings-modal.is-full-page .biny-mcp-field textarea,
+.settings-modal.is-full-page .settings-extension-notice,
+.settings-modal.is-full-page .settings-skill-content,
+.settings-modal.is-full-page .settings-skill-draft-card,
+.settings-modal.is-full-page .settings-skill-draft-editor,
+.settings-modal.is-full-page .capability-item {
+  border-radius: var(--st-radius, 12px);
+}
+
+/* —— 输入控件 —— */
+.settings-modal.is-full-page .biny-mcp-field input,
+.settings-modal.is-full-page .biny-mcp-field select,
+.settings-modal.is-full-page .biny-mcp-secret-row input,
+.settings-modal.is-full-page .biny-mcp-install-fields > select,
+.settings-modal.is-full-page .biny-mcp-install-parameters input {
+  height: var(--st-control-h, 29.25px);
+  min-height: 0;
+  border-radius: var(--st-radius, 12px);
+  transition: color 0.15s var(--st-ease, ease), border-color 0.15s var(--st-ease, ease), box-shadow 0.15s var(--st-ease, ease);
+}
+
+.settings-modal.is-full-page .biny-mcp-field textarea {
+  min-height: calc(4 * var(--st-rem, 13px));
+}
+
+.settings-modal.is-full-page .biny-mcp-field input:focus,
+.settings-modal.is-full-page .biny-mcp-field select:focus,
+.settings-modal.is-full-page .biny-mcp-field textarea:focus,
+.settings-modal.is-full-page .biny-mcp-install-fields > select:focus,
+.settings-modal.is-full-page .biny-mcp-install-parameters input:focus,
+.settings-modal.is-full-page .biny-mcp-search:focus-within,
+.settings-modal.is-full-page .settings-extension-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 3px var(--st-ring, rgb(0 0 0 / 10%));
+  outline: none;
+}
+
+/* —— 按钮变体 —— */
+/* default（主要操作）。 */
+.settings-modal.is-full-page .biny-mcp-add-button,
+.settings-modal.is-full-page .biny-mcp-primary-button,
+.settings-modal.is-full-page .biny-mcp-install-button,
+.settings-modal.is-full-page .biny-mcp-toolbar-add-button,
+.settings-modal.is-full-page .settings-plugin-install-button {
+  display: inline-flex;
+  height: auto;
+  min-height: var(--st-control-h-sm, 26px);
+  align-items: center;
+  justify-content: center;
+  gap: var(--st-control-gap, 5.2px);
+  padding: 0 calc(var(--st-control-px, 11.7px) - 0.15 * var(--st-rem, 13px));
+  border: 1px solid transparent;
+  border-radius: var(--st-radius, 12px);
+  color: var(--st-on-primary, #fff);
+  background: var(--st-primary, var(--accent));
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  font-size: calc(0.875 * var(--st-rem, 13px));
+  font-weight: 500;
+  transition: all 0.15s var(--st-ease, ease);
+}
+
+.settings-modal.is-full-page .biny-mcp-add-button:hover:not(:disabled),
+.settings-modal.is-full-page .biny-mcp-primary-button:hover:not(:disabled),
+.settings-modal.is-full-page .biny-mcp-install-button:hover:not(:disabled),
+.settings-modal.is-full-page .biny-mcp-toolbar-add-button:hover:not(:disabled),
+.settings-modal.is-full-page .settings-plugin-install-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--st-primary, var(--accent)) 90%, transparent);
+}
+
+/* outline（次要操作）。 */
+.settings-modal.is-full-page .biny-mcp-secondary-button,
+.settings-modal.is-full-page .biny-mcp-row-actions button,
+.settings-modal.is-full-page .biny-mcp-clipboard-button,
+.settings-modal.is-full-page .biny-mcp-link-action,
+.settings-modal.is-full-page .settings-extension-list-heading button,
+.settings-modal.is-full-page .settings-plugin-action,
+.settings-modal.is-full-page .settings-skill-draft-actions button,
+.settings-modal.is-full-page .settings-skill-content-toggle {
+  display: inline-flex;
+  height: auto;
+  min-height: var(--st-control-h-sm, 26px);
+  align-items: center;
+  justify-content: center;
+  gap: var(--st-control-gap, 5.2px);
+  padding: 0 calc(var(--st-control-px, 11.7px) - 0.15 * var(--st-rem, 13px));
+  border: 1px solid var(--border);
+  border-radius: var(--st-radius, 12px);
+  color: var(--text);
+  background: transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  font-size: calc(0.875 * var(--st-rem, 13px));
+  font-weight: 500;
+  transition: all 0.15s var(--st-ease, ease);
+}
+
+.settings-modal.is-full-page .biny-mcp-secondary-button:hover:not(:disabled),
+.settings-modal.is-full-page .biny-mcp-row-actions button:hover:not(:disabled),
+.settings-modal.is-full-page .biny-mcp-clipboard-button:hover:not(:disabled),
+.settings-modal.is-full-page .biny-mcp-link-action:hover:not(:disabled),
+.settings-modal.is-full-page .settings-extension-list-heading button:hover:not(:disabled),
+.settings-modal.is-full-page .settings-plugin-action:hover:not(:disabled),
+.settings-modal.is-full-page .settings-skill-draft-actions button:hover:not(:disabled),
+.settings-modal.is-full-page .settings-skill-content-toggle:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+/* destructive（危险操作）。 */
+.settings-modal.is-full-page .biny-mcp-danger-button,
+.settings-modal.is-full-page .settings-plugin-danger-button {
+  border-color: color-mix(in srgb, var(--red) 35%, transparent);
+  color: var(--red);
+}
+
+.settings-modal.is-full-page .biny-mcp-danger-button:hover:not(:disabled),
+.settings-modal.is-full-page .settings-plugin-danger-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--red) 50%, transparent);
+  background: var(--red-bg);
+}
+
+/* ghost 图标按钮。 */
+.settings-modal.is-full-page .biny-mcp-icon-button,
+.settings-modal.is-full-page .biny-mcp-link-button,
+.settings-modal.is-full-page .settings-extension-search > button {
+  display: grid;
+  place-items: center;
+  width: var(--st-control-h-sm, 26px);
+  height: var(--st-control-h-sm, 26px);
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: var(--st-radius, 12px);
+  color: var(--text-secondary);
+  background: transparent;
+  transition: background-color 0.15s var(--st-ease, ease), color 0.15s var(--st-ease, ease);
+}
+
+.settings-modal.is-full-page .biny-mcp-icon-button:hover,
+.settings-modal.is-full-page .biny-mcp-link-button:hover,
+.settings-modal.is-full-page .settings-extension-search > button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+/* —— 开关：对齐统一滑动开关几何 —— */
+.settings-modal.is-full-page .settings-extension-switch {
+  width: calc(2.75 * var(--st-rem, 13px));
+  height: calc(1.5 * var(--st-rem, 13px));
+  padding: 0;
+  border: 2px solid transparent;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  transition: background 0.15s var(--st-ease, ease);
+}
+
+.settings-modal.is-full-page .settings-extension-switch span {
+  width: calc(1.25 * var(--st-rem, 13px));
+  height: calc(1.25 * var(--st-rem, 13px));
+  border-radius: 999px;
+  background: var(--bg);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 10%), 0 4px 6px -4px rgb(0 0 0 / 10%);
+  transition: transform 0.15s var(--st-ease, ease);
+}
+
+.settings-modal.is-full-page .settings-extension-switch.is-on {
+  background: var(--st-primary, var(--accent));
+}
+
+.settings-modal.is-full-page .settings-extension-switch.is-on span {
+  transform: translateX(calc(1.25 * var(--st-rem, 13px)));
+}
+
+/* —— 弹层面板 —— */
+.settings-modal.is-full-page .biny-mcp-dialog,
+.settings-modal.is-full-page .biny-mcp-install-dialog {
+  border-radius: var(--st-radius, 12px);
+}
+
+@media (max-width: 700px) {
+  .settings-modal.is-full-page .biny-mcp-dialog,
+  .settings-modal.is-full-page .biny-mcp-install-dialog {
+    border-radius: var(--st-radius, 12px) var(--st-radius, 12px) 0 0;
+  }
+}
+
+/* 减少动态效果。 */
+@media (prefers-reduced-motion: reduce) {
+  .settings-modal.is-full-page .biny-mcp-add-button,
+  .settings-modal.is-full-page .biny-mcp-primary-button,
+  .settings-modal.is-full-page .biny-mcp-install-button,
+  .settings-modal.is-full-page .biny-mcp-secondary-button,
+  .settings-modal.is-full-page .biny-mcp-danger-button,
+  .settings-modal.is-full-page .biny-mcp-icon-button,
+  .settings-modal.is-full-page .settings-extension-switch,
+  .settings-modal.is-full-page .settings-extension-switch span {
+    transition: none;
   }
 }

@@ -1157,284 +1157,542 @@ select {
   overflow-wrap: anywhere;
 }
 
+/* ===================== 设置中心 ===================== */
+/* 布局基准：13px 根字号，尺寸 token 以 --st-rem 换算；壳内圆角统一 12px。
+   侧栏是浮在背景上的玻璃卡片，右列由标题栏、滚动区、底栏三段组成。 */
 .settings-modal.is-full-page {
-  --settings-content-max: 912px;
-  --settings-sidebar-width: 264px;
+  --st-rem: calc(13px * var(--font-scale, 1));
+  /* 卡片与控件密度（compact 档） */
+  --st-card-padding: calc(1.25 * var(--st-rem));
+  --st-card-gap: calc(1 * var(--st-rem));
+  --st-control-h: calc(2.25 * var(--st-rem));
+  --st-control-h-sm: calc(2 * var(--st-rem));
+  --st-control-px: calc(0.9 * var(--st-rem));
+  --st-control-py: calc(0.4 * var(--st-rem));
+  --st-control-gap: calc(0.4 * var(--st-rem));
+  --st-stack-gap: calc(0.75 * var(--st-rem));
+  --st-radius: 12px;
+  /* 色彩角色：主色 / 焦点环 / 弱化文本 / 卡片底 / 侧栏玻璃底 */
+  --st-primary: var(--accent);
+  --st-on-primary: var(--biny-selection-text);
+  --st-ring: color-mix(in srgb, var(--accent) 25%, transparent);
+  --st-ring-weak: color-mix(in srgb, var(--accent) 22%, transparent);
+  --st-muted-foreground: var(--text-secondary);
+  --st-card: #f8fafc;
+  --st-sidebar-bg: rgb(255 255 255 / 80%);
+  --st-sidebar-border: rgb(255 255 255 / 30%);
+  --st-unsaved: #ea580c;
+  --st-unsaved-dot: #f97316;
+  --st-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --st-scrollbar-thumb: color-mix(in srgb, var(--text) 30%, transparent);
+  position: relative;
   display: flex;
-  flex-direction: column;
   width: 100%;
   height: 100%;
   min-height: 0;
   overflow: hidden;
+  margin: 0;
   border: 0;
   border-radius: 0;
-  /* 设置页以侧栏为外层底板，右侧内容再浮一层；两块同色会让
-     分组边界消失，尤其是在浅色主题下更明显。 */
-  background: var(--sidebar);
+  background: var(--bg);
   box-shadow: none;
+  /* 密度行高（compact 档）作用于整个设置中心。 */
+  line-height: 1.4;
 }
 
-.settings-modal-body {
-  display: flex;
-  width: 100%;
-  min-height: 0;
-  flex: 1;
+/* 窗口拖拽：侧栏与标题栏是拖拽区，交互控件恢复 no-drag。 */
+.settings-modal.is-full-page .settings-tabs,
+.settings-modal.is-full-page .settings-titlebar {
+  -webkit-app-region: drag;
+  app-region: drag;
 }
 
+.settings-modal.is-full-page .settings-content,
+.settings-modal.is-full-page .settings-tabs button,
+.settings-modal.is-full-page .settings-search-box,
+.settings-modal.is-full-page .settings-nav-list,
+.settings-modal.is-full-page input,
+.settings-modal.is-full-page textarea,
+.settings-modal.is-full-page select {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+/* 深色主题（含系统深色回退）下的卡片底与侧栏玻璃底。 */
+:root[data-theme="dark"] .settings-modal.is-full-page {
+  --st-card: var(--surface-raised);
+  --st-sidebar-bg: color-mix(in srgb, var(--sidebar) 80%, transparent);
+  --st-sidebar-border: rgb(255 255 255 / 20%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .settings-modal.is-full-page,
+  :root[data-theme="system"] .settings-modal.is-full-page {
+    --st-card: var(--surface-raised);
+    --st-sidebar-bg: color-mix(in srgb, var(--sidebar) 80%, transparent);
+    --st-sidebar-border: rgb(255 255 255 / 20%);
+  }
+}
+
+/* 侧栏：0.5rem 外边距悬浮、宽 200px、圆角 26px-0.5rem、模糊 + 投影。 */
 .settings-modal.is-full-page .settings-tabs {
-  width: var(--settings-sidebar-width);
-  min-width: 0;
-  min-height: 0;
-  flex: 0 0 var(--settings-sidebar-width);
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding: 62px 24px 24px;
-  border-inline-end: 1px solid var(--border);
-  background: var(--sidebar);
+  position: relative;
+  z-index: 10;
+  display: flex;
+  width: 200px;
+  min-width: 200px;
+  max-width: 200px;
+  height: calc(100% - 13px);
+  flex: 0 0 200px;
+  flex-direction: column;
+  overflow: hidden;
+  margin: 6.5px;
+  padding: 0;
+  border: 1px solid var(--st-sidebar-border);
+  border-radius: 19.5px;
+  background: var(--st-sidebar-bg);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 10%), 0 4px 6px -4px rgb(0 0 0 / 10%);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* 玻璃卡片高光边：浅色左向渐变 + 左缘 1px 竖光；深色隐藏渐变、换竖光取值。 */
+.settings-modal.is-full-page .settings-tabs::before {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(to right, rgb(255 255 255 / 20%), transparent);
+  content: "";
+  pointer-events: none;
+}
+
+.settings-modal.is-full-page .settings-tabs::after {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  left: 0;
+  width: 1px;
+  background: linear-gradient(to bottom, rgb(255 255 255 / 40%), rgb(255 255 255 / 10%), transparent);
+  content: "";
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .settings-modal.is-full-page .settings-tabs::before {
+  display: none;
+}
+
+:root[data-theme="dark"] .settings-modal.is-full-page .settings-tabs::after {
+  background: linear-gradient(180deg, rgb(255 255 255 / 0%) 0%, rgb(255 255 255 / 24%) 20%, rgb(255 255 255 / 6%) 68%, rgb(255 255 255 / 0%) 100%);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .settings-modal.is-full-page .settings-tabs::before,
+  :root[data-theme="system"] .settings-modal.is-full-page .settings-tabs::before {
+    display: none;
+  }
+
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .settings-modal.is-full-page .settings-tabs::after,
+  :root[data-theme="system"] .settings-modal.is-full-page .settings-tabs::after {
+    background: linear-gradient(180deg, rgb(255 255 255 / 0%) 0%, rgb(255 255 255 / 24%) 20%, rgb(255 255 255 / 6%) 68%, rgb(255 255 255 / 0%) 100%);
+  }
+}
+
+/* 侧栏顶部条：承载返回按钮；mac 红绿灯悬浮在同排左侧，预留系统控件位。 */
+.settings-sidebar-strip {
+  display: flex;
+  height: calc(3 * var(--st-rem));
+  flex: none;
+  align-items: center;
+  padding-right: 6.5px;
+  padding-left: 76px;
 }
 
 .settings-back-button {
-  height: 42px;
-  gap: 12px;
-  margin-bottom: 18px;
-  padding-inline: 12px;
+  display: inline-flex;
+  height: var(--st-control-h-sm);
+  align-items: center;
+  gap: var(--st-control-gap);
+  margin: 0;
+  padding-inline: 8px;
+  border: 0;
+  border-radius: var(--st-radius);
   color: var(--text);
-  font-size: calc(21px * var(--font-scale));
+  background: transparent;
+  font-size: calc(0.875 * var(--st-rem));
+  transition: background-color 0.15s var(--st-ease);
 }
 
 .settings-back-button strong {
-  font-weight: 620;
-  letter-spacing: -0.02em;
+  font-weight: 500;
 }
 
 .settings-back-button:hover {
-  background: transparent;
+  background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
+/* 侧栏搜索框：h-7 输入、图标左置、命中失焦显示清除按钮。 */
 .settings-search-box {
+  position: relative;
   display: flex;
-  height: 34px;
+  flex: none;
   align-items: center;
-  gap: 8px;
-  margin: 0 0 14px;
-  padding: 0 11px;
-  border: 1px solid var(--border);
-  border-radius: 17px;
-  color: var(--text-tertiary);
-  background: var(--surface);
+  margin: 0 9.75px 6.5px;
 }
 
-.settings-search-box:focus-within {
-  border-color: var(--border-strong);
+.settings-search-box > svg {
+  position: absolute;
+  top: 50%;
+  left: 8.125px;
+  color: var(--st-muted-foreground);
+  pointer-events: none;
+  transform: translateY(-50%);
 }
 
 .settings-search-box input {
+  width: 100%;
+  height: calc(1.75 * var(--st-rem));
+  padding: 0 calc(1.75 * var(--st-rem)) 0 calc(2 * var(--st-rem));
+  border: 0;
+  border-radius: var(--st-radius);
+  color: var(--text);
+  background: color-mix(in srgb, var(--surface-hover) 70%, transparent);
+  outline: none;
+  font-size: calc(0.875 * var(--st-rem));
+  transition: box-shadow 0.15s var(--st-ease);
+}
+
+.settings-search-box input::placeholder {
+  color: var(--st-muted-foreground);
+}
+
+.settings-search-box input:focus {
+  box-shadow: 0 0 0 2px var(--st-ring-weak);
+}
+
+.settings-search-clear {
+  position: absolute;
+  top: 50%;
+  right: 4.875px;
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  color: var(--st-muted-foreground);
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: color 0.15s var(--st-ease);
+}
+
+.settings-search-clear:hover {
+  color: var(--text);
+}
+
+/* 侧栏导航：细滚动条静止透明、悬停显形；按钮 px-6 py-3、右缘 2px 选中指示。 */
+.settings-modal.is-full-page .settings-nav-list {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 0;
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+.settings-modal.is-full-page .settings-nav-list:hover {
+  scrollbar-color: var(--st-scrollbar-thumb) transparent;
+}
+
+.settings-modal.is-full-page .settings-nav-list::-webkit-scrollbar {
+  width: 5px;
+}
+
+.settings-modal.is-full-page .settings-nav-list::-webkit-scrollbar-thumb {
+  border: none;
+  border-radius: 999px;
+  background-color: #0000;
+  background-clip: padding-box;
+}
+
+.settings-modal.is-full-page .settings-nav-list:hover::-webkit-scrollbar-thumb {
+  background-color: var(--st-scrollbar-thumb);
+}
+
+.settings-modal.is-full-page .settings-nav-list::-webkit-scrollbar-track {
+  background: none;
+}
+
+.settings-modal.is-full-page .settings-nav-list button {
+  display: flex;
+  width: 100%;
+  height: auto;
+  flex: none;
+  align-items: center;
+  gap: 9.75px;
+  padding: 9.75px 19.5px;
+  border: 0;
+  border-right: 2px solid transparent;
+  border-radius: 0;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+  font-size: calc(0.875 * var(--st-rem));
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.4;
+  transition: background-color 0.15s var(--st-ease), color 0.15s var(--st-ease), border-color 0.15s var(--st-ease);
+}
+
+.settings-modal.is-full-page .settings-nav-list button svg {
+  color: inherit;
+}
+
+.settings-modal.is-full-page .settings-nav-list button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.settings-modal.is-full-page .settings-nav-list button.is-selected {
+  border-right-color: var(--st-primary);
+  color: var(--st-primary);
+  background: color-mix(in srgb, var(--st-primary) 10%, transparent);
+}
+
+:root[data-theme="dark"] .settings-modal.is-full-page .settings-nav-list button.is-selected {
+  background: color-mix(in srgb, var(--st-primary) 20%, transparent);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) .settings-modal.is-full-page .settings-nav-list button.is-selected,
+  :root[data-theme="system"] .settings-modal.is-full-page .settings-nav-list button.is-selected {
+    background: color-mix(in srgb, var(--st-primary) 20%, transparent);
+  }
+}
+
+.settings-modal.is-full-page .settings-nav-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  opacity: 0.7;
+  transition: opacity 0.2s linear;
+}
+
+.settings-modal.is-full-page .settings-nav-list button:hover .settings-nav-icon,
+.settings-modal.is-full-page .settings-nav-list button.is-selected .settings-nav-icon {
+  opacity: 1;
+}
+
+.settings-modal.is-full-page .settings-nav-label {
   min-width: 0;
   flex: 1;
-  border: 0;
-  outline: 0;
-  color: var(--text);
-  background: transparent;
-  font-size: calc(12px * var(--font-scale));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.settings-search-results {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.settings-modal.is-full-page .settings-nav-badge {
+  display: inline-flex;
+  height: calc(1 * var(--st-rem));
+  min-width: calc(1 * var(--st-rem));
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  padding-inline: calc(0.25 * var(--st-rem));
+  border-radius: 999px;
+  color: var(--st-primary);
+  background: color-mix(in srgb, var(--st-primary) 15%, transparent);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 600;
+  letter-spacing: 0;
 }
 
-.settings-tabs .settings-search-results button {
-  height: auto;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 9px 11px;
-  border-radius: 10px;
-}
-
-.settings-search-results button strong {
-  color: var(--text);
-  font-size: calc(12px * var(--font-scale));
-  font-weight: 560;
-}
-
-.settings-search-results button small,
-.settings-search-results > p {
+.settings-modal.is-full-page .settings-nav-empty {
   margin: 0;
-  color: var(--text-tertiary);
-  font-size: calc(10.5px * var(--font-scale));
-  line-height: 1.45;
+  padding: 13px 19.5px;
+  color: var(--st-muted-foreground);
+  font-size: calc(0.875 * var(--st-rem));
 }
 
-.settings-search-results > p {
-  padding: 10px 12px;
-}
-
-.settings-nav-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.settings-nav-section + .settings-nav-section {
-  margin-top: 12px;
-  padding-top: 10px;
-  border-top: 1px solid color-mix(in srgb, var(--border) 72%, transparent);
-}
-
-.settings-nav-group {
-  margin: 6px 12px 6px;
-  color: var(--text-tertiary);
-  font-size: calc(10px * var(--font-scale));
-  font-weight: 650;
-  letter-spacing: 0.04em;
-}
-
-.settings-nav-section:first-child .settings-nav-group {
-  margin-top: 2px;
-}
-
-.settings-tabs .settings-nav-list button {
-  height: 36px;
-  gap: 8px;
-  padding-inline: 12px;
-  border-radius: 18px;
-  color: var(--text-secondary);
-  font-size: calc(12.5px * var(--font-scale));
-  font-weight: 450;
-}
-
-.settings-tabs .settings-nav-list button:hover {
-  color: var(--text);
-  background: var(--surface-hover);
-}
-
-.settings-tabs .settings-nav-list button.is-selected {
-  color: var(--bg);
-  background: var(--text);
-  font-weight: 520;
-}
-
-.settings-tabs .settings-nav-list button.is-selected .settings-nav-badge {
-  color: inherit;
-  background: transparent;
-}
-
+/* 右列：标题栏 + 滚动区 + 底栏，自身不滚动。 */
 .settings-modal.is-full-page .settings-content {
+  position: relative;
+  z-index: 10;
   display: flex;
   min-width: 0;
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
+  overflow: hidden;
   margin: 0;
-  padding: 0 0 40px;
-  overflow-x: hidden;
-  overflow-y: auto;
+  padding: 0;
   border-radius: 0;
-  background: var(--surface-soft);
+  background: var(--bg);
 }
 
-.settings-modal.is-full-page .settings-content > header {
+/* 标题栏：border-b、px-6 py-4；左侧图标 + 分页名，右侧未保存提示。 */
+.settings-modal.is-full-page .settings-content > header.settings-titlebar {
+  position: relative;
+  z-index: auto;
+  top: auto;
   display: flex;
-  width: 100%;
-  flex: 0 0 auto;
-  align-items: flex-start;
+  min-height: 0;
+  flex: none;
+  align-items: center;
   justify-content: space-between;
-  gap: 24px;
-  min-height: 122px;
-  padding: 62px max(28px, calc((100% - var(--settings-content-max)) / 2)) 20px;
-  background: linear-gradient(to bottom, var(--surface-soft) 76%, transparent);
+  gap: calc(0.5 * var(--st-rem));
+  margin: 0;
+  padding: calc(1 * var(--st-rem)) calc(1.5 * var(--st-rem));
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
 }
 
-.settings-heading h2 {
-  font-size: calc(20px * var(--font-scale));
-  font-weight: 620;
+.settings-titlebar h2 {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: calc(0.5 * var(--st-rem));
+  margin: 0;
+  overflow: hidden;
+  color: var(--text);
+  font-size: calc(1.125 * var(--st-rem));
+  font-weight: 600;
+}
+
+.settings-titlebar-icon {
+  display: inline-flex;
+  flex: none;
+  color: inherit;
 }
 
 .settings-header-unsaved {
   display: inline-flex;
-  flex: 0 0 auto;
+  flex: none;
   align-items: center;
-  gap: 8px;
-  padding-top: 3px;
-  color: var(--biny-warning);
-  font-size: calc(13px * var(--font-scale));
+  gap: calc(0.5 * var(--st-rem));
+  color: var(--st-unsaved);
+  font-size: calc(0.875 * var(--st-rem));
   white-space: nowrap;
 }
 
 .settings-unsaved-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--biny-warning);
+  width: calc(0.5 * var(--st-rem));
+  height: calc(0.5 * var(--st-rem));
+  border-radius: 999px;
+  background: var(--st-unsaved-dot);
 }
 
-.settings-content > .settings-sections,
-.settings-content > .about-settings {
-  width: min(var(--settings-content-max), calc(100% - 56px));
-  max-width: var(--settings-content-max);
-  margin-inline: auto;
+/* 内容滚动区：p-6，页面铺满整列宽度。 */
+.settings-modal.is-full-page .settings-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: calc(1.5 * var(--st-rem));
 }
 
-.settings-page-footer {
+/* 扩展页（MCP / 技能 / 插件）自带滚动，滚动区只做容器。 */
+.settings-modal.is-full-page .settings-scroll.is-extension {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 0;
+}
+
+/* 底栏：border-t、px-6 py-4；左侧状态文本，右侧操作按钮。 */
+.settings-modal.is-full-page .settings-page-footer {
   position: relative;
   display: flex;
-  flex: 0 0 auto;
-  min-height: 64px;
+  flex: none;
+  min-height: 0;
   align-items: center;
   justify-content: space-between;
-  gap: 20px;
-  padding: 12px max(28px, calc((100% - var(--settings-sidebar-width) - var(--settings-content-max)) / 2)) 12px calc(var(--settings-sidebar-width) + max(28px, calc((100% - var(--settings-sidebar-width) - var(--settings-content-max)) / 2)));
-  background: var(--surface-soft);
-}
-
-.settings-page-footer::before {
-  position: absolute;
-  inset: 0 8px auto;
+  gap: calc(1 * var(--st-rem));
+  padding: calc(1 * var(--st-rem)) calc(1.5 * var(--st-rem));
+  background: var(--bg);
   border-top: 1px solid var(--border);
-  content: "";
 }
 
 .settings-save-status {
-  color: var(--text-tertiary);
-  font-size: calc(11px * var(--font-scale));
+  min-width: 0;
+  overflow: hidden;
+  color: var(--st-muted-foreground);
+  font-size: calc(0.875 * var(--st-rem));
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.settings-save-status.is-dirty,
-.settings-save-status.is-invalid,
-.settings-save-status.is-recovery_required {
-  color: var(--biny-warning);
-}
-
-.settings-save-status.is-invalid,
-.settings-save-status.is-recovery_required {
-  color: var(--red);
-}
-
-.settings-footer-actions,
-.settings-confirm-actions {
+.settings-footer-actions {
   display: flex;
+  flex: none;
   align-items: center;
   justify-content: flex-end;
-  gap: 8px;
+  gap: calc(0.75 * var(--st-rem));
 }
 
+/* 底栏按钮：outline 变体在前，default（主色）变体殿后。 */
 .settings-page-footer button,
 .settings-confirm-actions button {
-  min-height: 34px;
-  padding: 0 14px;
+  display: inline-flex;
+  min-height: var(--st-control-h);
+  align-items: center;
+  justify-content: center;
+  gap: var(--st-control-gap);
+  padding: var(--st-control-py) var(--st-control-px);
   border: 1px solid var(--border);
-  border-radius: 9px;
-  background: var(--surface);
+  border-radius: var(--st-radius);
+  color: var(--text);
+  background: transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  outline: none;
+  cursor: pointer;
   white-space: nowrap;
+  font-size: calc(0.875 * var(--st-rem));
+  font-weight: 500;
+  transition: all 0.15s var(--st-ease);
+}
+
+.settings-page-footer button:hover:not(:disabled),
+.settings-confirm-actions button:hover:not(:disabled) {
+  background: var(--surface-hover);
 }
 
 .settings-page-footer button:last-child,
 .settings-confirm-actions button:last-child {
-  color: var(--biny-selection-text);
-  border-color: var(--accent);
-  background: var(--accent);
+  border-color: transparent;
+  color: var(--st-on-primary);
+  background: var(--st-primary);
+}
+
+.settings-page-footer button:last-child:hover:not(:disabled),
+.settings-confirm-actions button:last-child:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--st-primary) 90%, transparent);
+}
+
+.settings-page-footer button:focus-visible,
+.settings-confirm-actions button:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 3px var(--st-ring);
+}
+
+.settings-page-footer button:disabled,
+.settings-confirm-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
+.settings-confirm-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: calc(0.75 * var(--st-rem));
 }
 
 .settings-confirm-panel {
@@ -1524,13 +1782,225 @@ select {
   background: var(--surface-hover);
 }
 
-.settings-sections > section,
-.settings-sections > .connection-section {
-  margin-bottom: 14px;
-  padding: 18px 20px;
+/* 卡片内主操作按钮：对齐 default 变体参数（主色底、12px 圆角、控件高度）。 */
+.settings-modal.is-full-page .settings-primary-button {
+  display: inline-flex;
+  min-height: var(--st-control-h);
+  align-items: center;
+  justify-content: center;
+  gap: var(--st-control-gap);
+  padding: var(--st-control-py) var(--st-control-px);
+  border: 1px solid transparent;
+  border-radius: var(--st-radius);
+  color: var(--st-on-primary);
+  background: var(--st-primary);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  font-size: calc(0.875 * var(--st-rem));
+  font-weight: 500;
+  transition: all 0.15s var(--st-ease);
+}
+
+.settings-modal.is-full-page .settings-primary-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--st-primary) 90%, transparent);
+}
+
+.settings-modal.is-full-page .settings-primary-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* 分区卡片：bg-card + 1px 边 + 12px 圆角 + 细投影 + 密度内边距。
+   卡体是 flex 列、子项间距 13px（对应密度 card-gap）；只重置旧样式的
+   margin-bottom——margin-top 交给下方相邻规则，否则卡片会全部贴死。 */
+.settings-modal.is-full-page .settings-sections > section,
+.settings-modal.is-full-page .settings-sections > .connection-section,
+.settings-modal.is-full-page .appearance-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--st-card-gap);
+  margin-bottom: 0;
+  padding: var(--st-card-padding);
   border: 1px solid var(--border);
-  border-radius: 12px;
-  background: var(--surface);
+  border-radius: var(--st-radius);
+  background: var(--st-card);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+}
+
+.settings-modal.is-full-page .settings-scroll > * + *,
+.settings-modal.is-full-page .settings-sections > * + * {
+  margin-top: calc(1.5 * var(--st-rem));
+}
+
+/* 内容列按参考实现的设置窗口内容宽度（980 窗 − 侧栏 − 内边距 ≈ 728px）居中，
+   避免大窗口里卡片被拉满整行。 */
+.settings-modal.is-full-page .settings-scroll > * {
+  width: 100%;
+  max-width: 728px;
+  margin-inline: auto;
+}
+
+/* fixed 定位的二级详情层是全屏遮罩，不参与列宽与相邻间距。 */
+.settings-modal.is-full-page .settings-scroll > .model-dialog-backdrop {
+  width: auto;
+  max-width: none;
+  margin: 0;
+}
+
+/* 卡片标题：text-lg font-medium，紧跟 6.5px 间距；描述 text-xs 弱化色，下距 13px。 */
+.settings-modal.is-full-page .settings-sections h3 {
+  margin: 0 0 calc(0.5 * var(--st-rem));
+  color: var(--text);
+  font-size: calc(1.125 * var(--st-rem));
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.settings-modal.is-full-page .settings-sections h3 + p {
+  margin: 0 0 calc(1 * var(--st-rem));
+  color: var(--st-muted-foreground);
+  font-size: calc(0.75 * var(--st-rem));
+  line-height: 1.4;
+}
+
+.settings-modal.is-full-page .section-heading-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: calc(1 * var(--st-rem));
+  margin-bottom: calc(1 * var(--st-rem));
+}
+
+.settings-modal.is-full-page .section-heading-row p {
+  margin: 0;
+  color: var(--st-muted-foreground);
+  font-size: calc(0.75 * var(--st-rem));
+  line-height: 1.4;
+}
+
+/* 卡片内输入 / 下拉：统一控件高度与 12px 圆角，焦点环 3px。 */
+.settings-modal.is-full-page .settings-sections input[type="text"],
+.settings-modal.is-full-page .settings-sections input[type="number"],
+.settings-modal.is-full-page .settings-sections input[type="search"],
+.settings-modal.is-full-page .settings-sections input[type="password"],
+.settings-modal.is-full-page .settings-sections input:not([type]),
+.settings-modal.is-full-page .settings-sections textarea,
+.settings-modal.is-full-page .settings-sections select {
+  min-height: var(--st-control-h);
+  padding: var(--st-control-py) var(--st-control-px);
+  border: 1px solid var(--border);
+  border-radius: var(--st-radius);
+  color: var(--text);
+  background: transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  font-size: calc(0.875 * var(--st-rem));
+  transition: color 0.15s var(--st-ease), border-color 0.15s var(--st-ease), box-shadow 0.15s var(--st-ease);
+}
+
+.settings-modal.is-full-page .settings-sections input[type="text"]:focus-visible,
+.settings-modal.is-full-page .settings-sections input[type="number"]:focus-visible,
+.settings-modal.is-full-page .settings-sections input[type="search"]:focus-visible,
+.settings-modal.is-full-page .settings-sections input[type="password"]:focus-visible,
+.settings-modal.is-full-page .settings-sections input:not([type]):focus-visible,
+.settings-modal.is-full-page .settings-sections textarea:focus-visible,
+.settings-modal.is-full-page .settings-sections select:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 3px var(--st-ring);
+  outline: none;
+}
+
+/* 统一布尔开关行：左侧标题与说明、右侧滑动开关。 */
+.settings-modal.is-full-page .settings-switch-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--st-control-gap);
+  padding: calc(0.5 * var(--st-rem)) 0;
+  border: 0;
+  color: var(--text);
+  background: transparent;
+  text-align: left;
+}
+
+.settings-modal.is-full-page .settings-switch-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.settings-modal.is-full-page .settings-switch-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-modal.is-full-page .settings-switch-copy strong {
+  font-size: calc(0.875 * var(--st-rem));
+  font-weight: 500;
+}
+
+.settings-modal.is-full-page .settings-switch-copy small {
+  color: var(--st-muted-foreground);
+  font-size: calc(0.75 * var(--st-rem));
+  line-height: 1.4;
+}
+
+/* 滑动开关：轨道 1.5rem×2.75rem、圆头 1.25rem、选中位移 1.25rem。 */
+.settings-modal.is-full-page .settings-switch {
+  display: inline-flex;
+  width: calc(2.75 * var(--st-rem));
+  height: calc(1.5 * var(--st-rem));
+  flex: none;
+  align-items: center;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text) 22%, transparent);
+  transition: background-color 0.15s var(--st-ease);
+}
+
+.settings-modal.is-full-page .settings-switch-row.is-checked .settings-switch {
+  background: var(--st-primary);
+}
+
+.settings-modal.is-full-page .settings-switch-row:focus-visible {
+  outline: none;
+}
+
+.settings-modal.is-full-page .settings-switch-row:focus-visible .settings-switch {
+  box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--st-ring);
+}
+
+.settings-modal.is-full-page .settings-switch-thumb {
+  display: block;
+  width: calc(1.25 * var(--st-rem));
+  height: calc(1.25 * var(--st-rem));
+  border-radius: 999px;
+  background: var(--bg);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 10%), 0 4px 6px -4px rgb(0 0 0 / 10%);
+  transition: transform 0.15s var(--st-ease);
+}
+
+.settings-modal.is-full-page .settings-switch-row.is-checked .settings-switch-thumb {
+  transform: translateX(calc(1.25 * var(--st-rem)));
+}
+
+/* 动效降级：系统要求减少动态效果时关闭设置内的过渡。 */
+@media (prefers-reduced-motion: reduce) {
+  .settings-modal.is-full-page .settings-nav-list button,
+  .settings-modal.is-full-page .settings-nav-icon,
+  .settings-modal.is-full-page .settings-back-button,
+  .settings-modal.is-full-page .settings-switch,
+  .settings-modal.is-full-page .settings-switch-thumb,
+  .settings-modal.is-full-page .settings-page-footer button,
+  .settings-modal.is-full-page .settings-confirm-actions button,
+  .settings-modal.is-full-page .settings-search-box input,
+  .settings-modal.is-full-page .settings-search-clear,
+  .settings-modal.is-full-page .settings-sections input,
+  .settings-modal.is-full-page .settings-sections textarea,
+  .settings-modal.is-full-page .settings-sections select {
+    transition: none;
+  }
 }
 
 .settings-inline-notice {
@@ -1554,11 +2024,6 @@ select {
 
 .settings-inline-notice.is-warning {
   border-color: color-mix(in srgb, var(--yellow) 36%, var(--border));
-}
-
-.settings-sections h3 {
-  font-size: calc(13px * var(--font-scale));
-  font-weight: 580;
 }
 
 .appearance-section-group {
@@ -1884,17 +2349,12 @@ select {
 }
 
 @media (max-width: 900px) {
+  /* 窄屏下侧栏玻璃卡片收窄到 190px。 */
   .settings-modal.is-full-page .settings-tabs {
-    width: 190px;
-    padding-inline: 18px;
-  }
-
-  .settings-modal.is-full-page {
-    --settings-sidebar-width: 190px;
-  }
-
-  .settings-modal.is-full-page .settings-content > header {
-    padding-inline: 28px;
+    width: 177px;
+    min-width: 177px;
+    max-width: 177px;
+    flex-basis: 177px;
   }
 
   .memory-stat-grid {
@@ -1917,12 +2377,10 @@ select {
   }
 
   .settings-modal.is-full-page .settings-tabs {
-    width: 160px;
-    padding-inline: 12px;
-  }
-
-  .settings-modal.is-full-page {
-    --settings-sidebar-width: 160px;
+    width: 147px;
+    min-width: 147px;
+    max-width: 147px;
+    flex-basis: 147px;
   }
 
   .appearance-settings .theme-option-grid {
@@ -3121,3 +3579,394 @@ select {
 .activity-memory-archive { padding: 16px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
 .activity-memory-archive > h3 { margin: 0 0 10px; font-size: calc(15px * var(--font-scale)); }
 .activity-memory-archive > p { color: var(--text-tertiary); font-size: 12px; }
+
+/* ===================== 设置内容区统一参数 ===================== */
+/* 内容区的行内盒、控件、按钮与二级弹层对齐壳层参数：
+   圆角体系 12px / 8px（内层）/ 4px（小标签）/ 999px（药丸），
+   控件高 2.25rem（紧凑 2rem），焦点环 3px 主色，过渡 150ms。 */
+
+/* —— 内容区单行输入与下拉：统一控件高度与圆角 —— */
+.settings-modal.is-full-page .settings-sections input[type="text"],
+.settings-modal.is-full-page .settings-sections input[type="number"],
+.settings-modal.is-full-page .settings-sections input[type="search"],
+.settings-modal.is-full-page .settings-sections input[type="password"],
+.settings-modal.is-full-page .settings-sections input:not([type]) {
+  height: var(--st-control-h);
+  min-height: 0;
+}
+
+.settings-modal.is-full-page .settings-sections select {
+  height: var(--st-control-h);
+  min-height: 0;
+}
+
+/* 包装器内的裸输入不吃外层控件的边框与内边距。 */
+.settings-modal.is-full-page .settings-sections .activity-number-input input,
+.settings-modal.is-full-page .settings-sections .activity-memory-search input {
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+/* —— 对话框与面板输入（模型连接、记忆编辑、详情层） —— */
+.settings-modal.is-full-page .connection-field > input,
+.settings-modal.is-full-page .secret-input-row input,
+.settings-modal.is-full-page .connection-row-editor input,
+.settings-modal.is-full-page .manual-model-row input,
+.settings-modal.is-full-page .model-profile-editor-fields input,
+.settings-modal.is-full-page .settings-confirm-panel input,
+.settings-modal.is-full-page .web-browser-url-row input,
+.settings-modal.is-full-page .settings-inline-input,
+.settings-modal.is-full-page .memory-importance-input {
+  height: var(--st-control-h);
+  min-height: 0;
+  padding: 0 var(--st-control-px);
+  border: 1px solid var(--border);
+  border-radius: var(--st-radius);
+  background: transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  font-size: calc(0.875 * var(--st-rem));
+  transition: color 0.15s var(--st-ease), border-color 0.15s var(--st-ease), box-shadow 0.15s var(--st-ease);
+}
+
+.settings-modal.is-full-page .connection-field > input:focus,
+.settings-modal.is-full-page .secret-input-row input:focus,
+.settings-modal.is-full-page .connection-row-editor input:focus,
+.settings-modal.is-full-page .manual-model-row input:focus,
+.settings-modal.is-full-page .model-profile-editor-fields input:focus,
+.settings-modal.is-full-page .settings-confirm-panel input:focus,
+.settings-modal.is-full-page .web-browser-url-row input:focus,
+.settings-modal.is-full-page .settings-inline-input:focus,
+.settings-modal.is-full-page .memory-importance-input:focus,
+.settings-modal.is-full-page .connection-select:focus,
+.settings-modal.is-full-page .memory-note-input:focus,
+.settings-modal.is-full-page .personalization-instructions:focus,
+.settings-modal.is-full-page .chat-instructions-field textarea:focus,
+.settings-modal.is-full-page .provider-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
+  box-shadow: 0 0 0 3px var(--st-ring);
+  outline: none;
+}
+
+.settings-modal.is-full-page .connection-select,
+.settings-modal.is-full-page .chat-override-grid select,
+.settings-modal.is-full-page .compaction-model-select,
+.settings-modal.is-full-page .font-select {
+  height: var(--st-control-h);
+  min-height: 0;
+  padding-inline: var(--st-control-px);
+  border: 1px solid var(--border);
+  border-radius: var(--st-radius);
+  background: transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  transition: color 0.15s var(--st-ease), border-color 0.15s var(--st-ease), box-shadow 0.15s var(--st-ease);
+}
+
+.settings-modal.is-full-page .font-size-input {
+  height: var(--st-control-h);
+  min-height: 0;
+  border-radius: var(--st-radius);
+}
+
+.settings-modal.is-full-page .provider-search {
+  height: var(--st-control-h);
+  border-radius: var(--st-radius);
+}
+
+/* —— 文本域 —— */
+.settings-modal.is-full-page .memory-note-input,
+.settings-modal.is-full-page .personalization-instructions,
+.settings-modal.is-full-page .chat-instructions-field textarea {
+  border: 1px solid var(--border);
+  border-radius: var(--st-radius);
+  background: transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  transition: color 0.15s var(--st-ease), border-color 0.15s var(--st-ease), box-shadow 0.15s var(--st-ease);
+}
+
+/* —— 按钮变体统一 —— */
+/* outline（次要操作）：1px 边 + 透明底，悬停浮起。 */
+.settings-modal.is-full-page .settings-secondary-button,
+.settings-modal.is-full-page .memory-library-toolbar > button,
+.settings-modal.is-full-page .memory-add-row > button,
+.settings-modal.is-full-page .activity-secondary-button,
+.settings-modal.is-full-page .web-browser-url-row button,
+.settings-modal.is-full-page .memory-search-row > button,
+.settings-modal.is-full-page .settings-button-row > button,
+.settings-modal.is-full-page .memory-index-actions > button,
+.settings-modal.is-full-page .memory-advanced-toggle,
+.settings-modal.is-full-page .login-code-actions > button:last-child,
+.settings-modal.is-full-page .connect-dialog-actions button:not(.is-primary):not(.is-danger),
+.settings-modal.is-full-page .danger-button,
+.settings-modal.is-full-page .activity-danger-button {
+  display: inline-flex;
+  min-height: var(--st-control-h-sm);
+  align-items: center;
+  justify-content: center;
+  gap: var(--st-control-gap);
+  padding: 0 calc(var(--st-control-px) - 0.15 * var(--st-rem));
+  border: 1px solid var(--border);
+  border-radius: var(--st-radius);
+  color: var(--text);
+  background: transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  outline: none;
+  font-size: calc(0.875 * var(--st-rem));
+  font-weight: 500;
+  transition: all 0.15s var(--st-ease);
+}
+
+.settings-modal.is-full-page .settings-secondary-button:hover:not(:disabled),
+.settings-modal.is-full-page .memory-library-toolbar > button:hover:not(:disabled),
+.settings-modal.is-full-page .memory-add-row > button:hover:not(:disabled),
+.settings-modal.is-full-page .activity-secondary-button:hover:not(:disabled),
+.settings-modal.is-full-page .web-browser-url-row button:hover:not(:disabled),
+.settings-modal.is-full-page .memory-search-row > button:hover:not(:disabled),
+.settings-modal.is-full-page .settings-button-row > button:hover:not(:disabled),
+.settings-modal.is-full-page .memory-index-actions > button:hover:not(:disabled),
+.settings-modal.is-full-page .memory-advanced-toggle:hover:not(:disabled),
+.settings-modal.is-full-page .login-code-actions > button:last-child:hover:not(:disabled),
+.settings-modal.is-full-page .connect-dialog-actions button:not(.is-primary):not(.is-danger):hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+/* destructive（危险操作）：红描边 + 弱红底悬停。 */
+.settings-modal.is-full-page .danger-button,
+.settings-modal.is-full-page .activity-danger-button {
+  border-color: color-mix(in srgb, var(--red) 35%, transparent);
+  color: var(--red);
+}
+
+.settings-modal.is-full-page .danger-button:hover:not(:disabled),
+.settings-modal.is-full-page .activity-danger-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--red) 50%, transparent);
+  background: var(--red-bg);
+}
+
+/* default（主要操作）：主色底。 */
+.settings-modal.is-full-page .login-primary-button,
+.settings-modal.is-full-page .connect-dialog-actions button.is-primary {
+  display: inline-flex;
+  min-height: var(--st-control-h-sm);
+  align-items: center;
+  justify-content: center;
+  gap: var(--st-control-gap);
+  padding: 0 calc(var(--st-control-px) - 0.15 * var(--st-rem));
+  border: 1px solid transparent;
+  border-radius: var(--st-radius);
+  color: var(--st-on-primary);
+  background: var(--st-primary);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  outline: none;
+  font-size: calc(0.875 * var(--st-rem));
+  font-weight: 500;
+  transition: all 0.15s var(--st-ease);
+}
+
+.settings-modal.is-full-page .login-primary-button:hover:not(:disabled),
+.settings-modal.is-full-page .connect-dialog-actions button.is-primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--st-primary) 90%, transparent);
+}
+
+/* ghost 图标按钮：方形紧凑，悬停弱化底。 */
+.settings-modal.is-full-page .icon-button,
+.settings-modal.is-full-page .activity-icon-button {
+  display: grid;
+  place-items: center;
+  min-height: var(--st-control-h-sm);
+  padding: 0;
+  border: 0;
+  border-radius: var(--st-radius);
+  color: var(--text-secondary);
+  background: transparent;
+  transition: background-color 0.15s var(--st-ease), color 0.15s var(--st-ease);
+}
+
+.settings-modal.is-full-page .icon-button:hover,
+.settings-modal.is-full-page .activity-icon-button:hover {
+  color: var(--text);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+/* link（文字按钮）。 */
+.settings-modal.is-full-page .text-button,
+.settings-modal.is-full-page .settings-link,
+.settings-modal.is-full-page .chat-temperature-reset {
+  border: 0;
+  border-radius: calc(var(--st-radius) - 4px);
+  color: var(--st-primary);
+  background: transparent;
+  transition: color 0.15s var(--st-ease);
+}
+
+.settings-modal.is-full-page .text-button:hover,
+.settings-modal.is-full-page .settings-link:hover,
+.settings-modal.is-full-page .chat-temperature-reset:hover {
+  color: color-mix(in srgb, var(--st-primary) 80%, transparent);
+}
+
+/* 通用 ghost 按钮（设置范围内）：无边框弱化按钮。 */
+.settings-modal.is-full-page .ghost-button {
+  display: inline-flex;
+  min-height: var(--st-control-h-sm);
+  align-items: center;
+  justify-content: center;
+  gap: var(--st-control-gap);
+  padding: 0 calc(var(--st-control-px) - 0.15 * var(--st-rem));
+  border: 0;
+  border-radius: var(--st-radius);
+  color: var(--text);
+  background: transparent;
+  font-size: calc(0.875 * var(--st-rem));
+  font-weight: 500;
+  transition: background-color 0.15s var(--st-ease);
+}
+
+.settings-modal.is-full-page .ghost-button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+
+.settings-modal.is-full-page .ghost-button.is-danger {
+  color: var(--red);
+}
+
+.settings-modal.is-full-page .ghost-button.is-danger:hover:not(:disabled) {
+  color: var(--red);
+  background: var(--red-bg);
+}
+
+/* —— 选项卡片（单选组）圆角与选中环 —— */
+.settings-modal.is-full-page .agent-permission-option,
+.settings-modal.is-full-page .capability-default-option,
+.settings-modal.is-full-page .personality-option,
+.settings-modal.is-full-page .theme-option-preview {
+  border-radius: var(--st-radius);
+}
+
+/* —— 行内提示 / 内层信息盒圆角 —— */
+.settings-modal.is-full-page .settings-inline-notice,
+.settings-modal.is-full-page .manual-model-editor,
+.settings-modal.is-full-page .model-profile-editor-row,
+.settings-modal.is-full-page .settings-memory-report,
+.settings-modal.is-full-page .connection-test-result,
+.settings-modal.is-full-page .connection-oauth-card,
+.settings-modal.is-full-page .login-subscription-card,
+.settings-modal.is-full-page .login-code-panel,
+.settings-modal.is-full-page .memory-stat-card,
+.settings-modal.is-full-page .memory-entry,
+.settings-modal.is-full-page .memory-index-summary > span,
+.settings-modal.is-full-page .permission-scope-summary > span,
+.settings-modal.is-full-page .chat-personalization-section,
+.settings-modal.is-full-page .activity-stat,
+.settings-modal.is-full-page .activity-permission-row,
+.settings-modal.is-full-page .activity-empty-state,
+.settings-modal.is-full-page .activity-session-row,
+.settings-modal.is-full-page .activity-search-result,
+.settings-modal.is-full-page .activity-report-output,
+.settings-modal.is-full-page .activity-detail-analysis,
+.settings-modal.is-full-page .activity-detail-unavailable,
+.settings-modal.is-full-page .activity-memory-diary-output,
+.settings-modal.is-full-page .activity-memory-add-box,
+.settings-modal.is-full-page .activity-memory-limit,
+.settings-modal.is-full-page .activity-memory-model,
+.settings-modal.is-full-page .memory-embedding-maintenance,
+.settings-modal.is-full-page .memory-filter-tabs button {
+  border-radius: var(--st-radius);
+}
+
+/* 搜索条与过滤行：控件级圆角。 */
+.settings-modal.is-full-page .activity-memory-search,
+.settings-modal.is-full-page .memory-search-row .settings-inline-input {
+  border-radius: var(--st-radius);
+}
+
+.settings-modal.is-full-page .activity-memory-filters button,
+.settings-modal.is-full-page .activity-memory-model select,
+.settings-modal.is-full-page .activity-memory-diary-actions input,
+.settings-modal.is-full-page .web-search-select {
+  border-radius: calc(var(--st-radius) - 4px);
+}
+
+/* —— 二级弹层面板：对齐卡片语言（12px 圆角 + 卡片底 + 投影） —— */
+.settings-modal.is-full-page .connect-dialog,
+.settings-modal.is-full-page .memory-editor-panel,
+.settings-modal.is-full-page .activity-detail-panel,
+.settings-modal.is-full-page .settings-confirm-panel,
+.settings-modal.is-full-page .settings-discard-panel {
+  border: 1px solid var(--border);
+  border-radius: var(--st-radius);
+  background: var(--st-card);
+}
+
+.settings-modal.is-full-page .detail-section-head h3 {
+  font-size: calc(1.125 * var(--st-rem));
+  font-weight: 500;
+}
+
+.settings-modal.is-full-page .connection-detail-title strong {
+  font-size: calc(1.125 * var(--st-rem));
+  font-weight: 600;
+}
+
+/* 分段控件 / 标签条：外层 12px、内层选中片 8px（radius-sm）。 */
+.settings-modal.is-full-page .settings-segmented,
+.settings-modal.is-full-page .memory-filter-tabs {
+  border-radius: var(--st-radius);
+}
+
+.settings-modal.is-full-page .settings-segmented button,
+.settings-modal.is-full-page .memory-filter-tabs button {
+  border-radius: calc(var(--st-radius) - 4px);
+}
+
+/* 活动页字段控件高度归一。 */
+.settings-modal.is-full-page .activity-field > input,
+.settings-modal.is-full-page .activity-field > textarea,
+.settings-modal.is-full-page .activity-number-input {
+  min-height: var(--st-control-h);
+  border-radius: var(--st-radius);
+}
+
+.settings-modal.is-full-page .activity-number-input input {
+  height: 100%;
+  min-height: 0;
+}
+
+/* 减少动态效果时关闭内容区过渡。 */
+@media (prefers-reduced-motion: reduce) {
+  .settings-modal.is-full-page .settings-secondary-button,
+  .settings-modal.is-full-page .memory-library-toolbar > button,
+  .settings-modal.is-full-page .activity-secondary-button,
+  .settings-modal.is-full-page .danger-button,
+  .settings-modal.is-full-page .activity-danger-button,
+  .settings-modal.is-full-page .login-primary-button,
+  .settings-modal.is-full-page .icon-button,
+  .settings-modal.is-full-page .activity-icon-button,
+  .settings-modal.is-full-page .text-button,
+  .settings-modal.is-full-page .ghost-button,
+  .settings-modal.is-full-page .settings-primary-button,
+  .settings-modal.is-full-page .connection-field > input,
+  .settings-modal.is-full-page .connection-select,
+  .settings-modal.is-full-page .memory-note-input,
+  .settings-modal.is-full-page .personalization-instructions {
+    transition: none;
+  }
+}
+
+/* 关闭确认面板：按钮对齐 outline/default 变体（不落入 ghost 紧凑规则）。 */
+.settings-modal.is-full-page .settings-discard-panel .settings-confirm-actions button,
+.settings-modal.is-full-page .settings-discard-panel .ghost-button {
+  min-height: var(--st-control-h);
+  border: 1px solid var(--border);
+  border-radius: var(--st-radius);
+  background: transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+}
+
+.settings-modal.is-full-page .settings-discard-panel .ghost-button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}

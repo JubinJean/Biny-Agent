@@ -1,57 +1,30 @@
 /**
- * 设置搜索的静态索引。
+ * 设置搜索的静态关键词索引。
  *
- * 这里只收录分页名、分区标题和产品关键词，绝不接触表单值，因此 API Key、自定义指令和
- * 记忆正文不会意外进入搜索字符串或日志。
+ * 只收录分页名和产品关键词，供侧栏搜索框就地过滤导航项；绝不接触表单值，
+ * 因此 API Key、自定义指令和记忆正文不会意外进入搜索字符串或日志。
  */
 import type { SettingsTab } from "./SettingsOverlay.js";
 
-export interface SettingsSearchResult {
-  tab: SettingsTab;
-  sectionId: string;
-  title: string;
-  description: string;
-  keywords: string[];
-}
+export const settingsTabKeywords: Record<SettingsTab, string> = {
+  通用: "theme font size appearance dark light 主题 背景 字体 字号 外观 显示模式",
+  聊天: "temperature max tokens tool skill compaction context auto 温度 输出 令牌 工具 压缩 上下文 保留 摘要",
+  快速对话: "quickchat shortcut overlay 悬浮窗 快捷键 失焦 屏幕上下文 穿透",
+  模型: "provider api key base url model connection default 供应商 密钥 模型 连接 默认模型 服务地址",
+  "MCP 服务器": "mcp server stdio remote sse http 服务器 工具 市场 扩展",
+  技能: "skill agent 技能 本机 预览 自动提取",
+  插件: "plugin extension module 插件 扩展 模块 市场",
+  记忆: "memory recall embedding entry 记忆 召回 生成 列表 搜索 整理",
+  联网搜索: "web search cookie provider 搜索 联网 网页 浏览器 导入 导出",
+  活动记录: "activity recorder snapshot ocr screen privacy 活动 记录 截图 权限 隐私 存储",
+  权限: "permission approval mode safety macos 权限 批准 安全 系统 屏幕录制 辅助功能",
+  关于: "about version 关于 版本 产品"
+};
 
-export const settingsSearchIndex: SettingsSearchResult[] = [
-  { tab: "通用", sectionId: "appearance-theme", title: "显示模式", description: "浅色、深色与跟随系统", keywords: ["主题", "背景", "theme", "dark", "light"] },
-  { tab: "通用", sectionId: "appearance-font", title: "界面字体", description: "字体与字号", keywords: ["字体", "字号", "font", "size"] },
-  { tab: "模型", sectionId: "models-connections", title: "模型连接", description: "供应商、服务地址与默认模型", keywords: ["模型", "供应商", "连接", "默认模型", "provider"] },
-  { tab: "MCP 服务器", sectionId: "mcp-servers", title: "MCP 服务器", description: "市场、已安装服务与自定义连接", keywords: ["mcp", "服务器", "stdio", "remote", "sse", "http"] },
-  { tab: "技能", sectionId: "settings-extensions-skills", title: "技能", description: "本机 Skill 列表与内容预览", keywords: ["skill", "技能", "agent", "自动提取"] },
-  { tab: "插件", sectionId: "settings-extensions-plugins", title: "插件", description: "已配置的本地插件模块", keywords: ["plugin", "插件", "扩展", "模块"] },
-  { tab: "活动记录", sectionId: "activity-overview", title: "活动记录器", description: "采集状态、权限、存储和本地隐私策略", keywords: ["activity", "recorder", "活动", "状态", "权限", "隐私"] },
-  { tab: "活动记录", sectionId: "activity-capture", title: "采集参数", description: "快照防抖、心跳、空闲和 JPEG 质量", keywords: ["采集", "快照", "防抖", "心跳", "jpeg", "截图"] },
-  { tab: "活动记录", sectionId: "activity-ocr", title: "OCR 与输入", description: "Vision OCR、语言和点击键盘活动", keywords: ["ocr", "vision", "输入", "键盘", "鼠标", "点击"] },
-  { tab: "活动记录", sectionId: "activity-sensitive-apps", title: "敏感应用", description: "不保存文本和截图的 bundle ID 列表", keywords: ["敏感", "bundle", "应用", "屏蔽"] },
-  { tab: "活动记录", sectionId: "activity-storage", title: "存储配置", description: "JPEG 容量上限与全局输出目录", keywords: ["存储", "目录", "jpeg", "fallback"] },
-  { tab: "记忆", sectionId: "memory-overview", title: "记忆功能", description: "总开关与记忆范围", keywords: ["记忆", "启用", "memory"] },
-  { tab: "记忆", sectionId: "memory-retrieval", title: "记忆召回", description: "每回合注入记忆概览，模型按需检索", keywords: ["召回", "概览", "recall"] },
-  { tab: "记忆", sectionId: "memory-features", title: "记忆生成", description: "自动生成与外部上下文", keywords: ["记忆", "生成", "外部上下文", "memory"] },
-  { tab: "记忆", sectionId: "memory-library", title: "记忆列表", description: "添加、搜索、编辑和删除记忆", keywords: ["添加", "搜索", "编辑", "清空"] },
-  { tab: "记忆", sectionId: "memory-search", title: "搜索记忆", description: "关键词和路径搜索", keywords: ["搜索", "关键词", "路径"] },
-  { tab: "联网搜索", sectionId: "web-search-provider", title: "搜索服务", description: "搜索提供方与结果设置", keywords: ["联网", "搜索", "网页", "provider"] },
-  { tab: "聊天", sectionId: "chat-params-temperature", title: "温度", description: "采样温度，越低越确定、越高越发散", keywords: ["温度", "采样", "temperature", "聊天参数"] },
-  { tab: "聊天", sectionId: "chat-params-max-tokens", title: "最大令牌数", description: "单次回复的最大输出 token 数", keywords: ["令牌", "输出", "max tokens", "token"] },
-  { tab: "聊天", sectionId: "chat-capability-defaults", title: "工具与 Skill", description: "默认使用自动、全部或不调用", keywords: ["工具", "tool", "skill", "技能", "自动", "全部", "不调用", "能力"] },
-  { tab: "权限", sectionId: "agent-permission-mode", title: "Agent 权限模式", description: "工具执行前的批准策略", keywords: ["权限", "批准", "安全", "permission", "allow"] },
-  { tab: "权限", sectionId: "agent-permission-safety", title: "关键操作始终询问", description: "高影响工具操作的额外确认", keywords: ["权限", "安全", "确认", "删除", "覆盖"] },
-  { tab: "权限", sectionId: "system-permissions", title: "macOS 系统权限", description: "查看并打开屏幕录制和辅助功能授权", keywords: ["权限", "macos", "系统设置", "屏幕录制", "辅助功能"] },
-  { tab: "聊天", sectionId: "compaction-enable", title: "自动压缩", description: "启用开关与触发阈值", keywords: ["压缩", "上下文", "阈值", "compaction", "context"] },
-  { tab: "聊天", sectionId: "compaction-keep", title: "保留策略", description: "保留最近消息条数与 token 上限", keywords: ["保留", "条数", "keep", "recent"] },
-  { tab: "聊天", sectionId: "compaction-model", title: "压缩模型", description: "生成压缩摘要所用的模型", keywords: ["摘要", "模型", "summary", "model"] },
-  { tab: "快速对话", sectionId: "quickchat-shortcut", title: "全局快捷键", description: "唤醒或收起 QuickChat 悬浮窗", keywords: ["快速对话", "quickchat", "快捷键", "悬浮窗", "shortcut"] },
-  { tab: "快速对话", sectionId: "quickchat-behavior", title: "悬浮窗行为", description: "失焦隐藏、屏幕上下文注入与点击穿透", keywords: ["快速对话", "quickchat", "失焦", "屏幕上下文", "穿透", "悬浮窗"] },
-  { tab: "联网搜索", sectionId: "web-search-cookies", title: "浏览器数据", description: "Cookie 导入、导出和清理", keywords: ["cookie", "浏览器", "导入", "导出"] },
-  { tab: "关于", sectionId: "about-product", title: "关于 Biny", description: "版本与产品信息", keywords: ["版本", "about", "version"] }
-];
-
-export function searchSettings(query: string): SettingsSearchResult[] {
+/** 空格分词后要求全部命中（分页名 + 关键词），与设置侧栏的过滤语义保持一致。 */
+export function matchesSettingsSearch(label: string, keywords: string, query: string): boolean {
   const terms = query.trim().toLocaleLowerCase().split(/\s+/u).filter(Boolean);
-  if (!terms.length) return [];
-  return settingsSearchIndex.filter((item) => {
-    const text = [item.tab, item.title, item.description, ...item.keywords].join(" ").toLocaleLowerCase();
-    return terms.every((term) => text.includes(term));
-  });
+  if (!terms.length) return true;
+  const haystack = `${label} ${keywords}`.toLocaleLowerCase();
+  return terms.every((term) => haystack.includes(term));
 }

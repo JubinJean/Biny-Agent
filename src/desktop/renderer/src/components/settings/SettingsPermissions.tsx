@@ -4,7 +4,7 @@ import type { ActivityRuntimeSnapshot } from "../../../../../activity/types.js";
 import type { PermissionMode } from "../../../../../permission/PermissionManager.js";
 import type { DesktopPermissionSettings } from "../../../../protocol.js";
 import { Icon, type IconName } from "../Icon.js";
-import { SettingsCheckbox } from "./SettingsCheckbox.js";
+import { SettingsSwitch } from "./SettingsSwitch.js";
 import { useSettingsDraft } from "./SettingsDraftContext.js";
 
 const permissionOptions: Array<{ mode: PermissionMode; label: string; detail: string }> = [
@@ -48,7 +48,7 @@ export function SettingsPermissions(): React.JSX.Element {
       <section id="agent-permission-safety" tabIndex={-1}>
         <h3>安全边界</h3>
         <p>关键操作会跳过自动批准白名单，始终回到确认流程。</p>
-        <SettingsCheckbox
+        <SettingsSwitch
           checked={permission.criticalAlwaysAsk}
           detail="例如删除、覆盖或高影响外部操作；开启后即使处于自动或完全访问模式也会询问。"
           label="关键操作始终询问"

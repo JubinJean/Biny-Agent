@@ -9,7 +9,7 @@
 import { useEffect, useState } from "react";
 import type { DesktopQuickChatSettings } from "../../../../protocol.js";
 import { Icon } from "../Icon.js";
-import { SettingsCheckbox } from "./SettingsCheckbox.js";
+import { SettingsSwitch } from "./SettingsSwitch.js";
 
 export function SettingsQuickChat(): React.JSX.Element {
   const [settings, setSettings] = useState<DesktopQuickChatSettings>();
@@ -63,19 +63,19 @@ export function SettingsQuickChat(): React.JSX.Element {
       <section className="appearance-card" id="quickchat-behavior" tabIndex={-1}>
         <h3>行为</h3>
         <div className="quickchat-toggle-list">
-          <SettingsCheckbox
+          <SettingsSwitch
             checked={settings.autoHideOnBlur}
             detail="开启后，Quick Chat 窗口在失去焦点时会自动隐藏"
             label="失焦时自动隐藏"
             onChange={(value) => update({ autoHideOnBlur: value })}
           />
-          <SettingsCheckbox
+          <SettingsSwitch
             checked={settings.injectScreenContext}
             detail="发送时附带 QuickChat 唤起后读取的前台应用、窗口标题、浏览器地址和可访问文本，不读取活动记录缓存。"
             label="注入前台应用上下文"
             onChange={(value) => update({ injectScreenContext: value })}
           />
-          <SettingsCheckbox
+          <SettingsSwitch
             checked={settings.clickThrough}
             detail="QuickChat 可见但忽略鼠标事件，悬浮在工作上方而不抢焦点。按 QuickChat 快捷键唤醒。"
             label="以环境（点击穿透）模式启动"

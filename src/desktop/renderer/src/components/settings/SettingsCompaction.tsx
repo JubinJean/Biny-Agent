@@ -1,7 +1,7 @@
 /** 自动压缩设置分页：触发阈值、保留策略与摘要模型，统一走设置草稿，保存时进入主进程事务。 */
 import { useEffect, useState } from "react";
 import type { DesktopCompactionSettings } from "../../../../protocol.js";
-import { SettingsCheckbox } from "./SettingsCheckbox.js";
+import { SettingsSwitch } from "./SettingsSwitch.js";
 import { useSettingsDraft } from "./SettingsDraftContext.js";
 
 /** 可留空的数字输入：空文本提交为 undefined（交给后端自动推导），越界值夹取到 [min, max]。 */
@@ -66,7 +66,7 @@ export function SettingsCompaction(): React.JSX.Element {
           <div><h3>自动压缩</h3><p>上下文接近上限时自动总结历史消息，让长对话不掉链子。</p></div>
           <span className="settings-scope-badge">全局</span>
         </div>
-        <SettingsCheckbox checked={compaction.enabled} detail="关闭后上下文写满会直接报错，需要手动 /compact" label="启用自动压缩" onChange={(enabled) => update({ enabled })} />
+        <SettingsSwitch checked={compaction.enabled} detail="关闭后上下文写满会直接报错，需要手动 /compact" label="启用自动压缩" onChange={(enabled) => update({ enabled })} />
       </section>
 
       <section id="compaction-threshold" tabIndex={-1}>

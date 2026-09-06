@@ -13,7 +13,7 @@ import type {
 } from "../../../../protocol.js";
 import type { MemorySleepRun } from "../../../../../agent/context/memoryTypes.js";
 import { Icon } from "../Icon.js";
-import { SettingsCheckbox } from "./SettingsCheckbox.js";
+import { SettingsSwitch } from "./SettingsSwitch.js";
 import { useSettingsDraft } from "./SettingsDraftContext.js";
 
 interface SettingsMemoryProps {
@@ -270,7 +270,7 @@ export function SettingsMemory({
           <h3>记忆</h3>
           <p>AI 记忆条目和上下文</p>
         </div>
-        <SettingsCheckbox
+        <SettingsSwitch
           checked={policy.enabled}
           detail="关闭后暂停记忆读取和自动保存，已有记忆不会删除"
           label="启用记忆"
@@ -280,19 +280,19 @@ export function SettingsMemory({
 
       {policy.enabled ? (
         <section className="activity-memory-config" id="memory-config" tabIndex={-1}>
-          <SettingsCheckbox
+          <SettingsSwitch
             checked={policy.useMemories}
             detail="在对话上下文中自动检索相关记忆"
             label="使用记忆"
             onChange={(useMemories) => setMemory({ ...policy, useMemories })}
           />
-          <SettingsCheckbox
+          <SettingsSwitch
             checked={policy.generateMemories}
             detail="从对话中自动提取重要信息并保存为新的记忆"
             label="自动创建记忆"
             onChange={(generateMemories) => setMemory({ ...policy, generateMemories })}
           />
-          <SettingsCheckbox
+          <SettingsSwitch
             checked={policy.queryRewrite}
             detail="在搜索记忆前，用记忆工具模型优化对话式查询；失败时使用原问题。"
             label="查询改写"
@@ -316,9 +316,9 @@ export function SettingsMemory({
           <label className="activity-memory-model"><span><strong>记忆睡眠</strong><small>每天在设定时间整理重复和相似的记忆。</small></span><input type="time" value={policy.sleepTime} onChange={(event) => setMemory({ ...policy, sleepTime: event.target.value })} /></label>
           <label className="activity-memory-limit"><span><strong>归档保留天数：{policy.archiveRetentionDays}</strong><small>归档记忆保留时间，之后仍可手动清理。</small></span><input aria-label="归档保留天数" type="range" min={1} max={3650} value={policy.archiveRetentionDays} onChange={(event) => setMemory({ ...policy, archiveRetentionDays: Number(event.target.value) })} /></label>
           <label className="activity-memory-limit"><span><strong>临时记忆 TTL：{policy.temporaryTtl} 天</strong><small>超过这段时间没有访问的临时记忆会进入归档。</small></span><input aria-label="临时记忆 TTL" type="range" min={1} max={3650} value={policy.temporaryTtl} onChange={(event) => setMemory({ ...policy, temporaryTtl: Number(event.target.value) })} /></label>
-          <SettingsCheckbox checked={policy.useLlm} detail="让记忆工具模型判断模糊的相似记忆是否合并。" label="使用 LLM 合并相似记忆" onChange={(useLlm) => setMemory({ ...policy, useLlm })} />
+          <SettingsSwitch checked={policy.useLlm} detail="让记忆工具模型判断模糊的相似记忆是否合并。" label="使用 LLM 合并相似记忆" onChange={(useLlm) => setMemory({ ...policy, useLlm })} />
           <label className="activity-memory-limit"><span><strong>LLM 批量大小：{policy.llmBatchSize}</strong><small>每次整理最多发送给模型的记忆数量。</small></span><input aria-label="LLM 批量大小" type="range" min={1} max={100} value={policy.llmBatchSize} onChange={(event) => setMemory({ ...policy, llmBatchSize: Number(event.target.value) })} /></label>
-          <SettingsCheckbox checked={policy.sleepEnabled} detail="机器离线时，下一次启动后会安静地补做整理。" label="启用每日记忆整理" onChange={(sleepEnabled) => setMemory({ ...policy, sleepEnabled })} />
+          <SettingsSwitch checked={policy.sleepEnabled} detail="机器离线时，下一次启动后会安静地补做整理。" label="启用每日记忆整理" onChange={(sleepEnabled) => setMemory({ ...policy, sleepEnabled })} />
         </section>
       ) : null}
 

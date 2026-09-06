@@ -36,7 +36,7 @@ import { SettingsChatParams } from "./SettingsChatParams.js";
 import { SettingsCapabilityDefaults } from "./SettingsCapabilityDefaults.js";
 import { SettingsCompaction } from "./SettingsCompaction.js";
 import { SettingsActivity } from "./SettingsActivity.js";
-import { SettingsCheckbox } from "./SettingsCheckbox.js";
+import { SettingsSwitch } from "./SettingsSwitch.js";
 import { SettingsCloseGuard } from "./SettingsCloseGuard.js";
 import { ModelMultiSelect } from "./ModelMultiSelect.js";
 import { SettingsDetailLayer } from "./SettingsDetailLayer.js";
@@ -47,7 +47,7 @@ import { SettingsQuickChat } from "./SettingsQuickChat.js";
 import { SettingsPageFooter } from "./SettingsPageFooter.js";
 import { SettingsPermissions } from "./SettingsPermissions.js";
 import { SettingsExtensionsView } from "./SettingsExtensionsView.js";
-import { searchSettings } from "./settingsSearch.js";
+import { matchesSettingsSearch, settingsTabKeywords } from "./settingsSearch.js";
 
 interface SettingsOverlayProps {
   open: boolean;
@@ -103,28 +103,19 @@ interface SettingsOverlayProps {
 
 export type SettingsTab = "通用" | "聊天" | "快速对话" | "模型" | "MCP 服务器" | "技能" | "插件" | "权限" | "活动记录" | "记忆" | "联网搜索" | "关于";
 
-type SettingsNavGroup = "preferences" | "capabilities" | "activity" | "system";
-
-const settingsNav: Array<{ badge?: string; group: SettingsNavGroup; icon: IconName; tab: SettingsTab; label: string }> = [
-  { group: "preferences", icon: "sun", tab: "通用", label: "通用" },
-  { group: "preferences", icon: "message", tab: "聊天", label: "聊天" },
-  { group: "preferences", icon: "compose", tab: "快速对话", label: "快速对话" },
-  { group: "capabilities", icon: "network", tab: "模型", label: "模型供应商" },
-  { group: "capabilities", icon: "plug", tab: "MCP 服务器", label: "MCP 服务器" },
-  { group: "capabilities", icon: "wand", tab: "技能", label: "技能" },
-  { group: "capabilities", icon: "puzzle", tab: "插件", label: "插件" },
-  { badge: "Beta", group: "capabilities", icon: "brain", tab: "记忆", label: "记忆" },
-  { badge: "Beta", group: "capabilities", icon: "search", tab: "联网搜索", label: "联网搜索" },
-  { badge: "Beta", group: "activity", icon: "activity", tab: "活动记录", label: "活动记录" },
-  { group: "system", icon: "shield", tab: "权限", label: "权限" },
-  { group: "system", icon: "help", tab: "关于", label: "关于" }
-];
-
-const settingsNavGroups: Array<{ label: string; items: typeof settingsNav }> = [
-  { label: "偏好", items: settingsNav.filter((item) => item.group === "preferences") },
-  { label: "能力", items: settingsNav.filter((item) => item.group === "capabilities") },
-  { label: "活动", items: settingsNav.filter((item) => item.group === "activity") },
-  { label: "系统", items: settingsNav.filter((item) => item.group === "system") }
+const settingsNav: Array<{ badge?: string; icon: IconName; tab: SettingsTab; label: string }> = [
+  { icon: "sun", tab: "通用", label: "通用" },
+  { icon: "message", tab: "聊天", label: "聊天" },
+  { icon: "compose", tab: "快速对话", label: "快速对话" },
+  { icon: "network", tab: "模型", label: "模型供应商" },
+  { icon: "plug", tab: "MCP 服务器", label: "MCP 服务器" },
+  { icon: "wand", tab: "技能", label: "技能" },
+  { icon: "puzzle", tab: "插件", label: "插件" },
+  { badge: "Beta", icon: "brain", tab: "记忆", label: "记忆" },
+  { badge: "Beta", icon: "search", tab: "联网搜索", label: "联网搜索" },
+  { badge: "Beta", icon: "activity", tab: "活动记录", label: "活动记录" },
+  { icon: "shield", tab: "权限", label: "权限" },
+  { icon: "help", tab: "关于", label: "关于" }
 ];
 
 const settingsTabValues = new Set<SettingsTab>(settingsNav.map((item) => item.tab));
@@ -146,21 +137,6 @@ const settingsTitles: Record<SettingsTab, string> = {
   记忆: "记忆",
   联网搜索: "联网搜索",
   关于: "关于"
-};
-
-const settingsSubtitles: Record<SettingsTab, string> = {
-  模型: "模型连接、API key 与默认模型管理。",
-  通用: "主题、背景和界面字体。",
-  "MCP 服务器": "管理可供 Agent 使用的 MCP 扩展服务。",
-  技能: "管理本机可用的 Agent Skills，并按需查看技能内容。",
-  插件: "管理当前项目的 Plugin，并从官方市场安装。",
-  活动记录: "记录事件与 AX 语义，必要时使用本地视觉 fallback，并控制隐私边界。",
-  记忆: "记忆检索、自动生成、长期策略与条目管理。",
-  联网搜索: "配置联网搜索与数据来源。",
-  聊天: "温度、输出额度与自动压缩策略。",
-  权限: "Agent 工具执行的批准策略、风险边界与 macOS 系统权限。",
-  快速对话: "全局快捷键与悬浮窗行为。",
-  关于: "版本与产品信息。"
 };
 
 export function SettingsOverlay(props: SettingsOverlayProps): React.JSX.Element | null {
@@ -287,21 +263,14 @@ function SettingsOverlayContent({
   );
   const defaultModelAlias = settingsDraft.draft?.models.defaultModel?.alias
     ?? settingsDraft.snapshot?.models.defaultModel;
-  const searchResults = searchSettings(searchQuery);
+  // 侧栏搜索就地过滤分页：命中分页名或关键词的项保留，其余隐藏。
+  const visibleTabs = settingsNav.filter((item) => matchesSettingsSearch(item.label, settingsTabKeywords[item.tab], searchQuery));
   const selectTab = (nextTab: SettingsTab): void => {
     if (nextTab === activeTab) return;
     activeTabRef.current = nextTab;
     setTab(nextTab);
     setMessage(undefined);
     if (nextTab === "记忆") setMemoryVisited(true);
-  };
-  const selectSearchResult = (nextTab: SettingsTab, sectionId: string): void => {
-    selectTab(nextTab);
-    window.requestAnimationFrame(() => {
-      const section = document.getElementById(sectionId);
-      section?.scrollIntoView({ behavior: "smooth", block: "start" });
-      section?.focus({ preventScroll: true });
-    });
   };
   const discardAndClose = async (): Promise<void> => {
     await settingsDraft.discard();
@@ -332,54 +301,45 @@ function SettingsOverlayContent({
       variant="fullscreen"
     >
       <section className={`settings-modal is-full-page${extensionSettings ? " is-extension-settings" : ""}`}>
-        <div className="settings-modal-body">
-          <aside className="settings-tabs">
-          <button aria-label="返回应用" className="settings-back-button" onClick={requestCancel} type="button">
-            <Icon name="arrow-left" size={16} />
-            <strong>设置</strong>
-          </button>
-          <label className="settings-search-box">
-            <Icon name="search" size={14} />
-            <input aria-label="搜索设置" onChange={(event) => setSearchQuery(event.target.value)} placeholder="搜索设置" type="search" value={searchQuery} />
-          </label>
-          {searchQuery.trim() ? (
-            <nav aria-label="设置搜索结果" className="settings-search-results">
-              {searchResults.map((result) => (
-                <button key={`${result.tab}:${result.sectionId}`} onClick={() => selectSearchResult(result.tab, result.sectionId)} type="button">
-                  <strong>{result.title}</strong>
-                  <small>{result.tab} · {result.description}</small>
-                </button>
-              ))}
-              {!searchResults.length ? <p>没有匹配的设置</p> : null}
-            </nav>
-          ) : (
-            <nav aria-label="设置分类" className="settings-nav-list">
-              {settingsNavGroups.map((group) => (
-                <div className="settings-nav-section" key={group.label}>
-                  <h3 className="settings-nav-group">{group.label}</h3>
-                  {group.items.map((item) => (
-                    <button aria-current={activeTab === item.tab ? "page" : undefined} className={activeTab === item.tab ? "is-selected" : ""} key={item.tab} onClick={() => selectTab(item.tab)} type="button">
-                      <Icon name={item.icon} size={17} />
-                      <span>{item.label}</span>
-                      {item.badge ? <em className="settings-nav-badge">{item.badge}</em> : null}
-                    </button>
-                  ))}
-                </div>
-              ))}
-            </nav>
-          )}
-          </aside>
-          <main className={`settings-content${extensionSettings ? " is-extension-settings" : ""}`}>
-          <header>
-            <div className="settings-heading">
-              <h2>{settingsTitles[activeTab]}</h2>
-              <p>{settingsSubtitles[activeTab]}</p>
-            </div>
+        <aside className="settings-tabs">
+          <div className="settings-sidebar-strip">
+            <button aria-label="返回应用" className="settings-back-button" onClick={requestCancel} type="button">
+              <Icon name="arrow-left" size={16} />
+              <strong>设置</strong>
+            </button>
+          </div>
+          <div className="settings-search-box">
+            <Icon name="search" size={13} />
+            <input aria-label="搜索设置" onChange={(event) => setSearchQuery(event.target.value)} placeholder="搜索设置" type="text" value={searchQuery} />
+            {searchQuery ? (
+              <button aria-label="清除搜索" className="settings-search-clear" onClick={() => setSearchQuery("")} type="button">
+                <Icon name="close" size={12} />
+              </button>
+            ) : null}
+          </div>
+          <nav aria-label="设置分类" className="settings-nav-list">
+            {visibleTabs.map((item) => (
+              <button aria-current={activeTab === item.tab ? "page" : undefined} className={activeTab === item.tab ? "is-selected" : ""} key={item.tab} onClick={() => selectTab(item.tab)} type="button">
+                <span aria-hidden="true" className="settings-nav-icon"><Icon name={item.icon} size={18} /></span>
+                <span className="settings-nav-label">{item.label}</span>
+                {item.badge ? <em className="settings-nav-badge">{item.badge}</em> : null}
+              </button>
+            ))}
+            {!visibleTabs.length ? <p className="settings-nav-empty">—</p> : null}
+          </nav>
+        </aside>
+        <main className={`settings-content${extensionSettings ? " is-extension-settings" : ""}`}>
+          <header className="settings-titlebar">
+            <h2>
+              <span aria-hidden="true" className="settings-titlebar-icon"><Icon name={settingsNav.find((item) => item.tab === activeTab)?.icon ?? "sun"} size={18} /></span>
+              {settingsTitles[activeTab]}
+            </h2>
             {settingsDraft.dirtyCount > 0 ? <span aria-live="polite" className="settings-header-unsaved" role="status">
               <span>未保存的更改</span>
               <span aria-hidden="true" className="settings-unsaved-dot" />
             </span> : null}
           </header>
+          <div className={`settings-scroll${extensionSettings ? " is-extension" : ""}`}>
           {activeTab === "模型" ? <SettingsModels
             active={open}
             loading={!settingsDraft.snapshot && !settingsDraft.loadError}
@@ -532,24 +492,24 @@ function SettingsOverlayContent({
             onClearCookies={onClearCookies}
             sessionRunning={runtimeBusy}
           /> : null}
-          {settingsToast ? (
-            <TopToast
-              icon={visibleLoadError ? "warning" : undefined}
-              key={settingsToast}
-              message={settingsToast}
-              onDismiss={() => (visibleLoadError ? setDismissedLoadError(visibleLoadError) : setMessage(undefined))}
-            />
-          ) : null}
-          </main>
-        </div>
-        <SettingsPageFooter
-          dirtyCount={settingsDraft.dirtyCount}
-          disabled={settingsDraft.invalid || settingsDraft.draft === undefined || (runtimeBusy && !settingsDraft.preferencesOnly)}
-          onCancel={requestCancel}
-          onSave={() => { void settingsDraft.saveAll(); }}
-          state={settingsDraft.saveState}
-        />
+          </div>
+          <SettingsPageFooter
+            dirtyCount={settingsDraft.dirtyCount}
+            disabled={settingsDraft.invalid || settingsDraft.draft === undefined || (runtimeBusy && !settingsDraft.preferencesOnly)}
+            onCancel={requestCancel}
+            onSave={() => { void settingsDraft.saveAll(); }}
+            state={settingsDraft.saveState}
+          />
+        </main>
       </section>
+      {settingsToast ? (
+        <TopToast
+          icon={visibleLoadError ? "warning" : undefined}
+          key={settingsToast}
+          message={settingsToast}
+          onDismiss={() => (visibleLoadError ? setDismissedLoadError(visibleLoadError) : setMessage(undefined))}
+        />
+      ) : null}
       {closeGuardOpen ? (
         <SettingsCloseGuard
           busy={settingsDraft.saveState === "saving" || settingsDraft.saveState === "rolling_back"}
@@ -2708,7 +2668,7 @@ function SettingsWebSearch({ onNotify, onOpenExternal, onLoadCookieJarStatus, on
     <div className="settings-sections">
       <section id="web-search-provider" tabIndex={-1}>
         <h3>联网搜索</h3>
-        <SettingsCheckbox checked={webSearch.enabled} detail="关闭后 Agent 将无法搜索公网信息" label="启用 web_search 工具" onChange={(enabled) => setWebSearch({ ...webSearch, enabled })} />
+        <SettingsSwitch checked={webSearch.enabled} detail="关闭后 Agent 将无法搜索公网信息" label="启用 web_search 工具" onChange={(enabled) => setWebSearch({ ...webSearch, enabled })} />
       </section>
       <section>
         <h3>搜索服务</h3>
