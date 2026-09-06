@@ -120,8 +120,8 @@ function DesktopApp(): React.JSX.Element {
   const [blankDraft, setBlankDraft] = useState(false);
   /** 未发送草稿的目标项目；只改变输入框归属，不提前切换工作区。 */
   const [draftProjectId, setDraftProjectId] = useState<string>();
-  const [_projectBranches, setProjectBranches] = useState<DesktopGitBranch[]>([]);
-  const [_branchesLoading, setBranchesLoading] = useState(false);
+  const [projectBranches, setProjectBranches] = useState<DesktopGitBranch[]>([]);
+  const [branchesLoading, setBranchesLoading] = useState(false);
   const [deletedUserMessages, setDeletedUserMessages] = useState<Set<string>>(() => new Set());
   const [searchOpen, setSearchOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -219,6 +219,11 @@ function DesktopApp(): React.JSX.Element {
 
   const selectedSession = workspace?.sessions.find((session) => session.id === selectedSessionId)
     ?? (document?.session.id === selectedSessionId ? document?.session : undefined);
+  // Composer 归属的项目：未进入会话时跟随未发送草稿的目标项目（缺省回落到当前工作区项目），
+  // 进入会话后固定为工作区项目。同一项目也驱动顶栏的项目/分支选择器。
+  const composerProject = selectedSessionId === undefined && draftProjectId
+    ? projects.find((project) => project.id === draftProjectId) ?? workspace?.project
+    : workspace?.project;
 
   useEffect(() => {
     let active = true;
@@ -285,7 +290,7 @@ function DesktopApp(): React.JSX.Element {
   }, []);
 
   useEffect(() => {
-    const projectId = workspace?.project.id;
+    const projectId = composerProject?.id;
     branchRequestRef.current += 1;
     if (!projectId) {
       setProjectBranches([]);
@@ -294,7 +299,7 @@ function DesktopApp(): React.JSX.Element {
     }
     setProjectBranches([]);
     void loadProjectBranches(projectId);
-  }, [loadProjectBranches, workspace?.project.id]);
+  }, [composerProject?.id, loadProjectBranches]);
 
   const refreshRuntimeProjection = useCallback(async (): Promise<void> => {
     const projectId = projectRef.current;
@@ -635,9 +640,7 @@ function DesktopApp(): React.JSX.Element {
     void selectProject(projectId);
   }, [selectProject]);
 
-  const _switchProjectBranch = useCallback(async (branchName: string): Promise<void> => {
-    const projectId = projectRef.current;
-    if (!projectId) return;
+  const switchProjectBranch = useCallback(async (projectId: string, branchName: string): Promise<void> => {
     try {
       const snapshot = await window.biny.switchProjectBranch(projectId, branchName);
       mergeProjectSnapshot(snapshot);
@@ -649,9 +652,7 @@ function DesktopApp(): React.JSX.Element {
     }
   }, [loadProjectBranches, mergeProjectSnapshot]);
 
-  const _createProjectBranch = useCallback(async (branchName: string): Promise<void> => {
-    const projectId = projectRef.current;
-    if (!projectId) return;
+  const createProjectBranch = useCallback(async (projectId: string, branchName: string): Promise<void> => {
     try {
       const snapshot = await window.biny.createProjectBranch(projectId, branchName);
       mergeProjectSnapshot(snapshot);
@@ -1177,6 +1178,7 @@ function DesktopApp(): React.JSX.Element {
     onOpenBrowser: openBrowser,
     onReadFile: readWorkspaceFile,
     onRunCommand: runInspectorCommand,
+    onWarning: setWarning,
     projectId: workspace?.project.id,
     source: `${workspace?.project.id ?? "none"}:${document?.session.id ?? "draft"}`
   });
@@ -1387,9 +1389,20 @@ function DesktopApp(): React.JSX.Element {
     setComposerDraft(input);
     setFocusToken((value) => value + 1);
   }, []);
-  const composerProject = selectedSessionId === undefined && draftProjectId
-    ? projects.find((project) => project.id === draftProjectId) ?? workspace?.project
-    : workspace?.project;
+  // 顶栏的项目/分支选择器胶囊：会话内外常驻；未进入会话时切换项目只影响草稿归属。
+  const workspaceContext = composerProject ? (
+    <WorkspaceContextBar
+      branches={projectBranches}
+      branchesLoading={branchesLoading}
+      onCreateBranch={(projectId, branchName) => createProjectBranch(projectId, branchName)}
+      onCreateProject={() => void createEmptyProject()}
+      onOpenBranches={(projectId) => void loadProjectBranches(projectId)}
+      onSelectBranch={(projectId, branchName) => void switchProjectBranch(projectId, branchName)}
+      onSelectProject={selectComposerProject}
+      project={composerProject}
+      projects={projects}
+    />
+  ) : undefined;
   const composer = (
     <Composer
       sessionWriterConflict={writerConflict !== undefined}
@@ -1426,14 +1439,6 @@ function DesktopApp(): React.JSX.Element {
       running={selectedRunning}
       runtimeBusy={runtimeBusy}
       runtimeInfo={workspace?.runtime?.info}
-      workspaceContext={composerProject ? (
-        <WorkspaceContextBar
-          onCreateProject={() => void createEmptyProject()}
-          onSelectProject={selectComposerProject}
-          project={composerProject}
-          projects={projects}
-        />
-      ) : undefined}
     />
   );
 
@@ -1606,6 +1611,8 @@ function DesktopApp(): React.JSX.Element {
         onRuntimeMutation={mutateRuntime}
         onRuntimeRefresh={refreshRuntimeProjection}
         onSubmitPrompt={submitComposerPrompt}
+        workspaceContext={workspaceContext}
+        inspectorRail={inspector.rail}
         homeFlight={homeFlight ?? undefined}
         onHomeFlightLanded={() => setHomeFlight(null)}
         onOpenRuntime={openRuntimePanel}

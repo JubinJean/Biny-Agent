@@ -447,7 +447,7 @@
   background: transparent;
 }
 
-:root[data-platform="darwin"] .desktop-root.biny-root .biny-sidebar {
+:root[data-platform="darwin"] .desktop-root.biny-root .biny-sidebar .biny-sidebar-card {
   background: color-mix(in srgb, var(--biny-sidebar-surface) 72%, transparent);
   backdrop-filter: blur(24px) saturate(1.4);
   -webkit-backdrop-filter: blur(24px) saturate(1.4);
@@ -465,7 +465,7 @@
 }
 
 /* peek 浮层盖在页面内容上，透出桌面而不是内容，保持液态玻璃一致性。 */
-:root[data-platform="darwin"] .desktop-root.biny-root .biny-sidebar.is-peek-overlay {
+:root[data-platform="darwin"] .desktop-root.biny-root .biny-sidebar.is-peek-overlay .biny-sidebar-card {
   background: color-mix(in srgb, var(--biny-sidebar-surface) 72%, transparent);
   backdrop-filter: blur(24px) saturate(1.4);
   -webkit-backdrop-filter: blur(24px) saturate(1.4);
@@ -482,6 +482,7 @@
 
 .biny-app-shell > .desktop-inspector-wrap {
   order: 1;
+  position: relative;
   flex: 0 0 var(--biny-inspector-animated-flow-width);
   box-sizing: border-box;
   width: var(--biny-inspector-animated-flow-width);
@@ -498,6 +499,42 @@
     transform var(--biny-sidebar-content-fade) cubic-bezier(0.22, 1, 0.36, 1),
     opacity var(--biny-sidebar-content-fade);
   will-change: flex-basis, width, transform, opacity;
+}
+
+/* dock 内容体铺满：终端与文件面板依赖这里撑满高度（旧 desktop-v2 直连子选择器已随重构移除）。 */
+.biny-inspector-view-content > .terminal-view,
+.biny-inspector-view-content > .file-preview-panel {
+  width: 100%;
+  height: 100%;
+}
+
+/* 拖拽把手贴在 dock 左缘内侧（wrap overflow:hidden 会裁掉伸出部分，热区必须完全落在内）。 */
+.desktop-inspector-resizer {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  box-sizing: border-box;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.desktop-inspector-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 1px;
+  background: transparent;
+  transition: background-color 140ms ease;
+}
+
+.desktop-inspector-resizer:hover::after,
+.desktop-inspector-resizer:focus-visible::after {
+  background: var(--biny-focus);
 }
 
 .biny-app-shell > .desktop-inspector-wrap.is-opening,
@@ -531,10 +568,6 @@
   app-region: drag;
 }
 
-.biny-root .desktop-inspector-header.is-tool {
-  border-bottom-color: var(--biny-border);
-}
-
 .biny-root .desktop-inspector-header button {
   -webkit-app-region: no-drag;
   app-region: no-drag;
@@ -565,37 +598,114 @@
   transform: translateY(1px);
 }
 
-.biny-inspector-header-spacer {
-  width: 28px;
-  height: 28px;
-  flex: 0 0 28px;
+.biny-inspector-title {
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 4px;
+  color: var(--biny-text);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.biny-inspector-back {
-  display: inline-flex;
-  min-width: 0;
-  height: 28px;
+/* Alma 式右缘浮动 rail：常驻工具入口；dock 打开时随流宽度变量一起左移。 */
+.biny-inspector-rail {
+  position: fixed;
+  z-index: 103;
+  top: 56px;
+  right: calc(var(--biny-inspector-animated-flow-width, 0px) + 10px);
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 6px;
-  padding: 0 7px 0 5px;
+  gap: 2px;
+  padding: 5px 4px;
+  border: 1px solid color-mix(in srgb, var(--biny-border) 60%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--biny-surface) 92%, transparent);
+  box-shadow: 0 10px 30px -10px var(--biny-shadow-color);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: right var(--biny-sidebar-transition);
+}
+
+.biny-root[data-sidebar-resizing="true"] .biny-inspector-rail {
+  transition: none;
+}
+
+.biny-inspector-rail-btn {
+  display: flex;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
   border: 0;
   border-radius: 8px;
+  background: transparent;
+  color: var(--biny-text-secondary);
+  cursor: pointer;
+  transition: background 140ms ease, color 140ms ease, transform 140ms ease;
+}
+
+.biny-inspector-rail-btn:hover {
+  background: var(--biny-surface-hover);
+  color: var(--biny-text);
+}
+
+.biny-inspector-rail-btn:active {
+  transform: scale(0.94);
+}
+
+.biny-inspector-rail-btn.is-active {
+  background: var(--biny-surface-selected);
+  color: var(--biny-text);
+}
+
+/* dock 内的横向 tab 行：替代旧的 launcher 两页式。 */
+.biny-inspector-tabs {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--biny-border) 50%, transparent);
+  overflow-x: auto;
+}
+
+.biny-inspector-tab {
+  display: inline-flex;
+  min-width: 0;
+  height: 26px;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 7px;
   background: transparent;
   color: var(--biny-text-secondary);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
-  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+  transition: background 140ms ease, color 140ms ease;
 }
 
-.biny-inspector-back:hover,
-.biny-inspector-back:focus-visible {
+.biny-inspector-tab > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.biny-inspector-tab:hover {
   background: var(--biny-surface-hover);
   color: var(--biny-text);
 }
 
-.biny-inspector-back:active {
-  transform: translateY(1px);
+.biny-inspector-tab.is-active {
+  background: var(--biny-surface-selected);
+  color: var(--biny-text);
 }
 
 .desktop-inspector {
@@ -612,145 +722,6 @@
   min-height: 0;
   flex: 1 1 auto;
   overflow: hidden;
-}
-
-.biny-inspector-pages {
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.t-page-slide {
-  position: relative;
-}
-.t-page-slide .t-page[data-page-id="1"] {
-  --t-page-from-x: calc(var(--page-slide-distance) * -1);
-}
-.t-page-slide .t-page[data-page-id="2"] {
-  --t-page-from-x: var(--page-slide-distance);
-}
-.t-page-slide .t-page {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  pointer-events: none;
-  transform: translateX(calc(var(--t-page-from-x, 0px) * var(--page-exit-enabled)));
-  filter: blur(calc(var(--page-blur) * var(--page-exit-enabled)));
-  transition:
-    opacity   var(--page-fade-dur)  var(--page-fade-ease),
-    transform var(--page-slide-dur) var(--page-slide-ease),
-    filter    var(--page-slide-dur) var(--page-slide-ease);
-  will-change: opacity, transform, filter;
-}
-.t-page-slide[data-page="1"] .t-page[data-page-id="1"],
-.t-page-slide[data-page="2"] .t-page[data-page-id="2"] {
-  opacity: 1;
-  pointer-events: auto;
-  transform: translateX(0);
-  filter: blur(0);
-  transition-delay: var(--page-stagger);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .t-page-slide .t-page { transition: none !important; }
-}
-
-.biny-inspector-launcher-page,
-.biny-inspector-tool-page {
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-}
-
-.biny-inspector-launcher {
-  display: flex;
-  box-sizing: border-box;
-  width: 100%;
-  height: 100%;
-  min-height: 0;
-  flex-direction: column;
-  justify-content: center;
-  padding: 18px 12px 14px;
-}
-
-.biny-inspector-launcher-spacer {
-  display: none;
-}
-
-.biny-inspector-launcher-list {
-  display: grid;
-  flex: 0 0 auto;
-  gap: 8px;
-}
-
-.biny-inspector-launcher-item {
-  display: flex;
-  min-width: 0;
-  min-height: 56px;
-  align-items: center;
-  gap: 12px;
-  padding: 0 14px;
-  border: 1px solid transparent;
-  border-radius: 11px;
-  background: var(--biny-surface-soft);
-  color: var(--biny-text);
-  font: inherit;
-  font-size: 15px;
-  text-align: left;
-  cursor: pointer;
-  transition: background 160ms ease, border-color 160ms ease, color 160ms ease, transform 160ms ease;
-}
-
-.biny-inspector-launcher-item > svg {
-  flex: 0 0 auto;
-  color: var(--biny-text-secondary);
-}
-
-.biny-inspector-launcher-item > span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.biny-inspector-launcher-item:hover,
-.biny-inspector-launcher-item:focus-visible {
-  border-color: var(--biny-border);
-  background: var(--biny-surface-hover);
-  color: var(--biny-text);
-  transform: translateY(-1px);
-}
-
-.biny-inspector-launcher-item:active {
-  transform: translateY(0);
-}
-
-.biny-inspector-launcher-item kbd {
-  margin-left: auto;
-  padding: 4px 8px;
-  border-radius: 999px;
-  background: var(--biny-surface-selected);
-  color: var(--biny-text-secondary);
-  font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.biny-inspector-launcher-error {
-  display: flex;
-  align-items: flex-start;
-  gap: 6px;
-  margin: 10px 3px 0;
-  color: var(--biny-danger);
-  font-size: 12px;
-  line-height: 1.45;
-}
-
-.biny-inspector-launcher-error svg {
-  flex: 0 0 auto;
-  margin-top: 1px;
 }
 
 .biny-inspector-command {
@@ -1036,22 +1007,33 @@
   height: 100%;
   flex: 0 0 auto;
   flex-direction: column;
-  /*
-   * 外壳是唯一的视觉裁剪边界。body/footer 可能暂时保留上一次展开盒宽，
-   * 但不能在外壳的 width 过渡期间溢出到主区，否则顶部背景和下方主体会不同步。
-   * 侧栏菜单使用窗口级 portal，resizer 改为完全落在这个裁剪盒内。
-   */
-  overflow: hidden;
-  /* 视觉分隔线由独立层绘制；这里保留边框盒尺寸，避免拖拽时布局宽度跳变。 */
-  border-right: 1px solid transparent;
-  background: var(--biny-sidebar-surface);
+  /* Alma 式卡片：aside 退化为只负责宽度动画的内边距壳，视觉壳（圆角/边框/阴影）在 card 上。 */
+  box-sizing: border-box;
+  padding: 8px;
+  overflow: visible;
   color: var(--biny-text);
   will-change: width;
 }
 
-.biny-sidebar.is-hidden {
+.biny-sidebar-card {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  width: 100%;
+  height: 100%;
+  flex: 0 0 auto;
+  flex-direction: column;
   overflow: hidden;
-  border-right-color: transparent;
+  /* Alma 式无边框卡片：只靠底色差和投影与主区分隔，不再画线。 */
+  border-radius: 18px;
+  background: var(--biny-sidebar-surface);
+  box-shadow: 0 8px 32px -12px var(--biny-shadow-sidebar);
+  transition: opacity var(--biny-sidebar-content-fade);
+}
+
+.biny-sidebar.is-hidden .biny-sidebar-card {
+  opacity: 0;
 }
 
 /* 原生拖拽期间要跟手；松手或键盘/状态切换时再使用 Biny 风格缓出过渡。 */
@@ -1062,15 +1044,17 @@
 
 .biny-sidebar-body,
 .biny-sidebar-footer {
-  width: var(--biny-sidebar-content-width);
+  /* 卡片内宽 = aside 宽 - 左右各 8px 内边距；收缩动画期间保持上一次盒宽由卡片裁剪。 */
+  box-sizing: border-box;
+  width: calc(var(--biny-sidebar-content-width) - 16px);
   -webkit-app-region: no-drag;
   app-region: no-drag;
   transition: opacity var(--biny-sidebar-content-fade), visibility 0s linear 0s;
   will-change: opacity;
 }
 
-.biny-sidebar.is-hidden > .biny-sidebar-body,
-.biny-sidebar.is-hidden > .biny-sidebar-footer {
+.biny-sidebar.is-hidden .biny-sidebar-body,
+.biny-sidebar.is-hidden .biny-sidebar-footer {
   visibility: hidden;
   opacity: 0;
   pointer-events: none;
@@ -1081,6 +1065,49 @@
   height: 46px;
   min-height: 46px;
   flex: 0 0 46px;
+}
+
+/* Alma 式内联会话过滤：常驻在列表上方，只过滤当前侧栏树。 */
+.biny-sidebar-search {
+  display: flex;
+  min-width: 0;
+  height: 28px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  margin: 2px 12px 6px;
+  padding: 0 10px;
+  border-radius: 9px;
+  background: var(--biny-surface-soft);
+  color: var(--biny-text-secondary);
+  transition: background var(--biny-sidebar-hover-duration) var(--biny-sidebar-hover-ease);
+}
+
+.biny-sidebar-search:focus-within {
+  background: var(--biny-surface-hover);
+}
+
+.biny-sidebar-search input {
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--biny-text);
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.biny-sidebar-search input::placeholder {
+  color: var(--biny-text-tertiary);
+}
+
+.biny-sidebar-search input::-webkit-search-cancel-button {
+  cursor: pointer;
+}
+
+.biny-sidebar.is-compact .biny-sidebar-search {
+  display: none;
 }
 
 .biny-sidebar-topbar {
@@ -1114,9 +1141,15 @@
 }
 
 .biny-sidebar-topbar-visual::before {
+  /* 卡片化后顶条与侧栏卡片同几何：从卡片上缘开始，顶部圆角与卡片一致。 */
   position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--biny-sidebar-animated-visual-width);
+  top: 8px;
+  bottom: auto;
+  left: 8px;
+  box-sizing: border-box;
+  width: calc(var(--biny-sidebar-animated-visual-width, 0px) - 16px);
+  height: calc(46px - 8px);
+  border-radius: 18px 18px 0 0;
   background: var(--biny-sidebar-surface);
   content: "";
   pointer-events: none;
@@ -1161,42 +1194,6 @@
   pointer-events: auto;
   -webkit-app-region: drag;
   app-region: drag;
-}
-
-/* 分隔线必须压在 floating chrome 上方，但不能参与 Electron 鼠标命中。 */
-.biny-topbar-divider {
-  position: fixed;
-  z-index: 121;
-  top: 45px;
-  right: 0;
-  left: 0;
-  height: 1px;
-  pointer-events: none;
-  background: transparent;
-}
-
-/* 只要任一侧栏存在，聊天区域顶部显示分隔线；仅剩聊天区时隐藏。 */
-.biny-root:not([data-sidebar-mode="collapsed"]) .biny-topbar-divider,
-.biny-root[data-right-sidebar-visible="true"] .biny-topbar-divider {
-  background: var(--biny-border);
-}
-
-/* 侧栏分隔线必须压在 floating chrome 上方，但不能参与 Electron 鼠标命中。 */
-.biny-sidebar-divider {
-  position: absolute;
-  z-index: 120;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  pointer-events: none;
-  background: var(--biny-border);
-  left: var(--biny-sidebar-animated-flow-width);
-  will-change: left;
-}
-
-.biny-root[data-sidebar-mode="collapsed"] .biny-sidebar-divider,
-.biny-root[data-sidebar-mode="peek"] .biny-sidebar-divider {
-  display: none;
 }
 
 .biny-sidebar-topbar-floating .biny-chrome-button {
@@ -1425,21 +1422,23 @@
 
 .biny-sidebar-footer {
   display: flex;
-  min-height: 44px;
-  flex: 0 0 44px;
-  align-items: stretch;
-  padding: 0;
-  border-top: 1px solid var(--biny-border);
+  min-height: 46px;
+  flex: 0 0 46px;
+  align-items: center;
+  padding: 6px 8px;
+}
+
+.biny-sidebar-footer .biny-sidebar-settings-item {
+  flex: 1 1 auto;
 }
 
 .biny-sidebar-settings-item {
   display: flex;
-  width: calc(100% - 12px);
-  height: 40px;
+  min-width: 0;
+  height: 34px;
   align-items: center;
   gap: 8px;
-  margin-inline: 6px;
-  padding: 0 10px;
+  padding: 0 9px;
   border: 0;
   border-radius: 8px;
   background: transparent;
@@ -1447,7 +1446,7 @@
   font: inherit;
   text-align: left;
   cursor: pointer;
-  transition: background 160ms ease, color 160ms ease, transform 160ms ease;
+  transition: background var(--biny-sidebar-hover-duration) var(--biny-sidebar-hover-ease), color var(--biny-sidebar-hover-duration) var(--biny-sidebar-hover-ease);
 }
 
 .biny-sidebar-settings-item svg {
@@ -1510,12 +1509,6 @@
   display: none;
 }
 
-.biny-sidebar.is-compact .biny-sidebar-section.has-compact-divider {
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid var(--biny-border);
-}
-
 .biny-sidebar.is-compact .biny-sidebar-section-header {
   justify-content: center;
   padding: 0;
@@ -1541,23 +1534,18 @@
 }
 
 .biny-sidebar.is-compact .biny-sidebar-footer {
-  display: flex;
   justify-content: center;
   padding: 0;
 }
 
-.biny-sidebar.is-compact .biny-sidebar-settings-item {
+.biny-sidebar.is-compact .biny-sidebar-footer .biny-sidebar-settings-item {
   box-sizing: border-box;
   width: 32px;
   height: 32px;
   flex: 0 0 32px;
   justify-content: center;
   gap: 0;
-  margin: auto;
   padding: 0;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
 }
 
 .biny-sidebar.is-compact .biny-sidebar-settings-item > span {
@@ -1906,6 +1894,7 @@
   width: 16px;
   height: 32px;
   flex: 0 0 16px;
+  align-self: center;
   place-items: center;
   padding: 0;
   border: 0;
@@ -1938,9 +1927,10 @@
   min-height: 32px;
   width: auto;
   flex: 1 1 auto;
-  align-items: center;
-  gap: 7px;
-  padding: 0 8px;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 4px 8px 5px;
   overflow: hidden;
   border: 0;
   border-radius: 8px;
@@ -1950,6 +1940,39 @@
   font-size: 13.5px;
   text-align: left;
   cursor: pointer;
+}
+
+/* 第一行保持原单行布局：状态点 + 标题 + 右侧时间/状态。 */
+.biny-sidebar-session-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
+/* 第二行：最后一条用户消息摘要（Alma 的 thread-row 双行结构）。 */
+.biny-sidebar-session-preview {
+  min-width: 0;
+  overflow: hidden;
+  padding-left: 13px;
+  color: var(--biny-text-tertiary);
+  font-size: 11.5px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.biny-sidebar.is-compact .biny-sidebar-session-preview {
+  display: none;
+}
+
+.biny-sidebar.is-compact .biny-sidebar-session-item {
+  min-height: 32px;
+  padding: 0 8px;
+}
+
+.biny-sidebar.is-compact .biny-sidebar-session-line {
+  min-height: 32px;
 }
 
 .biny-sidebar-session-entry:hover .biny-sidebar-session-item,
@@ -2151,22 +2174,19 @@
   app-region: no-drag;
 }
 
+/* 顶栏的项目/分支选择器：胶囊外观对齐 ZCode，紧跟在会话标题后。 */
 .biny-workspace-context-bar {
   display: flex;
   min-width: 0;
-  min-height: 28px;
   align-items: center;
   gap: 8px;
-  padding: 0 4px 7px;
-  color: var(--biny-text-secondary);
-  font-size: 12px;
 }
 
 .biny-workspace-context-selectors {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
 }
 
 .biny-workspace-context-anchor {
@@ -2176,26 +2196,26 @@
 
 .biny-workspace-context-trigger {
   display: inline-flex;
-  max-width: min(360px, 42vw);
-  min-height: 26px;
+  max-width: min(220px, 30vw);
+  min-height: 28px;
   align-items: center;
   gap: 6px;
-  padding: 0 7px;
-  border: 0;
-  border-radius: 7px;
-  color: var(--biny-text-secondary);
-  background: transparent;
+  padding: 0 11px;
+  border: 1px solid var(--biny-border);
+  border-radius: 999px;
+  color: var(--biny-text);
+  background: var(--biny-surface-soft);
   cursor: pointer;
   font: inherit;
-  font-size: 12px;
+  font-size: 13px;
   -webkit-app-region: no-drag;
   app-region: no-drag;
-  transition: background var(--biny-motion-quick) ease, color var(--biny-motion-quick) ease;
+  transition: background var(--biny-motion-quick) ease, color var(--biny-motion-quick) ease, border-color var(--biny-motion-quick) ease;
 }
 
 .biny-workspace-context-trigger:hover:not(:disabled),
 .biny-workspace-context-trigger[aria-expanded="true"] {
-  color: var(--biny-text);
+  border-color: var(--biny-border-strong);
   background: var(--biny-surface-hover);
 }
 
@@ -2209,12 +2229,6 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.biny-workspace-context-divider {
-  color: var(--biny-text-tertiary);
-  font-size: 13px;
-  user-select: none;
 }
 
 .biny-workspace-context-dirty {
@@ -2869,13 +2883,13 @@
 
 .capabilities-search {
   display: flex;
-  height: 30px;
+  height: 26px;
   align-items: center;
   gap: 7px;
-  margin: 8px 0 7px;
+  margin: 0 0 6px;
   padding: 0 9px;
   border: 1px solid var(--biny-border);
-  border-radius: 8px;
+  border-radius: 7px;
   color: var(--biny-text-tertiary);
   background: var(--biny-surface);
 }
@@ -3774,6 +3788,12 @@
   --biny-chat-content-width: calc(100% - 48px);
 }
 
+/* 聊天区右缘有常驻工具 rail（浮层），内容列在两侧对称让出它的宽度，
+   右对齐的用户消息、上下文用量和输入框不再被盖住。 */
+.biny-workspace-chat .biny-workspace-main {
+  --biny-chat-content-width: calc(100% - 48px - 60px);
+}
+
 /* 固定窗口 chrome 占用顶部 46px；聊天信息行从它下面开始，避免被 chrome 背景盖住。 */
 .biny-root:not([data-sidebar-mode="collapsed"]):not([data-sidebar-mode="peek"]) .biny-workspace-chat {
   box-sizing: border-box;
@@ -3844,7 +3864,8 @@
 .biny-chat-title {
   display: flex;
   min-width: 0;
-  flex: 1 1 auto;
+  /* 只收缩不撑满：让项目/分支胶囊紧跟标题（ZCode 格局），剩余空间留给拖动区。 */
+  flex: 0 1 auto;
   align-items: baseline;
   gap: 9px;
   -webkit-app-region: drag;
@@ -4836,7 +4857,6 @@
 @media (prefers-reduced-motion: reduce) {
   .desktop-root.biny-root,
   .biny-sidebar,
-  .biny-sidebar-divider,
   .biny-sidebar-pin-spacer,
   .biny-sidebar-body,
   .biny-sidebar-footer,
@@ -4875,6 +4895,8 @@
   .biny-composer-popover,
   .biny-usage-popover,
   .biny-runtime-panel,
+  .biny-workspace-context-trigger,
+  .desktop-inspector-resizer::after,
   .biny-memory-toggle,
   .biny-send-button,
   .biny-runtime-panel-icon,
@@ -6567,7 +6589,7 @@
 
 .biny-mcp-page {
   display: flex;
-  width: min(var(--settings-content-max), calc(100% - 56px));
+  width: 100%;
   min-width: 0;
   flex: 0 0 auto;
   flex-direction: column;
@@ -8758,11 +8780,11 @@
 /* MCP 应用市场保持单列，已安装区在宽屏把列表与运行详情并排展示。 */
 .settings-modal.is-extension-settings .biny-mcp-page {
   display: flex;
-  width: min(var(--settings-content-max), calc(100% - 56px));
+  width: 100%;
   min-height: 0;
   flex: 1 1 0;
   height: 0;
-  margin: 0 auto;
+  margin: 0;
   flex-direction: column;
   overflow: hidden;
 }

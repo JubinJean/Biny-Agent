@@ -1,9 +1,11 @@
 /* eslint-disable react-refresh/only-export-components -- Inspector 请求状态与私有视图必须共享同一生命周期。 */
 /**
- * Workspace 右侧检查器的状态与视图。
+ * Workspace 右侧工具区的状态与视图（对照 Alma 的 ArtifactSidebar2 格局）。
  *
- * 文件树、文件预览、终端切换和面板尺寸都属于 Inspector 自己的交互状态；会话区只拿到
- * 一个 dock 节点与 `previewFile` 命令，不再理解目录请求或终端布局。
+ * 右缘是一条常驻的浮动 rail（文件/终端/审阅/侧聊/浏览器），点击前四个打开 tab 化的
+ * dock 面板，浏览器是直接动作。文件树、文件预览、终端切换和面板尺寸都属于 Inspector
+ * 自己的交互状态；会话区只拿到 rail/dock 节点与 `previewFile` 命令，不再理解目录请求
+ * 或终端布局。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { IconButton } from "@astryxdesign/core/IconButton";
@@ -22,15 +24,13 @@ import {
 import { highlightWorkspaceFile } from "../../syntaxHighlight.js";
 import { workspaceFileMarker } from "../../workspaceFileMarker.js";
 import { CopyButton } from "../CopyButton.js";
-import { Icon } from "../Icon.js";
+import { Icon, type IconName } from "../Icon.js";
 import { TerminalView } from "../TerminalView.js";
 import { useClosingPresence } from "../../useClosingPresence.js";
 import {
   InspectorReview,
   InspectorSideChat,
-  InspectorToolLauncher,
-  type InspectorCommandState,
-  type InspectorToolAction
+  type InspectorCommandState
 } from "./InspectorToolLauncher.js";
 
 interface UseWorkspaceInspectorOptions {
@@ -46,6 +46,8 @@ interface UseWorkspaceInspectorOptions {
   onOpenBrowser(): Promise<void>;
   onReadFile(path: string): Promise<DesktopWorkspaceFilePreview>;
   onRunCommand(command: string): Promise<DesktopSlashResult>;
+  /** rail 动作（浏览器打开等）失败的提示通道。 */
+  onWarning(message: string): void;
 }
 
 interface FilePreviewState {
@@ -62,14 +64,17 @@ interface FileDirectoryState {
   error?: string;
 }
 
-type InspectorView = "launcher" | "files" | "terminal" | "review" | "side-chat";
+type InspectorView = "files" | "terminal" | "review" | "side-chat";
 
-const inspectorToolMetadata: Record<Exclude<InspectorView, "launcher">, { icon: "folder" | "message" | "shield" | "terminal"; label: string }> = {
+const inspectorViewMetadata: Record<InspectorView, { icon: IconName; label: string }> = {
   files: { icon: "folder", label: "文件" },
   terminal: { icon: "terminal", label: "终端" },
   review: { icon: "shield", label: "审阅" },
-  "side-chat": { icon: "message", label: "侧边聊天" }
+  "side-chat": { icon: "message", label: "侧聊" }
 };
+
+/** rail 上「审阅」先打开面板再触发 /review，其余面板视图直接切换；浏览器是纯动作。 */
+type RailAction = InspectorView | "browser";
 
 export function useWorkspaceInspector({
   filePanelResizing,
@@ -83,9 +88,11 @@ export function useWorkspaceInspector({
   onOpenFile,
   onOpenBrowser,
   onRunCommand,
-  onReadFile
+  onReadFile,
+  onWarning
 }: UseWorkspaceInspectorOptions): {
   dock?: React.JSX.Element;
+  rail?: React.JSX.Element;
   layout: {
     open: boolean;
     resizing: boolean;
@@ -107,13 +114,12 @@ export function useWorkspaceInspector({
   const sideChatRequestRef = useRef(0);
   const sideChatRunningRef = useRef(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
-  const [inspectorView, setInspectorView] = useState<InspectorView>("launcher");
+  const [inspectorView, setInspectorView] = useState<InspectorView>("files");
   const [preview, setPreview] = useState<FilePreviewState>();
   const [directoryStates, setDirectoryStates] = useState<Map<string, FileDirectoryState>>(new Map());
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set());
   const [reviewState, setReviewState] = useState<InspectorCommandState>({ status: "idle" });
   const [sideChatState, setSideChatState] = useState<InspectorCommandState>({ status: "idle" });
-  const [launcherError, setLauncherError] = useState<string>();
   // 和左侧侧栏共用 250ms 的几何过渡，关闭时要等宽度动画结束后再卸载。
   const inspectorPresence = useClosingPresence(inspectorOpen && Boolean(projectId), 250);
   const activePreview = preview?.source === source ? preview : undefined;
@@ -131,7 +137,6 @@ export function useWorkspaceInspector({
     sideChatRunningRef.current = false;
     setReviewState({ status: "idle" });
     setSideChatState({ status: "idle" });
-    setLauncherError(undefined);
   }, [source]);
 
   const loadDirectory = useCallback((relativePath: string): void => {
@@ -173,8 +178,8 @@ export function useWorkspaceInspector({
       setInspectorOpen(false);
       return;
     }
-    openInspector("launcher");
-  }, [inspectorOpen, openInspector]);
+    openInspector(inspectorView);
+  }, [inspectorOpen, inspectorView, openInspector]);
 
   const openFiles = useCallback((): void => {
     openInspector("files");
@@ -259,11 +264,10 @@ export function useWorkspaceInspector({
   }, [onRunCommand]);
 
   const openBrowser = useCallback((): void => {
-    setLauncherError(undefined);
-    void onOpenBrowser().catch((error: unknown) => setLauncherError(errorMessage(error)));
-  }, [onOpenBrowser]);
+    void onOpenBrowser().catch((error: unknown) => onWarning(errorMessage(error)));
+  }, [onOpenBrowser, onWarning]);
 
-  const openLauncherAction = useCallback((action: InspectorToolAction): void => {
+  const openRailAction = useCallback((action: RailAction): void => {
     if (action === "browser") {
       openBrowser();
       return;
@@ -273,38 +277,42 @@ export function useWorkspaceInspector({
       runReview();
       return;
     }
+    // rail 上点当前已打开的 tab 再点一次是收起面板（与 Alma 的 rail 开合一致）。
+    if (inspectorOpen && inspectorView === action) {
+      setInspectorOpen(false);
+      return;
+    }
     openInspector(action);
-  }, [openBrowser, openInspector, runReview]);
+  }, [inspectorOpen, inspectorView, openBrowser, openInspector, runReview]);
 
   useEffect(() => {
-    if (!inspectorOpen || !projectId) return;
+    if (!projectId) return;
     const handleShortcut = (event: KeyboardEvent): void => {
       if (event.defaultPrevented || event.repeat || isTextEntryTarget(event.target) || !event.metaKey) return;
       if (event.shiftKey && !event.altKey && event.code === "KeyG") {
         event.preventDefault();
-        openLauncherAction("review");
+        openRailAction("review");
         return;
       }
       if (!event.shiftKey && !event.altKey && event.code === "KeyT") {
         event.preventDefault();
-        openLauncherAction("browser");
+        openRailAction("browser");
         return;
       }
       if (!event.shiftKey && !event.altKey && event.code === "KeyP") {
         event.preventDefault();
-        openLauncherAction("files");
+        openRailAction("files");
         return;
       }
       if (!event.shiftKey && event.altKey && event.code === "KeyS") {
         event.preventDefault();
-        openLauncherAction("side-chat");
+        openRailAction("side-chat");
       }
     };
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [inspectorOpen, openLauncherAction, projectId]);
+  }, [openRailAction, projectId]);
 
-  const activeTool = inspectorView === "launcher" ? undefined : inspectorToolMetadata[inspectorView];
   const toolContent = !projectId ? null : inspectorView === "terminal" ? <TerminalView projectId={projectId} />
     : inspectorView === "files" ? (
       <FilePreviewPanel
@@ -317,8 +325,7 @@ export function useWorkspaceInspector({
         preview={activePreview}
       />
     ) : inspectorView === "review" ? <InspectorReview onRetry={runReview} state={reviewState} />
-      : inspectorView === "side-chat" ? <InspectorSideChat onSend={runSideChat} state={sideChatState} />
-        : null;
+      : <InspectorSideChat onSend={runSideChat} state={sideChatState} />;
 
   const inspector = inspectorPresence.present && projectId ? (
     <div
@@ -330,35 +337,57 @@ export function useWorkspaceInspector({
         onWidthChange={onFilePanelWidthChange}
         width={filePanelWidth}
       />
-      <aside aria-label="工作区检查器" className="desktop-inspector" role="complementary">
-        <header className={`desktop-inspector-header${activeTool ? " is-tool" : ""}`}>
-          {activeTool ? (
-            <button aria-label="返回工作区工具" className="biny-inspector-back" onClick={() => openInspector("launcher")} title="返回工作区工具" type="button">
-              <Icon name="arrow-left" size={15} />
-              <Icon name={activeTool.icon} size={14} />
-              <span>{activeTool.label}</span>
-            </button>
-          ) : <span aria-hidden="true" className="biny-inspector-header-spacer" />}
+      <aside aria-label="工作区工具" className="desktop-inspector" role="complementary">
+        <header className="desktop-inspector-header">
+          <span className="biny-inspector-title">{inspectorViewMetadata[inspectorView].label}</span>
           <button aria-label="收起工作区工具" className="desktop-inspector-close" onClick={() => setInspectorOpen(false)} title="收起工作区工具" type="button">
             <Icon name="panel-right" size={15} />
           </button>
         </header>
+        <nav aria-label="工具切换" className="biny-inspector-tabs">
+          {(Object.keys(inspectorViewMetadata) as InspectorView[]).map((view) => {
+            const active = inspectorView === view;
+            return (
+              <button
+                aria-current={active ? "page" : undefined}
+                aria-label={inspectorViewMetadata[view].label}
+                className={`biny-inspector-tab${active ? " is-active" : ""}`}
+                key={view}
+                onClick={() => openInspector(view)}
+                type="button"
+              >
+                <Icon name={inspectorViewMetadata[view].icon} size={13} />
+                <span>{inspectorViewMetadata[view].label}</span>
+              </button>
+            );
+          })}
+        </nav>
         <div className="desktop-inspector-body" id="desktop-inspector-panel">
-          <div className="t-page-slide biny-inspector-pages" data-page={inspectorView === "launcher" ? "1" : "2"}>
-            <section aria-hidden={inspectorView === "launcher" ? undefined : true} className="t-page biny-inspector-launcher-page" data-page-id="1" inert={inspectorView === "launcher" ? undefined : true}>
-              <InspectorToolLauncher error={launcherError} onAction={openLauncherAction} />
-            </section>
-            <section aria-hidden={inspectorView === "launcher" ? true : undefined} className="t-page biny-inspector-tool-page" data-page-id="2" inert={inspectorView === "launcher" ? true : undefined}>
-              <div className="biny-inspector-view-content" key={inspectorView}>{toolContent}</div>
-            </section>
-          </div>
+          <div className="biny-inspector-view-content" key={inspectorView}>{toolContent}</div>
         </div>
       </aside>
     </div>
   ) : undefined;
 
+  // rail 常驻右缘（有项目即可见）；right 随 dock 流宽度变量滑动，与面板开合同帧。
+  const rail = projectId ? (
+    <div aria-label="工作区工具" className="biny-inspector-rail" role="toolbar">
+      {(Object.keys(inspectorViewMetadata) as InspectorView[]).map((view) => (
+        <RailButton
+          active={inspectorOpen && inspectorView === view}
+          icon={inspectorViewMetadata[view].icon}
+          key={view}
+          label={inspectorViewMetadata[view].label}
+          onClick={() => openRailAction(view)}
+        />
+      ))}
+      <RailButton active={false} icon="site" label="浏览器" onClick={openBrowser} />
+    </div>
+  ) : undefined;
+
   return {
     dock: inspector,
+    rail,
     layout: {
       open: inspectorOpen && Boolean(projectId),
       resizing: filePanelResizing,
@@ -372,6 +401,21 @@ export function useWorkspaceInspector({
     toggleInspector,
     toggleTerminal
   };
+}
+
+function RailButton({ active, icon, label, onClick }: { active: boolean; icon: IconName; label: string; onClick(): void }): React.JSX.Element {
+  return (
+    <button
+      aria-label={label}
+      aria-pressed={active}
+      className={`biny-inspector-rail-btn${active ? " is-active" : ""}`}
+      onClick={onClick}
+      title={label}
+      type="button"
+    >
+      <Icon name={icon} size={16} />
+    </button>
+  );
 }
 
 function FilePanelResizer({ width, onWidthChange, onResizeStart, onResizeEnd }: {

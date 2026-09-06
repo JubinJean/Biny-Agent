@@ -99,6 +99,10 @@ export const Sidebar = memo(function Sidebar({
   const [loadedSessionParents, setLoadedSessionParents] = useState<Set<string>>(() => new Set());
   const [loadingSessionIds, setLoadingSessionIds] = useState<Set<string>>(() => new Set());
   const [sessionNextCursors, setSessionNextCursors] = useState<Map<string, string>>(() => new Map());
+  // 侧栏内联过滤（Alma 式）：只影响展示，命中项目名时保留整个项目的会话。
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const searching = normalizedQuery.length > 0;
   const [projectMenuOpen, setProjectMenuOpen] = useState<string>();
   const [projectOrganizationMenuOpen, setProjectOrganizationMenuOpen] = useState(false);
   const [projectCreateMenuOpen, setProjectCreateMenuOpen] = useState(false);
@@ -158,9 +162,31 @@ export const Sidebar = memo(function Sidebar({
   // 置顶区只是快捷入口；会话仍留在原项目树中，避免跨置顶状态的父子关系被拆开。
   const pinnedSessions = useMemo(() => sessions.filter((session) => session.pinned), [sessions]);
 
+  const matchSession = (session: DesktopSessionSummary): boolean =>
+    `${session.title} ${session.firstUserMessage}`.toLocaleLowerCase().includes(normalizedQuery);
+  const matchProject = (project: DesktopProject): boolean =>
+    `${project.name} ${project.path}`.toLocaleLowerCase().includes(normalizedQuery);
+  // 搜索期间把会话树打平为匹配结果；项目名命中时展示项目下全部会话。
+  const visibleSessionsFor = (projectId: string): DesktopSessionSummary[] => {
+    const projectSessions = sessionsByProject.get(projectId) ?? [];
+    if (!searching) return projectSessions;
+    const project = projects.find((candidate) => candidate.id === projectId);
+    if (project && matchProject(project)) return projectSessions;
+    return projectSessions.filter(matchSession);
+  };
+  const projectVisible = (project: DesktopProject): boolean =>
+    !searching || matchProject(project) || visibleSessionsFor(project.id).length > 0;
+
+  const visiblePinnedSessions = searching ? pinnedSessions.filter(matchSession) : pinnedSessions;
+  const visibleDialogueSessions = searching ? dialogueSessions.filter(matchSession) : dialogueSessions;
+
   const orderedProjects = useMemo(() => sortProjects(projects, projectSort), [projects, projectSort]);
   const pinnedProjects = orderedProjects.filter((project) => project.pinned);
   const unpinnedProjects = orderedProjects.filter((project) => !project.pinned);
+  const searchEmpty = searching
+    && visiblePinnedSessions.length === 0
+    && visibleDialogueSessions.length === 0
+    && !orderedProjects.some(projectVisible);
   const peekOpen = layout.mode === "peek";
   const contentVisible = layout.mode !== "collapsed";
   const compact = layout.mode === "rail";
@@ -238,6 +264,11 @@ export const Sidebar = memo(function Sidebar({
     else onOpenProject();
   };
 
+  // 搜索时空的区块整段隐藏，避免出现「标题在、内容空」的孤段。
+  const showPinnedSection = searching
+    ? Boolean(visiblePinnedSessions.length) || pinnedProjects.some(projectVisible)
+    : Boolean(pinnedProjects.length || pinnedSessions.length);
+
   const loadSessionChildren = async (session: DesktopSessionSummary, cursor?: string): Promise<void> => {
     if (!session.hasChildren || loadingSessionIds.has(session.id)) return;
     setLoadingSessionIds((current) => new Set(current).add(session.id));
@@ -279,10 +310,11 @@ export const Sidebar = memo(function Sidebar({
   };
 
   const renderProject = (project: DesktopProject, section: "pinned" | "projects"): React.JSX.Element => {
-    const projectSessions = sessionsByProject.get(project.id) ?? [];
-    const expanded = project.id === activeProjectId
-      ? !collapsedProjectIds.has(project.id)
-      : expandedProjectIds.has(project.id);
+    const projectSessions = visibleSessionsFor(project.id);
+    const expanded = searching ? true
+      : project.id === activeProjectId
+        ? !collapsedProjectIds.has(project.id)
+        : expandedProjectIds.has(project.id);
     return (
       <div
         className={`biny-project-group${dragState?.sourceId === project.id ? " is-dragging" : ""}${projectDropClass(project.id, section)}`}
@@ -325,6 +357,8 @@ export const Sidebar = memo(function Sidebar({
         />
         {expanded ? (
           <ProjectSessions
+            flat={searching}
+            limit={searching ? Number.MAX_SAFE_INTEGER : PROJECT_SESSION_COLLAPSE_LIMIT}
             onSelectSession={onSelectSession}
             onSessionMenu={onSessionMenu}
             projectId={project.id}
@@ -358,19 +392,38 @@ export const Sidebar = memo(function Sidebar({
         onPointerDown={peekOpen ? peekDrawerHandlers.onPointerDown : undefined}
         onPointerUp={peekOpen ? peekDrawerHandlers.onPointerUp : undefined}
       >
-        {/* 顶部行是侧栏内容的固定锚点；收起时也保留它，避免导航内容向上跳 46px。 */}
-        <div aria-hidden="true" className="biny-sidebar-topbar-spacer" />
+        {/* Alma 式浮动卡片：aside 只负责宽度动画与裁剪，视觉壳在 card 上。 */}
+        <div className="biny-sidebar-card">
+          {/* 顶部行是侧栏内容的固定锚点；收起时也保留它，避免导航内容向上跳 46px。 */}
+          <div aria-hidden="true" className="biny-sidebar-topbar-spacer" />
 
       <div className="biny-sidebar-body">
+        <label className="biny-sidebar-search">
+          <Icon name="search" size={13} />
+          <input
+            aria-label="搜索会话"
+            onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={(event) => {
+              // Escape 清空并退出搜索；输入法组词中的 Escape 交给 IME 自己处理。
+              if (event.key !== "Escape" || event.nativeEvent.isComposing || !query) return;
+              event.preventDefault();
+              setQuery("");
+              event.currentTarget.blur();
+            }}
+            placeholder="搜索会话…"
+            type="search"
+            value={query}
+          />
+        </label>
         <div className="biny-sidebar-scroll">
-          {pinnedProjects.length || pinnedSessions.length ? (
-            <SidebarSection expanded={expandedSections.pinned} label="置顶" onToggle={() => toggleSection("pinned")}>
+          {showPinnedSection ? (
+            <SidebarSection expanded={searching || expandedSections.pinned} label="置顶" onToggle={() => toggleSection("pinned")}>
               {/* 置顶会话排在置顶文件夹之前，避免文件夹把会话顶到下面。 */}
               <SessionList
                 onSelectSession={onSelectSession}
                 onSessionMenu={onSessionMenu}
                     selectedSessionId={selectedSessionId}
-                sessions={pinnedSessions}
+                sessions={visiblePinnedSessions}
                 flat
                 expandedSessionIds={expandedSessionIds}
                 loadingSessionIds={loadingSessionIds}
@@ -378,7 +431,7 @@ export const Sidebar = memo(function Sidebar({
                 onToggleSession={toggleSession}
                 onLoadMoreSessionChildren={loadMoreSessionChildren}
               />
-              {pinnedProjects.map((project) => renderProject(project, "pinned"))}
+              {pinnedProjects.filter(projectVisible).map((project) => renderProject(project, "pinned"))}
             </SidebarSection>
           ) : null}
 
@@ -431,30 +484,32 @@ export const Sidebar = memo(function Sidebar({
                 />
               </div>
             )}
-            expanded={expandedSections.projects}
+            expanded={searching || expandedSections.projects}
             icon="folder"
             label="你的项目"
-            compactDivider
             onToggle={() => toggleSection("projects")}
           >
-            {unpinnedProjects.length ? unpinnedProjects.map((project) => renderProject(project, "projects")) : <div className="biny-sidebar-empty-row">暂无项目，点击 + 添加</div>}
+            {unpinnedProjects.filter(projectVisible).map((project) => renderProject(project, "projects"))}
+            {!unpinnedProjects.length ? <div className="biny-sidebar-empty-row">暂无项目，点击 + 添加</div> : null}
           </SidebarSection>
 
-          <SidebarSection expanded={expandedSections.dialogue} icon="message" label="对话" onToggle={() => toggleSection("dialogue")}>
+          <SidebarSection expanded={searching || expandedSections.dialogue} icon="message" label="对话" onToggle={() => toggleSection("dialogue")}>
             <CollapsibleSessionList
-              limit={DIALOGUE_SESSION_COLLAPSE_LIMIT}
+              limit={searching ? Number.MAX_SAFE_INTEGER : DIALOGUE_SESSION_COLLAPSE_LIMIT}
+              flat={searching}
               onSelectSession={onSelectSession}
               onSessionMenu={onSessionMenu}
                 selectedSessionId={selectedSessionId}
-              sessions={dialogueSessions}
+              sessions={visibleDialogueSessions}
               expandedSessionIds={expandedSessionIds}
               loadingSessionIds={loadingSessionIds}
               sessionNextCursors={sessionNextCursors}
               onToggleSession={toggleSession}
               onLoadMoreSessionChildren={loadMoreSessionChildren}
             />
-            {!dialogueSessions.length ? <p className="biny-sidebar-empty-row">暂无未归类对话</p> : null}
+            {!visibleDialogueSessions.length && !searching ? <p className="biny-sidebar-empty-row">暂无未归类对话</p> : null}
           </SidebarSection>
+          {searchEmpty ? <div className="biny-sidebar-empty-row">没有匹配的会话</div> : null}
         </div>
       </div>
 
@@ -478,6 +533,7 @@ export const Sidebar = memo(function Sidebar({
           tabIndex={0}
         />
       ) : null}
+      </div>
       </aside>
       <SidebarChrome
         collapsed={!contentVisible}
@@ -530,9 +586,9 @@ function SidebarChrome({ collapsed, floating = false, onNewTask, onSearch, onTog
   );
 }
 
-function SidebarSection({ label, icon, compactDivider, expanded, actions, onToggle, children }: { label: string; icon?: IconName; compactDivider?: boolean; expanded: boolean; actions?: React.ReactNode; onToggle(): void; children: React.ReactNode }): React.JSX.Element {
+function SidebarSection({ label, icon, expanded, actions, onToggle, children }: { label: string; icon?: IconName; expanded: boolean; actions?: React.ReactNode; onToggle(): void; children: React.ReactNode }): React.JSX.Element {
   return (
-    <section aria-label={label} className={`biny-sidebar-section${expanded ? " is-expanded" : ""}${icon ? " has-compact-icon" : ""}${compactDivider ? " has-compact-divider" : ""}`}>
+    <section aria-label={label} className={`biny-sidebar-section${expanded ? " is-expanded" : ""}${icon ? " has-compact-icon" : ""}`}>
       <div className="biny-sidebar-section-header">
         <button aria-expanded={expanded} aria-label={label} className="biny-sidebar-section-trigger" onClick={onToggle} type="button">
           {icon ? <span aria-hidden="true" className="biny-sidebar-section-icon"><Icon name={icon} size={17} /></span> : null}
@@ -546,11 +602,12 @@ function SidebarSection({ label, icon, compactDivider, expanded, actions, onTogg
   );
 }
 
-function ProjectSessions({ projectId, sessions, selectedSessionId, onSelectSession, onSessionMenu, expandedSessionIds, loadingSessionIds, sessionNextCursors, onToggleSession, onLoadMoreSessionChildren }: { projectId: string; sessions: DesktopSessionSummary[]; selectedSessionId?: string; onSelectSession(projectId: string, sessionId: string): void; onSessionMenu(session: DesktopSessionSummary): void; expandedSessionIds: Set<string>; loadingSessionIds: Set<string>; sessionNextCursors: Map<string, string>; onToggleSession(session: DesktopSessionSummary): void; onLoadMoreSessionChildren(session: DesktopSessionSummary): void }): React.JSX.Element | null {
+function ProjectSessions({ projectId, sessions, selectedSessionId, onSelectSession, onSessionMenu, flat = false, limit = PROJECT_SESSION_COLLAPSE_LIMIT, expandedSessionIds, loadingSessionIds, sessionNextCursors, onToggleSession, onLoadMoreSessionChildren }: { projectId: string; sessions: DesktopSessionSummary[]; selectedSessionId?: string; onSelectSession(projectId: string, sessionId: string): void; onSessionMenu(session: DesktopSessionSummary): void; flat?: boolean; limit?: number; expandedSessionIds: Set<string>; loadingSessionIds: Set<string>; sessionNextCursors: Map<string, string>; onToggleSession(session: DesktopSessionSummary): void; onLoadMoreSessionChildren(session: DesktopSessionSummary): void }): React.JSX.Element | null {
   if (!sessions.length) return <div className="biny-sidebar-empty-row biny-sidebar-project-empty">没有聊天</div>;
   return (
     <CollapsibleSessionList
-      limit={PROJECT_SESSION_COLLAPSE_LIMIT}
+      limit={limit}
+      flat={flat}
       onSelectSession={onSelectSession}
       onSessionMenu={onSessionMenu}
       projectId={projectId}
@@ -617,6 +674,7 @@ function SessionList({ flat = false, projectId, sessions, selectedSessionId, onS
     const nextCursor = sessionNextCursors.get(session.id);
     const running = isSessionRunning(session);
     const title = session.title || session.firstUserMessage || "新对话";
+    const preview = session.firstUserMessage && session.firstUserMessage !== title ? session.firstUserMessage : undefined;
     const meta = sidebarSessionMeta(session, running);
     const metaTitle = meta ? sidebarSessionUpdatedAt(session.updatedAt) : undefined;
     const worktree = session.isolation === "worktree";
@@ -649,9 +707,12 @@ function SessionList({ flat = false, projectId, sessions, selectedSessionId, onS
             title={session.firstUserMessage || session.title}
             type="button"
           >
-            {running ? <span aria-hidden="true" className={`biny-sidebar-session-running${session.status === "waiting_permission" ? " is-waiting" : ""}`} /> : session.unread ? <span aria-label="未读" className="biny-sidebar-session-unread" /> : null}
-            <span className="biny-sidebar-session-title">{title}</span>
-            {meta && metaTitle ? <span aria-label={`上次活动：${metaTitle}`} className="biny-sidebar-session-meta" title={metaTitle}>{meta}</span> : null}
+            <span className="biny-sidebar-session-line">
+              {running ? <span aria-hidden="true" className={`biny-sidebar-session-running${session.status === "waiting_permission" ? " is-waiting" : ""}`} /> : session.unread ? <span aria-label="未读" className="biny-sidebar-session-unread" /> : null}
+              <span className="biny-sidebar-session-title">{title}</span>
+              {meta && metaTitle ? <span aria-label={`上次活动：${metaTitle}`} className="biny-sidebar-session-meta" title={metaTitle}>{meta}</span> : null}
+            </span>
+            {preview ? <span className="biny-sidebar-session-preview">{preview}</span> : null}
           </button>
         </div>
       </div>,

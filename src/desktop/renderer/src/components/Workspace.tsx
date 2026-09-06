@@ -69,6 +69,10 @@ interface WorkspaceProps {
   onRuntimeRefresh(): Promise<void>;
   /** 建议 pill 点击即提交，由 App 转发给 Composer 的统一提交路径。 */
   onSubmitPrompt(prompt: string): void;
+  /** 顶栏的项目/分支选择器胶囊（含菜单），由 App 装配；无项目时缺省。 */
+  workspaceContext?: React.ReactNode;
+  /** 右缘常驻的工具 rail（文件/终端/审阅/侧聊/浏览器），由 App 装配；无项目时缺省。 */
+  inspectorRail?: React.ReactNode;
   /** 项目行「新建任务」直达的空白草稿：跳过欢迎态，直接渲染空白聊天 + 底部 Composer。 */
   blankDraft?: boolean;
   /** 首页提交过场信号；发送失败时 App 会清空它触发回滚。 */
@@ -121,6 +125,8 @@ export function Workspace({
   blankDraft = false,
   homeFlight,
   onHomeFlightLanded,
+  workspaceContext,
+  inspectorRail,
   onOpenRuntime: _onOpenRuntime,
   onOpenExtensions: _onOpenExtensions,
   children
@@ -272,12 +278,19 @@ export function Workspace({
   return (
     <div className="workspace biny-workspace biny-workspace-chat">
       <div className="biny-workspace-main">
+        {/* 后台运行面板从右上角盖下来时会覆盖 rail 区域，期间先收起 rail 避免互相遮挡。 */}
+        {runtimePanelOpen ? null : inspectorRail}
         <header className="biny-chat-toolbar">
           <div className="biny-chat-drag-region">
-            <div className="biny-chat-title">
-              <strong>{sessionTitle ?? project?.name ?? "Biny"}</strong>
-              {project ? <span>{project.name}{project.branch ? ` · ${project.branch}` : ""}</span> : <span>打开一个本地项目开始</span>}
-            </div>
+            {/* 顶栏复刻 ZCode 格局：会话名截断展示，项目/分支以胶囊选择器跟在标题后；
+              未进入会话时标题只有选择器本身，连项目都没有时才显示引导文案。 */}
+            {sessionTitle || !project ? (
+              <div className="biny-chat-title">
+                <strong>{sessionTitle ?? "Biny"}</strong>
+                {!sessionTitle && !project ? <span>打开一个本地项目开始</span> : null}
+              </div>
+            ) : null}
+            {workspaceContext}
             {worktreeView ? (
               <button
                 aria-label={`隔离工作树：${worktreeView.label}。${worktreeView.detail}`}

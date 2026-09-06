@@ -40,8 +40,6 @@ function SidebarPinSpacer({ active }: { active: boolean }): React.JSX.Element {
 }
 
 export function DesktopShell({ children, overlays, rightPanel, rightSidebar, sideNav, sidebarLayout, theme }: DesktopShellProps): React.JSX.Element {
-  // Inspector 退场期间仍保留 dock 节点，横线要等右侧栏完全卸载后再恢复。
-  const rightSidebarVisible = rightPanel !== undefined && rightPanel !== null;
   const rootStyle = {
     "--biny-sidebar-visual-width": `${sidebarLayout.visualWidth}px`,
     "--biny-sidebar-flow-width": `${sidebarLayout.flowWidth}px`,
@@ -55,7 +53,6 @@ export function DesktopShell({ children, overlays, rightPanel, rightSidebar, sid
       <div
         className="desktop-root biny-root"
         data-sidebar-mode={sidebarLayout.mode}
-        data-right-sidebar-visible={rightSidebarVisible ? "true" : undefined}
         data-inspector-resizing={rightSidebar?.resizing ? "true" : undefined}
         data-sidebar-resizing={sidebarLayout.resizing ? "true" : undefined}
         data-sidebar-transition={sidebarLayout.transition === "idle" ? undefined : sidebarLayout.transition}
@@ -69,14 +66,6 @@ export function DesktopShell({ children, overlays, rightPanel, rightSidebar, sid
           </div>
           {rightPanel}
         </div>
-        <div
-          aria-hidden="true"
-          className="biny-topbar-divider"
-        />
-        <div
-          aria-hidden="true"
-          className="biny-sidebar-divider"
-        />
         {overlays}
       </div>
     </Theme>

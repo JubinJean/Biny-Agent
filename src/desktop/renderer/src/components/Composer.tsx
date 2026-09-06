@@ -56,8 +56,6 @@ interface ComposerProps {
   submitDraft?: { text: string; nonce: number };
   /** submitDraft 被领取后回调清掉源头——draft 是单次信号，不清的话 Composer 每次重挂载（过场落地、新建任务回首页）都会把旧草稿再发一遍。 */
   onSubmitDraftConsumed?(): void;
-  /** 内联进底栏的工作区/分支选择器（文件夹图标 + 项目名位于工具栏左组）。 */
-  workspaceContext?: React.ReactNode;
   capabilityDefaults: DesktopCapabilityDefaults;
   skills: DesktopSkillCatalogEntry[];
   toolCatalog: DesktopToolCatalogEntry[];
@@ -104,7 +102,6 @@ export const Composer = memo(function Composer({
   prefillInput,
   submitDraft,
   onSubmitDraftConsumed,
-  workspaceContext,
   capabilityDefaults,
   skills,
   toolCatalog,
@@ -554,7 +551,6 @@ export const Composer = memo(function Composer({
                 toolsSupported={toolsSupported}
               />
             </div>
-            {workspaceContext}
             <div className="composer-menu-anchor" ref={permissionAnchorRef}>
               <ComposerActionButton
                 className="biny-permission-pill"

@@ -1,56 +1,18 @@
 /**
- * 右侧 Inspector 的工具启动器与只读子代理结果展示。
+ * 右侧 Inspector 的只读子代理视图（审阅 / 侧聊）。
  *
- * 这里不直接触达 IPC：父级只把已经存在的浏览器、文件、终端和斜杠命令能力作为回调传入，
+ * 这里不直接触达 IPC：父级只把已经存在的斜杠命令能力作为回调传入，
  * 以免展示层再承担项目或会话的运行时职责。
  */
 import { useCallback, useState } from "react";
 import type { DesktopSlashResult } from "../../../../protocol.js";
-import { Icon, type IconName } from "../Icon.js";
+import { Icon } from "../Icon.js";
 
-export type InspectorToolAction = "review" | "terminal" | "browser" | "files" | "side-chat";
-
-export interface InspectorCommandState {
+export type InspectorCommandState = {
   status: "idle" | "loading" | "ready" | "error";
   result?: DesktopSlashResult;
   error?: string;
-}
-
-interface LauncherAction {
-  action: InspectorToolAction;
-  icon: IconName;
-  label: string;
-  shortcut?: string;
-}
-
-const launcherActions: readonly LauncherAction[] = [
-  { action: "review", icon: "shield", label: "审阅", shortcut: "⇧⌘G" },
-  { action: "terminal", icon: "terminal", label: "终端" },
-  { action: "browser", icon: "site", label: "浏览器", shortcut: "⌘T" },
-  { action: "files", icon: "folder", label: "文件", shortcut: "⌘P" },
-  { action: "side-chat", icon: "message", label: "侧边聊天", shortcut: "⌥⌘S" }
-];
-
-export function InspectorToolLauncher({ onAction, error }: {
-  onAction(action: InspectorToolAction): void;
-  error?: string;
-}): React.JSX.Element {
-  return (
-    <section aria-label="工作区工具" className="biny-inspector-launcher">
-      <div aria-hidden="true" className="biny-inspector-launcher-spacer" />
-      <div className="biny-inspector-launcher-list">
-        {launcherActions.map(({ action, icon, label, shortcut }) => (
-          <button className="biny-inspector-launcher-item" key={action} onClick={() => onAction(action)} type="button">
-            <Icon name={icon} size={20} />
-            <span>{label}</span>
-            {shortcut ? <kbd>{shortcut}</kbd> : null}
-          </button>
-        ))}
-      </div>
-      {error ? <p className="biny-inspector-launcher-error" role="alert"><Icon name="warning" size={14} /><span>{error}</span></p> : null}
-    </section>
-  );
-}
+};
 
 export function InspectorReview({ state, onRetry }: {
   state: InspectorCommandState;
