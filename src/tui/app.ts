@@ -57,6 +57,7 @@ import { pasteTuiClipboard } from "./runtime/clipboard.js";
 import { permissionChoiceToResult } from "./runtime/permissionChoice.js";
 import { readGitBranch } from "./runtime/gitBranch.js";
 import { openDesktopSession } from "./runtime/desktopHandoff.js";
+import { sessionIdFromFile } from "../session/store.js";
 import { readStoredSessionEvents } from "../session/events.js";
 import { isSessionWriterConflictError } from "../runtime/SessionLease.js";
 import { sessionEventsToTranscript } from "./sessionTranscript.js";
@@ -137,6 +138,7 @@ export class BinyTui {
   private readonly editorContainer = new Container();
   private readonly pendingAttachmentsView = new PendingAttachmentsComponent();
   private sessionWriterConflict: { sessionId: string; ownerSurface?: string } | undefined;
+  private readonly ownedSessionIds = new Set<string>();
   private sessionWriterConflictView: SessionWriterConflictComponent | undefined;
   private readonly status: StatusIndicatorComponent;
   private readonly footer: FooterComponent;
@@ -268,15 +270,14 @@ export class BinyTui {
         };
         // 显式 session 在 Host/界面完成 attach 后再恢复；这样 writer conflict 可以
         // 转成只读历史，而不会在本地 fallback 创建阶段直接终止 TUI。
-        const local = await createLocalRuntime(undefined);
-        runtime = local.runtime;
-        commands = local.commands;
         try {
-          this.runtimeHost = await startRuntimeHost(this.workspaceRoot, runtime, commands, {
+          this.runtimeHost = await startRuntimeHost(this.workspaceRoot, createLocalRuntime, {
             createRuntime: createLocalRuntime,
             resumeInterrupted: false,
             configDir: globalConfigDir()
           });
+          runtime = this.runtimeHost.getCurrentRuntime();
+          commands = this.runtimeHost.getCurrentCommands();
           // TUI owner 也通过 socket client 使用同一条 Host 路径，这样 owner 自己和
           // attach 进来的 Desktop/CLI 看到的 session 注册表与事件扇出完全一致。
           const ownerClient = await connectRuntimeHost(this.workspaceRoot, {
@@ -288,7 +289,7 @@ export class BinyTui {
             commands = undefined;
           }
         } catch (error) {
-          await runtime.close();
+          await this.runtimeHost?.close();
           const retry = await connectOrSpawnRuntimeHost(this.workspaceRoot, {
             workspaceRoot: this.workspaceRoot,
             configDir: globalConfigDir(),
@@ -315,12 +316,10 @@ export class BinyTui {
         this.setAutocompleteProvider([], this.workspaceRoot);
       }
 
-      // 普通进入 TUI 等价于 Codex 的新交互会话：已有 Host 空闲时只重建空白
-      // AgentSession，不读取旧 transcript，也不续跑 checkpoint。运行中的 Host
-      // 则必须保留，避免打开第二个 owner 或打断用户正在观察的任务。
+      // 普通入口在 Host 上新建独立 Session；已有运行不影响新窗口，也不会被替换。
       if ((this.launchMode === "new" || this.launchMode === "resume-picker")
         && this.initialSession === undefined
-        && !runtimeIsBusy(runtime.getSnapshot())) {
+        && (runtime instanceof RuntimeHostClient || !runtimeIsBusy(runtime.getSnapshot()))) {
         await this.restartRuntimeForNewChat();
         runtime = this.runtime;
         commands = this.commands;
@@ -352,8 +351,7 @@ export class BinyTui {
         modelLabel: info.modelLabel,
         reasoningLabel: info.reasoningLabel
       });
-      // 显式 session 必须走完整 transcript 加载；如果当前 Host 正在运行另一条
-      // session，resumeSession 会拒绝切换，不能静默显示错误会话。
+      // 显式 session 加载自己的 transcript，Host 中其他 Session 的运行保持不变。
       if (this.initialSession) await this.resumeSession(this.initialSession);
       if (this.launchMode === "resume-picker" && this.initialSession === undefined) await this.showSessionPicker();
       void this.refreshContextUsage();
@@ -509,10 +507,12 @@ export class BinyTui {
   private async refreshContextUsage(): Promise<void> {
     const runtime = this.runtime;
     if (!runtime) return;
+    const sessionId = runtime.getSnapshot().info.sessionId;
     try {
       const context = this.commands
         ? await this.commands.agent.contextStatus()
         : await requireRemoteRuntime(runtime).contextStatus();
+      if (runtime.getSnapshot().info.sessionId !== sessionId) return;
       // 百分比按模型自身的上下文窗口算；没有窗口信息时才退回输入预算。
       this.contextUsage = {
         usedTokens: context.budget.usedTokens,
@@ -528,10 +528,12 @@ export class BinyTui {
   private async refreshUsage(): Promise<void> {
     const runtime = this.runtime;
     if (!runtime) return;
+    const sessionId = runtime.getSnapshot().info.sessionId;
     try {
       const summary: UsageSummary = this.commands
         ? await this.commands.agent.usageSummary()
         : (await requireRemoteRuntime(runtime).usage()).summary;
+      if (runtime.getSnapshot().info.sessionId !== sessionId) return;
       this.cacheHitRate = summary.latestCacheHitRate;
       this.sessionCacheHitRate = summary.sessionCacheHitRate;
       this.refreshChrome();
@@ -564,6 +566,7 @@ export class BinyTui {
       this.ui.requestRender();
       return;
     }
+    const sessionId = runtime.getSnapshot().info.sessionId;
     const pendingModelSwitch = this.modelSwitchPromise;
     if (pendingModelSwitch) {
       // 底部模型名已经立即变化，但消息必须等真实 Runtime 切换完成后再提交，
@@ -589,15 +592,20 @@ export class BinyTui {
         // 与 Pi 一致：补全只显示元数据，按 Enter 后才读取并注入 Skill 正文。
         const expandedPrompt = commands
           ? await commands.expandSkillCommand(value)
-          : await requireRemoteRuntime(runtime).expandSkillCommand(value);
+          : await requireRemoteRuntime(runtime).expandSkillCommand(value, sessionId);
         const input = withAttachmentReferences(expandedPrompt, attachments);
-        await this.ensureFocusedSessionWriteAccess();
-        if (runtimeIsBusy(this.runtimeSnapshot)) {
-          runtime.followUp(input, attachments);
+        await this.ensureSessionWriteAccess(sessionId);
+        if (runtimeIsBusy(runtime instanceof RuntimeHostClient ? runtime.getSnapshot(sessionId) : runtime.getSnapshot())) {
+          if (runtime instanceof RuntimeHostClient) {
+            const queued = await runtime.queueRunMessageForSession(sessionId, input, "followUp", attachments);
+            if (!queued.accepted) throw new Error(queued.reason);
+          } else runtime.followUp(input, attachments);
           this.notify("Skill 消息已加入 follow-up 队列，将在当前任务准备结束时继续处理。");
           return;
         }
-        await runtime.submitPrompt(input, this.mode, attachments).completion;
+        await (runtime instanceof RuntimeHostClient
+          ? runtime.submitPromptForSession(sessionId, input, this.mode, attachments)
+          : runtime.submitPrompt(input, this.mode, attachments)).completion;
       } catch (error) {
         if (isSessionWriterConflictError(error)) {
           await this.showSessionWriterConflict(error.sessionId, error.ownerSurface);
@@ -624,13 +632,18 @@ export class BinyTui {
     }
 
     try {
-      await this.ensureFocusedSessionWriteAccess();
-      if (runtimeIsBusy(this.runtimeSnapshot)) {
-        runtime.followUp(withAttachmentReferences(prompt, attachments), attachments);
+      await this.ensureSessionWriteAccess(sessionId);
+      if (runtimeIsBusy(runtime instanceof RuntimeHostClient ? runtime.getSnapshot(sessionId) : runtime.getSnapshot())) {
+        if (runtime instanceof RuntimeHostClient) {
+          const queued = await runtime.queueRunMessageForSession(sessionId, withAttachmentReferences(prompt, attachments), "followUp", attachments);
+          if (!queued.accepted) throw new Error(queued.reason);
+        } else runtime.followUp(withAttachmentReferences(prompt, attachments), attachments);
         this.notify("消息已加入 follow-up 队列，将在当前任务准备结束时继续处理。");
         return;
       }
-      await runtime.submitPrompt(withAttachmentReferences(prompt, attachments), this.mode, attachments).completion;
+      await (runtime instanceof RuntimeHostClient
+        ? runtime.submitPromptForSession(sessionId, withAttachmentReferences(prompt, attachments), this.mode, attachments)
+        : runtime.submitPrompt(withAttachmentReferences(prompt, attachments), this.mode, attachments)).completion;
     } catch (error) {
       if (isSessionWriterConflictError(error)) {
         await this.showSessionWriterConflict(error.sessionId, error.ownerSurface);
@@ -720,6 +733,7 @@ export class BinyTui {
     const runtime = this.runtime;
     const commands = this.commands;
     if (!runtime) return;
+    const sessionId = runtime.getSnapshot().info.sessionId;
     const value = this.editor.getText().trim();
     if (!value && !this.pendingAttachments.length) return;
     const prompt = value || "请分析这个附件。";
@@ -728,10 +742,13 @@ export class BinyTui {
       const expandedPrompt = value.startsWith("/skill:")
         ? commands
           ? await commands.expandSkillCommand(value)
-          : await requireRemoteRuntime(runtime).expandSkillCommand(value)
+          : await requireRemoteRuntime(runtime).expandSkillCommand(value, sessionId)
         : prompt;
-      await this.ensureFocusedSessionWriteAccess();
-      runtime.steer(withAttachmentReferences(expandedPrompt, attachments), attachments);
+      await this.ensureSessionWriteAccess(sessionId);
+      if (runtime instanceof RuntimeHostClient) {
+        const queued = await runtime.queueRunMessageForSession(sessionId, withAttachmentReferences(expandedPrompt, attachments), "steer", attachments);
+        if (!queued.accepted) throw new Error(queued.reason);
+      } else runtime.steer(withAttachmentReferences(expandedPrompt, attachments), attachments);
       this.setPendingAttachments([]);
       this.setEditorText("");
       this.editor.addToHistory(prompt);
@@ -748,12 +765,11 @@ export class BinyTui {
   }
 
   /** Remote Host 的写入口先取得当前 session 的长期 claim，避免 TUI 只靠瞬时执行 lease。 */
-  private async ensureFocusedSessionWriteAccess(): Promise<void> {
+  private async ensureSessionWriteAccess(sessionId: string): Promise<void> {
     const runtime = this.runtime;
     if (!(runtime instanceof RuntimeHostClient)) return;
-    const sessionId = runtime.getFocusedSessionId() ?? runtime.getSnapshot().info.sessionId;
-    await runtime.ensureSession({ sessionId, writeIntent: true });
-    this.runtimeSnapshot = runtime.getSnapshot();
+    await runtime.ensureSession({ sessionId, writeIntent: true, focus: false });
+    this.ownedSessionIds.add(sessionId);
   }
 
   private async pasteClipboard(): Promise<void> {
@@ -976,7 +992,7 @@ export class BinyTui {
       return;
     }
 
-    if (command === "/resume" && runtimeIsBusy(this.runtimeSnapshot)) {
+    if (command === "/resume" && !(runtime instanceof RuntimeHostClient) && runtimeIsBusy(this.runtimeSnapshot)) {
       this.notify("当前任务仍在运行，请先取消后再恢复会话。");
       return;
     }
@@ -1162,15 +1178,18 @@ export class BinyTui {
   private async applyChatPersonalization(patch: ChatPersonalizationOverridePatch): Promise<void> {
     const runtime = this.runtime;
     if (!runtime) return;
+    const sessionId = runtime.getSnapshot().info.sessionId;
     try {
-      const state = await this.readPersonalizationState();
+      const state = runtime instanceof RuntimeHostClient
+        ? await runtime.getPersonalizationState(sessionId)
+        : await this.readPersonalizationState();
       if (!state.catalogRevision) throw new Error("Chat personalization revision is unavailable.");
       const updated = this.commands
         ? await runtime.runExclusiveOperation(
           "personalization",
           async () => await this.commands!.agent.updateChatPersonalization(patch, state.catalogRevision)
         )
-        : await requireRemoteRuntime(runtime).updateChatPersonalization(patch, state.catalogRevision);
+        : await requireRemoteRuntime(runtime).updateChatPersonalization(patch, state.catalogRevision, sessionId);
       const memory = memoryPolicyOptionForOverride(updated);
       this.notify(`Chat settings saved (memory ${memory}). They apply from the next root turn.`);
     } catch (error) {
@@ -1216,6 +1235,7 @@ export class BinyTui {
     const runtime = this.runtime;
     const commands = this.commands;
     if (!runtime) return;
+    const sessionId = runtime.getSnapshot().info.sessionId;
     const requestId = ++this.modelSwitchGeneration;
     const optimistic = modelPresentationFromChoice(
       alias,
@@ -1233,10 +1253,10 @@ export class BinyTui {
             "switch_model",
             async () => await commands.agent.switchModel(alias, thinking)
           )
-          : await requireRemoteRuntime(runtime).switchModel(alias, thinking);
+          : await requireRemoteRuntime(runtime).switchModel(alias, thinking, sessionId);
         const confirmed = modelPresentationFromInfo(info);
-        this.confirmedModel = confirmed;
-        if (this.modelSwitchGeneration === requestId) {
+        if (this.modelSwitchGeneration === requestId && runtime.getSnapshot().info.sessionId === sessionId) {
+          this.confirmedModel = confirmed;
           this.applyModelPresentation(confirmed);
           this.notify(`Model changed to ${info.modelLabel} ${info.reasoningLabel.toLowerCase()}`);
         }
@@ -1250,6 +1270,7 @@ export class BinyTui {
       (error: unknown) => {
         if (this.modelSwitchGeneration !== requestId) return;
         this.modelSwitchPromise = undefined;
+        if (runtime.getSnapshot().info.sessionId !== sessionId) return;
         this.applyModelPresentation(this.confirmedModel ?? modelPresentationFromInfo(runtime.getSnapshot().info));
         this.showTextViewer("Model", `Model switch failed: ${describeError(error)}`);
       }
@@ -1547,6 +1568,12 @@ export class BinyTui {
     const runtime = this.runtime;
     if (!runtime || !session) return;
     try {
+      if (runtime instanceof RuntimeHostClient) {
+        // 驻留会话只切换观察目标；历史会话由 Host 按 ID 懒加载，不重放正在运行的实例。
+        const stored = await readStoredSessionEvents(runtime.persistenceRoot, session);
+        await this.focusRuntimeSession(sessionIdFromFile(stored.filePath));
+        return;
+      }
       const resumed = await runtime.resumeSession(session);
       this.clearSessionWriterConflict();
       this.announceCurrentSession();
@@ -1639,9 +1666,10 @@ export class BinyTui {
           const { info } = snapshot;
           this.exitSummary = { sessionId: info.sessionId, sessionFile: info.sessionFile };
         }
-        // 只有当前进程创建的 owner 才能在退出时取消自己的 AgentRun。附着到共享 Host
-        // 的 TUI 只是观察者，断开时不能结束其他客户端正在执行的任务。
-        if (snapshot && runtimeIsBusy(snapshot) && !(runtime instanceof RuntimeHostClient)) {
+        // 只取消本窗口取得写权限的 Session，观察其他窗口的任务不代表拥有它。
+        if (runtime instanceof RuntimeHostClient) {
+          await Promise.all([...this.ownedSessionIds].map(async (sessionId) => await drainRuntimeBeforeExit(runtime, sessionId)));
+        } else if (snapshot && runtimeIsBusy(snapshot)) {
           await drainRuntimeBeforeExit(runtime);
         }
         this.unsubscribe?.();
@@ -1679,12 +1707,20 @@ export function ctrlCAction(lastCtrlCAt: number, now: number): "cancel" | "exit"
   return isDoubleCtrlC(lastCtrlCAt, now) ? "exit" : "cancel";
 }
 
-async function drainRuntimeBeforeExit(runtime: InteractiveRuntimeHandle): Promise<void> {
-  runtime.cancelCurrentRun();
+async function drainRuntimeBeforeExit(runtime: InteractiveRuntimeHandle, sessionId?: string): Promise<void> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     await Promise.race([
-      runtime.waitForIdle(),
+      (async () => {
+        if (runtime instanceof RuntimeHostClient) {
+          const snapshot = runtime.getSnapshot(sessionId);
+          if (snapshot.state.kind === "runs") await runtime.cancelRunRequest(snapshot.state.activeRun.runId, sessionId);
+          await runtime.waitForIdle(sessionId);
+        } else {
+          runtime.cancelCurrentRun();
+          await runtime.waitForIdle();
+        }
+      })(),
       new Promise<void>((resolve) => {
         timer = setTimeout(resolve, TUI_SHUTDOWN_DRAIN_MS);
       })
