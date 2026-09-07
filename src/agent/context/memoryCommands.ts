@@ -181,7 +181,7 @@ function formatEntryDetail(entry: MemoryEntry): string {
     ...(entry.decisions.length ? [`Decisions: ${entry.decisions.join("; ")}`] : []),
     ...(entry.paths.length ? [`Paths: ${entry.paths.join(", ")}`] : []),
     `Updated: ${entry.updatedAt}`,
-    `Recalled: ${String(entry.recallCount)}${entry.lastRecalledAt ? `; last ${entry.lastRecalledAt}` : ""}`,
+    `Accessed: ${String(entry.accessCount)}${entry.lastAccessedAt ? `; last ${entry.lastAccessedAt}` : ""}`,
     `Sources: ${entry.lineage.map((lineage) => lineage.source).join(", ")}`
   ].join("\n");
 }

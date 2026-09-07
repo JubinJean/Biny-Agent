@@ -1,8 +1,8 @@
 /**
  * 自动记忆召回：可选查询改写后进行向量余弦 topK；向量不可用时保持为空。
  *
- * SQLite/LocalMemory 负责事实源；向量索引只提供可丢弃的语义排名。向量不可用、指纹或
- * 内容哈希不匹配时自动召回 fail closed，绝不把词法猜测或其他项目内容带进上下文；手动
+ * SQLite/LocalMemory 负责事实源；向量索引只提供可丢弃的语义排名。向量不可用或指纹
+ * 不匹配时自动召回 fail closed，绝不把词法猜测或其他项目内容带进上下文；手动
  * `/memory search` 仍然保留词法 fallback。
  */
 import { createHash } from "node:crypto";
@@ -11,7 +11,7 @@ import path from "node:path";
 import type { EmbeddingModelRuntime, EmbeddingThresholds } from "../../llm/embedding/types.js";
 import { redactSecrets } from "../../utils/secrets.js";
 import { perfNow, recordPerfPhase } from "../../observability/perfTiming.js";
-import { memoryVectorContentHash, type MemoryVectorIndexStatus, type MemoryVectorSearchResult } from "./MemoryVectorIndex.js";
+import { type MemoryVectorIndexStatus, type MemoryVectorSearchResult } from "./MemoryVectorIndex.js";
 import type {
   MemoryEntriesResult,
   MemoryEntry,
@@ -28,7 +28,6 @@ const queryRewriteTimeoutMs = 3_000;
 const currentWorkspaceBoost = 1.1;
 const userMemoryBoost = 1.05;
 const defaultRecallMaxChars = 12_000;
-const maximumSemanticCandidates = 100;
 
 export interface AutomaticMemoryStore {
   listMemoryEntries(options?: { origins?: MemoryOriginSelector[]; includeArchived?: boolean; signal?: AbortSignal }): Promise<MemoryEntriesResult>;
@@ -82,10 +81,6 @@ export interface HybridMemoryRankingInput {
  */
 export function memoryEntryEmbeddingText(entry: MemoryEntry): string {
   return entry.summary;
-}
-
-export function memoryEntryContentHash(entry: MemoryEntry): string {
-  return memoryVectorContentHash(memoryEntryEmbeddingText(entry));
 }
 
 export class HybridMemoryRetriever {
@@ -147,7 +142,7 @@ export class HybridMemoryRetriever {
     }
 
     const semanticPerfStartedAt = perfNow();
-    const semantic = await this.semanticSearch(rewritten || safeQuery, snapshot.entries, options.signal);
+    const semantic = await this.semanticSearch(rewritten || safeQuery, snapshot.entries, options.limit, options.signal);
     recordPerfPhase("memory.semantic", semanticPerfStartedAt, { available: semantic.available });
     return rankHybridMemory({
       entries: snapshot.entries,
@@ -192,6 +187,7 @@ export class HybridMemoryRetriever {
   private async semanticSearch(
     query: string,
     entries: readonly MemoryEntry[],
+    limit: number,
     signal?: AbortSignal
   ): Promise<{ available: boolean; results: MemoryVectorSearchResult[] }> {
     if (!query) return { available: false, results: [] };
@@ -220,15 +216,15 @@ export class HybridMemoryRetriever {
       const thresholds = this.options.getThresholds(runtime.descriptor.fingerprint, runtime.descriptor.recommendedThresholds);
       const candidates = index.search(queryVector, {
         modelFingerprint: runtime.descriptor.fingerprint,
-        limit: Math.min(maximumSemanticCandidates, entries.length),
-        minimumSimilarity: -1,
+        limit: Math.min(limit, entries.length),
+        minimumSimilarity: Math.min(thresholds.currentWorkspace, thresholds.crossWorkspace),
         entryIds: new Set(entryById.keys())
       });
       return {
         available: true,
         results: candidates.filter((candidate) => {
           const entry = entryById.get(candidate.entryId);
-          if (!entry || candidate.contentHash !== memoryEntryContentHash(entry)) return false;
+          if (!entry) return false;
           const otherWorkspace = entry.origin.kind === "workspace" && entry.origin.workspaceId !== currentWorkspaceId;
           return candidate.similarity >= (otherWorkspace ? thresholds.crossWorkspace : thresholds.currentWorkspace);
         })
@@ -275,13 +271,15 @@ export function rankHybridMemory(input: HybridMemoryRankingInput, storeRevision 
     const entry = entries.get(id)!;
     return {
       entry,
-      score: score * originBoost(entry, input.currentWorkspaceId)
+      score: input.automatic === true ? score : score * originBoost(entry, input.currentWorkspaceId)
     };
   }).sort((left, right) => (
     right.score - left.score
-    || right.entry.importance - left.entry.importance
-    || right.entry.updatedAt.localeCompare(left.entry.updatedAt)
-    || left.entry.id.localeCompare(right.entry.id)
+    || (input.automatic === true
+      ? left.entry.id.localeCompare(right.entry.id)
+      : right.entry.importance - left.entry.importance
+        || right.entry.updatedAt.localeCompare(left.entry.updatedAt)
+        || left.entry.id.localeCompare(right.entry.id))
   ));
 
   const included = emptyOriginCounts();

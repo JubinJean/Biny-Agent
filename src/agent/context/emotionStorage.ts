@@ -8,7 +8,7 @@ import { promises as fs } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { globalAgentDir } from "../../config/paths.js";
-import { blendEmotion, type BlendedEmotion, type EmotionState } from "./emotionTypes.js";
+import { blendEmotion, DEFAULT_EMOTION_STATE, type BlendedEmotion, type EmotionState } from "./emotionTypes.js";
 
 const baseFileName = "base.md";
 const contextDirectoryName = "context";
@@ -32,7 +32,7 @@ export class EmotionStorage {
   }
 
   async readBase(): Promise<EmotionState | undefined> {
-    return await this.readState(path.join(this.root, baseFileName));
+    return await this.readState(path.join(this.root, baseFileName), DEFAULT_EMOTION_STATE.energy, true);
   }
 
   async writeBase(state: EmotionState): Promise<void> {
@@ -40,34 +40,53 @@ export class EmotionStorage {
   }
 
   async readContext(sessionId: string): Promise<EmotionState | undefined> {
-    return await this.readState(path.join(this.root, contextDirectoryName, `${safeFileName(sessionId)}.md`));
+    return await this.readState(path.join(this.root, contextDirectoryName, `${safeFileName(sessionId)}.md`), DEFAULT_EMOTION_STATE.energy, false);
   }
 
   async writeContext(sessionId: string, state: EmotionState): Promise<void> {
     await this.writeState(
       path.join(this.root, contextDirectoryName, `${safeFileName(sessionId)}.md`),
-      state
+      state,
+      false
     );
   }
 
   async readBlended(sessionId: string | undefined, fatigue: number): Promise<BlendedEmotion> {
-    const [base, context] = await Promise.all([
-      this.readBase(),
-      sessionId === undefined ? Promise.resolve(undefined) : this.readContext(sessionId)
-    ]);
+    const base = await this.readBase();
+    const context = sessionId === undefined
+      ? undefined
+      : await this.readState(
+        path.join(this.root, contextDirectoryName, `${safeFileName(sessionId)}.md`),
+        base?.energy ?? DEFAULT_EMOTION_STATE.energy,
+        false
+      );
     return blendEmotion(base, context, fatigue, this.now());
   }
 
-  private async readState(filePath: string): Promise<EmotionState | undefined> {
+  async listContexts(): Promise<Array<{ sessionId: string; state: EmotionState }>> {
     try {
-      return parseEmotionDocument(await fs.readFile(filePath, "utf8"));
+      const names = await fs.readdir(path.join(this.root, contextDirectoryName));
+      const contexts: Array<{ sessionId: string; state: EmotionState }> = [];
+      for (const name of names.filter((value) => value.endsWith(".md")).sort()) {
+        const state = await this.readState(path.join(this.root, contextDirectoryName, name), DEFAULT_EMOTION_STATE.energy, false);
+        if (state) contexts.push({ sessionId: name.slice(0, -3), state });
+      }
+      return contexts;
+    } catch {
+      return [];
+    }
+  }
+
+  private async readState(filePath: string, fallbackEnergy: number, requireEnergy: boolean): Promise<EmotionState | undefined> {
+    try {
+      return parseEmotionDocument(await fs.readFile(filePath, "utf8"), fallbackEnergy, requireEnergy);
     } catch {
       // 情绪是表达层的可选状态，缺失或损坏都应降级到默认情绪，不阻断主回合。
       return undefined;
     }
   }
 
-  private async writeState(filePath: string, state: EmotionState): Promise<void> {
+  private async writeState(filePath: string, state: EmotionState, includeEnergy = true): Promise<void> {
     const directory = path.dirname(filePath);
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });
     await fs.chmod(directory, 0o700);
@@ -75,7 +94,7 @@ export class EmotionStorage {
     let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
     try {
       handle = await fs.open(temporary, "w", 0o600);
-      await handle.writeFile(renderEmotionDocument(state), "utf8");
+      await handle.writeFile(renderEmotionDocument(state, includeEnergy), "utf8");
       await handle.sync();
       await handle.close();
       handle = undefined;
@@ -87,20 +106,20 @@ export class EmotionStorage {
   }
 }
 
-function renderEmotionDocument(state: EmotionState): string {
+function renderEmotionDocument(state: EmotionState, includeEnergy: boolean): string {
   const trigger = state.trigger?.trim();
   const frontmatter = [
     "---",
     `mood: ${state.mood.trim()}`,
     `valence: ${String(state.valence)}`,
-    `energy: ${String(state.energy)}`,
+    ...(includeEnergy ? [`energy: ${String(state.energy)}`] : []),
     `updated: ${state.updatedAt}`,
     "---"
   ].join("\n");
   return trigger ? `${frontmatter}\n\n${trigger}\n` : `${frontmatter}\n`;
 }
 
-function parseEmotionDocument(content: string): EmotionState | undefined {
+function parseEmotionDocument(content: string, fallbackEnergy: number, requireEnergy: boolean): EmotionState | undefined {
   const normalized = content.replace(/\r\n?/gu, "\n");
   const match = normalized.match(/^---\n([\s\S]*?)\n---(?:\n([\s\S]*))?$/u);
   if (!match) return undefined;
@@ -116,12 +135,13 @@ function parseEmotionDocument(content: string): EmotionState | undefined {
 
   const mood = fields.mood;
   const valence = Number(fields.valence);
-  const energy = Number(fields.energy);
+  const energy = fields.energy === undefined ? fallbackEnergy : Number(fields.energy);
   const updatedAt = fields.updated;
   if (
     !mood
     || Array.from(mood).length > 32
     || !Number.isFinite(valence)
+    || (requireEnergy && fields.energy === undefined)
     || !Number.isFinite(energy)
     || valence < 0
     || valence > 10

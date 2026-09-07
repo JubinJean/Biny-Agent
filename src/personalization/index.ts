@@ -4,7 +4,7 @@ import type { EmbeddingModelRef } from "../llm/embedding/types.js";
 export const embeddingModelRefSchema: z.ZodType<EmbeddingModelRef> = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("local"),
-    model: z.enum(["multilingual-e5-small", "paraphrase-multilingual-MiniLM-L12-v2"])
+    model: z.enum(["all-MiniLM-L6-v2", "bge-small-en-v1.5", "multilingual-e5-small", "paraphrase-multilingual-MiniLM-L12-v2"])
   }).strict(),
   z.object({
     kind: z.literal("provider"),
@@ -54,6 +54,8 @@ const rawMemoryPolicySchema = z.object({
   sleepTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/u).default("03:00"),
   archiveRetentionDays: z.number().int().min(1).max(3650).default(30),
   temporaryTtl: z.number().int().min(1).max(3650).default(30),
+  similarityMergeThreshold: z.number().min(0).max(1).default(0.95),
+  dedupAcrossUserIds: z.boolean().default(true),
   useLlm: z.boolean().default(true),
   llmMergeLow: z.number().min(0).max(1).default(0.75),
   llmBatchSize: z.number().int().min(1).max(100).default(20),
@@ -81,6 +83,8 @@ export const memoryPolicySchema = rawMemoryPolicySchema.transform((policy) => ({
   sleepTime: "03:00",
   archiveRetentionDays: 30,
   temporaryTtl: 30,
+  similarityMergeThreshold: 0.95,
+  dedupAcrossUserIds: true,
   useLlm: true,
   llmMergeLow: 0.75,
   llmBatchSize: 20

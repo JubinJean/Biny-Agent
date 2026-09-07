@@ -53,7 +53,7 @@ async function testRuntimeHostUpdatesEmotion(): Promise<void> {
     }, {
       mood: "专注",
       valence: 8,
-      energy: 6,
+      energy: 7,
       trigger: "完成一次 Host smoke"
     });
 

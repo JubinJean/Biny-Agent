@@ -18,6 +18,7 @@ import {
   memoryPolicySchema,
   type MemoryPolicy
 } from "../personalization/index.js";
+import { defaultHeartbeatConfig, type HeartbeatConfig } from "../agent/context/heartbeat.js";
 import { GLOBAL_CONFIG_FORMAT, GLOBAL_CONFIG_VERSION } from "./migrations.js";
 
 const agentSchema = z.object({
@@ -112,6 +113,40 @@ export const emotionPolicySchema = z.object({
 }).strict().default({ enabled: true, allowModelUpdate: true });
 
 export type EmotionPolicy = z.infer<typeof emotionPolicySchema>;
+
+const crystalThresholdSchema = z.object({
+  count: z.number().int().min(2).max(200),
+  turns: z.number().int().min(2).max(200),
+  spread: z.number().int().min(1).max(50)
+}).strict();
+
+export const crystalSettingsSchema = z.object({
+  passiveEnabled: z.boolean().default(true),
+  semanticScanEnabled: z.boolean().default(true),
+  contour: crystalThresholdSchema.default({ count: 4, turns: 3, spread: 2 }),
+  nucleus: crystalThresholdSchema.default({ count: 8, turns: 5, spread: 2 }),
+  dormantDays: z.number().int().min(1).max(3_650).default(14)
+}).strict().default({
+  passiveEnabled: true,
+  semanticScanEnabled: true,
+  contour: { count: 4, turns: 3, spread: 2 },
+  nucleus: { count: 8, turns: 5, spread: 2 },
+  dormantDays: 14
+});
+
+export type CrystalSettings = z.infer<typeof crystalSettingsSchema>;
+
+const heartbeatSchema = z.object({
+  enabled: z.boolean().default(defaultHeartbeatConfig.enabled),
+  intervalMinutes: z.number().int().min(1).max(1_440).default(defaultHeartbeatConfig.intervalMinutes),
+  activeHoursStart: z.number().int().min(0).max(23).default(defaultHeartbeatConfig.activeHoursStart),
+  activeHoursEnd: z.number().int().min(0).max(23).default(defaultHeartbeatConfig.activeHoursEnd),
+  baseEmotionRefreshHours: z.number().int().min(1).max(168).default(defaultHeartbeatConfig.baseEmotionRefreshHours),
+  timezone: z.string().trim().min(1).max(100).optional(),
+  prompt: z.string().trim().min(1).max(4_000).optional()
+}).strict().default(defaultHeartbeatConfig);
+
+export type HeartbeatSettings = z.infer<typeof heartbeatSchema>;
 
 const contextSchema = z.object({
   // 不配置时按当前模型的上下文窗口自动推导；配置了就作为额外上限。
@@ -591,6 +626,7 @@ const modelAliasSchema = z.object({
 const canonicalConfigSchema = z.object({
   format: z.literal(GLOBAL_CONFIG_FORMAT),
   configVersion: z.literal(GLOBAL_CONFIG_VERSION),
+  needsEmbeddingRebuild: z.boolean().default(false),
   defaultModel: z.string().min(1),
   providers: z.record(providerConfigSchema),
   /** 凭据正文保存在 Keychain；这里仅保存并发 CAS 使用的非机密版本 nonce。 */
@@ -603,6 +639,8 @@ const canonicalConfigSchema = z.object({
     ignore: z.array(z.string())
   }),
   activity: activitySettingsSchema,
+  crystal: crystalSettingsSchema,
+  heartbeat: heartbeatSchema,
   context: contextSchema,
   chat: chatParamsSchema,
   diagnostics: diagnosticsSchema,
@@ -774,6 +812,7 @@ const defaultWorkspaceIgnore = [
 export const defaultConfig: AgentConfig = {
   format: GLOBAL_CONFIG_FORMAT,
   configVersion: GLOBAL_CONFIG_VERSION,
+  needsEmbeddingRebuild: false,
   defaultModel: "deepseek-v4-flash",
   providers: {
     deepseek: {
@@ -824,6 +863,14 @@ export const defaultConfig: AgentConfig = {
     ignore: defaultWorkspaceIgnore
   },
   activity: defaultActivitySettings,
+  crystal: {
+    passiveEnabled: true,
+    semanticScanEnabled: true,
+    contour: { count: 4, turns: 3, spread: 2 },
+    nucleus: { count: 8, turns: 5, spread: 2 },
+    dormantDays: 14
+  },
+  heartbeat: defaultHeartbeatConfig satisfies HeartbeatConfig,
   chat: { temperature: undefined, maxOutputTokens: undefined, defaultToolSelection: "auto", defaultSkillSelection: "auto" },
   checkpoints: { enabled: true },
   sandbox: { mode: "off", allowNetwork: true },
@@ -859,6 +906,8 @@ export const defaultConfig: AgentConfig = {
       sleepTime: "03:00",
       archiveRetentionDays: 30,
       temporaryTtl: 30,
+      similarityMergeThreshold: 0.95,
+      dedupAcrossUserIds: true,
       useLlm: true,
       llmMergeLow: 0.75,
       llmBatchSize: 20

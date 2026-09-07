@@ -44,9 +44,23 @@ export function sanitizeMemoryEntryInput(input: MemoryEntryInput): MemoryEntryIn
     throw new Error("Invalid memory audience: " + String(input.audience));
   }
   if (!isMemoryKind(input.kind)) throw new Error("Invalid memory kind: " + String(input.kind));
+  if (input.tags !== undefined && (!Array.isArray(input.tags) || input.tags.some((tag) => typeof tag !== "string"))) {
+    throw new Error("Memory tags must be strings.");
+  }
+  if (input.source !== undefined && typeof input.source !== "string" || input.rationale !== undefined && typeof input.rationale !== "string") {
+    throw new Error("Memory source and rationale must be strings.");
+  }
+  if (input.accessCount !== undefined && (!Number.isSafeInteger(input.accessCount) || input.accessCount < 0)) {
+    throw new Error("Memory accessCount must be a non-negative safe integer.");
+  }
   const lineage = (Array.isArray(input.lineage) ? input.lineage : [input.lineage]).map(sanitizeMemoryLineage);
   if (!lineage.length) throw new Error("Memory entry lineage must not be empty.");
+  const metadata: unknown = input.metadata === undefined ? undefined : JSON.parse(JSON.stringify(input.metadata));
+  if (metadata !== undefined && (metadata === null || typeof metadata !== "object" || Array.isArray(metadata))) {
+    throw new Error("Memory metadata must be a JSON object.");
+  }
   const sanitized: MemoryEntryInput = {
+    metadata: metadata as Record<string, unknown> | undefined,
     origin: input.origin === undefined ? undefined : sanitizeMemoryOrigin(input.origin),
     audience: input.audience,
     kind: input.kind,
@@ -56,7 +70,16 @@ export function sanitizeMemoryEntryInput(input: MemoryEntryInput): MemoryEntryIn
     decisions: sanitizeStringArray(input.decisions, 8, 500),
     paths: sanitizeStringArray(input.paths, 16, 500),
     keywords: sanitizeStringArray(input.keywords, 12, 120).map((value) => value.toLowerCase()),
+    source: input.source ?? "manual",
+    tags: input.tags?.slice() ?? [],
+    rationale: input.rationale,
+    activitySource: input.activitySource,
+    activitySessionId: input.activitySessionId,
+    threadId: sanitizeOptionalIdentifier(input.threadId),
+    messageId: sanitizeOptionalIdentifier(input.messageId),
+    userId: sanitizeOptionalIdentifier(input.userId),
     importance: normalizeImportance(input.importance),
+    accessCount: input.accessCount,
     durability: normalizeMemoryDurability(input.durability),
     expiresAt: sanitizeOptionalTime(input.expiresAt),
     archivedAt: input.archivedAt,
@@ -70,7 +93,7 @@ export function sanitizeMemoryEntryInput(input: MemoryEntryInput): MemoryEntryIn
 
 /** 写入 SQLite 前再次做边界校验；模型输出也不能绕过格式和长度约束。 */
 export function createStoredMemoryEntry(input: MemoryEntryInput, fields: StoredEntryFields): MemoryEntry {
-  const safe = sanitizeMemoryEntryInput(sanitizeMemoryEntryInput(input));
+  const safe = sanitizeMemoryEntryInput(input);
   if (!safe.origin) throw new Error("Stored memory entry requires a resolved origin.");
   return {
     id: sanitizeIdentifier(fields.id),
@@ -83,15 +106,24 @@ export function createStoredMemoryEntry(input: MemoryEntryInput, fields: StoredE
     decisions: safe.decisions ?? [],
     paths: safe.paths ?? [],
     keywords: safe.keywords ?? [],
-    importance: safe.importance ?? 3,
+    source: safe.source ?? "manual",
+    tags: safe.tags ?? [],
+    rationale: safe.rationale,
+    metadata: safe.metadata,
+    activitySource: safe.activitySource,
+    activitySessionId: safe.activitySessionId,
+    threadId: safe.threadId,
+    messageId: safe.messageId,
+    userId: safe.userId,
+    importance: safe.importance ?? 0.5,
     createdAt: assertIsoTime(fields.createdAt),
     updatedAt: assertIsoTime(fields.updatedAt),
     revision: Math.max(0, Math.trunc(fields.revision)),
     lineage: Array.isArray(safe.lineage) ? safe.lineage : [safe.lineage],
     durability: safe.durability ?? fields.durability ?? "permanent",
     expiresAt: safe.expiresAt ?? sanitizeOptionalTime(fields.expiresAt),
-    recallCount: 0,
-    lastRecalledAt: undefined,
+    accessCount: safe.accessCount ?? 0,
+    lastAccessedAt: undefined,
     archivedAt: typeof safe.archivedAt === "string" ? assertIsoTime(safe.archivedAt) : undefined,
     archivedReason: isArchiveReason(safe.archivedReason) ? safe.archivedReason : undefined,
     mergedInto: typeof safe.mergedInto === "string" ? sanitizeOptionalIdentifier(safe.mergedInto) : undefined,
@@ -162,8 +194,8 @@ export function normalizeMemoryTopic(value: string): string {
 }
 
 export function normalizeImportance(value: number | undefined): number {
-  if (value === undefined || !Number.isFinite(value)) return 3;
-  return Math.min(5, Math.max(1, Math.round(value)));
+  if (value === undefined || !Number.isFinite(value)) return 0.5;
+  return value;
 }
 
 export function sanitizeMemoryLineage(lineage: MemoryLineage): MemoryLineage {
@@ -237,9 +269,9 @@ function sanitizeOptionalLineageValue(value: string | undefined, maxChars: numbe
 }
 
 function sanitizeIdentifier(value: string): string {
-  const sanitized = value.toLowerCase().replace(/[^a-z0-9-]/g, "").slice(0, 128);
-  if (sanitized.length < 8) throw new Error("Memory entry id must contain at least 8 safe characters.");
-  return sanitized;
+  // 标识是来源关联键，大小写、下划线和长度不能被内容清洗规则改写。
+  if (!/^[A-Za-z0-9_-]{1,128}$/u.test(value)) throw new Error("Memory entry id contains invalid characters or length.");
+  return value;
 }
 
 function assertIsoTime(value: string): string {

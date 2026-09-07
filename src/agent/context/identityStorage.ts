@@ -74,10 +74,12 @@ const documentStateSchema = {
 
 export class IdentityStorage {
   private readonly root: string;
+  private readonly legacyRoot: string;
   private readonly now: () => Date;
 
   constructor(options: IdentityStorageOptions = {}) {
-    this.root = path.join(path.resolve(options.agentDir ?? globalAgentDir()), "identity");
+    this.legacyRoot = path.resolve(options.agentDir ?? globalAgentDir());
+    this.root = path.join(this.legacyRoot, "identity");
     this.now = options.now ?? (() => new Date());
   }
 
@@ -90,7 +92,7 @@ export class IdentityStorage {
   }
 
   async overview(): Promise<IdentityOverview> {
-    if (!await this.hasRoot()) {
+    if (!await this.hasRoot() && !await this.hasLegacyDocument()) {
       return { revision: 0, documents: {} };
     }
     const state = await this.readState();
@@ -131,6 +133,30 @@ export class IdentityStorage {
     });
   }
 
+  async appendUserFact(fact: string, section = "## Learned"): Promise<IdentityOverview> {
+    const normalizedFact = fact.replace(/\r\n?/gu, " ").replace(/\s+/gu, " ").trim();
+    if (!normalizedFact) throw new Error("User profile fact cannot be empty.");
+    return await this.withLock(async () => {
+      const state = await this.readState();
+      const existing = await this.readDocument("user", state);
+      const content = appendSection(existing?.content ?? "", section, normalizedFact);
+      const timestamp = this.now().toISOString();
+      const nextRevision = state.revision + 1;
+      const next = identityDocument("user", content, nextRevision, timestamp);
+      await this.writeDocument(next);
+      await this.writeHistory(next);
+      state.documents.user = {
+        revision: next.revision,
+        updatedAt: next.updatedAt,
+        contentHash: next.contentHash
+      };
+      state.revision = nextRevision;
+      state.updatedAt = timestamp;
+      await this.writeState(state);
+      return await this.overviewFromState(state);
+    });
+  }
+
   private async overviewFromState(state: IdentityState): Promise<IdentityOverview> {
     const documents: Partial<Record<IdentityDocumentKind, IdentityDocument>> = {};
     for (const kind of identityDocumentKinds) {
@@ -144,7 +170,8 @@ export class IdentityStorage {
   }
 
   private async readDocument(kind: IdentityDocumentKind, state: IdentityState): Promise<IdentityDocument | undefined> {
-    const content = await readOptional(path.join(this.root, identityDocumentFileNames[kind]));
+    const content = await readOptional(path.join(this.legacyRoot, identityDocumentFileNames[kind]))
+      ?? await readOptional(path.join(this.root, identityDocumentFileNames[kind]));
     if (content === undefined) return undefined;
     const metadata = state.documents[kind];
     const normalized = normalizeIdentityContent(content, kind);
@@ -157,7 +184,9 @@ export class IdentityStorage {
   }
 
   private async writeDocument(document: IdentityDocument): Promise<void> {
-    await this.writeFile(path.join(this.root, identityDocumentFileNames[document.kind]), document.content.endsWith("\n") ? document.content : `${document.content}\n`);
+    const content = document.content.endsWith("\n") ? document.content : `${document.content}\n`;
+    await this.writeFile(path.join(this.root, identityDocumentFileNames[document.kind]), content);
+    if (this.legacyRoot !== this.root) await this.writeFile(path.join(this.legacyRoot, identityDocumentFileNames[document.kind]), content);
   }
 
   private async writeHistory(document: IdentityDocument): Promise<void> {
@@ -224,6 +253,18 @@ export class IdentityStorage {
     }
   }
 
+  private async hasLegacyDocument(): Promise<boolean> {
+    for (const kind of identityDocumentKinds) {
+      try {
+        const stat = await fs.lstat(path.join(this.legacyRoot, identityDocumentFileNames[kind]));
+        if (stat.isFile() && !stat.isSymbolicLink()) return true;
+      } catch (error) {
+        if (!isNotFound(error)) throw error;
+      }
+    }
+    return false;
+  }
+
   private async ensureRoot(): Promise<void> {
     await fs.mkdir(this.root, { recursive: true, mode: 0o700 });
     await fs.chmod(this.root, 0o700);
@@ -259,6 +300,20 @@ export class IdentityStorage {
 
 function emptyState(): IdentityState {
   return { version: 1, revision: 0, updatedAt: new Date(0).toISOString(), documents: {} };
+}
+
+function appendSection(existing: string, sectionTitle: string, fact: string): string {
+  const heading = sectionTitle.trim().startsWith("## ") ? sectionTitle.trim() : `## ${sectionTitle.trim()}`;
+  const root = existing.trim() || "# User";
+  if (root.split("\n").some((line) => line.trim() === `- ${fact}`)) return root;
+  const lines = root.split("\n");
+  const start = lines.findIndex((line) => line.trim() === heading);
+  if (start < 0) return `${root}\n\n${heading}\n\n- ${fact}`;
+  let end = start + 1;
+  while (end < lines.length && !/^#{1,2} /u.test(lines[end] ?? "")) end += 1;
+  const body = lines.slice(start + 1, end).join("\n").trim();
+  const nextBody = body ? `${body}\n- ${fact}` : `- ${fact}`;
+  return [...lines.slice(0, start), heading, "", nextBody, ...lines.slice(end)].join("\n").trim();
 }
 
 function assertExpectedRevision(expected: number, actual: number): void {

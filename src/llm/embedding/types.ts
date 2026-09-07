@@ -7,6 +7,8 @@
 export type EmbeddingInputType = "query" | "passage";
 
 export type LocalEmbeddingModelId =
+  | "all-MiniLM-L6-v2"
+  | "bge-small-en-v1.5"
   | "multilingual-e5-small"
   | "paraphrase-multilingual-MiniLM-L12-v2";
 

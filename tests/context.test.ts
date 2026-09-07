@@ -6,8 +6,13 @@ import os from "node:os";
 import path from "node:path";
 import type { AgentMessage, AgentModel, ModelStreamContext, ModelStreamEvent } from "../src/agent/core/types.js";
 import { AgentSession } from "../src/agent/AgentSession.js";
+import { LocalEmbeddingManager } from "../src/llm/embedding/LocalEmbeddingRuntime.js";
 import { ContextMemory, estimateMessageTokens } from "../src/agent/context/ContextMemory.js";
 import { LocalMemory, redactSecrets } from "../src/agent/context/LocalMemory.js";
+import { sessionMessageMetadata } from "../src/session/messageTree.js";
+import { sessionEventsToTranscript } from "../src/tui/sessionTranscript.js";
+import type { HybridMemoryRetriever } from "../src/agent/context/HybridMemoryRetriever.js";
+import { CrystalStorage } from "../src/agent/context/crystalStorage.js";
 import { memoryDatabaseFileName } from "../src/agent/context/memoryStorage.js";
 import { WorkspaceContext } from "../src/agent/context/WorkspaceContext.js";
 import { cloneAgentMessages, messageReasoning, messageText } from "../src/agent/modelMessages.js";
@@ -47,10 +52,9 @@ class ContextTestModel {
     this.requests.push(cloneAgentMessages(messages));
     this.systemPrompts.push(systemPrompt);
     const prompt = messageText(messages.at(-1) ?? { role: "user", content: "" });
-    if (prompt.includes("update durable memory")) {
+    if (prompt.includes("Extract memories from this conversation:")) {
       this.memoryExtractionCalls += 1;
-      return JSON.stringify({
-        add: [{
+      return JSON.stringify([{ operation: "add",
           audience: "workspace",
           kind: "workflow",
           topic: "workflows",
@@ -59,9 +63,7 @@ class ContextTestModel {
           decisions: ["Use deterministic paths instead of vector retrieval."],
           paths: ["src/agent/context/ContextMemory.ts"],
           keywords: ["context", "refresh", "workflow"]
-        }],
-        delete: []
-      });
+         }]);
     }
     if (prompt.includes("durable context checkpoint")) {
       return [
@@ -123,12 +125,18 @@ async function main(): Promise<void> {
     await testAutomaticContextRejectsExternalSymlinks();
     await testAutomaticContextSupportsSymlinkedWorkspaceRoot();
     await testBudgetAndCompaction();
+    await testRecallCountsBeforeBudget();
     await testMidTurnToolResultPruning();
     await testActiveRunCompactionPreservesToolBatches();
     await testIncrementalSplitTurnCompaction();
     await testContextPreparationAbortStopsAutoCompaction();
     await testRestoreWithoutPersistedBudgetUsesHistoryEstimate();
     await testSessionReplayAndAgentResume();
+    await testCrystalHistoricalMaterial();
+    await testCrystalThreadBackfill();
+    await testCrystalSemanticDotProduct();
+    await testCrystalDormancyWithoutNewAnchors();
+    await testCrystalFailedAndCancelledTurns();
     await testCheckpointIsResumeTruthSource();
     await testLegacyAgentStateIsIgnored();
     await testFlatSessionMigration();
@@ -140,9 +148,11 @@ async function main(): Promise<void> {
     await testFailedCurrentSessionResumeKeepsRecorderUsable();
     await testTruncatedSessionTailAndDanglingToolRecovery();
     await testTurnStatusPersistence();
+    await testMessageMetadataPersistence();
     await testSessionAndToolDisplayRedaction();
     await testMemoryExactDurableContentAndWriter();
     await testMemoryLifecycleAndUsagePersistence();
+    await testMemoryMetadataDetailsFromCompletedExtraction();
     await testAutomaticMemoryRecallRequiresEmbedding();
     await testMemoryStorageBoundaries();
     await testMemoryEntryManagementAndCjkSearch();
@@ -565,6 +575,45 @@ function toolResultValue(message: AgentMessage | undefined): unknown {
   return message.content.find((entry) => entry.type === "text")?.text;
 }
 
+async function testRecallCountsBeforeBudget(): Promise<void> {
+  await withTempWorkspace(async (workspaceRoot) => {
+    const previousRoot = process.env[BINY_AGENT_DIR_ENV];
+    process.env[BINY_AGENT_DIR_ENV] = path.join(workspaceRoot, "agent-data");
+    const local = new LocalMemory(workspaceRoot, () => new ContextTestModel().model);
+    try {
+      const written = await local.writeEntry({
+        audience: "workspace", kind: "fact", topic: "release", title: "Release",
+        summary: "Release verification requires a complete test run. ".repeat(30),
+        lineage: { source: "explicit", externalContext: false }
+      }, { expectedRevision: (await local.getOverview()).storeRevision });
+      assert.ok(written.entry);
+      const result = await local.search("Release verification", [], { origins: ["current_workspace"], limit: 1 });
+      let calls = 0;
+      const retriever = {
+        retrieve: async () => result,
+        recordRecallUsage: async (ids: string[]) => {
+          calls += 1;
+          await local.recordRecallUsage(ids);
+        }
+      } as unknown as HybridMemoryRetriever;
+      const context = new ContextMemory(
+        () => new ContextTestModel().model, new WorkspaceContext(workspaceRoot, [], 32 * 1024),
+        local, 120, 32 * 1024, undefined, undefined, {}, undefined, undefined, retriever
+      );
+      await context.prepareTurn("current task ".repeat(20), "system rule ".repeat(30));
+      assert.equal(calls, 1);
+      assert.equal((await local.listMemoryEntries({ origins: ["current_workspace"] })).entries.find((entry) => entry.id === written.entry!.id)?.accessCount, 1);
+      assert.notEqual((await context.status()).budget.components?.find((item) => item.id === "stable memory")?.disposition, "included");
+      await context.prepareTurn("no memory", "system", undefined, [], false);
+      assert.equal(calls, 1);
+    } finally {
+      local.close();
+      if (previousRoot === undefined) delete process.env[BINY_AGENT_DIR_ENV];
+      else process.env[BINY_AGENT_DIR_ENV] = previousRoot;
+    }
+  });
+}
+
 async function testBudgetAndCompaction(): Promise<void> {
   await withTempWorkspace(async (workspaceRoot) => {
     const provider = new ContextTestModel();
@@ -916,6 +965,47 @@ async function testTruncatedSessionTailAndDanglingToolRecovery(): Promise<void> 
     const summaries = await listSessionSummaries(workspaceRoot);
     assert.equal(summaries.some((summary) => summary.fileName === path.basename(healthyListFile)), true);
     assert.equal(summaries.some((summary) => summary.fileName === path.basename(corruptListFile)), false);
+  });
+}
+
+async function testMessageMetadataPersistence(): Promise<void> {
+  await withTempWorkspace(async (workspaceRoot) => {
+    await ensureAgentDirs(workspaceRoot);
+    const recorder = new SessionRecorder(workspaceRoot, "metadata-persistence");
+    const user = recorder.record({ type: "user_message", content: "Remember my preference." });
+    const answer = recorder.record({ type: "agent_message", metadata: { initial: "preserved", usage: { inputTokens: 3, details: { previous: true } }, nested: { previous: true }, apiKey: "not-a-real-metadata-secret" }, message: { role: "assistant", content: [{ type: "text", text: "Noted." }] } });
+    assert.ok("messageId" in answer && answer.messageId);
+    assert.ok("messageId" in user && user.messageId);
+    recorder.record({ type: "message_metadata", messageId: answer.messageId, metadata: { memoryExtracted: true, memoryExtractedAt: "2026-09-06T00:00:00.000Z", retained: "existing" } });
+    recorder.record({ type: "message_metadata", messageId: answer.messageId, metadata: { updated: true, usage: { outputTokens: 4, details: { current: true } }, nested: { current: true } } });
+    recorder.record({ type: "message_metadata", messageId: "missing-message", metadata: { memoryExtracted: true } });
+    await recorder.close();
+    const events = await readSessionEvents(recorder.filePath);
+    assert.equal((await fs.readFile(recorder.filePath, "utf8")).includes("not-a-real-metadata-secret"), false);
+    assert.deepEqual(sessionMessageMetadata(events, answer.messageId), {
+      initial: "preserved", apiKey: "[redacted]", usage: { inputTokens: 3, outputTokens: 4, details: { current: true } }, nested: { current: true },
+      memoryExtracted: true, memoryExtractedAt: "2026-09-06T00:00:00.000Z", retained: "existing", updated: true
+    });
+    assert.deepEqual(sessionMessageMetadata(events, user.messageId), {});
+    assert.deepEqual(sessionMessageMetadata(events, "missing-message"), {});
+    assert.deepEqual(sessionEventsToConversation(events).map((message) => message.role), ["user", "assistant"]);
+    assert.deepEqual(sessionEventsToTranscript(events), sessionEventsToTranscript(events.filter((event) => event.type !== "message_metadata")));
+    assert.deepEqual(sessionMessageMetadata([
+      { type: "message_metadata", messageId: "future-message", metadata: { memoryExtracted: true } },
+      { type: "user_message", messageId: "future-message", content: "A later message" }
+    ], "future-message"), {});
+    const reopened = new SessionRecorder(workspaceRoot, recorder.sessionId);
+    assert.equal(sessionMessageMetadata(parseSessionEvents(reopened.readText()), answer.messageId).memoryExtracted, true);
+    await reopened.close();
+    assert.throws(() => parseSessionEvents(JSON.stringify({ type: "message_metadata", messageId: "x", metadata: [] })), /Invalid session event/u);
+    assert.throws(() => parseSessionEvents(JSON.stringify({ type: "user_message", messageId: "x", content: "test", metadata: [] })), /Invalid session event/u);
+    for (const value of [null, false, 0, "", "xy", [5, 6]]) {
+      const projected = sessionMessageMetadata([
+        { type: "assistant_message", messageId: "usage-test", content: "Answer", metadata: { usage: { inputTokens: 7 } } },
+        { type: "message_metadata", messageId: "usage-test", metadata: { usage: value } }
+      ], "usage-test");
+      assert.deepEqual(projected.usage, { inputTokens: 7, ...Object(value || {}) });
+    }
   });
 }
 
@@ -1591,10 +1681,34 @@ async function testMemoryLifecycleAndUsagePersistence(): Promise<void> {
       recorder
     });
     await agent.initialize();
+    const extractionMessageIds: Array<string | undefined> = [];
+    const localMemory = agent.getLocalMemory();
+    const summarize = localMemory.summarizeAndStoreMemories.bind(localMemory);
+    localMemory.summarizeAndStoreMemories = async (messages, options) => {
+      extractionMessageIds.push(options.messageId);
+      return summarize(messages, options);
+    };
     await agent.runTask(`Remember this successful context workflow: ${"grounded details ".repeat(20)}`);
     await waitForMemoryExtraction(provider, 1);
+    await agent.runTask("Remember that this workflow also applies to the next completed answer.");
+    await waitForMemoryExtraction(provider, 2);
     const overview = await agent.getLocalMemory().getOverview();
     await agent.close();
+    const recordedEvents = await readSessionEvents(recorder.filePath);
+    const assistantIds = recordedEvents.flatMap((event) => event.type === "assistant_message" && event.messageId ? [event.messageId] : []);
+    const userIds = recordedEvents.flatMap((event) => event.type === "user_message" && event.messageId ? [event.messageId] : []);
+    assert.equal(assistantIds.length, 2);
+    assert.equal(new Set(assistantIds).size, 2);
+    assert.deepEqual(extractionMessageIds, assistantIds);
+    for (const id of assistantIds) {
+      const metadata = sessionMessageMetadata(recordedEvents, id);
+      assert.equal(metadata.memoryExtracted, true);
+      assert.equal(typeof metadata.memoryExtractedAt, "string");
+      assert.ok(Number.isFinite(Date.parse(String(metadata.memoryExtractedAt))));
+      assert.equal(metadata.createdMemories, undefined);
+      assert.equal(metadata.deletedMemories, undefined);
+    }
+    assert.equal(extractionMessageIds.some((id) => id !== undefined && userIds.includes(id)), false);
     // 有信息量的成功回合会直接尝试写入 active memory，不再经过候选队列；
     // 但语义能力不可用时，按自动记忆的 fail-closed 规则跳过 ADD。
     assert.equal(overview.origins.currentWorkspace, 0);
@@ -1614,6 +1728,55 @@ async function testMemoryLifecycleAndUsagePersistence(): Promise<void> {
     const afterShortTurn = await shortAgent.getLocalMemory().getOverview();
     await shortAgent.close();
     assert.equal(afterShortTurn.origins.currentWorkspace, overview.origins.currentWorkspace);
+  });
+}
+
+async function testMemoryMetadataDetailsFromCompletedExtraction(): Promise<void> {
+  await withTempWorkspace(async (workspaceRoot) => {
+    const config = testConfig();
+    config.context.memory.enabled = true;
+    config.context.memory.generateMemories = true;
+    await ensureAgentDirs(workspaceRoot);
+    const recorder = new SessionRecorder(workspaceRoot, "memory-details");
+    const agent = new AgentSession({ workspaceRoot, config, model: new ContextTestModel().model, toolRegistry: new ToolRegistry(), permissionManager: new PermissionManager({ ...config.permission, source: "test" }), recorder });
+    await agent.initialize();
+    const changes = {
+      created: [{ id: "created-memory", content: "The user prefers concise updates." }],
+      deleted: [{ id: "deleted-memory", content: "The previous project deadline is obsolete." }]
+    };
+    const memory = agent.getLocalMemory();
+    const written = await memory.writeEntry({
+      audience: "workspace",
+      kind: "fact",
+      topic: "memory",
+      title: "Stored extraction fixture",
+      summary: changes.created[0]!.content,
+      lineage: { source: "explicit", externalContext: false }
+    }, { expectedRevision: (await memory.getOverview()).storeRevision });
+    assert.ok(written.entry);
+    const termInputs: string[] = [];
+    agent.getCrystalService().extract = async (text) => {
+      termInputs.push(text);
+      return [];
+    };
+    let callbackFinished = false;
+    // 用已落库条目隔离验证抽取完成回调，不依赖下载向量模型。
+    memory.summarizeAndStoreMemories = async (_messages, options) => {
+      await options.onMemoryWritten?.(written.entry!);
+      callbackFinished = true;
+      return changes;
+    };
+    await agent.runTask("Update the remembered preferences.");
+    await agent.close();
+    assert.equal(callbackFinished, true);
+    assert.deepEqual(termInputs, ["Update the remembered preferences."]);
+    const events = await readSessionEvents(recorder.filePath);
+    const assistant = events.find((event) => event.type === "assistant_message" && event.messageId !== undefined);
+    assert.ok(assistant?.type === "assistant_message" && assistant.messageId);
+    const metadata = sessionMessageMetadata(events, assistant.messageId);
+    assert.equal(metadata.memoryExtracted, true);
+    assert.deepEqual(metadata.createdMemories, changes.created.map((entry) => ({ ...entry, type: "created" })));
+    assert.deepEqual(metadata.deletedMemories, changes.deleted.map((entry) => ({ ...entry, type: "created" })));
   });
 }
 
@@ -1814,6 +1977,309 @@ function hasToolCall(message: AgentMessage | undefined, toolCallId: string): boo
 
 function hasToolResult(message: AgentMessage | undefined, toolCallId: string): boolean {
   return message?.role === "toolResult" && message.toolCallId === toolCallId;
+}
+
+async function testCrystalFailedAndCancelledTurns(): Promise<void> {
+  for (const status of ["failed", "cancelled"] as const) {
+    await withTempWorkspace(async (workspaceRoot) => {
+      await ensureAgentDirs(workspaceRoot);
+      const config = testConfig();
+      config.context.memory.useMemories = false;
+      config.context.memory.generateMemories = false;
+      const model: AgentModel = { provider: "test", modelId: "terminal-crystal", stream: async () => { throw new Error("Terminal fixture model failure"); } };
+      const agent = new AgentSession({ workspaceRoot, config, model, toolRegistry: new ToolRegistry(), permissionManager: new PermissionManager({ ...config.permission, source: "test" }), recorder: new SessionRecorder(workspaceRoot) });
+      await agent.initialize();
+      const seen: string[] = [];
+      agent.getCrystalService().extract = async (text) => { seen.push(text); return []; };
+      const controller = new AbortController();
+      if (status === "cancelled") controller.abort();
+      const input = `Crystal topic from ${status} turn`;
+      try {
+        const outcome = await agent.runTask(input, { abortSignal: controller.signal });
+        assert.equal(outcome.status, status);
+      } finally {
+        await agent.close();
+      }
+      assert.deepEqual(seen, [input]);
+    });
+  }
+}
+
+async function testCrystalSemanticDotProduct(): Promise<void> {
+  await withTempWorkspace(async (workspaceRoot) => {
+    await ensureAgentDirs(workspaceRoot);
+    const config = testConfig();
+    config.context.memory.useMemories = false;
+    config.context.memory.generateMemories = false;
+    config.crystal.semanticScanEnabled = true;
+    const agent = new AgentSession({ workspaceRoot, config, model: new ContextTestModel().model, recorder: new SessionRecorder(workspaceRoot), toolRegistry: new ToolRegistry(), permissionManager: new PermissionManager({ ...config.permission, source: "test" }) });
+    await agent.initialize();
+    const ready = LocalEmbeddingManager.prototype.isReady;
+    const createRuntime = LocalEmbeddingManager.prototype.createRuntime;
+    let vector = new Float32Array([0.5, 0]);
+    const inputs: string[][] = [];
+    const models: string[] = [];
+    let failEmbedding = false;
+    let failedText: string | undefined;
+    LocalEmbeddingManager.prototype.isReady = () => true;
+    LocalEmbeddingManager.prototype.createRuntime = async (model) => {
+      models.push(model);
+      return {
+      fingerprint: "crystal-dot-test",
+      descriptor: { ref: { kind: "local", model: "all-MiniLM-L6-v2" }, fingerprint: "crystal-dot-test", displayName: "test", recommendedThresholds: { currentWorkspace: 0, crossWorkspace: 0 }, source: "local" },
+      embed: async (request) => {
+        inputs.push([...request.texts]);
+        if (failEmbedding || request.texts[0] === failedText) throw new Error("Embedding fixture failure");
+        return { embeddings: [request.texts[0] === "Unrelated input text" ? vector : new Float32Array([1, 0])], dimensions: 2, fingerprint: "crystal-dot-test", model: { kind: "local", model: "all-MiniLM-L6-v2" } };
+      }
+      };
+    };
+    try {
+      const crystals = agent.getCrystalService();
+      const seed = crystals.createSeed("Target seed");
+      const orderedSeeds = crystals.storage.listCrystals()
+        .filter((item) => item.origin === "seed" && item.stage === "candidate" && !item.dormant && item.slot !== undefined)
+        .sort((left, right) => left.slot! - right.slot!);
+      const low = await crystals.processAnchor({ threadId: "dot", anchorId: "dot-low", day: "2026-09-06", text: "Unrelated input text", terms: [] });
+      assert.equal(low.materialsAdded, 0);
+      assert.deepEqual(inputs.map((texts) => texts[0]), ["Unrelated input text", ...orderedSeeds.map((item) => [item.name, ...Object.values(item.checklist).map((field) => field.value)].filter(Boolean).join(" | ").slice(0, 400))]);
+      assert.equal(crystals.storage.listMaterials(seed.id).length, 0);
+      vector = new Float32Array([0.75, 0]);
+      inputs.length = 0;
+      const high = await crystals.processAnchor({ threadId: "dot", anchorId: "dot-high", day: "2026-09-06", text: "Unrelated input text", terms: [] });
+      assert.ok(high.materialsAdded >= 1);
+      assert.equal(crystals.storage.listMaterials(seed.id).length, 1);
+      assert.equal(crystals.storage.listMaterials(seed.id)[0]?.source, "auto-semantic");
+      assert.deepEqual(inputs, [["Unrelated input text"]]);
+      inputs.length = 0;
+      await crystals.processAnchor({ threadId: "dot", anchorId: "dot-short", day: "2026-09-06", text: " 1234567 ", terms: [] });
+      assert.deepEqual(inputs, []);
+      await crystals.processAnchor({ threadId: "dot", anchorId: "dot-direct", day: "2026-09-06", text: "TARGET SEED", terms: [] });
+      assert.equal(inputs.some((texts) => texts[0] === seed.name), false);
+      assert.equal(crystals.storage.listMaterials(seed.id).find((material) => material.ref.anchorId === "dot-direct")?.source, "auto");
+      inputs.length = 0;
+      const longText = "  " + "x".repeat(900) + "  ";
+      await crystals.processAnchor({ threadId: "dot", anchorId: "dot-long", day: "2026-09-06", text: longText, terms: [] });
+      assert.ok(inputs.length > 0);
+      assert.deepEqual(inputs, [["x".repeat(800)]]);
+      const changed = crystals.storage.getCrystal(seed.id)!;
+      changed.checklist.definition = { value: "Updated definition", sources: ["test"] };
+      crystals.storage.putCrystal(changed);
+      inputs.length = 0;
+      await crystals.processAnchor({ threadId: "dot", anchorId: "dot-changed", day: "2026-09-06", text: "Unrelated input text", terms: [] });
+      assert.deepEqual(inputs, [["Unrelated input text"], ["Target seed | Updated definition"]]);
+      failEmbedding = true;
+      inputs.length = 0;
+      const beforeFailure = crystals.storage.listMaterials(seed.id);
+      await crystals.processAnchor({ threadId: "dot", anchorId: "dot-failed", day: "2026-09-06", text: "Failed semantic source", terms: [] });
+      assert.deepEqual(crystals.storage.listMaterials(seed.id), beforeFailure);
+      assert.equal(crystals.storage.hasProcessedAnchor("dot-failed"), true);
+      assert.deepEqual(inputs, [["Failed semantic source"]]);
+      failEmbedding = false;
+      const failingCandidate = crystals.storage.getCrystal(seed.id)!;
+      failingCandidate.checklist.definition = { value: "Retry candidate", sources: ["test"] };
+      crystals.storage.putCrystal(failingCandidate);
+      failedText = "Target seed | Retry candidate";
+      inputs.length = 0;
+      await crystals.processAnchor({ threadId: "dot", anchorId: "dot-candidate-failed", day: "2026-09-06", text: "Unrelated input text", terms: [] });
+      assert.deepEqual(crystals.storage.listMaterials(seed.id), beforeFailure);
+      assert.deepEqual(inputs, [["Unrelated input text"], [failedText]]);
+      const otherSeed = orderedSeeds.find((item) => item.id !== seed.id);
+      assert.ok(otherSeed, "fixture must contain another active seed");
+      assert.ok(crystals.storage.listMaterials(otherSeed.id).some((material) => material.ref.anchorId === "dot-candidate-failed"));
+      failedText = undefined;
+      inputs.length = 0;
+      await crystals.processAnchor({ threadId: "dot", anchorId: "dot-candidate-recovered", day: "2026-09-06", text: "Unrelated input text", terms: [] });
+      assert.deepEqual(inputs, [["Unrelated input text"], ["Target seed | Retry candidate"]]);
+      assert.ok(models.length > 0 && models.every((model) => model === "multilingual-e5-small"));
+      assert.ok(crystals.storage.listMaterials(seed.id).some((material) => material.ref.anchorId === "dot-candidate-recovered"));
+    } finally {
+      LocalEmbeddingManager.prototype.isReady = ready;
+      LocalEmbeddingManager.prototype.createRuntime = createRuntime;
+      await agent.close();
+    }
+  });
+}
+
+async function testCrystalDormancyWithoutNewAnchors(): Promise<void> {
+  await withTempWorkspace(async (workspaceRoot) => {
+    await ensureAgentDirs(workspaceRoot);
+    const config = testConfig();
+    config.context.memory.useMemories = false;
+    config.context.memory.generateMemories = false;
+    const recorder = new SessionRecorder(workspaceRoot, "crystal-aging");
+    recorder.record({ type: "user_message", messageId: "aging-processed", content: "Already processed topic" });
+    const model: AgentModel = { provider: "test", modelId: "aging-test", stream: async () => {
+      return (async function* (): AsyncGenerator<ModelStreamEvent> {
+        yield { type: "text-delta", text: "Done" };
+        yield { type: "finish", reason: "stop" };
+      })();
+    } };
+    const agent = new AgentSession({ workspaceRoot, config, model, recorder, toolRegistry: new ToolRegistry(), permissionManager: new PermissionManager({ ...config.permission, source: "test" }) });
+    await agent.initialize();
+    const crystals = agent.getCrystalService();
+    crystals.storage.markAnchorProcessed("aging-processed", new Date().toISOString());
+    const old = { ...crystals.createSeed("Old candidate"), origin: "nucleus" as const, updatedAt: "2000-01-01T00:00:00.000Z" };
+    crystals.storage.putCrystal(old);
+    let anchorCalls = 0;
+    crystals.extract = async () => { anchorCalls += 1; return []; };
+    let dormant = false;
+    const maintain = crystals.dormantOldCrystals.bind(crystals);
+    crystals.dormantOldCrystals = () => {
+      maintain();
+      dormant = crystals.storage.getCrystal(old.id)?.dormant ?? false;
+    };
+    try {
+      await agent.runTask("This anchor was already processed.", { recordSessionUserMessage: false });
+    } finally {
+      await agent.close();
+    }
+    assert.equal(anchorCalls, 0);
+    assert.equal(dormant, true);
+  });
+}
+
+async function testCrystalThreadBackfill(): Promise<void> {
+  await withTempWorkspace(async (workspaceRoot) => {
+    await ensureAgentDirs(workspaceRoot);
+    const saved = new SessionRecorder(workspaceRoot, "crystal-backfill");
+    saved.record({ type: "user_message", messageId: "backfill-old", content: "Old backlog topic", time: "2026-08-01T10:00:00.000Z" });
+    saved.record({ type: "agent_message", messageId: "backfill-assistant", message: { role: "assistant", content: [{ type: "text", text: "Assistant must not become a term source" }] } });
+    saved.record({ type: "user_message", messageId: "backfill-discarded", parentMessageId: "backfill-assistant", slotId: "backfill-choice", content: "Discarded branch topic" });
+    saved.record({ type: "user_message", messageId: "backfill-selected", parentMessageId: "backfill-assistant", slotId: "backfill-choice", content: "Selected backlog topic", time: "2026-08-02T10:00:00.000Z" });
+    await saved.close();
+    const config = testConfig();
+    config.context.memory.useMemories = false;
+    config.context.memory.generateMemories = false;
+    const model: AgentModel = { provider: "test", modelId: "backfill-test", stream: async () => (async function* (): AsyncGenerator<ModelStreamEvent> {
+      yield { type: "text-delta", text: "Done" };
+      yield { type: "finish", reason: "stop" };
+    })() };
+    const agent = new AgentSession({ workspaceRoot, config, model, toolRegistry: new ToolRegistry(), permissionManager: new PermissionManager({ ...config.permission, source: "test" }), recorder: new SessionRecorder(workspaceRoot) });
+    await agent.initialize();
+    const seen: Array<{ text: string; day: string; anchorId: string }> = [];
+    let count = 0;
+    try {
+      await agent.resume("crystal-backfill");
+      const crystals = agent.getCrystalService();
+      crystals.extract = async () => ["BackfillOnlyTopic"];
+      const process = crystals.processAnchor.bind(crystals);
+      crystals.processAnchor = async (options) => {
+        const result = await process(options);
+        if (result.claimed) seen.push({ text: options.text, day: options.day, anchorId: options.anchorId });
+        count = crystals.storage.listTerms().find((term) => term.term === "backfillonlytopic")?.count ?? 0;
+        return result;
+      };
+      await agent.runTask("Newest backlog topic");
+      await agent.runTask("One more backlog topic");
+    } finally {
+      await agent.close();
+    }
+    assert.deepEqual(seen.map((entry) => entry.text), ["Old backlog topic", "Selected backlog topic", "Newest backlog topic", "One more backlog topic"]);
+    assert.deepEqual(seen.slice(0, 2).map((entry) => entry.day), ["2026-08-01", "2026-08-02"]);
+    assert.equal(count, 4);
+    assert.equal(new Set(seen.map((entry) => entry.anchorId)).size, 4);
+  });
+}
+
+async function testCrystalHistoricalMaterial(): Promise<void> {
+  await withTempWorkspace(async (workspaceRoot) => {
+    await ensureAgentDirs(workspaceRoot);
+    const historical = new SessionRecorder(workspaceRoot, "crystal-history");
+    historical.record({ type: "user_message", messageId: "historical-anchor", content: "Historical project evidence for crystal prefill." });
+    await historical.close();
+    const config = testConfig();
+    config.context.memory.useMemories = false;
+    config.context.memory.generateMemories = false;
+    let materialPrompt = "";
+    const systemPrompts: string[] = [];
+    const model: AgentModel = {
+      provider: "test",
+      modelId: "material-test",
+      stream: async (context) => (async function* (): AsyncGenerator<ModelStreamEvent> {
+        materialPrompt = context.messages.map(messageText).join("\n");
+        systemPrompts.push(context.systemPrompt ?? "");
+        yield { type: "text-delta", text: JSON.stringify({ definition: { value: "Historical definition", sources: ["turn:historical-anchor"] } }) };
+        yield { type: "finish", reason: "stop" };
+      })()
+    };
+    const currentRecorder = new SessionRecorder(workspaceRoot);
+    const agent = new AgentSession({
+      workspaceRoot, config, model,
+      toolRegistry: new ToolRegistry(),
+      permissionManager: new PermissionManager({ ...config.permission, source: "test" }),
+      recorder: currentRecorder
+    });
+    await agent.initialize();
+    try {
+      const crystals = agent.getCrystalService();
+      const seed = crystals.createSeed("Historical reference");
+      crystals.setType(seed.id, "concept");
+      crystals.addMaterial(seed.id, "turn", { threadId: "crystal-history", anchorId: "historical-anchor" });
+      const filled = await crystals.prefill(seed.id);
+      assert.match(materialPrompt, /Historical project evidence/u);
+      assert.equal(filled.checklist.definition?.value, "Historical definition");
+      const wrong = crystals.createSeed("Invalid reference");
+      crystals.setType(wrong.id, "concept");
+      crystals.addMaterial(wrong.id, "turn", { threadId: "crystal-hist", anchorId: "historical-anchor" });
+      await assert.rejects(crystals.prefill(wrong.id), /no readable text/u);
+      for (const field of ["includes", "excludes", "examples", "source"]) {
+        crystals.updateChecklist(seed.id, field, { value: `${field} from historical evidence`, sources: ["turn:historical-anchor"] });
+      }
+      crystals.confirm(seed.id);
+      systemPrompts.length = 0;
+      await agent.runTask(`Use @[Historical reference](biny://crystal/${seed.id}) to explain the project.`);
+      assert.ok(systemPrompts.some((prompt) => prompt.includes("Historical definition") && prompt.includes("## Crystal references")));
+      assert.ok(systemPrompts.some((prompt) => prompt.includes("只有用户可以批准正式化")));
+      systemPrompts.length = 0;
+      await agent.runTask("Now explain a completely unrelated topic.");
+      assert.ok(systemPrompts.length > 0);
+      assert.ok(systemPrompts.some((prompt) => prompt.includes("Referenced earlier in this thread (resolve if relevant):") && prompt.includes(`biny://crystal/${seed.id}`)));
+      assert.ok(systemPrompts.every((prompt) => !(prompt.match(/<!-- biny-crystal:start -->([\s\S]*?)<!-- biny-crystal:end -->/u)?.[1] ?? "").includes("Historical definition")));
+      await currentRecorder.flush();
+      const retryTarget = (await readSessionEvents(currentRecorder.filePath)).filter((event) => event.type === "agent_message" && event.message.role === "assistant").at(-1);
+      assert.ok(retryTarget?.type === "agent_message" && retryTarget.messageId);
+      await agent.runTask(`Later branch uses @[Invalid reference](biny://crystal/${wrong.id}).`);
+      systemPrompts.length = 0;
+      for await (const event of agent.retry(retryTarget.messageId)) {
+        if (event.type === "error") assert.fail(event.message);
+      }
+      assert.ok(systemPrompts.some((prompt) => (prompt.match(/<!-- biny-crystal:start -->([\s\S]*?)<!-- biny-crystal:end -->/u)?.[1] ?? "").includes(`biny://crystal/${seed.id}`)));
+      assert.ok(systemPrompts.every((prompt) => !(prompt.match(/<!-- biny-crystal:start -->([\s\S]*?)<!-- biny-crystal:end -->/u)?.[1] ?? "").includes(`biny://crystal/${wrong.id}`)));
+      await agent.compactConversation("Keep only a short summary without object references.");
+      systemPrompts.length = 0;
+      await agent.runTask("Continue after compacting the conversation.");
+      assert.ok(systemPrompts.some((prompt) => (prompt.match(/<!-- biny-crystal:start -->([\s\S]*?)<!-- biny-crystal:end -->/u)?.[1] ?? "").includes(`biny://crystal/${seed.id}`)));
+      assert.ok(systemPrompts.every((prompt) => !prompt.includes("Checklist:")));
+      assert.equal(materialPrompt.includes(`biny://crystal/${seed.id}`), false, "压缩后的模型消息已不含原始引用，但持久化历史仍应提供卡片");
+      const entered = deferred<void>();
+      const released = deferred<void>();
+      crystals.extract = async () => {
+        entered.resolve();
+        await released.promise;
+        return ["ShutdownEvidence"];
+      };
+      await agent.runTask("Keep ShutdownEvidence across shutdown.");
+      let closed = false;
+      const closing = agent.close().then(() => { closed = true; });
+      try {
+        await entered.promise;
+        assert.equal(closed, false);
+      } finally {
+        released.resolve();
+        await closing;
+      }
+      const reopened = new CrystalStorage();
+      await reopened.initialize();
+      try {
+        assert.ok(reopened.listTerms().some((term) => term.term === "shutdownevidence" && term.count >= 1));
+      } finally {
+        reopened.close();
+      }
+    } finally {
+      await agent.close();
+    }
+  });
 }
 
 function testConfig(): AgentConfig {

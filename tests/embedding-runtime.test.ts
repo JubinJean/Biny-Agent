@@ -2,6 +2,9 @@ import assert from "node:assert/strict";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
+import { load as loadSqliteVec } from "sqlite-vec";
+import { MemoryVectorIndex } from "../src/agent/context/MemoryVectorIndex.js";
 import type { ProviderDefinition } from "../src/ai/types.js";
 import { providerDefinition } from "../src/ai/provider.js";
 import { configSchema, defaultConfig, type ProviderConfig } from "../src/config/schema.js";
@@ -20,8 +23,41 @@ testConfiguredEmbeddingCatalog();
 await testOpenAiEmbeddingWire();
 await testGoogleEmbeddingWire();
 await testLocalEmbeddingLifecycle();
+await testSqliteVectorProjection();
 
 console.log("embedding runtime tests passed");
+
+async function testSqliteVectorProjection(): Promise<void> {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), "biny-vec-projection-"));
+  let index: MemoryVectorIndex | undefined;
+  let database: DatabaseSync | undefined;
+  try {
+    index = new MemoryVectorIndex(root);
+    index.replaceAll("test-vector-model", 2, [
+      { entryId: "allowed", embedding: [0.8, 0.6] },
+      { entryId: "excluded", embedding: [1, 0] }
+    ]);
+    database = new DatabaseSync(path.join(root, "memory.sqlite"), { allowExtension: true });
+    loadSqliteVec(database);
+    assert.match(String(database.prepare("SELECT sql FROM sqlite_master WHERE name = 'memory_embeddings'").get()?.sql), /vec0/u);
+    index.upsertActiveVectors("test-vector-model", 2, [{ entryId: "allowed", embedding: [0, 1] }]);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM memory_embeddings WHERE memory_id = 'allowed'").get()?.count, 1);
+    index.close();
+    index = new MemoryVectorIndex(root);
+    assert.match(String(database.prepare("SELECT sql FROM sqlite_master WHERE name = 'memory_embeddings'").get()?.sql), /FLOAT\[2\]/u);
+    assert.equal(index.status().active?.modelFingerprint, "test-vector-model");
+    assert.match(String(database.prepare("SELECT sql FROM sqlite_master WHERE name = 'memory_embeddings'").get()?.sql), /FLOAT\[2\]/u);
+    assert.equal(database.prepare("SELECT COUNT(*) AS count FROM memory_embeddings").get()?.count, 2);
+    const results = index.search([1, 0], { modelFingerprint: "test-vector-model", limit: 1, entryIds: new Set(["allowed"]) });
+    assert.deepEqual(results.map((row) => row.entryId), ["allowed"]);
+    assert.ok(Math.abs(results[0]!.similarity) < 1e-6);
+    assert.deepEqual(index.listActiveEmbeddings({ modelFingerprint: "test-vector-model" }).map((row) => row.entryId), ["allowed", "excluded"]);
+  } finally {
+    database?.close();
+    index?.close();
+    await fs.rm(root, { recursive: true, force: true });
+  }
+}
 
 function testVectorValidation(): void {
   const normalized = normalizeEmbedding([3, 4]);
@@ -222,14 +258,17 @@ async function testLocalEmbeddingLifecycle(): Promise<void> {
     assert.deepEqual(progress, [0, 0.5, 1]);
     assert.equal(disposed, 1);
     const runtime = await manager.createRuntime("multilingual-e5-small");
+    assert.equal(manager.isReady(), false);
     const result = await runtime.embed({ texts: ["天气"], inputType: "query" });
+    assert.equal(manager.isReady(), true);
     assert.equal(result.dimensions, 384);
-    assert.deepEqual(seenTexts.at(-1), ["query: 天气"]);
+    assert.deepEqual(seenTexts.at(-1), ["天气"]);
     await assert.rejects(
       manager.remove("multilingual-e5-small", { activeModel: "multilingual-e5-small" }),
       /active embedding model/u
     );
     await manager.close();
+    assert.equal(manager.isReady(), false);
     const removed = await manager.remove("multilingual-e5-small");
     assert.equal(cleared, 1);
     assert.equal(removed.bytesFreed, 100);

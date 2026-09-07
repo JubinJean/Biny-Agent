@@ -46,7 +46,7 @@ import {
 
 export const memoryDatabaseFileName = "memory.sqlite";
 
-const memorySchemaVersion = 3;
+const memorySchemaVersion = 4;
 const sqliteBusyTimeoutMs = 5_000;
 const memoryRootName = "memory";
 const maxMaintenanceErrorChars = 2_000;
@@ -58,6 +58,11 @@ const memoryMetadataSchema = z.object({
   decisions: z.array(z.string()),
   paths: z.array(z.string()),
   keywords: z.array(z.string()),
+  source: z.string().default("manual"),
+  tags: z.array(z.string()).default([]),
+  rationale: z.string().optional(),
+  activitySource: z.string().optional(),
+  activitySessionId: z.string().optional(),
   importance: z.number(),
   durability: z.enum(["temporary", "permanent"]),
   expiresAt: z.string().optional(),
@@ -70,12 +75,12 @@ const memoryMetadataSchema = z.object({
     sourceEntryIds: z.array(z.string()).optional(),
     userEvidence: z.string().optional()
   })).min(1)
-});
+}).passthrough();
 
 const memorySleepRunSchema = z.object({
   id: z.string().min(1),
   status: z.enum(["running", "completed", "failed", "cancelled"]),
-  trigger: z.enum(["scheduled", "manual"]),
+  trigger: z.enum(["scheduled", "manual", "idle", "count"]),
   examined: z.number().int().nonnegative(),
   written: z.number().int().nonnegative(),
   failed: z.number().int().nonnegative(),
@@ -118,11 +123,14 @@ interface MemoryDbRow {
   origin_kind: unknown;
   workspace_id: unknown;
   workspace_name: unknown;
+  thread_id?: unknown;
+  message_id?: unknown;
+  user_id?: unknown;
   created_at: unknown;
   updated_at: unknown;
   revision: unknown;
   access_count: unknown;
-  last_recalled_at: unknown;
+  last_accessed_at?: unknown;
   archived_at?: unknown;
   archived_reason?: unknown;
   archived_by?: unknown;
@@ -163,15 +171,29 @@ interface SleepRunDbRow {
   output_tokens?: unknown;
   started_at: unknown;
   finished_at: unknown;
+  ended_at?: unknown;
   error: unknown;
 }
 
 export class MemoryStorage {
   private database: DatabaseSync | undefined;
   private databaseOpening: Promise<DatabaseSync | undefined> | undefined;
-  private writeTail: Promise<unknown> = Promise.resolve();
 
-  constructor(readonly workspaceRoot: string) {}
+  private readonly agentDir: string | undefined;
+
+  constructor(readonly workspaceRoot: string, options: { agentDir?: string } = {}) {
+    this.agentDir = options.agentDir;
+  }
+
+  close(): void {
+    this.database?.close();
+    this.database = undefined;
+    this.databaseOpening = undefined;
+  }
+
+  async getCurrentWorkspaceId(): Promise<string> {
+    return (await currentWorkspaceOrigin(this.workspaceRoot)).workspaceId;
+  }
 
   async getOverview(options: MemoryReadOptions = {}): Promise<MemoryOverview> {
     options.signal?.throwIfAborted();
@@ -328,6 +350,15 @@ export class MemoryStorage {
         decisions: patch.decisions ?? existing.decisions,
         paths: patch.paths ?? existing.paths,
         keywords: patch.keywords ?? existing.keywords,
+        source: patch.source ?? existing.source,
+        tags: patch.tags ?? existing.tags,
+        rationale: patch.rationale ?? existing.rationale,
+        metadata: { ...existing.metadata, ...patch.metadata },
+        activitySource: patch.activitySource ?? existing.activitySource,
+        activitySessionId: patch.activitySessionId ?? existing.activitySessionId,
+        threadId: patch.threadId ?? existing.threadId,
+        messageId: patch.messageId ?? existing.messageId,
+        userId: patch.userId ?? existing.userId,
         importance: patch.importance ?? existing.importance,
         durability: patch.durability ?? existing.durability,
         expiresAt: patch.expiresAt ?? existing.expiresAt,
@@ -357,8 +388,8 @@ export class MemoryStorage {
         originalId: existing.originalId,
         archivedBy: existing.archivedBy
       });
-      entry.recallCount = existing.recallCount;
-      entry.lastRecalledAt = existing.lastRecalledAt;
+      entry.accessCount = existing.accessCount;
+      entry.lastAccessedAt = existing.lastAccessedAt;
       if (existing.archivedAt === undefined) updateActiveMemory(database, entry);
       else updateArchivedMemory(database, entry);
       setRevision(database, nextRevision);
@@ -391,6 +422,15 @@ export class MemoryStorage {
           decisions: existing.decisions,
           paths: existing.paths,
           keywords: existing.keywords,
+          source: existing.source,
+          tags: existing.tags,
+          rationale: existing.rationale,
+          metadata: existing.metadata,
+          activitySource: existing.activitySource,
+          activitySessionId: existing.activitySessionId,
+          threadId: existing.threadId,
+          messageId: existing.messageId,
+          userId: existing.userId,
           importance: existing.importance,
           durability: existing.durability,
           expiresAt: existing.expiresAt,
@@ -408,8 +448,8 @@ export class MemoryStorage {
           createdAt: existing.createdAt,
           updatedAt: existing.updatedAt
         });
-        entry.recallCount = existing.recallCount;
-        entry.lastRecalledAt = existing.lastRecalledAt;
+        entry.accessCount = existing.accessCount;
+        entry.lastAccessedAt = existing.lastAccessedAt;
         insertArchivedMemory(database, entry);
         deleteActiveMemory(database, existing.id);
         setRevision(database, nextRevision);
@@ -426,6 +466,15 @@ export class MemoryStorage {
           decisions: existing.decisions,
           paths: existing.paths,
           keywords: existing.keywords,
+          source: existing.source,
+          tags: existing.tags,
+          rationale: existing.rationale,
+          metadata: existing.metadata,
+          activitySource: existing.activitySource,
+          activitySessionId: existing.activitySessionId,
+          threadId: existing.threadId,
+          messageId: existing.messageId,
+          userId: existing.userId,
           importance: existing.importance,
           durability: existing.durability,
           lineage: existing.lineage
@@ -435,8 +484,8 @@ export class MemoryStorage {
           createdAt: now,
           updatedAt: now
         });
-        entry.recallCount = existing.recallCount;
-        entry.lastRecalledAt = existing.lastRecalledAt;
+        entry.accessCount = existing.accessCount;
+        entry.lastAccessedAt = existing.lastAccessedAt;
         insertActiveMemory(database, entry);
         deleteArchivedMemory(database, existing.id);
         setRevision(database, nextRevision);
@@ -472,6 +521,15 @@ export class MemoryStorage {
           decisions: existing.decisions,
           paths: existing.paths,
           keywords: existing.keywords,
+          source: existing.source,
+          tags: existing.tags,
+          rationale: existing.rationale,
+          metadata: existing.metadata,
+          activitySource: existing.activitySource,
+          activitySessionId: existing.activitySessionId,
+          threadId: existing.threadId,
+          messageId: existing.messageId,
+          userId: existing.userId,
           importance: existing.importance,
           durability: existing.durability,
           expiresAt: existing.expiresAt,
@@ -487,8 +545,8 @@ export class MemoryStorage {
           createdAt: existing.createdAt,
           updatedAt: existing.updatedAt
         });
-        entry.recallCount = existing.recallCount;
-        entry.lastRecalledAt = existing.lastRecalledAt;
+        entry.accessCount = existing.accessCount;
+        entry.lastAccessedAt = existing.lastAccessedAt;
         assertAllowedMemoryEntry(entry, this.workspaceRoot);
         return entry;
       });
@@ -509,7 +567,7 @@ export class MemoryStorage {
       const cutoff = (options.now ?? new Date()).getTime()
         - Math.max(1, Math.trunc(retentionDays)) * 86_400_000;
       const targets = readMemoryEntries(database).filter((entry) => (
-        entry.archivedAt !== undefined && Date.parse(entry.archivedAt) <= cutoff
+        entry.archivedAt !== undefined && Date.parse(entry.archivedAt) < cutoff
       ));
       if (!targets.length) return { deleted: 0, revision };
       const deleteStatement = database.prepare("DELETE FROM memory_archive WHERE id = ?");
@@ -565,14 +623,15 @@ export class MemoryStorage {
     await this.withWrite(options.signal, (database) => {
       const now = (options.now ?? new Date()).toISOString();
       const active = database.prepare(
-        "UPDATE memories SET access_count = access_count + 1, last_recalled_at = ? WHERE id = ?"
+        "UPDATE memories SET access_count = access_count + 1, last_accessed_at = ?, updated_at = ? WHERE id = ?"
       );
       const archived = database.prepare(
-        "UPDATE memory_archive SET access_count = access_count + 1, last_recalled_at = ? WHERE id = ?"
+        "UPDATE memory_archive SET access_count = access_count + 1, last_accessed_at = ? WHERE id = ?"
       );
       for (const id of uniqueIds) {
-        const result = active.run(now, id);
-        if (result.changes === 0) archived.run(now, id);
+        const result = active.run(now, now, id);
+        if (result.changes > 0) updateAccessMetadata(database, "memories", id, now);
+        else if (archived.run(now, id).changes > 0) updateAccessMetadata(database, "memory_archive", id, now);
       }
     });
   }
@@ -582,7 +641,10 @@ export class MemoryStorage {
     const database = await this.openDatabase(false);
     if (database === undefined) return emptyMaintenanceStatus();
     const row = database.prepare("SELECT * FROM memory_maintenance WHERE id = 1").get() as MaintenanceDbRow | undefined;
-    if (!row) return emptyMaintenanceStatus();
+    if (!row) {
+      const sleepRuns = readSleepRuns(database);
+      return { ...emptyMaintenanceStatus(), sleepRuns: sleepRuns.length ? sleepRuns : undefined };
+    }
     const state = memoryStateSchema.safeParse({
       state: row.state,
       startedAt: optionalTimeValue(row.started_at),
@@ -604,12 +666,30 @@ export class MemoryStorage {
     };
   }
 
+  async importSleepRun(run: MemorySleepRun, signal?: AbortSignal): Promise<boolean> {
+    const safe = memorySleepRunSchema.parse(run);
+    return await this.withWrite(signal, (database) => {
+      const existing = readSleepRuns(database, safe.id)[0];
+      if (existing) {
+        if (JSON.stringify(existing) !== JSON.stringify(safe)) throw new Error(`Imported sleep run id conflicts: ${safe.id}`);
+        return false;
+      }
+      database.prepare(
+        "INSERT INTO memory_sleep_runs (id, status, trigger, examined, written, failed, archived, exact, expired, similarity, llm, " +
+        "archived_exact, archived_expired, archived_orphan, archived_similarity, archived_llm, input_tokens, output_tokens, started_at, finished_at, ended_at, error) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      ).run(safe.id, safe.status, safe.trigger, safe.examined, safe.written, safe.failed, safe.archived, safe.exact, safe.expired, safe.similarity, safe.llm,
+        safe.archivedExact, safe.archivedExpired, safe.archivedOrphan, safe.archivedSimilarity, safe.archivedLlm, safe.inputTokens, safe.outputTokens,
+        safe.startedAt, safe.finishedAt ?? null, safe.finishedAt ?? null, safe.error ?? null);
+      return true;
+    });
+  }
+
   async writeMaintenanceStatus(status: MemoryMaintenanceStatus, signal?: AbortSignal): Promise<void> {
     signal?.throwIfAborted();
     const safe = sanitizeMaintenanceStatus(status);
     await this.withWrite(signal, (database) => {
-      const existingRuns = safe.sleepRuns === undefined ? readSleepRuns(database) : [];
-      const runs = safe.sleepRuns ?? existingRuns;
+      const runs = safe.sleepRuns ?? [];
       database.prepare(
         "INSERT INTO memory_maintenance (id, state, started_at, last_scan_at, last_finished_at, eligible, processed, written, failed, error, last_run_json) " +
         "VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
@@ -629,15 +709,23 @@ export class MemoryStorage {
         safe.error ?? null,
         safe.lastRun === undefined ? null : JSON.stringify(safe.lastRun)
       );
-      database.prepare("DELETE FROM memory_sleep_runs").run();
+      // 状态快照可能只包含最近的运行，未包含的历史不应因此被删除。
       const insert = database.prepare(
         "INSERT INTO memory_sleep_runs " +
         "(id, status, trigger, examined, written, failed, archived, exact, expired, similarity, llm, " +
         "archived_exact, archived_expired, archived_orphan, archived_similarity, archived_llm, input_tokens, output_tokens, " +
-        "started_at, finished_at, error) " +
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+        "started_at, finished_at, ended_at, error) " +
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+        "ON CONFLICT(id) DO UPDATE SET status = excluded.status, trigger = excluded.trigger, " +
+        "examined = excluded.examined, written = excluded.written, failed = excluded.failed, " +
+        "archived = excluded.archived, exact = excluded.exact, expired = excluded.expired, " +
+        "similarity = excluded.similarity, llm = excluded.llm, archived_exact = excluded.archived_exact, " +
+        "archived_expired = excluded.archived_expired, archived_orphan = excluded.archived_orphan, " +
+        "archived_similarity = excluded.archived_similarity, archived_llm = excluded.archived_llm, " +
+        "input_tokens = excluded.input_tokens, output_tokens = excluded.output_tokens, " +
+        "started_at = excluded.started_at, finished_at = excluded.finished_at, ended_at = excluded.ended_at, error = excluded.error"
       );
-      for (const run of runs.slice(-20)) {
+      for (const run of runs) {
         insert.run(
           run.id,
           run.status,
@@ -658,6 +746,7 @@ export class MemoryStorage {
           run.inputTokens,
           run.outputTokens,
           run.startedAt,
+          run.finishedAt ?? null,
           run.finishedAt ?? null,
           run.error ?? null
         );
@@ -685,7 +774,7 @@ export class MemoryStorage {
   }
 
   private async openDatabaseInternal(create: boolean): Promise<DatabaseSync | undefined> {
-    const databasePath = await resolveMemoryDatabasePath(create);
+    const databasePath = await resolveMemoryDatabasePath(create, this.agentDir);
     if (databasePath === undefined) return undefined;
     const database = new DatabaseSync(databasePath, {
       timeout: sqliteBusyTimeoutMs,
@@ -693,7 +782,7 @@ export class MemoryStorage {
     });
     try {
       await assertSafeDatabaseFile(databasePath);
-      migrateDatabase(database);
+      initializeDatabase(database);
       return database;
     } catch (error) {
       database.close();
@@ -708,19 +797,25 @@ export class MemoryStorage {
     signal?.throwIfAborted();
     const database = await this.openDatabase(true);
     if (database === undefined) throw new Error("Failed to create memory database.");
-    const run = this.writeTail.then(() => runTransaction(database, signal, operation));
-    this.writeTail = run.catch(() => undefined);
-    return await run;
+    return runTransaction(database, signal, operation);
   }
 }
 
-function migrateDatabase(database: DatabaseSync): void {
+function initializeDatabase(database: DatabaseSync): void {
   const row = database.prepare("PRAGMA user_version").get() as Record<string, unknown> | undefined;
   const version = safeCounter(row?.user_version);
-  if (version > memorySchemaVersion) {
-    throw new Error("Unsupported memory database schema version: " + String(version));
+  if (version !== 0 && version !== memorySchemaVersion) {
+    throw new Error("Memory database schema is not current; remove it before starting.");
   }
-  migrateLegacyArchiveTable(database);
+  const existingTables = (database.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+  ).all() as Array<{ name?: unknown }>)
+    .map((table) => typeof table.name === "string" ? table.name : "")
+    .filter(Boolean);
+  // 向量索引可能先创建自己的派生表；只要事实表尚未出现，仍属于当前库的首次初始化。
+  if (version === 0 && existingTables.includes("memories")) {
+    throw new Error("Memory database schema is not current; remove it before starting.");
+  }
   database.exec(
     "PRAGMA journal_mode = WAL; " +
     "PRAGMA synchronous = NORMAL; " +
@@ -733,19 +828,28 @@ function migrateDatabase(database: DatabaseSync): void {
     "CREATE TABLE IF NOT EXISTS memories (" +
     "id TEXT PRIMARY KEY NOT NULL, content TEXT NOT NULL, metadata TEXT NOT NULL, " +
     "origin_kind TEXT NOT NULL, workspace_id TEXT, workspace_name TEXT, " +
+    "thread_id TEXT, message_id TEXT, user_id TEXT, " +
     "created_at TEXT NOT NULL, updated_at TEXT NOT NULL, revision INTEGER NOT NULL, " +
-    "access_count INTEGER NOT NULL DEFAULT 0, last_recalled_at TEXT" +
+    "access_count INTEGER NOT NULL DEFAULT 0, last_accessed_at TEXT" +
     "); " +
     "CREATE INDEX IF NOT EXISTS memories_origin_idx ON memories(origin_kind, workspace_id); " +
+    "CREATE INDEX IF NOT EXISTS memories_thread_idx ON memories(thread_id); " +
+    "CREATE INDEX IF NOT EXISTS memories_user_idx ON memories(user_id); " +
     "CREATE TABLE IF NOT EXISTS memory_archive (" +
     "id TEXT PRIMARY KEY NOT NULL, original_id TEXT NOT NULL, content TEXT NOT NULL, metadata TEXT NOT NULL, " +
     "origin_kind TEXT NOT NULL, workspace_id TEXT, workspace_name TEXT, " +
+    "thread_id TEXT, message_id TEXT, user_id TEXT, " +
     "original_created_at TEXT NOT NULL, original_updated_at TEXT NOT NULL, revision INTEGER NOT NULL, " +
-    "access_count INTEGER NOT NULL DEFAULT 0, last_recalled_at TEXT, " +
+    "access_count INTEGER NOT NULL DEFAULT 0, last_accessed_at TEXT, " +
     "archived_at TEXT NOT NULL, archived_reason TEXT NOT NULL, archived_by TEXT NOT NULL, merged_into TEXT" +
     "); " +
     "CREATE INDEX IF NOT EXISTS memory_archive_original_idx ON memory_archive(original_id); " +
     "CREATE INDEX IF NOT EXISTS memory_archive_origin_idx ON memory_archive(origin_kind, workspace_id); " +
+    "CREATE INDEX IF NOT EXISTS memory_archive_thread_idx ON memory_archive(thread_id); " +
+    "CREATE INDEX IF NOT EXISTS memory_archive_user_idx ON memory_archive(user_id); " +
+    "CREATE TABLE IF NOT EXISTS memory_metadata (" +
+    "key TEXT PRIMARY KEY NOT NULL, value TEXT NOT NULL" +
+    "); " +
     "CREATE TABLE IF NOT EXISTS memory_maintenance (" +
     "id INTEGER PRIMARY KEY CHECK (id = 1), state TEXT NOT NULL, " +
     "started_at TEXT, last_scan_at TEXT, last_finished_at TEXT, " +
@@ -760,66 +864,68 @@ function migrateDatabase(database: DatabaseSync): void {
     "archived_orphan INTEGER NOT NULL DEFAULT 0, archived_similarity INTEGER NOT NULL DEFAULT 0, " +
     "archived_llm INTEGER NOT NULL DEFAULT 0, input_tokens INTEGER NOT NULL DEFAULT 0, " +
     "output_tokens INTEGER NOT NULL DEFAULT 0, " +
-    "started_at TEXT NOT NULL, finished_at TEXT, error TEXT" +
+    "started_at TEXT NOT NULL, finished_at TEXT, ended_at TEXT, error TEXT" +
     "); " +
-    "PRAGMA user_version = 3;"
+    "PRAGMA user_version = 4;"
   );
-  ensureSleepRunColumns(database);
+  createCrystalTables(database);
   database.exec(`PRAGMA user_version = ${String(memorySchemaVersion)};`);
 }
 
-/**
- * v2 的 archive 以 original_id 为主键；当前 archive 是独立历史行，id 每次归档都重新生成。
- * 当前 checkout 尚未发布，迁移只需保留旧内容并补齐审计字段。
- */
-function migrateLegacyArchiveTable(database: DatabaseSync): void {
-  const columns = new Set((database.prepare("PRAGMA table_info(memory_archive)").all() as Array<{ name?: unknown }>)
-    .map((row) => typeof row.name === "string" ? row.name : ""));
-  if (columns.size === 0 || (columns.has("id") && columns.has("original_created_at") && columns.has("archived_by"))) return;
-
-  database.exec("ALTER TABLE memory_archive RENAME TO memory_archive_legacy_v2");
-  createArchiveTable(database);
-  database.exec(
-    "INSERT INTO memory_archive " +
-    "(id, original_id, content, metadata, origin_kind, workspace_id, workspace_name, " +
-    "original_created_at, original_updated_at, revision, access_count, last_recalled_at, " +
-    "archived_at, archived_reason, archived_by, merged_into) " +
-    "SELECT original_id, original_id, content, metadata, origin_kind, workspace_id, workspace_name, " +
-    "created_at, updated_at, revision, access_count, last_recalled_at, archived_at, " +
-    "COALESCE(archived_reason, 'manual'), 'manual', merged_into " +
-    "FROM memory_archive_legacy_v2"
-  );
-  database.exec("DROP TABLE memory_archive_legacy_v2");
-}
-
-function createArchiveTable(database: DatabaseSync): void {
-  database.exec(
-    "CREATE TABLE IF NOT EXISTS memory_archive (" +
-    "id TEXT PRIMARY KEY NOT NULL, original_id TEXT NOT NULL, content TEXT NOT NULL, metadata TEXT NOT NULL, " +
-    "origin_kind TEXT NOT NULL, workspace_id TEXT, workspace_name TEXT, " +
-    "original_created_at TEXT NOT NULL, original_updated_at TEXT NOT NULL, revision INTEGER NOT NULL, " +
-    "access_count INTEGER NOT NULL DEFAULT 0, last_recalled_at TEXT, archived_at TEXT NOT NULL, " +
-    "archived_reason TEXT NOT NULL, archived_by TEXT NOT NULL, merged_into TEXT" +
-    ")"
-  );
-}
-
-/** Additive upgrade for the short-lived v1 sleep history; all names are constants, not user input. */
-function ensureSleepRunColumns(database: DatabaseSync): void {
-  const columns = new Set((database.prepare("PRAGMA table_info(memory_sleep_runs)").all() as Array<{ name?: unknown }>)
-    .map((row) => typeof row.name === "string" ? row.name : ""));
-  const additions = [
-    ["archived_exact", "INTEGER NOT NULL DEFAULT 0"],
-    ["archived_expired", "INTEGER NOT NULL DEFAULT 0"],
-    ["archived_orphan", "INTEGER NOT NULL DEFAULT 0"],
-    ["archived_similarity", "INTEGER NOT NULL DEFAULT 0"],
-    ["archived_llm", "INTEGER NOT NULL DEFAULT 0"],
-    ["input_tokens", "INTEGER NOT NULL DEFAULT 0"],
-    ["output_tokens", "INTEGER NOT NULL DEFAULT 0"]
-  ] as const;
-  for (const [name, definition] of additions) {
-    if (!columns.has(name)) database.exec(`ALTER TABLE memory_sleep_runs ADD COLUMN ${name} ${definition}`);
-  }
+function createCrystalTables(database: DatabaseSync): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS crystal_terms (
+      id TEXT PRIMARY KEY NOT NULL,
+      term TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'latent',
+      count INTEGER NOT NULL DEFAULT 0,
+      turn_ids TEXT NOT NULL DEFAULT '[]',
+      thread_ids TEXT NOT NULL DEFAULT '[]',
+      days TEXT NOT NULL DEFAULT '[]',
+      occurrences TEXT NOT NULL DEFAULT '[]',
+      crystal_id TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_crystal_terms_status ON crystal_terms(status, updated_at);
+    CREATE TABLE IF NOT EXISTS crystals (
+      id TEXT PRIMARY KEY NOT NULL,
+      origin TEXT NOT NULL,
+      stage TEXT NOT NULL DEFAULT 'candidate',
+      name TEXT NOT NULL,
+      type TEXT,
+      dormant INTEGER NOT NULL DEFAULT 0,
+      slot INTEGER,
+      term_id TEXT,
+      checklist TEXT NOT NULL DEFAULT '{}',
+      notified INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      formal_at TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_crystals_stage ON crystals(stage, dormant, updated_at);
+    CREATE TABLE IF NOT EXISTS crystal_bundles (
+      id TEXT PRIMARY KEY NOT NULL,
+      name TEXT,
+      thread_id TEXT NOT NULL,
+      anchor_ids TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS crystal_materials (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      crystal_id TEXT NOT NULL,
+      kind TEXT NOT NULL,
+      ref TEXT NOT NULL,
+      source TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_crystal_materials_crystal ON crystal_materials(crystal_id, created_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_crystal_materials_unique ON crystal_materials(crystal_id, kind, ref);
+    CREATE TABLE IF NOT EXISTS crystal_processed_anchors (
+      anchor_id TEXT PRIMARY KEY NOT NULL,
+      processed_at TEXT NOT NULL
+    );
+  `);
 }
 
 function runTransaction<T>(
@@ -859,8 +965,8 @@ function setRevision(database: DatabaseSync, revision: number): void {
 function readMemoryEntries(database: DatabaseSync): MemoryEntry[] {
   const active = database.prepare("SELECT * FROM memories").all() as unknown as MemoryDbRow[];
   const archived = database.prepare(
-    "SELECT id, original_id, content, metadata, origin_kind, workspace_id, workspace_name, " +
-    "original_created_at AS created_at, original_updated_at AS updated_at, revision, access_count, last_recalled_at, " +
+    "SELECT id, original_id, content, metadata, origin_kind, workspace_id, workspace_name, thread_id, message_id, user_id, " +
+    "original_created_at AS created_at, original_updated_at AS updated_at, revision, access_count, last_accessed_at, " +
     "archived_at, archived_reason, archived_by, merged_into " +
     "FROM memory_archive"
   ).all() as unknown as MemoryDbRow[];
@@ -880,8 +986,8 @@ function findMemoryEntry(database: DatabaseSync, id: string): MemoryEntry | unde
   const active = database.prepare("SELECT * FROM memories WHERE id = ?").get(id) as MemoryDbRow | undefined;
   if (active) return memoryFromRow(active);
   const archived = database.prepare(
-    "SELECT id, original_id, content, metadata, origin_kind, workspace_id, workspace_name, " +
-    "original_created_at AS created_at, original_updated_at AS updated_at, revision, access_count, last_recalled_at, " +
+    "SELECT id, original_id, content, metadata, origin_kind, workspace_id, workspace_name, thread_id, message_id, user_id, " +
+    "original_created_at AS created_at, original_updated_at AS updated_at, revision, access_count, last_accessed_at, " +
     "archived_at, archived_reason, archived_by, merged_into " +
     "FROM memory_archive WHERE id = ?"
   ).get(id) as MemoryDbRow | undefined;
@@ -905,6 +1011,15 @@ function memoryFromRow(row: MemoryDbRow): MemoryEntry {
     decisions: metadata.decisions,
     paths: metadata.paths,
     keywords: metadata.keywords,
+    source: metadata.source,
+    tags: metadata.tags,
+    rationale: metadata.rationale,
+    metadata,
+    activitySource: metadata.activitySource,
+    activitySessionId: metadata.activitySessionId,
+    threadId: optionalString(row.thread_id),
+    messageId: optionalString(row.message_id),
+    userId: optionalString(row.user_id),
     importance: metadata.importance,
     durability: metadata.durability,
     expiresAt: metadata.expiresAt,
@@ -921,8 +1036,8 @@ function memoryFromRow(row: MemoryDbRow): MemoryEntry {
     updatedAt: stringValue(row.updated_at, "memory updated_at"),
     durability: metadata.durability
   });
-  entry.recallCount = safeCounter(row.access_count);
-  entry.lastRecalledAt = optionalTimeValue(row.last_recalled_at);
+  entry.accessCount = safeCounter(row.access_count);
+  entry.lastAccessedAt = optionalTimeValue(row.last_accessed_at);
   return entry;
 }
 
@@ -941,21 +1056,24 @@ function parseMemoryMetadata(value: unknown): z.infer<typeof memoryMetadataSchem
 function insertActiveMemory(database: DatabaseSync, entry: MemoryEntry): void {
   database.prepare(
     "INSERT INTO memories " +
-    "(id, content, metadata, origin_kind, workspace_id, workspace_name, created_at, updated_at, revision, access_count, last_recalled_at) " +
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "(id, content, metadata, origin_kind, workspace_id, workspace_name, thread_id, message_id, user_id, created_at, updated_at, revision, access_count, last_accessed_at) " +
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   ).run(...activeMemoryValues(entry));
 }
 
 function updateActiveMemory(database: DatabaseSync, entry: MemoryEntry): void {
   database.prepare(
     "UPDATE memories SET content = ?, metadata = ?, origin_kind = ?, workspace_id = ?, workspace_name = ?, " +
-    "updated_at = ?, revision = ? WHERE id = ?"
+    "thread_id = ?, message_id = ?, user_id = ?, updated_at = ?, revision = ? WHERE id = ?"
   ).run(
     entry.summary,
     memoryMetadata(entry),
     entry.origin.kind,
     entry.origin.kind === "workspace" ? entry.origin.workspaceId : null,
     entry.origin.kind === "workspace" ? entry.origin.workspaceName : null,
+    entry.threadId ?? null,
+    entry.messageId ?? null,
+    entry.userId ?? null,
     entry.updatedAt,
     entry.revision,
     entry.id
@@ -966,9 +1084,9 @@ function insertArchivedMemory(database: DatabaseSync, entry: MemoryEntry): void 
   if (!entry.archivedAt || !entry.originalId) throw new Error("Archived memory requires archived_at and original_id.");
   database.prepare(
     "INSERT INTO memory_archive " +
-    "(id, original_id, content, metadata, origin_kind, workspace_id, workspace_name, original_created_at, " +
-    "original_updated_at, revision, access_count, last_recalled_at, archived_at, archived_reason, archived_by, merged_into) " +
-    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "(id, original_id, content, metadata, origin_kind, workspace_id, workspace_name, thread_id, message_id, user_id, original_created_at, " +
+    "original_updated_at, revision, access_count, last_accessed_at, archived_at, archived_reason, archived_by, merged_into) " +
+    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   ).run(...archivedMemoryValues(entry));
 }
 
@@ -976,13 +1094,17 @@ function updateArchivedMemory(database: DatabaseSync, entry: MemoryEntry): void 
   if (!entry.archivedAt) throw new Error("Archived memory requires archived_at.");
   database.prepare(
     "UPDATE memory_archive SET content = ?, metadata = ?, origin_kind = ?, workspace_id = ?, workspace_name = ?, " +
-    "original_updated_at = ?, revision = ?, archived_at = ?, archived_reason = ?, archived_by = ?, merged_into = ? WHERE id = ?"
+    "thread_id = ?, message_id = ?, user_id = ?, last_accessed_at = ?, original_updated_at = ?, revision = ?, archived_at = ?, archived_reason = ?, archived_by = ?, merged_into = ? WHERE id = ?"
   ).run(
     entry.summary,
     memoryMetadata(entry),
     entry.origin.kind,
     entry.origin.kind === "workspace" ? entry.origin.workspaceId : null,
     entry.origin.kind === "workspace" ? entry.origin.workspaceName : null,
+    entry.threadId ?? null,
+    entry.messageId ?? null,
+    entry.userId ?? null,
+    entry.lastAccessedAt ?? null,
     entry.updatedAt,
     entry.revision,
     entry.archivedAt,
@@ -1001,11 +1123,14 @@ function activeMemoryValues(entry: MemoryEntry): SqlValue[] {
     entry.origin.kind,
     entry.origin.kind === "workspace" ? entry.origin.workspaceId : null,
     entry.origin.kind === "workspace" ? entry.origin.workspaceName : null,
+    entry.threadId ?? null,
+    entry.messageId ?? null,
+    entry.userId ?? null,
     entry.createdAt,
     entry.updatedAt,
     entry.revision,
-    entry.recallCount,
-    entry.lastRecalledAt ?? null
+    entry.accessCount,
+    entry.lastAccessedAt ?? null
   ];
 }
 
@@ -1019,11 +1144,14 @@ function archivedMemoryValues(entry: MemoryEntry): SqlValue[] {
     entry.origin.kind,
     entry.origin.kind === "workspace" ? entry.origin.workspaceId : null,
     entry.origin.kind === "workspace" ? entry.origin.workspaceName : null,
+    entry.threadId ?? null,
+    entry.messageId ?? null,
+    entry.userId ?? null,
     entry.createdAt,
     entry.updatedAt,
     entry.revision,
-    entry.recallCount,
-    entry.lastRecalledAt ?? null,
+    entry.accessCount,
+    entry.lastAccessedAt ?? null,
     entry.archivedAt,
     entry.archivedReason ?? "manual",
     entry.archivedBy ?? "manual",
@@ -1033,17 +1161,38 @@ function archivedMemoryValues(entry: MemoryEntry): SqlValue[] {
 
 function memoryMetadata(entry: MemoryEntry): string {
   return JSON.stringify({
+    ...entry.metadata,
     kind: entry.kind,
     topic: entry.topic,
     title: entry.title,
     decisions: entry.decisions,
     paths: entry.paths,
     keywords: entry.keywords,
+    source: entry.source,
+    tags: entry.tags,
+    rationale: entry.rationale,
+    activitySource: entry.activitySource,
+    activitySessionId: entry.activitySessionId,
+    accessCount: entry.accessCount,
+    lastAccessedAt: entry.lastAccessedAt,
     importance: entry.importance,
     durability: entry.durability,
     expiresAt: entry.expiresAt,
     lineage: entry.lineage
   });
+}
+
+function updateAccessMetadata(database: DatabaseSync, table: "memories" | "memory_archive", id: string, timestamp: string): void {
+  const row = database.prepare(`SELECT metadata, access_count FROM ${table} WHERE id = ?`).get(id) as { metadata?: unknown; access_count?: unknown } | undefined;
+  if (!row || typeof row.metadata !== "string") return;
+  try {
+    const metadata = JSON.parse(row.metadata) as Record<string, unknown>;
+    metadata.accessCount = safeCounter(row.access_count);
+    metadata.lastAccessedAt = timestamp;
+    database.prepare(`UPDATE ${table} SET metadata = ? WHERE id = ?`).run(JSON.stringify(metadata), id);
+  } catch {
+    // 访问计数的派生投影不应遮蔽已经成功的计数更新。
+  }
 }
 
 function deleteActiveMemory(database: DatabaseSync, id: string): void {
@@ -1060,7 +1209,7 @@ function emptyMaintenanceStatus(): MemoryMaintenanceStatus {
 
 function sanitizeMaintenanceStatus(status: MemoryMaintenanceStatus): MemoryMaintenanceStatus {
   const safeRun = status.lastRun === undefined ? undefined : sanitizeSleepRun(status.lastRun);
-  const runs = status.sleepRuns?.slice(-20).map(sanitizeSleepRun);
+  const runs = status.sleepRuns?.map(sanitizeSleepRun);
   return {
     state: status.state,
     startedAt: safeOptionalTime(status.startedAt),
@@ -1102,13 +1251,13 @@ function sanitizeSleepRun(run: MemorySleepRun): MemorySleepRun {
   };
 }
 
-function readSleepRuns(database: DatabaseSync): MemorySleepRun[] {
+function readSleepRuns(database: DatabaseSync, id?: string): MemorySleepRun[] {
   const rows = database.prepare(
     "SELECT id, status, trigger, examined, written, failed, archived, exact, expired, similarity, llm, " +
     "archived_exact, archived_expired, archived_orphan, archived_similarity, archived_llm, input_tokens, output_tokens, " +
-    "started_at, finished_at, error " +
-    "FROM memory_sleep_runs ORDER BY started_at ASC, id ASC"
-  ).all() as unknown as SleepRunDbRow[];
+    "started_at, finished_at, ended_at, error " +
+    "FROM memory_sleep_runs " + (id === undefined ? "ORDER BY started_at ASC, id ASC" : "WHERE id = ?")
+  ).all(...(id === undefined ? [] : [id])) as unknown as SleepRunDbRow[];
   return rows.map((row) => {
     const parsed = memorySleepRunSchema.safeParse({
       id: stringValue(row.id, "sleep run id"),
@@ -1130,7 +1279,7 @@ function readSleepRuns(database: DatabaseSync): MemorySleepRun[] {
       inputTokens: safeCounter(row.input_tokens),
       outputTokens: safeCounter(row.output_tokens),
       startedAt: stringValue(row.started_at, "sleep run started_at"),
-      finishedAt: optionalTimeValue(row.finished_at),
+      finishedAt: optionalTimeValue(row.finished_at ?? row.ended_at),
       error: optionalString(row.error)
     });
     if (!parsed.success) throw new Error("Invalid memory sleep run.");
@@ -1151,8 +1300,8 @@ function parseSleepRun(value: unknown): MemorySleepRun | undefined {
   return sanitizeSleepRun(parsed.data);
 }
 
-async function resolveMemoryDatabasePath(create: boolean): Promise<string | undefined> {
-  const configuredAgentPath = path.resolve(globalAgentDir());
+async function resolveMemoryDatabasePath(create: boolean, agentDir?: string): Promise<string | undefined> {
+  const configuredAgentPath = path.resolve(agentDir ?? globalAgentDir());
   const agent = await ensureRealDirectory(configuredAgentPath, create, "global agent directory");
   if (!agent) return undefined;
   const canonicalAgent = await fs.realpath(configuredAgentPath);

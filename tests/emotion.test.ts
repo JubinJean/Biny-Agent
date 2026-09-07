@@ -17,12 +17,14 @@ import {
   systemPromptForTelemetry
 } from "../src/agent/prompts.js";
 import { configSchema, defaultConfig } from "../src/config/schema.js";
+import { BINY_AGENT_DIR_ENV } from "../src/config/paths.js";
 import { PermissionManager } from "../src/permission/PermissionManager.js";
 import { SessionRecorder } from "../src/session/recorder.js";
 import { ensureAgentDirs } from "../src/session/store.js";
 import { createEmotionTool } from "../src/tools/emotion.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import type { AgentModel } from "../src/agent/core/types.js";
+import { emotionSetBaseCommand, emotionSetContextCommand } from "../src/cli/commands/emotion.js";
 
 const now = new Date("2026-08-30T03:00:00.000Z");
 
@@ -30,6 +32,7 @@ await testBlendEmotion();
 await testEmotionStorage();
 testEmotionPromptAndSystemPrompt();
 await testEmotionTool();
+await testEmotionCliWritesLocalFiles();
 await testAgentSessionFatigue();
 testEmotionConfig();
 console.log("emotion tests passed");
@@ -118,17 +121,44 @@ async function testEmotionStorage(): Promise<void> {
     const baseDocument = await fs.readFile(path.join(storage.directory, "base.md"), "utf8");
     assert.match(baseDocument, /^---\nmood: 基础\nvalence: 6\nenergy: 7\nupdated: 2026-08-30T02:00:00\.000Z\n---\n\n全局原因\n$/u);
     const contextDirectory = path.join(storage.directory, "context");
-    const contextFiles = await fs.readdir(contextDirectory);
-    assert.deepEqual(contextFiles, ["session-one.md"]);
-    assert.equal(contextFiles.some((file) => file.endsWith(".tmp")), false);
+  const contextFiles = await fs.readdir(contextDirectory);
+  assert.deepEqual(contextFiles, ["session-one.md"]);
+  assert.equal(contextFiles.some((file) => file.endsWith(".tmp")), false);
+  const contextDocument = await fs.readFile(path.join(contextDirectory, "session-one.md"), "utf8");
+  assert.doesNotMatch(contextDocument, /^energy:/mu, "context 文件只保存 mood/valence/updated");
 
     await fs.writeFile(path.join(storage.directory, "base.md"), "not markdown", "utf8");
     assert.equal(await storage.readBase(), undefined);
     current = new Date("2026-08-30T06:00:00.000Z");
     assert.equal((await storage.readContext("session/one"))?.mood, "上下文");
+    await fs.writeFile(
+      path.join(contextDirectory, "session-one.md"),
+      "---\nmood: 外部上下文\nvalence: 8\nupdated: 2026-08-30T05:59:00.000Z\n---\n\n外部触发\n",
+      "utf8"
+    );
+    assert.equal((await storage.readContext("session/one"))?.mood, "外部上下文");
     await fs.writeFile(path.join(contextDirectory, "session-one.md"), "---\nmood: broken\n---\n", "utf8");
     assert.equal(await storage.readContext("session/one"), undefined);
   } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+async function testEmotionCliWritesLocalFiles(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "biny-emotion-cli-test-"));
+  const previous = process.env[BINY_AGENT_DIR_ENV];
+  process.env[BINY_AGENT_DIR_ENV] = root;
+  try {
+    await emotionSetBaseCommand("专注", "8", "6", ["完成一轮整理"]);
+    await emotionSetContextCommand("chat-one", "轻松", "7", ["用户反馈明确"]);
+    const storage = new EmotionStorage({ agentDir: root });
+    assert.equal((await storage.readBase())?.mood, "专注");
+    assert.equal((await storage.readContext("chat-one"))?.mood, "轻松");
+    const contextDocument = await fs.readFile(path.join(root, "emotions", "context", "chat-one.md"), "utf8");
+    assert.doesNotMatch(contextDocument, /^energy:/mu);
+  } finally {
+    if (previous === undefined) delete process.env[BINY_AGENT_DIR_ENV];
+    else process.env[BINY_AGENT_DIR_ENV] = previous;
     await rm(root, { recursive: true, force: true });
   }
 }
@@ -187,7 +217,7 @@ async function testEmotionTool(): Promise<void> {
     assert.equal(result.updated, true);
     assert.equal(result.state.valence, 10);
     assert.equal(result.state.energy, 0);
-    assert.equal(result.blended.energy, 0);
+    assert.equal(result.blended.energy, 4, "context 文件不覆盖全局 energy，疲劳上限仍生效");
     assert.equal((await storage.readContext("session/one"))?.mood, "疲惫");
 
     const invalidSessionExecution = await tool.resolveExecution({

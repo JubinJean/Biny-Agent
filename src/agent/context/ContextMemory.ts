@@ -174,12 +174,6 @@ export class ContextMemory {
       }
     }
     this.memoryRecall = memoryRecallForAssembly(recalled.report, recalled.entries, assembly.budget.components);
-    const memoryComponent = assembly.budget.components?.find((component) => component.id === "stable memory");
-    if (memoryComponent?.disposition === "included" && recalled.entries.length) {
-      const ids = recalled.entries.map(({ id }) => id);
-      await (this.memoryRetriever?.recordRecallUsage(ids, { signal })
-        ?? this.localMemory?.recordRecallUsage(ids, { signal }))?.catch(() => undefined);
-    }
     this.lastBudget = {
       ...assembly.budget,
       contextWindow: budget.contextWindow,
@@ -593,6 +587,7 @@ export class ContextMemory {
         signal,
         automatic: true
       });
+      await this.memoryRetriever.recordRecallUsage(result.matches.map((match) => match.entry.id), { signal });
       return {
         matches: result.matches.map((match) => ({
           topic: match.topic,

@@ -68,8 +68,23 @@ export interface MemoryEntryInput {
   decisions?: string[];
   paths?: string[];
   keywords?: string[];
-  /** 1（低）到 5（高），默认 3。 */
+  /** 与原始记忆协议兼容的来源标签；未提供时由写入入口按调用场景补齐。 */
+  source?: "auto" | "manual" | string;
+  /** 原始记忆协议中的标签集合；keywords 仍作为 Biny 的检索字段保留。 */
+  tags?: string[];
+  /** 模型或用户给出的保存理由。 */
+  rationale?: string;
+  /** 保留来源 JSON 字段；显式条目字段及存储身份不由此对象覆盖。 */
+  metadata?: Record<string, unknown>;
+  activitySource?: string;
+  activitySessionId?: string;
+  /** 可选的对话来源关联。 */
+  threadId?: string;
+  messageId?: string;
+  userId?: string;
+  /** 显式数值原样保留；底层默认 0.5。 */
   importance?: number;
+  accessCount?: number;
   durability?: MemoryDurability;
   expiresAt?: string;
   archivedAt?: string;
@@ -87,6 +102,15 @@ export interface MemoryEntryPatch {
   decisions?: string[];
   paths?: string[];
   keywords?: string[];
+  source?: "auto" | "manual" | string;
+  tags?: string[];
+  rationale?: string;
+  metadata?: Record<string, unknown>;
+  activitySource?: string;
+  activitySessionId?: string;
+  threadId?: string;
+  messageId?: string;
+  userId?: string;
   importance?: number;
   durability?: MemoryDurability;
   expiresAt?: string;
@@ -108,6 +132,15 @@ export interface MemoryEntry {
   decisions: string[];
   paths: string[];
   keywords: string[];
+  source: string;
+  tags: string[];
+  rationale?: string;
+  metadata?: Record<string, unknown>;
+  activitySource?: string;
+  activitySessionId?: string;
+  threadId?: string;
+  messageId?: string;
+  userId?: string;
   importance: number;
   createdAt: string;
   updatedAt: string;
@@ -117,8 +150,8 @@ export interface MemoryEntry {
   durability: MemoryDurability;
   expiresAt?: string;
   /** SQLite 行上的 usage 字段；不会改变事实 revision。 */
-  recallCount: number;
-  lastRecalledAt?: string;
+  accessCount: number;
+  lastAccessedAt?: string;
   /** memory_archive 对应的可恢复归档状态。 */
   archivedAt?: string;
   archivedReason?: MemoryArchiveReason;
@@ -275,6 +308,7 @@ export interface MemorySearchResult {
  * 当前维护批次结束后再调度重建，避免与后续 memory mutation 并发。
  */
 export interface MemoryDerivedIndexSink {
+  prepareSynthesis?(content: string, signal?: AbortSignal): Promise<((entry: MemoryEntry) => void) | undefined>;
   indexEntry(entry: MemoryEntry): Promise<void>;
   removeEntries?(entryIds: readonly string[]): void;
   requestRebuild?(): void;
@@ -282,7 +316,12 @@ export interface MemoryDerivedIndexSink {
     entries: readonly MemoryEntry[],
     minimumSimilarity: number,
     signal?: AbortSignal
-  ) => Promise<MemorySimilarityPair[]>;
+  ) => Promise<MemorySimilarityScan>;
+}
+
+export interface MemorySimilarityScan {
+  examined: number;
+  pairs: MemorySimilarityPair[];
 }
 
 export interface MemorySimilarityPair {
@@ -292,16 +331,25 @@ export interface MemorySimilarityPair {
 }
 
 export interface MemoryMaintenanceOptions extends MemoryReadOptions {
+  sleepEnabled?: boolean;
   now?: Date;
-  trigger?: "scheduled" | "manual";
+  trigger?: "scheduled" | "manual" | "idle" | "count";
   archiveRetentionDays?: number;
   temporaryTtl?: number;
+  similarityMergeThreshold?: number;
+  dedupAcrossUserIds?: boolean;
   useLlm?: boolean;
   llmMergeLow?: number;
   llmBatchSize?: number;
 }
 
 export interface MemorySleepPreview {
+  examined?: number;
+  skipped?: string;
+  archiveProposed?: Array<{ id: string; content: string; reason: MemoryArchiveReason; mergedInto?: string }>;
+  synthesisProposed?: Array<{ content: string; durability: MemoryDurability; sourceIds: string[] }>;
+  inputTokens?: number;
+  outputTokens?: number;
   available: boolean;
   entries: number;
   temporaryToArchive: number;
@@ -313,7 +361,7 @@ export interface MemorySleepPreview {
 export interface MemorySleepRun {
   id: string;
   status: "running" | "completed" | "failed" | "cancelled";
-  trigger: "scheduled" | "manual";
+  trigger: "scheduled" | "manual" | "idle" | "count";
   examined: number;
   written: number;
   failed: number;

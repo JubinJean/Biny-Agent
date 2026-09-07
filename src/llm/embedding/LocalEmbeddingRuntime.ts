@@ -30,7 +30,6 @@ interface LocalModelDefinition {
   description: string;
   dimensions: number;
   modelSizeBytes: number;
-  prefix: "e5" | "none";
   recommendedThresholds: {
     currentWorkspace: number;
     crossWorkspace: number;
@@ -77,15 +76,36 @@ export interface LocalEmbeddingManagerOptions {
 
 export const localEmbeddingModels: readonly LocalModelDefinition[] = [
   {
+    id: "all-MiniLM-L6-v2",
+    repository: "Xenova/all-MiniLM-L6-v2",
+    revision: "751bff37182d3f1213fa05d7196b954e230abad9",
+    dtype: "q8",
+    displayName: "MiniLM L6 v2",
+    description: "轻量通用句向量模型。",
+    dimensions: 384,
+    modelSizeBytes: 23 * 1024 * 1024,
+    recommendedThresholds: { currentWorkspace: 0.45, crossWorkspace: 0.65 }
+  },
+  {
+    id: "bge-small-en-v1.5",
+    repository: "Xenova/bge-small-en-v1.5",
+    revision: "ea104dacec62c0de699686887e3f920caeb4f3e3",
+    dtype: "q8",
+    displayName: "BGE Small EN v1.5",
+    description: "面向英语语义检索的句向量模型。",
+    dimensions: 384,
+    modelSizeBytes: 33 * 1024 * 1024,
+    recommendedThresholds: { currentWorkspace: 0.45, crossWorkspace: 0.65 }
+  },
+  {
     id: "multilingual-e5-small",
     repository: "Xenova/multilingual-e5-small",
     revision: "761b726dd34fb83930e26aab4e9ac3899aa1fa78",
     dtype: "q8",
     displayName: "Multilingual E5 Small",
-    description: "适合中英文检索；查询和记忆分别使用 query/passage 前缀。",
+    description: "适合中英文检索；对原文做平均池化并归一化。",
     dimensions: 384,
     modelSizeBytes: 145 * 1024 * 1024,
-    prefix: "e5",
     recommendedThresholds: { currentWorkspace: 0.8, crossWorkspace: 0.86 }
   },
   {
@@ -97,13 +117,13 @@ export const localEmbeddingModels: readonly LocalModelDefinition[] = [
     description: "覆盖 50 种语言的轻量句向量模型。",
     dimensions: 384,
     modelSizeBytes: 145 * 1024 * 1024,
-    prefix: "none",
     recommendedThresholds: { currentWorkspace: 0.45, crossWorkspace: 0.65 }
   }
 ] as const;
 
 export class LocalEmbeddingManager {
   private readonly extractors = new Map<LocalEmbeddingModelId, Promise<FeatureExtractor>>();
+  private readonly readyModels = new Set<LocalEmbeddingModelId>();
   private readonly moduleLoader: () => Promise<TransformersModule>;
 
   constructor(readonly cacheDirectory: string, options: LocalEmbeddingManagerOptions = {}) {
@@ -112,6 +132,10 @@ export class LocalEmbeddingManager {
 
   descriptors(): EmbeddingModelDescriptor[] {
     return listLocalEmbeddingModels();
+  }
+
+  isReady(): boolean {
+    return this.readyModels.size > 0;
   }
 
   async list(): Promise<LocalEmbeddingModelStatus[]> {
@@ -160,6 +184,7 @@ export class LocalEmbeddingManager {
     const model = requireLocalModel(modelId);
     const loaded = this.extractors.get(modelId);
     this.extractors.delete(modelId);
+    this.readyModels.delete(modelId);
     if (loaded) await (await loaded).dispose();
     const transformers = await this.moduleLoader();
     const cacheRoot = path.join(this.cacheDirectory, ...model.repository.split("/"), model.revision);
@@ -183,6 +208,7 @@ export class LocalEmbeddingManager {
   async close(): Promise<void> {
     const loaded = [...this.extractors.values()];
     this.extractors.clear();
+    this.readyModels.clear();
     await Promise.allSettled(loaded.map(async (extractor) => await (await extractor).dispose()));
   }
 
@@ -192,7 +218,7 @@ export class LocalEmbeddingManager {
     const embeddings: Float32Array[] = [];
     for (let offset = 0; offset < request.texts.length; offset += localEmbeddingBatchSize) {
       request.signal?.throwIfAborted();
-      const texts = request.texts.slice(offset, offset + localEmbeddingBatchSize).map((text) => prefixText(model, request.inputType, text));
+      const texts = request.texts.slice(offset, offset + localEmbeddingBatchSize);
       const output = await extractor(texts, { pooling: "mean", normalize: true });
       request.signal?.throwIfAborted();
       embeddings.push(...tensorRows(output, texts.length, model.dimensions));
@@ -208,7 +234,10 @@ export class LocalEmbeddingManager {
   private async extractor(model: LocalModelDefinition): Promise<FeatureExtractor> {
     const existing = this.extractors.get(model.id);
     if (existing) return await existing;
-    const loading = this.load(model, true).catch((error) => {
+    const loading = this.load(model, true).then((extractor) => {
+      if (this.extractors.get(model.id) === loading) this.readyModels.add(model.id);
+      return extractor;
+    }).catch((error) => {
       this.extractors.delete(model.id);
       throw error;
     });
@@ -292,16 +321,11 @@ function localDescriptor(model: LocalModelDefinition): EmbeddingModelDescriptor 
 function localFingerprint(model: LocalModelDefinition): string {
   return embeddingModelFingerprint({
     ref: { kind: "local", model: model.id },
-    wire: "transformers-js",
+    wire: "transformers-js/raw-mean-normalized-v1",
     revision: model.revision,
     dtype: model.dtype,
     dimensions: model.dimensions
   });
-}
-
-function prefixText(model: LocalModelDefinition, inputType: EmbeddingRequest["inputType"], text: string): string {
-  if (model.prefix !== "e5") return text;
-  return `${inputType === "query" ? "query" : "passage"}: ${text}`;
 }
 
 function tensorRows(

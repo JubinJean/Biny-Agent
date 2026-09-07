@@ -15,6 +15,7 @@ import {
 import { PermissionManager, type PermissionMode } from "../permission/PermissionManager.js";
 import { runPermissionCommand } from "../permission/commands.js";
 import { listSessionSummaries, parseSessionEvents, readSessionEvents, type SessionSummary } from "../session/events.js";
+import { sessionMessageMetadata } from "../session/messageTree.js";
 import { assertSessionFileSize } from "../session/limits.js";
 import { cachedSessionEvents, sessionFileFingerprint } from "../session/parseCache.js";
 import { SessionRecorder, type ReasoningBlock, type SessionEvent } from "../session/recorder.js";
@@ -69,18 +70,20 @@ import {
   refreshChatDailyDiary,
   type ChatDiaryRefreshResult
 } from "./context/chatDiary.js";
+import { refreshSelfReflection } from "./context/selfReflection.js";
 import { LocalMemory, redactSecrets } from "./context/LocalMemory.js";
 import { IdentityStorage } from "./context/identityStorage.js";
 import { EmotionStorage } from "./context/emotionStorage.js";
 import { renderEmotionPrompt } from "./context/emotionPrompt.js";
 import { runMemoryCommand } from "./context/memoryCommands.js";
-import { readDailyMemoryNotes } from "../activity/dailyNotes.js";
+import { readFileMemoryPrompt } from "./context/fileMemory.js";
 import { MemoryVectorIndex } from "./context/MemoryVectorIndex.js";
 import { HybridMemoryRetriever } from "./context/HybridMemoryRetriever.js";
 import {
   MemoryEmbeddingService,
   type MemoryEmbeddingRuntimeStatus
 } from "./context/MemoryEmbeddingService.js";
+import { CrystalService } from "./context/crystalService.js";
 import { WorkspaceContext } from "./context/WorkspaceContext.js";
 import type { CompactionResult, ContextStatus } from "./context/types.js";
 import { recordNativeTelemetry } from "../observability/telemetry.js";
@@ -123,7 +126,7 @@ import type {
   MemorySearchOptions,
   MemorySearchResult,
   MemorySimilarSearchOptions,
-  MemorySimilarityPair
+  MemorySimilarityScan
 } from "./context/memoryTypes.js";
 import { resolveCapabilityNames, type AgentCapabilitySelection } from "./capabilitySelection.js";
 
@@ -299,6 +302,7 @@ export class AgentSession {
   private readonly localEmbeddingManager: LocalEmbeddingManager;
   private readonly memoryRetriever: HybridMemoryRetriever;
   private readonly memoryEmbeddingService: MemoryEmbeddingService;
+  private readonly crystalService: CrystalService;
   private usageRecords: SessionUsage[] = [];
   private modelRequestRecords: ModelRequestMetrics[] = [];
   private unpersistedRelatedUsage: SessionUsage[] = [];
@@ -307,6 +311,10 @@ export class AgentSession {
   private activeOperation: string | undefined;
   private activeRunMessageQueues: ActiveRunMessageQueues | undefined;
   private readonly lingeringExternalTools = new Map<Promise<unknown>, { tool: string; toolCallId: string }>();
+  private readonly pendingCrystalTasks = new Set<Promise<void>>();
+  private readonly queuedCrystalThreads = new Set<string>();
+  private readonly pendingMemoryTasks = new Set<Promise<unknown>>();
+  private closed = false;
   /** 与 ContextMemory history 一一对应；内部 steering 消息没有持久化引用。 */
   private contextMessageReferences: Array<SessionMessageReference | undefined> = [];
   private nextSessionMessageIndex = 0;
@@ -370,7 +378,7 @@ export class AgentSession {
       },
       async (query, searchOptions) => {
         const snapshot = await this.localMemory.listMemoryEntries({
-          origins: ["all"],
+          origins: ["user", "current_workspace"],
           signal: searchOptions.signal
         });
         return await this.memoryEmbeddingService.findSimilarEntries(
@@ -395,6 +403,7 @@ export class AgentSession {
       getReadOnlyVectorIndex: openReadOnlyMemoryIndex,
       getActiveModel: () => this.activeConfig.context.memory.embeddingModel,
       getProviderModels: () => this.providerEmbeddingModels(),
+      getNeedsRebuild: () => this.activeConfig.needsEmbeddingRebuild,
       getRuntime: async () => await this.activeMemoryEmbeddingRuntime()
     });
     this.memoryRetriever = new HybridMemoryRetriever({
@@ -428,6 +437,31 @@ export class AgentSession {
         });
         if (result.usage) await onUsage(result.usage, "memory");
         return result.text;
+      }
+    });
+    this.crystalService = new CrystalService({
+      getModel: () => this.memoryModelFor("memoryModel"),
+      getConfig: () => this.activeConfig.crystal,
+      readAnchorText: async ({ threadId, anchorId }) => {
+        if (!threadId || !/^[A-Za-z0-9_-]+$/u.test(threadId)) return undefined;
+        const filePath = threadId === this.recorder.sessionId
+          ? this.recorder.filePath
+          : await resolveSessionFile(this.persistenceRoot(), threadId);
+        // 查询接口也支持前缀；材料必须绑定完整会话标识，不能读到另一个近似匹配。
+        if (sessionIdFromFile(filePath) !== threadId) return undefined;
+        const events = await readSessionEvents(filePath);
+        const event = events.find((candidate) => (candidate.type === "user_message" || candidate.type === "assistant_message") && candidate.messageId === anchorId);
+        return event?.type === "user_message" || event?.type === "assistant_message" ? event.content : undefined;
+      },
+      embedText: async (text, signal) => {
+        if (!this.localEmbeddingManager.isReady()) return undefined;
+        const runtime = await this.localEmbeddingManager.createRuntime("multilingual-e5-small");
+        const embedded = await runtime.embed({
+          texts: [text],
+          inputType: "passage",
+          signal
+        });
+        return embedded.embeddings[0];
       }
     });
     // 压缩摘要可切换到更便宜的模型。与 memoryModel 一样读取 root-turn 快照；解析失败只
@@ -476,6 +510,7 @@ export class AgentSession {
   async initialize(): Promise<void> {
     await this.contextMemory.initialize();
     await this.identityStorage.initialize();
+    await this.crystalService.initialize();
   }
 
   /** 技能元数据、具名子代理清单与 MCP instructions 共同构成 system prompt 的扩展段。 */
@@ -500,12 +535,7 @@ export class AgentSession {
 
   private async dailyNotesPrompt(): Promise<string | undefined> {
     try {
-      const notes = await readDailyMemoryNotes();
-      if (!notes.length) return undefined;
-      return notes.map((note) => [
-        `### ${note.dateKey}`,
-        note.content.length > 12_000 ? `…\n${note.content.slice(-12_000)}` : note.content
-      ].join("\n")).join("\n\n");
+      return await readFileMemoryPrompt();
     } catch {
       return undefined;
     }
@@ -525,7 +555,8 @@ export class AgentSession {
     permissionMode: PermissionMode,
     personalization: ResolvedChatPersonalization,
     capabilitySelection?: AgentCapabilitySelection,
-    signal?: AbortSignal
+    signal?: AbortSignal,
+    referenceHistory?: readonly AgentMessage[]
   ): Promise<string> {
     const selectedToolNames = this.selectedToolNames(capabilitySelection);
     const initialTools = mode === "plan"
@@ -536,6 +567,23 @@ export class AgentSession {
       : undefined;
     const emotionPrompt = await this.currentEmotionPrompt();
     const dailyNotesPrompt = await this.dailyNotesPrompt();
+    let crystalPrompt: string | undefined;
+    try {
+      let history = referenceHistory;
+      if (history === undefined) {
+        await this.recorder.flush();
+        const events = await readSessionEvents(this.recorder.filePath);
+        const nodes = sessionMessageTree(events);
+        const activeIds = activeSessionMessageIds(events);
+        // 引用来自原始活动消息，不从压缩摘要推断；旧无 ID 会话沿用内存历史。
+        history = nodes.length ? nodes.filter((node) => activeIds.has(node.id)).map((node) => node.message) : this.contextMemory.getHistory();
+      }
+      crystalPrompt = await this.crystalService.promptText(input, 8_000, history
+        .filter((message) => message.role === "user" || message.role === "assistant")
+        .map(messageText));
+    } catch {
+      // 辅助引用读取失败不扩大到其他会话或阻断当前对话。
+    }
     let activityPrompt: string | undefined;
     if (this.options.activityContext !== undefined) {
       try {
@@ -558,6 +606,7 @@ export class AgentSession {
       emotionPrompt,
       activityPrompt,
       dailyNotesPrompt,
+      crystalPrompt,
       cwd: this.options.workspaceRoot
     });
   }
@@ -747,6 +796,14 @@ export class AgentSession {
     return this.localMemory;
   }
 
+  getCrystalService(): CrystalService {
+    return this.crystalService;
+  }
+
+  getHeartbeatConfig(): AgentConfig["heartbeat"] {
+    return this.activeConfig.heartbeat;
+  }
+
   /** 刷新文件型每日工作日志；只读聊天/Activity 日志，不读取或改写 durable memory。 */
   async refreshDailyDiary(
     dateKey: string,
@@ -758,7 +815,7 @@ export class AgentSession {
     } catch {
       // 没有可用模型时由 diary 模块写确定性 fallback，避免日报依赖聊天模型配置。
     }
-    return await refreshChatDailyDiary(dateKey, {
+    const result = await refreshChatDailyDiary(dateKey, {
       model,
       signal: options.signal,
       force: options.force,
@@ -766,6 +823,17 @@ export class AgentSession {
       onModelRequest: async (metrics) => await this.recordModelRequest(metrics),
       requestContext: { operation: "memory" }
     });
+    if (model) {
+      const memories = await this.localMemory.listMemoryEntries({ origins: ["user", "current_workspace"], limit: 40 }).catch(() => undefined);
+      await refreshSelfReflection(dateKey, {
+        model,
+        memoryContext: memories?.entries.map((entry) => `- ${entry.summary}`).join("\n"),
+        onUsage: async (usage, operation) => { this.recordModelUsage(usage, operation); },
+        onModelRequest: async (metrics) => await this.recordModelRequest(metrics),
+        requestContext: { operation: "memory" }
+      }).catch(() => undefined);
+    }
+    return result;
   }
 
   /**
@@ -859,6 +927,7 @@ export class AgentSession {
   async rebuildMemoryEmbeddingIndex(signal?: AbortSignal): Promise<void> {
     await this.refreshMemoryConfig();
     await this.memoryEmbeddingService.rebuild(signal);
+    await this.clearEmbeddingRebuildMarker();
   }
 
   cancelMemoryEmbeddingRebuild(): boolean {
@@ -867,16 +936,21 @@ export class AgentSession {
 
   async indexMemoryEntry(entry: MemoryEntry): Promise<void> {
     // SQLite 事实已在调用前提交。配置瞬时读取失败也只能让该条目留待重建，不能把成功写入
-    // 对外伪装成失败并诱发重复提交；旧快照若仍可用，Service 会安全尝试同指纹增量写。
+    // 对外伪装成失败并诱发重复提交；事实更新时旧向量已先移除，避免短暂召回旧内容。
     await this.refreshMemoryConfig().catch(() => undefined);
     await this.memoryEmbeddingService.indexEntry(entry);
+  }
+
+  async prepareMemorySynthesis(content: string, signal?: AbortSignal): Promise<((entry: MemoryEntry) => void) | undefined> {
+    await this.refreshMemoryConfig();
+    return this.memoryEmbeddingService.prepareSynthesis(content, signal);
   }
 
   async findMemorySimilarityPairs(
     entries: readonly MemoryEntry[],
     minimumSimilarity: number,
     signal?: AbortSignal
-  ): Promise<MemorySimilarityPair[]> {
+  ): Promise<MemorySimilarityScan> {
     await this.refreshMemoryConfig().catch(() => undefined);
     return await this.memoryEmbeddingService.findSimilarPairs(entries, minimumSimilarity, signal);
   }
@@ -893,7 +967,7 @@ export class AgentSession {
     const embeddingModel = this.activeConfig.context.memory.embeddingModel;
     if (embeddingModel?.kind !== "local" || embeddingModel.model !== "multilingual-e5-small") return undefined;
     const snapshot = await this.localMemory.listMemoryEntries({
-      origins: ["all"],
+      origins: ["user", "current_workspace"],
       signal: options.signal
     });
     return await this.memoryEmbeddingService.findSimilarEntries(
@@ -973,17 +1047,25 @@ export class AgentSession {
       }
       const current = await store.loadVersioned(this.options.workspaceRoot);
       const parsedUpdate = globalPersonalizationUpdateSchema.parse(update);
+      const nextMemory = parsedUpdate.memory === undefined
+        ? current.config.context.memory
+        : memoryPolicySchema.parse(parsedUpdate.memory);
       const next = configSchema.parse({
         ...current.config,
         context: {
           ...current.config.context,
-          memory: parsedUpdate.memory === undefined
-            ? current.config.context.memory
-            : memoryPolicySchema.parse(parsedUpdate.memory)
-        }
+          memory: nextMemory
+        },
+        needsEmbeddingRebuild: parsedUpdate.memory !== undefined
+          && !sameEmbeddingModel(current.config.context.memory.embeddingModel, nextMemory.embeddingModel)
+          ? true
+          : current.config.needsEmbeddingRebuild
       });
       const saved = await store.saveVersioned(next, expectedRevision, this.options.workspaceRoot);
-      return (await this.readPersonalizationState(saved)).state;
+      const refreshed = await this.readPersonalizationState(saved);
+      this.activeConfig = refreshed.config;
+      this.activePersonalization = refreshed.state.resolved;
+      return refreshed.state;
     } finally {
       release();
     }
@@ -1064,7 +1146,10 @@ export class AgentSession {
     const permissionMode = this.options.permissionManager.getStatus().mode;
     this.contextMemory.restore(prefixMessages, replay.contextState ?? replay.contextUsage);
     this.contextMessageReferences = prefixReferences;
-    const basePrompt = await this.baseSystemPrompt(sourceInput, mode, permissionMode, personalization, options.capabilitySelection, options.abortSignal);
+    const originalActiveIds = activeSessionMessageIds(recordedEvents);
+    const referenceHistory = nodes.filter((node) => originalActiveIds.has(node.id)
+      && node.eventIndex < (replacingUser ? userNode.eventIndex : target.eventIndex)).map((node) => node.message);
+    const basePrompt = await this.baseSystemPrompt(sourceInput, mode, permissionMode, personalization, options.capabilitySelection, options.abortSignal, referenceHistory);
     const prepared = await this.contextMemory.prepareTurn(
       sourceInput,
       appendPromptContext(basePrompt, options.promptContext),
@@ -1440,6 +1525,7 @@ export class AgentSession {
     });
     return;
     } finally {
+      this.scheduleCrystalThread(this.recorder);
       this.recorder.setRuntimeContext(undefined);
       messageQueues.accepting = false;
       if (this.activeRunMessageQueues === messageQueues) this.activeRunMessageQueues = undefined;
@@ -1972,13 +2058,35 @@ export class AgentSession {
           occurredAt: new Date()
         }).catch(() => undefined);
         if (this.activePersonalization.contributeMemories) {
-          void this.localMemory.summarizeAndStoreMemories(finalMessages.slice(-4), {
-            sessionId: this.recorder.sessionId,
-            turnId: runOptions.turnId!,
-            runId: runOptions.runId!,
-            externalContext: Boolean(runOptions.attachments?.length) || this.usedExternalContext(finalMessages),
-            excludeExternalContext: this.activePersonalization.excludeExternalContext
-          }).catch(() => undefined);
+          const memoryRecorder = this.recorder;
+          const memoryRuntime = memoryRecorder.runtimeContextSnapshot();
+          const memoryMessageId = finalAssistantReference?.id;
+          const memoryTask = (async () => {
+            if (memoryMessageId && sessionMessageMetadata(await readSessionEvents(memoryRecorder.filePath), memoryMessageId).memoryExtracted) return;
+            const changes = await this.localMemory.summarizeAndStoreMemories(finalMessages, {
+              sessionId: memoryRecorder.sessionId,
+              turnId: runOptions.turnId!,
+              messageId: memoryMessageId,
+              runId: runOptions.runId!,
+              externalContext: Boolean(runOptions.attachments?.length) || this.usedExternalContext(finalMessages),
+              excludeExternalContext: this.activePersonalization.excludeExternalContext,
+              onMemoryWritten: async (entry) => {
+                if (entry.origin.kind === "user") await this.identityStorage.appendUserFact(entry.summary);
+              }
+            });
+            if (memoryMessageId) {
+              const metadata: Record<string, unknown> = { memoryExtracted: true, memoryExtractedAt: new Date().toISOString() };
+              if (changes.created.length) metadata.createdMemories = changes.created.map((entry) => ({ id: entry.id, content: entry.content, type: "created" }));
+              if (changes.deleted.length) metadata.deletedMemories = changes.deleted.map((entry) => ({ id: entry.id, content: entry.content, type: "created" }));
+              memoryRecorder.recordWithRuntimeContext({
+                type: "message_metadata",
+                messageId: memoryMessageId,
+                metadata
+              }, memoryRuntime);
+              await memoryRecorder.flush();
+            }
+          })().catch(() => undefined).finally(() => this.pendingMemoryTasks.delete(memoryTask));
+          this.pendingMemoryTasks.add(memoryTask);
         }
         if (!runOptions.continueFrom?.length) {
           void this.enqueueCompletedSkillDraft(input, content, newMessages, runOptions).catch(() => undefined);
@@ -2693,8 +2801,13 @@ export class AgentSession {
   }
 
   async close(): Promise<void> {
+    await Promise.allSettled([...this.pendingMemoryTasks]);
+    this.closed = true;
+    await Promise.allSettled([...this.pendingCrystalTasks]);
     this.memoryRetriever.close();
     this.memoryEmbeddingService.close();
+    this.localMemory.close();
+    this.crystalService.close();
     await this.localEmbeddingManager.close();
     const relatedUsage = this.takeRelatedUsage();
     if (relatedUsage) {
@@ -2855,6 +2968,24 @@ export class AgentSession {
     this.activePersonalization = snapshot.state.resolved;
   }
 
+  private async clearEmbeddingRebuildMarker(): Promise<void> {
+    if (!this.activeConfig.needsEmbeddingRebuild) return;
+    const store = this.options.configStore;
+    if (!store?.loadVersioned || !store.saveVersioned) return;
+    const activeModel = this.activeConfig.context.memory.embeddingModel;
+    const current = await store.loadVersioned(this.options.workspaceRoot);
+    if (!sameEmbeddingModel(current.config.context.memory.embeddingModel, activeModel)) return;
+    if (!current.config.needsEmbeddingRebuild) {
+      this.activeConfig = current.config;
+      return;
+    }
+    const next = configSchema.parse({ ...current.config, needsEmbeddingRebuild: false });
+    const saved = await store.saveVersioned(next, current.revision, this.options.workspaceRoot);
+    const refreshed = await this.readPersonalizationState(saved);
+    this.activeConfig = refreshed.config;
+    this.activePersonalization = refreshed.state.resolved;
+  }
+
 
 
   /**
@@ -2918,6 +3049,40 @@ export class AgentSession {
       });
     }
     return hydrated;
+  }
+
+  private scheduleCrystalThread(recorder: SessionRecorder): void {
+    if (this.closed) return;
+    if (this.queuedCrystalThreads.has(recorder.sessionId)) return;
+    this.queuedCrystalThreads.add(recorder.sessionId);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const task = new Promise<void>((resolve) => {
+      timer = setTimeout(() => {
+        void (async () => {
+          this.queuedCrystalThreads.delete(recorder.sessionId);
+          await recorder.flush();
+          const events = await readSessionEvents(recorder.filePath);
+          const activeIds = activeSessionMessageIds(events);
+          for (const node of sessionMessageTree(events)) {
+            if (node.message.role !== "user" || !activeIds.has(node.id)) continue;
+            if (this.crystalService.storage.hasProcessedAnchor(node.id)) continue;
+            await this.crystalService.processAnchor({
+              threadId: recorder.sessionId,
+              anchorId: node.id,
+              day: (events[node.eventIndex]?.time ?? new Date().toISOString()).slice(0, 10),
+              text: messageText(node.message),
+              source: "conversation"
+            });
+          }
+          // 整个线程扫描结束才维护休眠，已处理锚点不应阻止时间驱动的状态变化。
+          this.crystalService.dormantOldCrystals();
+        })().catch(() => undefined).finally(resolve);
+      }, 400);
+    }).finally(() => {
+      if (timer !== undefined) clearTimeout(timer);
+      this.pendingCrystalTasks.delete(task);
+    });
+    this.pendingCrystalTasks.add(task);
   }
 }
 
@@ -3179,6 +3344,19 @@ function sameTerminalOutcome(
 function sameStringArray(left: readonly string[] | undefined, right: readonly string[] | undefined): boolean {
   if (left === undefined || right === undefined) return left === right;
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function sameEmbeddingModel(
+  left: AgentConfig["context"]["memory"]["embeddingModel"],
+  right: AgentConfig["context"]["memory"]["embeddingModel"]
+): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  if (left.kind !== right.kind) return false;
+  if (left.kind === "local" && right.kind === "local") return left.model === right.model;
+  if (left.kind === "provider" && right.kind === "provider") {
+    return left.provider === right.provider && left.model === right.model;
+  }
+  return false;
 }
 
 function sessionAttachments(attachments: AgentAttachment[] | undefined): AttachmentReference[] | undefined {

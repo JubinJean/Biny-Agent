@@ -5,7 +5,6 @@ import os from "node:os";
 import path from "node:path";
 import {
   HybridMemoryRetriever,
-  memoryEntryContentHash,
   rankHybridMemory,
   type AutomaticMemoryStore,
   type MemoryVectorSearchIndex
@@ -35,6 +34,22 @@ function testPureHybridRanking(): void {
   });
   assert.deepEqual(semantic.matches.map(({ entry }) => entry.id), [current.id, user.id]);
   assert.deepEqual(semantic.report.origins.included, { user: 1, currentWorkspace: 1, otherWorkspaces: 0 });
+
+  const automatic = rankHybridMemory({
+    entries: [current, user],
+    currentWorkspaceId,
+    lexicalRankings: [],
+    vectorRanking: [
+      { entryId: user.id, similarity: 0.87 },
+      { entryId: current.id, similarity: 0.86 }
+    ],
+    semanticAvailable: true,
+    automatic: true,
+    limit: 2,
+    maxChars: 12_000
+  });
+  assert.deepEqual(automatic.matches.map(({ entry }) => entry.id), [user.id, current.id]);
+  assert.deepEqual(automatic.matches.map(({ score }) => score), [0.87, 0.86]);
 
   const filteredSemantic = rankHybridMemory({
     entries: [current, user, other],
@@ -157,9 +172,9 @@ async function testFingerprintThresholdAndCrossWorkspaceGate(): Promise<void> {
       })
     };
     const index = new FakeVectorIndex(fingerprint, [
-      { entryId: other.id, contentHash: memoryEntryContentHash(other), similarity: 0.85 },
-      { entryId: current.id, contentHash: memoryEntryContentHash(current), similarity: 0.81 },
-      { entryId: user.id, contentHash: memoryEntryContentHash(user), similarity: 0.82 }
+      { entryId: other.id, similarity: 0.85 },
+      { entryId: current.id, similarity: 0.81 },
+      { entryId: user.id, similarity: 0.82 }
     ]);
     let thresholdFingerprint: string | undefined;
     const retriever = new HybridMemoryRetriever({
@@ -174,6 +189,7 @@ async function testFingerprintThresholdAndCrossWorkspaceGate(): Promise<void> {
     });
     const result = await retriever.retrieve("release", [], { limit: 5 });
     assert.equal(thresholdFingerprint, fingerprint, "thresholds must be selected by the runtime fingerprint");
+    assert.deepEqual(index.lastSearch, { limit: 3, minimumSimilarity: 0.8 });
     assert.equal(result.matches.some(({ entry }) => entry.id === other.id), false, "lexical hits cannot bypass the cross-workspace vector threshold");
     assert.deepEqual(new Set(result.matches.map(({ entry }) => entry.id)), new Set([current.id, user.id]));
 
@@ -223,28 +239,27 @@ class FakeMemoryStore implements AutomaticMemoryStore {
 
 class FakeVectorIndex implements MemoryVectorSearchIndex {
   closed = false;
+  lastSearch: { limit?: number; minimumSimilarity?: number } | undefined;
 
   constructor(
     private readonly fingerprint: string,
-    private readonly results: Array<{ entryId: string; contentHash: string; similarity: number }>
+    private readonly results: Array<{ entryId: string; similarity: number }>
   ) {}
 
   status() {
     return {
       active: {
-        generationId: "generation",
         modelFingerprint: this.fingerprint,
         dimensions: 2,
         vectorCount: this.results.length,
         createdAt: "2026-08-13T00:00:00.000Z",
         completedAt: "2026-08-13T00:00:01.000Z"
-      },
-      building: 0,
-      failed: 0
+      }
     };
   }
 
-  search(): Array<{ entryId: string; contentHash: string; similarity: number }> {
+  search(_query: ArrayLike<number>, options: { limit?: number; minimumSimilarity?: number }): Array<{ entryId: string; similarity: number }> {
+    this.lastSearch = { limit: options.limit, minimumSimilarity: options.minimumSimilarity };
     return this.results;
   }
 
@@ -270,8 +285,8 @@ function memoryEntry(id: string, origin: MemoryEntry["origin"], summary = `Durab
     revision: 1,
     lineage: [{ source: "explicit", externalContext: false, userEvidence: origin.kind === "user" ? "explicit" : undefined }],
     durability: "permanent",
-    recallCount: 0,
-    lastRecalledAt: undefined
+    accessCount: 0,
+    lastAccessedAt: undefined
   };
 }
 

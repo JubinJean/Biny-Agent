@@ -1,6 +1,7 @@
 import type { AgentMessage, AgentModel, AgentUsage, ModelRequestContext, ModelRequestObserver } from "../agent/core/types.js";
 
 export interface NativeTextGenerationOptions {
+  systemPrompt?: string;
   signal?: AbortSignal;
   maxOutputTokens?: number;
   providerOptions?: Record<string, unknown>;
@@ -24,7 +25,8 @@ export async function generateNativeText(
   let text = "";
   let usage: AgentUsage | undefined;
   const streamModel = model.streamSimple?.bind(model) ?? model.stream.bind(model);
-  for await (const event of await streamModel({ messages, tools: [] }, options)) {
+  const { systemPrompt, ...streamOptions } = options;
+  for await (const event of await streamModel({ systemPrompt, messages, tools: [] }, streamOptions)) {
     options.signal?.throwIfAborted();
     if (event.type === "text-delta") text += event.text;
     else if (event.type === "finish") usage = event.usage;
