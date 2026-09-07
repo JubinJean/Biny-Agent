@@ -52,18 +52,17 @@ import { executeRuntimeCommand } from "../../../runtime/commands.js";
 import {
   createInteractiveAgentHost,
   type AgentRunOutcome,
-  type InteractiveAgentHost,
   type InteractiveRuntimeHandle
 } from "../../../runtime/InteractiveAgentRuntime.js";
 import type { CommandRuntime } from "../../../runtime/CommandRuntime.js";
 import {
   connectOrSpawnRuntimeHostWithOwnership,
+  connectRuntimeHost,
   startRuntimeHost,
   RuntimeHostClient,
   type HostOperationResult,
   type RuntimeHostFactory,
-  type RuntimeHostServer,
-  type RuntimeHostFactoryOptions
+  type RuntimeHostServer
 } from "../../../runtime/RuntimeHost.js";
 import { isSessionWriterConflictError, SessionLeaseError } from "../../../runtime/SessionLease.js";
 import {
@@ -422,7 +421,11 @@ export class DesktopAgentManager {
           void this.projects.updateSessionMetadata(this.projects.requireProject(projectId), event.sessionId, { unread: true }).catch(() => undefined);
         }
       }
-      this.emit(projectId, update, { sessionId: event?.sessionId ?? update.snapshot.info.sessionId, primary });
+      const sessionId = event?.sessionId ?? update.snapshot.info.sessionId;
+      const isPrimary = runtime instanceof RuntimeHostClient
+        ? runtime.runtimeSnapshots().find((entry) => entry.sessionId === sessionId)?.primary === true
+        : primary;
+      this.emit(projectId, update, { sessionId, primary: isPrimary });
     });
   }
 
@@ -595,12 +598,12 @@ export class DesktopAgentManager {
     capabilitySelection?: AgentCapabilitySelection
   ): Promise<DesktopRunReceipt> {
     const sendPerfStartedAt = perfNow();
+    const selectedBeforeSend = this.state.selectedSessionId(projectId);
     const requestedSessionId = sessionId ?? this.draftSessionIds.get(projectId);
     const runtimeForPromptPerfStartedAt = perfNow();
-    const managed = await this.runtimeForPrompt(projectId, requestedSessionId, mode !== "plan", personalization);
+    const { managed, snapshot } = await this.runtimeForPrompt(projectId, requestedSessionId, mode !== "plan", personalization);
     const runtime = managed.runtime;
-    const snapshot = runtime.getSnapshot();
-    const targetSessionId = requestedSessionId ?? snapshot.info.sessionId;
+    const targetSessionId = snapshot.info.sessionId;
     const project = this.projects.requireProject(projectId);
     recordPerfPhase("desktop.runtimeForPrompt", runtimeForPromptPerfStartedAt, { projectId }, project.path);
     const prompt = withAttachmentReferences(input, attachments);
@@ -619,7 +622,7 @@ export class DesktopAgentManager {
         throw new Error(queued.reason ?? "Runtime Host did not accept the queued message.");
       }
       if (this.draftSessionIds.get(projectId) === targetSessionId) this.draftSessionIds.delete(projectId);
-      await this.state.setSelectedSession(projectId, targetSessionId);
+      if (this.state.selectedSessionId(projectId) === selectedBeforeSend) await this.state.setSelectedSession(projectId, targetSessionId);
       recordPerfPhase("desktop.sendPrompt", sendPerfStartedAt, { projectId, queued: true }, project.path);
       return {
         sessionId: targetSessionId,
@@ -632,7 +635,7 @@ export class DesktopAgentManager {
       ? runtime.submitPromptForSession(targetSessionId, prompt, mode, nativeAttachments, undefined, promptContext, capabilitySelection)
       : runtime.submitPrompt(prompt, mode, nativeAttachments, undefined, promptContext, capabilitySelection);
     if (this.draftSessionIds.get(projectId) === targetSessionId) this.draftSessionIds.delete(projectId);
-    await this.state.setSelectedSession(projectId, info.sessionId);
+    if (this.state.selectedSessionId(projectId) === selectedBeforeSend) await this.state.setSelectedSession(projectId, info.sessionId);
     this.observeRunCompletion(projectId, submitted.completion);
     recordPerfPhase("desktop.sendPrompt", sendPerfStartedAt, { projectId, queued: false }, project.path);
     return {
@@ -651,18 +654,16 @@ export class DesktopAgentManager {
     sessionId: string | undefined,
     writeIntent: boolean,
     personalization?: DesktopChatPersonalizationOverride
-  ): Promise<ManagedRuntime> {
+  ): Promise<{ managed: ManagedRuntime; snapshot: InteractiveRuntimeSnapshot }> {
     const primary = await this.ensureRuntime(projectId);
     if (primary.runtime instanceof RuntimeHostClient) {
-      if (sessionId !== undefined) {
-        await primary.runtime.ensureSession({ sessionId, writeIntent });
-      } else if (runtimeIsBusy(primary.runtime.getSnapshot())) {
-        await primary.runtime.ensureSession({ writeIntent });
-      } else {
-        await this.ensureDraftRuntime(projectId);
+      const target = await primary.runtime.ensureSession({ sessionId, writeIntent, focus: false });
+      if (personalization !== undefined) {
+        const state = await primary.runtime.getPersonalizationState(target.sessionId);
+        await primary.runtime.updateChatPersonalization(personalization, state.catalogRevision, target.sessionId);
       }
-      if (personalization !== undefined) await this.updateManagedChatPersonalization(primary, personalization);
-      return primary;
+      return { managed: primary, snapshot: primary.runtime.getSnapshot(target.sessionId) };
+
     }
     if (sessionId !== undefined && primary.runtime.getSnapshot().info.sessionId !== sessionId) {
       if (runtimeIsBusy(primary.runtime.getSnapshot())) {
@@ -673,7 +674,7 @@ export class DesktopAgentManager {
       await this.ensureDraftRuntime(projectId);
     }
     if (personalization !== undefined) await this.updateManagedChatPersonalization(primary, personalization);
-    return primary;
+    return { managed: primary, snapshot: primary.runtime.getSnapshot() };
   }
 
   /** 找到或准备 Host 注册表中的目标 session runtime。 */
@@ -739,11 +740,12 @@ export class DesktopAgentManager {
     return await this.runIdempotently(projectId, "retry", idempotencyKey, async () => {
       const managed = await this.resolveSessionRuntime(projectId, sessionId);
       const { runtime } = managed;
-      const snapshot = runtime.getSnapshot();
+      const snapshot = runtime instanceof RuntimeHostClient ? runtime.getSnapshot(sessionId) : runtime.getSnapshot();
       if (snapshot.state.kind === "runs") {
         // 重试会先停掉当前回合，再把目标位置作为新版本重写；否则用户点早期消息时，
         // 后面的运行会一直占住 Runtime，前端也只能把刷新按钮变成无效操作。
-        runtime.cancelCurrentRun();
+        if (runtime instanceof RuntimeHostClient) await runtime.cancelRunRequest(snapshot.state.activeRun.runId, sessionId);
+        else runtime.cancelCurrentRun();
         if (runtime instanceof RuntimeHostClient) await runtime.waitForIdle(sessionId);
         else await runtime.waitForIdle();
       } else if (snapshot.state.kind === "maintenance") {
@@ -778,7 +780,8 @@ export class DesktopAgentManager {
     direction: "prev" | "next"
   ): Promise<DesktopSessionDocument> {
     const managed = await this.resolveSessionRuntime(projectId, sessionId);
-    await managed.runtime.switchMessageVersion(messageId, direction);
+    if (managed.runtime instanceof RuntimeHostClient) await managed.runtime.switchMessageVersion(messageId, direction, sessionId);
+    else await managed.runtime.switchMessageVersion(messageId, direction);
     return await this.openSession(projectId, sessionId);
   }
 
@@ -792,9 +795,10 @@ export class DesktopAgentManager {
   ): Promise<DesktopRunReceipt> {
     const managed = await this.resolveSessionRuntime(projectId, sessionId);
     const { runtime } = managed;
-    const snapshot = runtime.getSnapshot();
+    const snapshot = runtime instanceof RuntimeHostClient ? runtime.getSnapshot(sessionId) : runtime.getSnapshot();
     if (snapshot.state.kind === "runs") {
-      runtime.cancelCurrentRun();
+      if (runtime instanceof RuntimeHostClient) await runtime.cancelRunRequest(snapshot.state.activeRun.runId, sessionId);
+      else runtime.cancelCurrentRun();
       if (runtime instanceof RuntimeHostClient) await runtime.waitForIdle(sessionId);
       else await runtime.waitForIdle();
     } else if (snapshot.state.kind === "maintenance") {
@@ -885,6 +889,7 @@ export class DesktopAgentManager {
   }
 
   async switchModel(projectId: string, alias: string, thinking: ThinkingSelection): Promise<ModelRuntimeInfo> {
+    const sessionId = this.draftSessionIds.get(projectId) ?? this.state.selectedSessionId(projectId);
     const project = this.projects.requireProject(projectId);
     const config = await this.configStore.load(project.path);
     if (!this.runtimes.has(projectId) && this.configStore.supportsDetachedRuntimeHost === false) {
@@ -924,7 +929,7 @@ export class DesktopAgentManager {
         async () => await commands.agent.switchModel(alias, thinking)
       );
     }
-    return await requireRemoteRuntime(runtime).switchModel(alias, thinking);
+    return await requireRemoteRuntime(runtime).switchModel(alias, thinking, sessionId);
   }
 
   /**
@@ -1152,6 +1157,11 @@ export class DesktopAgentManager {
       validateModelConfiguration(next, next.defaultModel);
     }
 
+    if (input.memory !== undefined
+      && !sameEmbeddingModel(current.config.context.memory.embeddingModel, next.context.memory.embeddingModel)) {
+      next = configSchema.parse({ ...next, needsEmbeddingRebuild: true });
+    }
+
     synchronizeCredentialRevisions(next, current.config);
 
     return {
@@ -1375,7 +1385,7 @@ export class DesktopAgentManager {
     if (managed.commands) {
       await managed.commands.agent.updateChatPersonalization(input, revision);
     } else {
-      await requireRemoteRuntime(managed.runtime).updateChatPersonalization(input, revision);
+      await requireRemoteRuntime(managed.runtime).updateChatPersonalization(input, revision, sessionId);
     }
     return await this.workspaceSnapshot(projectId);
   }
@@ -1605,8 +1615,8 @@ export class DesktopAgentManager {
       path: match.path,
       excerpt: match.excerpt,
       score: match.score,
-      recallCount: match.entry.recallCount,
-      lastRecalledAt: match.entry.lastRecalledAt,
+      accessCount: match.entry.accessCount,
+      lastAccessedAt: match.entry.lastAccessedAt,
       archivedAt: match.entry.archivedAt,
       archivedReason: match.entry.archivedReason,
       mergedInto: match.entry.mergedInto,
@@ -1704,7 +1714,9 @@ export class DesktopAgentManager {
     const { runtime, commands } = await this.ensureRuntime(projectId);
     if (commands) {
       const policy = (await commands.agent.getPersonalizationState()).memory;
-      return await commands.agent.getLocalMemory().previewMaintenance(policy);
+      return await commands.agent.getLocalMemory().previewMaintenance(policy, {
+        findSimilarPairs: async (entries, threshold, signal) => commands.agent.findMemorySimilarityPairs(entries, threshold, signal)
+      });
     }
     return await requireRemoteRuntime(runtime).memory("sleep-preview", {});
   }
@@ -1724,6 +1736,8 @@ export class DesktopAgentManager {
       trigger: "manual" as const,
       archiveRetentionDays: memoryPolicy.archiveRetentionDays,
       temporaryTtl: memoryPolicy.temporaryTtl,
+      similarityMergeThreshold: memoryPolicy.similarityMergeThreshold,
+      dedupAcrossUserIds: memoryPolicy.dedupAcrossUserIds,
       useLlm: memoryPolicy.useLlm,
       llmMergeLow: memoryPolicy.llmMergeLow,
       llmBatchSize: memoryPolicy.llmBatchSize
@@ -1734,6 +1748,7 @@ export class DesktopAgentManager {
         try {
           await commands.agent.getLocalMemory().runMemoryMaintenance({ ...maintenanceOptions, signal }, {
             indexEntry: async (entry) => await commands.agent.indexMemoryEntry(entry),
+            prepareSynthesis: (content, signal) => commands.agent.prepareMemorySynthesis(content, signal),
             requestRebuild: () => { rebuildRequested = true; },
             findSimilarPairs: async (entries, minimumSimilarity, pairSignal) => (
               await commands.agent.findMemorySimilarityPairs(entries, minimumSimilarity, pairSignal)
@@ -2381,8 +2396,10 @@ export class DesktopAgentManager {
   private async rebuildManagedRuntime(projectId: string, managed: ManagedRuntime): Promise<void> {
     if (managed.runtime instanceof RuntimeHostClient) {
       const focusedSessionId = managed.runtime.getFocusedSessionId();
-      await managed.runtime.restartRuntime();
-      // 配置重载只刷新 primary runtime；不能因为 Host 内部重建就把用户正在查看的
+      for (const entry of managed.runtime.runtimeSnapshots()) {
+        await managed.runtime.restartRuntime(entry.sessionId);
+      }
+      // 配置重载覆盖所有驻留 Session，不能把用户正在查看的
       // 非主 session 偷偷切回 primary。
       if (focusedSessionId !== undefined && focusedSessionId !== managed.runtime.getFocusedSessionId()) {
         const stillResident = managed.runtime.runtimeSnapshots().some((entry) => entry.sessionId === focusedSessionId);
@@ -2399,7 +2416,7 @@ export class DesktopAgentManager {
     const resident = [...this.runtimes.entries()];
     for (const [projectId, managed] of resident) {
       // 只处理快照中的原实例；并发导航若已经替换了它，不应误关新 Runtime。
-      if (this.runtimes.get(projectId) !== managed || runtimeIsBusy(managed.runtime.getSnapshot())) continue;
+      if (this.runtimes.get(projectId) !== managed || this.runtimeSnapshots(projectId).some((snapshot) => runtimeIsBusy(snapshot))) continue;
       await this.rebuildManagedRuntime(projectId, managed);
       this.runtimeErrors.delete(projectId);
     }
@@ -2410,7 +2427,7 @@ export class DesktopAgentManager {
     const resident = [...this.runtimes.entries()];
     for (const [projectId, managed] of resident) {
       // 只处理快照中的原实例；并发导航若已经替换了它，不应误关新 Runtime。
-      if (this.runtimes.get(projectId) !== managed || runtimeIsBusy(managed.runtime.getSnapshot())) continue;
+      if (this.runtimes.get(projectId) !== managed || this.runtimeSnapshots(projectId).some((snapshot) => runtimeIsBusy(snapshot))) continue;
       try {
         await this.rebuildManagedRuntime(projectId, managed);
         this.runtimeErrors.delete(projectId);
@@ -2439,9 +2456,12 @@ export class DesktopAgentManager {
     options: { terminateOwnedHosts?: boolean } = {}
   ): Promise<void> {
     managed.unsubscribe();
-    await managed.host?.close();
-    await managed.runtime.close();
-    if (options.terminateOwnedHosts) await terminateOwnedHost(managed.spawnedHost);
+    try {
+      await managed.host?.close();
+    } finally {
+      await managed.runtime.close();
+      if (options.terminateOwnedHosts) await terminateOwnedHost(managed.spawnedHost);
+    }
   }
 
   /**
@@ -2489,7 +2509,7 @@ export class DesktopAgentManager {
     // session 走全局项目目录，附件仍在项目 `.biny`；三端通过同一个 workspace 定位同一份历史。
     const persistenceRoot = await this.projects.dataRoot(project);
     let runtime: InteractiveRuntimeHandle;
-    let commands: CommandRuntime | undefined;
+    const commands = undefined;
     let host: RuntimeHostServer | undefined;
     let attached: RuntimeHostClient | undefined;
     let spawnedHost: ChildProcess | undefined;
@@ -2516,7 +2536,7 @@ export class DesktopAgentManager {
     if (attached) {
       runtime = attached;
     } else {
-      const createLocalRuntime: RuntimeHostFactory = async (sessionId?: string, factoryOptions?: RuntimeHostFactoryOptions): Promise<InteractiveAgentHost> => {
+      const createLocalRuntime: RuntimeHostFactory = async (sessionId, factoryOptions) => {
         const fresh = factoryOptions?.fresh === true;
         const local = await createInteractiveAgentHost(factoryOptions?.workspaceRoot ?? project.path, {
           persistenceRoot,
@@ -2532,51 +2552,24 @@ export class DesktopAgentManager {
           throw error;
         }
       };
-      const local = await createLocalRuntime(undefined);
-      runtime = local.runtime;
-      commands = local.commands;
-    }
-    if (commands && supportsDetachedRuntimeHost) {
+      // safeStorage 留在 Electron；仍通过统一 Host 注册表承载每个 Session。
+      // 先取得 owner lock，再打开 Runtime 的 store，避免失败候选提前执行恢复。
+      host = await startRuntimeHost(persistenceRoot, createLocalRuntime, {
+        workspaceRoot: project.path,
+        createRuntime: createLocalRuntime,
+        resumeInterrupted: false,
+        configDir: globalConfigDir()
+      });
       try {
-        const createLocalRuntime: RuntimeHostFactory = async (sessionId?: string, factoryOptions?: RuntimeHostFactoryOptions): Promise<InteractiveAgentHost> => {
-          const fresh = factoryOptions?.fresh === true;
-          const local = await createInteractiveAgentHost(factoryOptions?.workspaceRoot ?? project.path, {
-            persistenceRoot,
-            configStore: this.configStore,
-            attachmentRoot: this.projects.attachmentsRoot(project),
-            sessionId: fresh ? sessionId : undefined
-          });
-          try {
-            if (sessionId !== undefined && !fresh) await local.runtime.resumeSession(sessionId);
-            return local;
-          } catch (error) {
-            await local.runtime.close();
-            throw error;
-          }
-        };
-        host = await startRuntimeHost(persistenceRoot, runtime, commands, {
-          workspaceRoot: project.path,
-          createRuntime: createLocalRuntime,
-          resumeInterrupted: false,
-          configDir: globalConfigDir()
-        });
-      } catch (error) {
-        // 两个入口同时启动时，只有抢到 Host lock 的一方创建 owner；另一方丢弃
-        // 刚装配的本地 runtime，再接回已存在的 owner，避免第二份 AgentSession 抢写。
-        await runtime.close();
-        const retry = await connectOrSpawnRuntimeHostWithOwnership(persistenceRoot, {
-          workspaceRoot: project.path,
-          configDir: globalConfigDir(),
-          attachmentRoot: this.projects.attachmentsRoot(project),
-          sessionId: undefined,
-          resumeInterrupted: false,
+        const client = await connectRuntimeHost(persistenceRoot, {
           clientId: `desktop-${process.pid}`,
           surface: "desktop"
         });
-        if (!retry) throw error;
-        runtime = retry.client;
-        spawnedHost = retry.spawnedProcess;
-        commands = undefined;
+        if (!client) throw new Error("无法连接当前 Desktop 的 Runtime Host。");
+        runtime = client;
+      } catch (error) {
+        await host.close();
+        throw error;
       }
     }
     try {
@@ -2624,8 +2617,8 @@ export class DesktopAgentManager {
   private async personalizationState(projectId: string, sessionId: string): Promise<AgentPersonalizationState> {
     const managed = await this.ensureRuntime(projectId);
     if (managed.runtime instanceof RuntimeHostClient) {
-      await managed.runtime.focusSession(sessionId);
-      return await this.readManagedPersonalizationState(managed);
+      await managed.runtime.ensureSession({ sessionId, focus: false });
+      return await managed.runtime.getPersonalizationState(sessionId);
     }
     const snapshot = managed.runtime.getSnapshot();
     if (snapshot.info.sessionId !== sessionId) {
@@ -2804,11 +2797,10 @@ export class DesktopAgentManager {
       activeModel,
       models: descriptors,
       localModels: [],
-      index: { building: 0, failed: 0 },
+      index: {},
       totalEntries,
       indexedEntries: 0,
       pendingEntries: totalEntries,
-      failedEntries: 0,
       degradedReason: "打开会话后显示索引进度与运行中操作"
     };
   }
@@ -3220,6 +3212,19 @@ function sameCredentialScope(left: DesktopSettingsCredentialScope, right: Deskto
   return left.projectId === right.projectId
     && left.purpose === right.purpose
     && left.providerAlias === right.providerAlias;
+}
+
+function sameEmbeddingModel(
+  left: AgentConfig["context"]["memory"]["embeddingModel"],
+  right: AgentConfig["context"]["memory"]["embeddingModel"]
+): boolean {
+  if (left === undefined || right === undefined) return left === right;
+  if (left.kind !== right.kind) return false;
+  if (left.kind === "local" && right.kind === "local") return left.model === right.model;
+  if (left.kind === "provider" && right.kind === "provider") {
+    return left.provider === right.provider && left.model === right.model;
+  }
+  return false;
 }
 
 function formatModelConnectionError(error: unknown): string {

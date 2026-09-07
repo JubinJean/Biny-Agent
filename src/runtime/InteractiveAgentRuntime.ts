@@ -319,6 +319,11 @@ export class InteractiveAgentRuntime {
     }
     this.activeRun = run;
     this.activeRunController = controller;
+    // admission 同步占用运行状态；不能等异步账本写入后才让 Host 的配额看到这个 run。
+    this.state = { kind: "runs", activeRun: {
+      sessionId, runId, messageId, input, mode, status: run.status,
+      startedAt: run.startedAt, retryOfMessageId: run.retryOfMessageId
+    } };
     const execution = this.executeRun(run, controller.signal);
     const completion = execution
       .catch(async (error: unknown) => {
@@ -901,7 +906,6 @@ export class InteractiveAgentRuntime {
     const agent = this.commandRuntime.agent;
     const startedAtMs = Date.now();
     const executePerfStartedAt = perfNow();
-    await this.startRunLedger(run);
     const info = this.getInfo();
     run.sessionId = info.sessionId;
     run.status = "thinking";
@@ -939,6 +943,8 @@ export class InteractiveAgentRuntime {
       skills: info.skills ?? []
     });
 
+    // 首批事件是前台时间线进入运行态的信号；账本落盘属于后台持久化，不能阻挡用户消息先展示。
+    await this.startRunLedger(run);
     try {
       // 先发布运行状态，让界面在技能刷新等本地准备阶段立即进入忙碌态；准备完成后才调用模型。
       const refreshSkillsPerfStartedAt = perfNow();

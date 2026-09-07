@@ -94,7 +94,7 @@ await run("git", ["commit", "--quiet", "-m", "initial"], { cwd: workspaceRoot })
 const commands = {} as CommandRuntime;
 const primary = fakeRuntime("primary", workspaceRoot, "full-access");
 const createdFactoryOptions: Array<{ isolation?: string; workspaceRoot?: string }> = [];
-const host = await startRuntimeHost(workspaceRoot, primary, commands, {
+const host = await startRuntimeHost(workspaceRoot, async () => ({ runtime: primary, commands: commands }), {
   workspaceRoot,
   createRuntime: async (sessionId, options) => {
     createdFactoryOptions.push(options ?? {});
@@ -129,8 +129,8 @@ try {
     const draft = await client.startDraft();
     assert.equal(client.getFocusedSessionId(), draft.sessionId, "创建草稿后客户端必须聚焦新 session");
     assert.equal(client.getSnapshot().info.sessionId, draft.sessionId);
-    assert.equal(createdFactoryOptions.at(-1)?.isolation, "worktree", "已有 full-access session 忙碌时，新草稿必须自动隔离");
-    assert.notEqual(draft.workspaceRoot, workspaceRoot, "自动隔离草稿必须指向独立 worktree");
+    assert.equal(createdFactoryOptions.at(-1)?.isolation, "shared", "并行会话默认共享目录");
+    assert.equal(draft.workspaceRoot, workspaceRoot);
     assert.equal(client.runtimeSnapshots().filter((entry) => entry.primary).length, 1);
     assert.equal(
       client.runtimeSnapshots().find((entry) => entry.primary)?.sessionId,
@@ -147,8 +147,10 @@ try {
       "runs",
       "创建草稿不能中断或替换正在运行的旧 session"
     );
+    const isolated = await client.ensureSession({ isolation: "worktree" });
+    assert.notEqual(isolated.snapshot.info.workspaceRoot, workspaceRoot);
     await assert.rejects(
-      client.ensureSession({ sessionId: draft.sessionId, isolation: "shared" }),
+      client.ensureSession({ sessionId: isolated.sessionId, isolation: "shared" }),
       /already configured for worktree isolation/u,
       "已有 worktree session 不能被显式参数切回 shared"
     );

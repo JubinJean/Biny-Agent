@@ -12,7 +12,6 @@ import { createCommandRuntime, type CommandRuntime } from "../../runtime/Command
 import { ExecutionService } from "../../runtime/ExecutionService.js";
 import { SessionLeaseStore, type SessionLease } from "../../runtime/SessionLease.js";
 import { connectOrSpawnRuntimeHost, connectRuntimeHost, RuntimeHostClient } from "../../runtime/RuntimeHost.js";
-import { runtimeIsBusy } from "../../runtime/agentEvents.js";
 import type { UsageSummary } from "../../session/metadata.js";
 import type { ModelRequestSummary } from "../../observability/modelRequests.js";
 import { withCliAbortSignal } from "../sigint.js";
@@ -123,14 +122,11 @@ async function runAttachedCommand(
   options: RunCommandOptions
 ): Promise<RunCommandResult> {
   try {
-    let sessionId = runtime.getFocusedSessionId();
-    if (options.isolated || runtimeIsBusy(runtime.getSnapshot())) {
-      const ensured = await runtime.ensureSession({
-        isolation: options.isolated ? "worktree" : undefined,
-        writeIntent: true
-      });
-      sessionId = ensured.sessionId;
-    }
+    // 一次性命令总是独立任务，不能因 Host 恰好空闲而复用别人的会话。
+    const { sessionId } = await runtime.ensureSession({
+      isolation: options.isolated ? "worktree" : "shared",
+      writeIntent: true
+    });
     const submitted = runtime.submitPromptForSession(sessionId, input, "chat");
     const turn = await withCliAbortSignal(async (signal) => {
       const onAbort = (): void => {

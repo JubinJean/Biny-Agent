@@ -24,33 +24,41 @@ export interface RuntimeHostMemoryMaintenance {
 export interface RuntimeHostMemoryMaintenanceOptions {
   getRuntime(): InteractiveRuntimeHandle;
   getCommands(): CommandRuntime;
+  isBusy?: () => boolean;
 }
 
 export function createRuntimeHostMemoryMaintenance(
   options: RuntimeHostMemoryMaintenanceOptions
 ): RuntimeHostMemoryMaintenance {
   let maintenanceTimer: ReturnType<typeof setInterval> | undefined;
+  let initialTimer: ReturnType<typeof setTimeout> | undefined;
   let maintenanceAbort: AbortController | undefined;
   let maintenancePromise: Promise<void> | undefined;
   let embeddingRebuildTimer: ReturnType<typeof setTimeout> | undefined;
+  let startupHeal: { commands: CommandRuntime; promise: Promise<MemoryMaintenanceStatus> } | undefined;
   let stopped = false;
 
   const run = async (force = false): Promise<void> => {
-    if (stopped || maintenancePromise || options.getRuntime().getSnapshot().state.kind !== "idle") return;
+    if (stopped || maintenancePromise || (options.isBusy?.() ?? (options.getRuntime().getSnapshot().state.kind !== "idle"))) return;
     const commands = options.getCommands();
     const agent = commands.agent as CommandRuntime["agent"] & {
-      getPersonalizationState?: () => Promise<{ memory?: { enabled?: boolean; sleepEnabled?: boolean; sleepTime?: string; archiveRetentionDays?: number; temporaryTtl?: number; useLlm?: boolean; llmMergeLow?: number; llmBatchSize?: number } }>;
+      getPersonalizationState?: () => Promise<{ memory?: { enabled?: boolean; sleepEnabled?: boolean; sleepTime?: string; archiveRetentionDays?: number; temporaryTtl?: number; similarityMergeThreshold?: number; dedupAcrossUserIds?: boolean; useLlm?: boolean; llmMergeLow?: number; llmBatchSize?: number } }>;
     };
     if (!agent) return;
     const state = agent.getPersonalizationState
       ? await agent.getPersonalizationState().catch(() => undefined)
       : undefined;
+    // 配置读取会让出执行权；期间可能已停止、切换 runtime 或由另一入口启动维护。
+    if (stopped || maintenancePromise || options.getCommands() !== commands || (options.isBusy?.() ?? (options.getRuntime().getSnapshot().state.kind !== "idle"))) return;
     const sleep = state?.memory;
     const now = new Date();
     const localMemory = typeof agent.getLocalMemory === "function" ? agent.getLocalMemory() : undefined;
-    if (sleep && !localMemory) return;
-    const [hour = 3, minute = 0] = (sleep?.sleepTime ?? "03:00").split(":").map(Number);
-    const due = now.getHours() > hour || now.getHours() === hour && now.getMinutes() >= minute;
+    if (!localMemory) return;
+    const time = /^(\d{1,2}):(\d{2})$/.exec((sleep?.sleepTime ?? "03:00").trim());
+    const hour = Number(time?.[1]);
+    const minute = Number(time?.[2]);
+    const scheduledMinute = time && hour <= 23 && minute <= 59 ? hour * 60 + minute : 180;
+    const due = now.getHours() * 60 + now.getMinutes() >= scheduledMinute;
     if (!force && sleep?.enabled === false) return;
     if (!force && sleep?.sleepEnabled === false) return;
     if (!force && !due) return;
@@ -59,24 +67,31 @@ export function createRuntimeHostMemoryMaintenance(
     const promise = (async () => {
       // 先读磁盘上的状态，再判断当天是否已经跑过或是否需要退避；否则新建
       // AgentSession 时内存里的初始状态会让调度器重复执行当天的 Sleep。
-      const persistedStatus = await localMemory!.loadMaintenanceStatus({ signal: controller.signal });
+      const healed = startupHeal?.commands === commands ? startupHeal.promise : undefined;
+      if (healed) startupHeal = undefined;
+      const persistedStatus = healed
+        ? await healed
+        : await localMemory.loadMaintenanceStatus({ signal: controller.signal });
       controller.signal.throwIfAborted();
       if (!force && shouldSkipScheduledRun(persistedStatus, now)) return;
-      if (options.getRuntime().getSnapshot().state.kind !== "idle") return;
+      if ((options.isBusy?.() ?? (options.getRuntime().getSnapshot().state.kind !== "idle"))) return;
       let rebuildRequested = false;
       try {
-        await localMemory!.runMemoryMaintenance(
+        await localMemory.runMemoryMaintenance(
           {
             signal: controller.signal,
             trigger: force ? "manual" : "scheduled",
             archiveRetentionDays: sleep?.archiveRetentionDays,
             temporaryTtl: sleep?.temporaryTtl,
+            similarityMergeThreshold: sleep?.similarityMergeThreshold,
+            dedupAcrossUserIds: sleep?.dedupAcrossUserIds,
             useLlm: sleep?.useLlm,
             llmMergeLow: sleep?.llmMergeLow,
             llmBatchSize: sleep?.llmBatchSize
           },
           {
             indexEntry: async (entry: MemoryEntry) => await commands.agent.indexMemoryEntry(entry),
+            prepareSynthesis: (content, signal) => commands.agent.prepareMemorySynthesis(content, signal),
             requestRebuild: () => { rebuildRequested = true; },
             findSimilarPairs: async (entries: readonly MemoryEntry[], minimumSimilarity: number, signal?: AbortSignal) => (
               await commands.agent.findMemorySimilarityPairs(entries, minimumSimilarity, signal)
@@ -110,16 +125,35 @@ export function createRuntimeHostMemoryMaintenance(
         previewMaintenance: (options?: { temporaryTtl?: number; archiveRetentionDays?: number }) => Promise<MemorySleepPreview>;
       } };
       if (typeof agent.getLocalMemory !== "function") return { available: false, entries: 0, temporaryToArchive: 0, archivedToDelete: 0, recentRuns: 0 };
-      return await agent.getLocalMemory().previewMaintenance();
+      const state = typeof agent.getPersonalizationState === "function" ? await agent.getPersonalizationState() : undefined;
+      return await agent.getLocalMemory().previewMaintenance(state?.memory, {
+        findSimilarPairs: async (entries, threshold, signal) => agent.findMemorySimilarityPairs(entries, threshold, signal)
+      });
     },
     cancel(): boolean {
-      if (!maintenanceAbort) return false;
+      const cancelled = options.getCommands().agent?.cancelMemoryMaintenance?.() ?? false;
+      if (!maintenanceAbort) return cancelled;
       maintenanceAbort.abort();
       return true;
     },
     start(): void {
       if (stopped || maintenanceTimer) return;
-      void run();
+      const commands = options.getCommands();
+      const agent = commands.agent as CommandRuntime["agent"] & {
+        getLocalMemory?: () => { loadMaintenanceStatus: (options?: { signal?: AbortSignal }) => Promise<MemoryMaintenanceStatus> };
+      };
+      if (!agent) return;
+      const localMemory = typeof agent.getLocalMemory === "function" ? agent.getLocalMemory() : undefined;
+      if (localMemory) {
+        const promise = localMemory.loadMaintenanceStatus({});
+        startupHeal = { commands, promise };
+        void promise.catch(() => undefined);
+      }
+      initialTimer = setTimeout(() => {
+        initialTimer = undefined;
+        void run();
+      }, 5_000);
+      initialTimer.unref?.();
       maintenanceTimer = setInterval(() => {
         void run();
       }, runtimeHostMemoryMaintenanceIntervalMs);
@@ -129,6 +163,8 @@ export function createRuntimeHostMemoryMaintenance(
       stopped = true;
       if (maintenanceTimer) clearInterval(maintenanceTimer);
       maintenanceTimer = undefined;
+      if (initialTimer) clearTimeout(initialTimer);
+      initialTimer = undefined;
       maintenanceAbort?.abort();
       if (embeddingRebuildTimer) clearTimeout(embeddingRebuildTimer);
       embeddingRebuildTimer = undefined;
@@ -154,15 +190,14 @@ export function createRuntimeHostMemoryMaintenance(
 
 function shouldSkipScheduledRun(status: MemoryMaintenanceStatus | undefined, now: Date): boolean {
   if (status?.state === "running" || status?.lastRun?.status === "running") return true;
-  const todayRuns = maintenanceRuns(status)
-    .filter((run) => run.finishedAt !== undefined && sameLocalDay(run.finishedAt, now))
-    .sort((left, right) => runTime(left) - runTime(right));
-  const latest = todayRuns.at(-1);
-  if (latest?.status === "completed") return true;
+  const recentRuns = maintenanceRuns(status)
+    .sort((left, right) => runTime(right) - runTime(left))
+    .slice(0, 10);
+  if (recentRuns.some((run) => run.status === "completed" && sameLocalDay(run.startedAt, now))) return true;
 
   let consecutiveFailures = 0;
-  for (let index = todayRuns.length - 1; index >= 0; index -= 1) {
-    if (todayRuns[index]?.status !== "failed") break;
+  for (const run of recentRuns) {
+    if (run.status !== "failed" || !sameLocalDay(run.startedAt, now)) break;
     consecutiveFailures += 1;
   }
   return consecutiveFailures >= 3;
@@ -188,7 +223,6 @@ function localDayKey(date: Date): string {
 }
 
 function runTime(run: MemorySleepRun): number {
-  const timestamp = run.finishedAt ?? run.startedAt;
-  const time = Date.parse(timestamp);
+  const time = Date.parse(run.startedAt);
   return Number.isFinite(time) ? time : 0;
 }

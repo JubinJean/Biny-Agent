@@ -9,6 +9,7 @@ import type { AgentAttachment, AgentRunMode, AgentSessionInfo, ResumedAgentSessi
 import type { AgentCapabilitySelection } from "../../agent/capabilitySelection.js";
 import type { AgentRunOutcome, InteractiveRuntimeHandle, QueuedAgentMessage, RuntimeRequestIds, SubmittedAgentRun } from "../InteractiveAgentRuntime.js";
 import type { ContextStatus } from "../../agent/context/types.js";
+import type { MemorySleepPreview } from "../../agent/context/memoryTypes.js";
 import type { AgentRuntimeUpdate, InteractiveRuntimeSnapshot, RuntimeOperation } from "../agentEvents.js";
 import type { LocalEmbeddingModelId } from "../../llm/embedding/types.js";
 import type { MemoryEmbeddingRuntimeStatus } from "../../agent/context/MemoryEmbeddingService.js";
@@ -633,14 +634,14 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     return this.focusedSessionId;
   }
 
-  async ensureSession(options: { sessionId?: string; isolation?: RuntimeIsolation; writeIntent?: boolean } = {}): Promise<{ sessionId: string; snapshot: InteractiveRuntimeSnapshot }> {
+  async ensureSession(options: { sessionId?: string; isolation?: RuntimeIsolation; writeIntent?: boolean; focus?: boolean } = {}): Promise<{ sessionId: string; snapshot: InteractiveRuntimeSnapshot }> {
     const result = await this.request<{
       sessionId: string;
       snapshot: InteractiveRuntimeSnapshot;
       sequence: number;
       sessions: RuntimeHostSessionSummary[];
     }>("session.ensure", { sessionId: options.sessionId, isolation: options.isolation, writeIntent: options.writeIntent });
-    this.focusedSessionId = result.sessionId;
+    if (options.focus !== false) this.focusedSessionId = result.sessionId;
     this.applySessionSummaries(result.sessions);
     this.applySnapshot(result.snapshot, result.sequence, undefined, true);
     return { sessionId: result.sessionId, snapshot: result.snapshot };
@@ -695,13 +696,13 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     throw new Error("Remote runtime operations must use the Runtime Host command methods.");
   }
 
-  async switchMessageVersion(messageId: string, direction: "prev" | "next"): Promise<void> {
+  async switchMessageVersion(messageId: string, direction: "prev" | "next", sessionId = this.focusedSessionId): Promise<void> {
     const result = await this.request<HostOperationResult<undefined>>("message.version", {
       messageId,
       direction,
-      sessionId: this.focusedSessionId,
+      sessionId,
       writeIntent: true,
-      expectedRevision: this.currentRevision()
+      expectedRevision: this.currentRevision(sessionId)
     });
     if (!result.accepted) throw new Error(result.reason ?? "Runtime Host did not accept message version switching.");
   }
@@ -717,8 +718,8 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     return await this.request<string>("compact", { hint, sessionId: this.focusedSessionId, writeIntent: true, expectedRevision: this.currentRevision() });
   }
 
-  getSnapshot(): InteractiveRuntimeSnapshot {
-    const focused = this.focusedSessionId === undefined ? this.snapshot : this.snapshots.get(this.focusedSessionId);
+  getSnapshot(sessionId = this.focusedSessionId): InteractiveRuntimeSnapshot {
+    const focused = sessionId === undefined ? this.snapshot : this.snapshots.get(sessionId);
     if (!focused) throw this.lastError ?? new Error("Runtime Host snapshot is not ready.");
     return focused;
   }
@@ -781,8 +782,7 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     return await this.requestWithRuntimeRevision<ModelRuntimeInfo>("agent.refresh-model", { sessionId }, sessionId);
   }
 
-  async switchModel(alias: string, thinking?: ThinkingSelection): Promise<ModelRuntimeInfo> {
-    const sessionId = this.focusedSessionId;
+  async switchModel(alias: string, thinking?: ThinkingSelection, sessionId = this.focusedSessionId): Promise<ModelRuntimeInfo> {
     return await this.requestWithRuntimeRevision<ModelRuntimeInfo>("agent.switch-model", { alias, thinking, sessionId }, sessionId);
   }
 
@@ -808,15 +808,16 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     return await this.request<SessionSummary[]>("agent.sessions", {});
   }
 
-  async getPersonalizationState(): Promise<AgentPersonalizationState> {
-    return await this.request("personalization.get", { sessionId: this.focusedSessionId });
+  async getPersonalizationState(sessionId = this.focusedSessionId): Promise<AgentPersonalizationState> {
+    return await this.request("personalization.get", { sessionId });
   }
 
   async updateChatPersonalization(
     patch: ChatPersonalizationOverridePatch,
-    expectedRevision: string
+    expectedRevision: string,
+    sessionId = this.focusedSessionId
   ): Promise<AgentPersonalizationState> {
-    return await this.request("personalization.update-chat", { patch, expectedRevision, sessionId: this.focusedSessionId });
+    return await this.request("personalization.update-chat", { patch, expectedRevision, sessionId });
   }
 
   async updateGlobalPersonalization(
@@ -834,8 +835,8 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     return await this.request("tools.list", { sessionId: this.focusedSessionId });
   }
 
-  async expandSkillCommand(input: string): Promise<string> {
-    return await this.request<string>("skills.expand", { input, sessionId: this.focusedSessionId });
+  async expandSkillCommand(input: string, sessionId = this.focusedSessionId): Promise<string> {
+    return await this.request<string>("skills.expand", { input, sessionId });
   }
 
   async mcpStatus(): Promise<Awaited<ReturnType<CommandRuntime["mcp"]["listServers"]>>> {
@@ -874,12 +875,13 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     return await this.memory("sleep-runs", {});
   }
 
-  async previewMemorySleep(): Promise<{ available: boolean; entries: number; temporaryToArchive: number; archivedToDelete: number; recentRuns: number; lastRun?: unknown }> {
+  async previewMemorySleep(): Promise<MemorySleepPreview> {
     return await this.memory("sleep-preview", {});
   }
 
   async cancelMemorySleep(): Promise<boolean> {
-    return await this.request("memory.sleep.cancel", {});
+    const result = await this.request<{ cancelled: boolean }>("memory.sleep.cancel", {});
+    return result.cancelled;
   }
 
   async memoryEmbeddingStatus(): Promise<MemoryEmbeddingRuntimeStatus> {

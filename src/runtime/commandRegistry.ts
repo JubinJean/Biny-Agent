@@ -13,15 +13,17 @@ export interface SlashCommandDefinition {
 const terminalOnly = ["tui"] as const;
 const allInteractive = ["tui", "desktop"] as const;
 
+// 纯展示类命令（/usage /status /mcp /skills /plugins 的信息面板）在 Desktop 有专属 UI：
+// 用量浮层、模型/权限 pill、设置页与能力菜单。桌面端不再通过命令重复展示，只保留给 TUI。
 export const SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
   { name: "/clear", description: "Clear visible messages", category: "system", surfaces: terminalOnly },
-  { name: "/usage", description: "Show model token usage and cost", category: "system", surfaces: allInteractive },
+  { name: "/usage", description: "Show model token usage and cost", category: "system", surfaces: terminalOnly },
   { name: "/compact", description: "Compact older conversation history", category: "system", acceptsArgs: true, surfaces: allInteractive },
   { name: "/model", description: "Choose a model and its supported thinking effort", category: "system", surfaces: terminalOnly },
-  { name: "/status", description: "Show model, context, permissions and extensions", category: "system", surfaces: allInteractive },
-  { name: "/mcp", description: "List MCP servers and tools, or reconnect a server", category: "extension", acceptsArgs: true, surfaces: allInteractive },
-  { name: "/skills", description: "List available project and global skills", category: "extension", surfaces: allInteractive },
-  { name: "/plugins", description: "List loaded plugins", category: "extension", surfaces: allInteractive },
+  { name: "/status", description: "Show model, context, permissions and extensions", category: "system", surfaces: terminalOnly },
+  { name: "/mcp", description: "List MCP servers and tools, or reconnect a server", category: "extension", acceptsArgs: true, surfaces: terminalOnly },
+  { name: "/skills", description: "List available project and global skills", category: "extension", surfaces: terminalOnly },
+  { name: "/plugins", description: "List loaded plugins", category: "extension", surfaces: terminalOnly },
   { name: "/subagent", description: "Run or manage a subagent (start/status/cancel/agents)", category: "extension", requiresArgs: true, acceptsArgs: true, surfaces: allInteractive },
   { name: "/tasks", description: "Inspect durable background TaskRuns", category: "runtime", acceptsArgs: true, surfaces: allInteractive },
   { name: "/automation", description: "List or control local automations", category: "runtime", acceptsArgs: true, surfaces: allInteractive },

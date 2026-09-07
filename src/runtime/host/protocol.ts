@@ -19,7 +19,7 @@ export const runtimeHostReconnectDelayMs = 250;
 export const runtimeHostMaxUnixSocketPathLength = 90;
 export const runtimeHostStartupTimeoutMs = 8_000;
 export const runtimeHostJournalFile = "runtime-host-events.jsonl";
-export const runtimeHostMemoryMaintenanceIntervalMs = 60 * 60 * 1_000;
+export const runtimeHostMemoryMaintenanceIntervalMs = 60 * 1_000;
 export const runtimeHostDirectoryName = "biny-runtime-host";
 
 export const runtimeHostCapabilities = [

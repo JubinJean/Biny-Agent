@@ -6,8 +6,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { globalAgentDir, globalConfigDir } from "../../config/paths.js";
-import type { CommandRuntime } from "../CommandRuntime.js";
-import type { InteractiveRuntimeHandle } from "../InteractiveAgentRuntime.js";
+import type { InteractiveAgentHost } from "../InteractiveAgentRuntime.js";
 import { RuntimeHostServer } from "./server.js";
 import { issueRuntimeHostAccessCredential } from "./credentials.js";
 import {
@@ -23,8 +22,7 @@ import type { HostRegistration, RuntimeHostStartOptions } from "./types.js";
 
 export async function startRuntimeHost(
   persistenceRoot: string,
-  runtime: InteractiveRuntimeHandle,
-  commands: CommandRuntime,
+  createInitialRuntime: () => Promise<InteractiveAgentHost>,
   options: RuntimeHostStartOptions = {}
 ): Promise<RuntimeHostServer> {
   if (process.platform === "win32") throw new Error("Runtime Host currently requires Unix domain sockets.");
@@ -48,9 +46,11 @@ export async function startRuntimeHost(
     createdAt: new Date().toISOString()
   };
   let server: RuntimeHostServer | undefined;
+  let initial: InteractiveAgentHost | undefined;
   try {
     await removeSocketIfStale(paths.endpoint);
-    server = new RuntimeHostServer(runtime, commands, registration, lock, options.createRuntime, {
+    initial = await createInitialRuntime();
+    server = new RuntimeHostServer(initial.runtime, initial.commands, registration, lock, options.createRuntime, {
       workspaceRoot: options.workspaceRoot,
       maxSessionRuntimes: options.maxSessionRuntimes,
       maxConcurrentRuns: options.maxConcurrentRuns,
@@ -65,7 +65,10 @@ export async function startRuntimeHost(
     return server;
   } catch (error) {
     await server?.close().catch(() => undefined);
-    if (!server) await lock.close().catch(() => undefined);
+    if (!server) {
+      await initial?.runtime.close().catch(() => undefined);
+      await lock.close().catch(() => undefined);
+    }
     await removeStaleRegistration(registration).catch(() => undefined);
     throw error;
   }

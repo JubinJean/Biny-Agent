@@ -53,19 +53,12 @@ export async function runRuntimeHostProcess(argv: readonly string[] = process.ar
   const initialFactoryOptions = selectedSession === undefined
     ? undefined
     : await worktrees.runtimeFactoryOptions(selectedSession);
-  const initial = await createRuntime(selectedSession, initialFactoryOptions);
-  let server;
-  try {
-    server = await startRuntimeHost(options.persistenceRoot, initial.runtime, initial.commands, {
-      workspaceRoot: options.workspaceRoot,
-      createRuntime,
-      resumeInterrupted: options.resumeInterrupted,
-      configDir: options.configDir
-    });
-  } catch (error) {
-    await initial.runtime.close();
-    throw error;
-  }
+  const server = await startRuntimeHost(options.persistenceRoot, () => createRuntime(selectedSession, initialFactoryOptions), {
+    workspaceRoot: options.workspaceRoot,
+    createRuntime,
+    resumeInterrupted: options.resumeInterrupted,
+    configDir: options.configDir
+  });
 
   let shuttingDown = false;
   const shutdown = (): void => {

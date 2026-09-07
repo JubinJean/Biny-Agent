@@ -55,6 +55,7 @@ import { CapabilityStore } from "./CapabilityStore.js";
 import { createProjectSkillKey } from "../extensions/skillRef.js";
 import { listEnabledProjectPluginPaths } from "../extensions/pluginRegistry.js";
 import { DailyDiaryScheduler } from "../agent/context/chatDiary.js";
+import { HeartbeatScheduler } from "../agent/context/heartbeat.js";
 
 export interface CommandRuntime {
   workspaceRoot: string;
@@ -68,6 +69,7 @@ export interface CommandRuntime {
   runtimeAuthority: RuntimeEventAuthority;
   taskRuns: DurableTaskRunStore;
   automationStore: AutomationStore;
+  heartbeat: HeartbeatScheduler;
   graphs: GoalGraphStore;
   capabilities: CapabilityStore;
   subagents: SubagentTaskManager | undefined;
@@ -95,6 +97,10 @@ export interface RuntimeToolCatalogEntry {
   source: ToolSource;
   risk?: ToolRisk;
 }
+
+// 日报和心跳是进程级后台工作；增加 Session 不能增加相同工作的计时器。
+// 当前承载实例关闭后交给下一个存活实例，避免 LRU/配置重建停掉后台工作。
+const backgroundOwners = new Set<{ start(): void; stop(): void }>();
 
 export interface CommandRuntimeOptions {
   persistenceRoot?: string;
@@ -328,7 +334,19 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
       }
     }
   });
-  dailyDiaryScheduler.start();
+  const heartbeat = new HeartbeatScheduler({
+    getConfig: () => dailyDiaryAgent.getHeartbeatConfig(),
+    agentDir: undefined,
+    run: async (prompt, signal) => {
+      await dailyDiaryAgent.runTask(prompt, { abortSignal: signal, runId: randomUUID(), turnId: randomUUID() });
+    }
+  });
+  const backgroundOwner = {
+    start: (): void => { dailyDiaryScheduler.start(); heartbeat.start(); },
+    stop: (): void => { dailyDiaryScheduler.stop(); heartbeat.stop(); }
+  };
+  backgroundOwners.add(backgroundOwner);
+  if (backgroundOwners.size === 1) backgroundOwner.start();
 
   // MCP 连接状态与工具集合在运行期会变（断线、重连、list_changed），报告每次实时取。
   const extensionStatus = (): ExtensionStatus => ({
@@ -397,6 +415,7 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     runtimeAuthority,
     taskRuns,
     automationStore,
+    heartbeat,
     graphs,
     capabilities,
     subagents: subagentTaskManager,
@@ -428,7 +447,10 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     },
     close: async () => {
       try {
-        dailyDiaryScheduler.stop();
+        const wasOwner = backgroundOwners.values().next().value === backgroundOwner;
+        backgroundOwner.stop();
+        backgroundOwners.delete(backgroundOwner);
+        if (wasOwner) backgroundOwners.values().next().value?.start();
         await subagentTaskManager?.close();
         await agent.close();
       } finally {

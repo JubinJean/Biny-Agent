@@ -74,11 +74,14 @@ export async function executeRuntimeHostMemoryOperation(
       trigger: "manual",
       archiveRetentionDays: policy.archiveRetentionDays,
       temporaryTtl: policy.temporaryTtl,
+      similarityMergeThreshold: policy.similarityMergeThreshold,
+      dedupAcrossUserIds: policy.dedupAcrossUserIds,
       useLlm: policy.useLlm,
       llmMergeLow: policy.llmMergeLow,
       llmBatchSize: policy.llmBatchSize
     }, {
       indexEntry: async (entry: MemoryEntry) => await commands.agent.indexMemoryEntry(entry),
+      prepareSynthesis: (content, signal) => commands.agent.prepareMemorySynthesis(content, signal),
       requestRebuild: () => context.scheduleEmbeddingRebuild(),
       findSimilarPairs: async (entries: readonly MemoryEntry[], minimumSimilarity: number, signal?: AbortSignal) => (
         await commands.agent.findMemorySimilarityPairs(entries, minimumSimilarity, signal)
@@ -88,9 +91,8 @@ export async function executeRuntimeHostMemoryOperation(
   }
   if (action === "sleep-preview") {
     const state = await commands.agent.getPersonalizationState();
-    return await memory.previewMaintenance({
-      temporaryTtl: state.memory.temporaryTtl,
-      archiveRetentionDays: state.memory.archiveRetentionDays
+    return await memory.previewMaintenance(state.memory, {
+      findSimilarPairs: async (entries, threshold, signal) => commands.agent.findMemorySimilarityPairs(entries, threshold, signal)
     });
   }
   if (action === "write-v3") {

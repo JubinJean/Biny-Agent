@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import type { AgentRuntimeUpdate, InteractiveRuntimeSnapshot } from "../src/runtime/agentEvents.js";
 import type { CommandRuntime } from "../src/runtime/CommandRuntime.js";
+import type { MemorySleepPreview } from "../src/agent/context/memoryTypes.js";
 import { defaultConfig } from "../src/config/schema.js";
 import { saveConfig } from "../src/config/loader.js";
 import { runtimeHostPaths, startRuntimeHost, connectRuntimeHost, spawnRuntimeHost } from "../src/runtime/RuntimeHost.js";
@@ -51,9 +52,17 @@ async function main(): Promise<void> {
   const exclusiveOperations: string[] = [];
   let memoryExpectedRevision: number | undefined;
   let maintenanceRuns = 0;
+  let releaseMemoryPreview: (() => void) | undefined;
+  const previewReport: MemorySleepPreview = {
+    available: true, entries: 2, temporaryToArchive: 0, archivedToDelete: 0, recentRuns: 0,
+    skipped: "Cancelled by user", inputTokens: 37, outputTokens: 11,
+    archiveProposed: [{ id: "source-1", content: "原始记忆内容", reason: "llm_merge", mergedInto: "preview-1" }],
+    synthesisProposed: [{ content: "合成后的记忆内容", durability: "permanent", sourceIds: ["source-1", "source-2"] }]
+  };
   let chatExpectedRevision: string | undefined;
   let globalExpectedRevision: string | undefined;
   const memoryPolicy = {
+    sleepTime: "00:00",
     useMemories: false,
     generateMemories: false,
     extractModel: undefined,
@@ -68,11 +77,10 @@ async function main(): Promise<void> {
     activeModel: { kind: "local" as const, model: "multilingual-e5-small" as const },
     models: [],
     localModels: [],
-    index: { building: 0, failed: 0 },
+    index: {},
     totalEntries: 0,
     indexedEntries: 0,
-    pendingEntries: 0,
-    failedEntries: 0
+    pendingEntries: 0
   });
   const personalizationState = () => ({
     memory: memoryPolicy,
@@ -183,6 +191,10 @@ async function main(): Promise<void> {
         return personalizationState();
       },
       getLocalMemory: () => ({
+        previewMaintenance: async () => {
+          await new Promise<void>((resolve) => { releaseMemoryPreview = resolve; });
+          return previewReport;
+        },
         loadMaintenanceStatus: async () => ({ state: "idle", eligible: 0, processed: 0, written: 0, failed: 0 }),
         runMemoryMaintenance: async () => {
           maintenanceRuns += 1;
@@ -200,6 +212,12 @@ async function main(): Promise<void> {
         },
       }),
       indexMemoryEntry: async (entry: { id: string }) => { indexedMemoryEntries.push(entry.id); },
+      cancelMemoryMaintenance: () => {
+        if (!releaseMemoryPreview) return false;
+        releaseMemoryPreview();
+        releaseMemoryPreview = undefined;
+        return true;
+      },
       removeMemoryEmbeddingEntries: () => undefined,
       memoryEmbeddingStatus: async () => embeddingStatus(),
       downloadMemoryEmbeddingModel: async (model: string) => { downloadedEmbeddingModel = model; },
@@ -217,7 +235,7 @@ async function main(): Promise<void> {
   await fs.mkdir(path.dirname(hostPaths.registrationPath), { recursive: true });
   await fs.writeFile(attackerRegistration, "attacker-registration\n");
   await symlink(attackerRegistration, hostPaths.registrationPath);
-  const host = await startRuntimeHost(workspace, runtime, commands);
+  const host = await startRuntimeHost(workspace, async () => ({ runtime: runtime, commands: commands }));
   assert.equal(await readFile(attackerRegistration, "utf8"), "attacker-registration\n", "registration writes must replace a symlink, not follow it");
   const hostDirectory = await fs.lstat(path.dirname(hostPaths.endpoint));
   assert.equal(hostDirectory.mode & 0o077, 0, "Runtime Host directory must not be group/world accessible");
@@ -229,7 +247,16 @@ async function main(): Promise<void> {
   assert.equal((await readFile(hostPaths.lockPath, "utf8")).trim(), String(ownerRegistration.pid));
   const client = await connectRuntimeHost(workspace, { clientId: "test-client", surface: "tui" });
   assert.ok(client);
-  await waitUntil(() => maintenanceRuns >= 1);
+  await waitUntil(() => maintenanceRuns >= 1, 6_000);
+  assert.equal(await client.cancelMemorySleep(), false);
+  const pendingMemoryPreview = client.previewMemorySleep();
+  await waitUntil(() => releaseMemoryPreview !== undefined);
+  assert.equal(await client.cancelMemorySleep(), true);
+  const receivedPreview = await pendingMemoryPreview;
+  assert.equal(receivedPreview.skipped, "Cancelled by user");
+  assert.deepEqual(receivedPreview.synthesisProposed?.[0]?.sourceIds, ["source-1", "source-2"]);
+  assert.deepEqual(receivedPreview, previewReport);
+  assert.equal(await client.cancelMemorySleep(), false);
   assert.equal(client.getSnapshot().info.sessionId, "session-host-test");
   assert.equal(client.hostInfo?.hostEpoch, host.info.hostEpoch);
   assert.equal(client.hostInfo?.capabilities.includes("personalization"), true);
@@ -455,14 +482,14 @@ async function main(): Promise<void> {
   await idleWait;
   await host.close();
   currentSnapshot = snapshot;
-  const explicitResumeHost = await startRuntimeHost(workspace, runtime, commands, { resumeInterrupted: true });
+  const explicitResumeHost = await startRuntimeHost(workspace, async () => ({ runtime: runtime, commands: commands }), { resumeInterrupted: true });
   assert.equal(interruptedStarts, 1, "只有显式恢复开关才允许启动中断回合");
   await explicitResumeHost.close();
   assert.equal(await connectRuntimeHost(workspace, { clientId: "after-close", surface: "tui" }), undefined);
 
   // 注册窗口回归：registration 尚未落盘时，lock 内的活 pid 必须阻止第二个 owner 接管。
   await fs.writeFile(hostPaths.lockPath, `${String(process.pid)}\n`, { mode: 0o600 });
-  await assert.rejects(startRuntimeHost(workspace, runtime, commands), /already running/u);
+  await assert.rejects(startRuntimeHost(workspace, async () => ({ runtime: runtime, commands: commands })), /already running/u);
   assert.equal(await readFile(hostPaths.lockPath, "utf8"), `${String(process.pid)}\n`, "存活 owner 的 lock 不得被当作 stale 删除");
   await fs.rm(hostPaths.lockPath, { force: true });
 
@@ -561,16 +588,20 @@ async function main(): Promise<void> {
   assert.ok(reattached);
   await reattached.restartOwner();
   const restartedEpoch = reattached.hostInfo?.hostEpoch;
+  assert.ok(restartedEpoch);
   assert.notEqual(restartedEpoch, initialEpoch);
   assert.equal(reattached.getSnapshot().info.workspaceRoot, spawnedWorkspace);
   // 模拟 owner 被系统杀掉：不会执行 Host.close，验证 registration/lock 的接管路径。
   const restartedRegistration = JSON.parse(await readFile(runtimeHostPaths(spawnedWorkspace).registrationPath, "utf8")) as { pid?: unknown };
   if (typeof restartedRegistration.pid === "number") process.kill(restartedRegistration.pid, "SIGKILL");
   const takeoverDeadline = Date.now() + 10_000;
-  while (reattached.hostInfo?.hostEpoch === restartedEpoch && Date.now() < takeoverDeadline) {
+  while ((!reattached.hostInfo?.hostEpoch || reattached.hostInfo.hostEpoch === restartedEpoch) && Date.now() < takeoverDeadline) {
     await new Promise<void>((resolve) => setTimeout(resolve, 100));
   }
-  assert.notEqual(reattached.hostInfo?.hostEpoch, initialEpoch);
+  assert.ok(reattached.hostInfo?.hostEpoch);
+  assert.notEqual(reattached.hostInfo.hostEpoch, restartedEpoch);
+  const takeoverSnapshot = await reattached.focusSession(reattached.getSnapshot().info.sessionId);
+  assert.equal(takeoverSnapshot.info.workspaceRoot, spawnedWorkspace);
   await reattached.close();
   if (previousReplacementAgentRoot === undefined) delete process.env.BINY_AGENT_DIR;
   else process.env.BINY_AGENT_DIR = previousReplacementAgentRoot;

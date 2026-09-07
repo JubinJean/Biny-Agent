@@ -83,15 +83,16 @@ export interface SessionTurnStatusEvent {
 
 type SessionEventPayload =
   // session 事件类型要保持稳定；resume、未来上下文压缩和记忆功能都会依赖这几个基础类型。
-  | { type: "user_message"; content: string; attachments?: AttachmentReference[]; skills?: string[]; contextUsage?: SessionContextUsage; contextState?: SessionContextState; preparationUsage?: SessionUsage[]; messageId?: string; parentMessageId?: string; slotId?: string; auditOnly?: boolean; time?: string }
-  | { type: "assistant_message"; content: string; reasoningContent?: string; reasoningProviderOptions?: Record<string, unknown>; reasoningBlocks?: ReasoningBlock[]; usage?: SessionUsage; relatedUsage?: SessionUsage[]; contextState?: SessionContextState; messageId?: string; parentMessageId?: string; slotId?: string; replyToMessageId?: string; retryOfMessageId?: string; auditOnly?: boolean; time?: string }
+  | { type: "user_message"; metadata?: Record<string, unknown>; content: string; attachments?: AttachmentReference[]; skills?: string[]; contextUsage?: SessionContextUsage; contextState?: SessionContextState; preparationUsage?: SessionUsage[]; messageId?: string; parentMessageId?: string; slotId?: string; auditOnly?: boolean; time?: string }
+  | { type: "assistant_message"; metadata?: Record<string, unknown>; content: string; reasoningContent?: string; reasoningProviderOptions?: Record<string, unknown>; reasoningBlocks?: ReasoningBlock[]; usage?: SessionUsage; relatedUsage?: SessionUsage[]; contextState?: SessionContextState; messageId?: string; parentMessageId?: string; slotId?: string; replyToMessageId?: string; retryOfMessageId?: string; auditOnly?: boolean; time?: string }
   | { type: "tool_call"; tool: string; args: unknown; toolCallId?: string; sequence?: number; assistantContent?: string; reasoningContent?: string; reasoningProviderOptions?: Record<string, unknown>; reasoningBlocks?: ReasoningBlock[]; auditOnly?: boolean; time?: string }
   | { type: "tool_execution"; tool: string; toolCallId: string; sequence: number; operationId: string; state: ToolExecutionState; evidence?: string; retrySafety?: ToolRetrySafety; time?: string }
   | { type: "tool_result"; tool: string; result: unknown; toolCallId?: string; sequence?: number; relatedUsage?: SessionUsage[]; executionStatus?: ToolExecutionResultStatus; recovered?: boolean; operationId?: string; evidence?: string; auditOnly?: boolean; time?: string }
-  | { type: "agent_message"; message: Exclude<AgentMessage, { role: "user" }>; messageId?: string; parentMessageId?: string; slotId?: string; replyToMessageId?: string; retryOfMessageId?: string; time?: string }
+  | { type: "agent_message"; metadata?: Record<string, unknown>; message: Exclude<AgentMessage, { role: "user" }>; messageId?: string; parentMessageId?: string; slotId?: string; replyToMessageId?: string; retryOfMessageId?: string; time?: string }
   | ({ type: "context_checkpoint"; reason: "threshold" | "overflow" | "manual"; time?: string } & SessionContextCheckpoint)
   | { type: "model_request"; metrics: ModelRequestMetrics; time?: string }
   | { type: "message_version_selected"; messageId: string; slotId: string; time?: string }
+  | { type: "message_metadata"; messageId: string; metadata: Record<string, unknown>; time?: string }
   | SessionTurnStatusEvent
   | { type: "error"; message: string; detail?: unknown; relatedUsage?: SessionUsage[]; time?: string };
 
@@ -380,6 +381,9 @@ function redactReasoningBlocks(blocks: ReasoningBlock[] | undefined): ReasoningB
 }
 
 function redactSessionEvent(event: SessionEvent): SessionEvent {
+  if ("metadata" in event && event.metadata !== undefined) {
+    event = { ...event, metadata: redactSensitiveValue(event.metadata) as Record<string, unknown> };
+  }
   if (event.type === "user_message") {
     return {
       ...event,
@@ -439,6 +443,7 @@ function redactSessionEvent(event: SessionEvent): SessionEvent {
     };
   }
   if (event.type === "message_version_selected") return event;
+  if (event.type === "message_metadata") return event;
   return {
     ...event,
     message: redactSecrets(event.message),

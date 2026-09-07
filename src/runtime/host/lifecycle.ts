@@ -74,7 +74,6 @@ export function spawnRuntimeHostProcess(
       ...(process.versions.electron === undefined ? {} : { ELECTRON_RUN_AS_NODE: "1" })
     }
   });
-  child.unref();
   return child;
 }
 
@@ -165,8 +164,7 @@ export async function terminateSpawnedHost(child: ChildProcess, graceMs = 250): 
     const hardTimer = setTimeout(finish, Math.max(graceMs + 1_000, 1_000));
     child.once("exit", finish);
     child.once("error", finish);
-    timer.unref?.();
-    hardTimer.unref?.();
+    if (child.exitCode !== null) queueMicrotask(finish);
   });
 }
 

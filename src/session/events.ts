@@ -118,6 +118,7 @@ const persistedAgentMessageSchema = z.discriminatedUnion("role", [
 const sessionEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("user_message"),
+    metadata: z.record(z.unknown()).optional(),
     content: z.string(),
     attachments: z.array(attachmentReferenceSchema).optional(),
     skills: z.array(z.string()).optional(),
@@ -132,6 +133,7 @@ const sessionEventSchema = z.discriminatedUnion("type", [
   }).passthrough(),
   z.object({
     type: z.literal("assistant_message"),
+    metadata: z.record(z.unknown()).optional(),
     content: z.string(),
     reasoningContent: z.string().optional(),
     reasoningProviderOptions: z.record(z.unknown()).optional(),
@@ -187,6 +189,7 @@ const sessionEventSchema = z.discriminatedUnion("type", [
   }).passthrough(),
   z.object({
     type: z.literal("agent_message"),
+    metadata: z.record(z.unknown()).optional(),
     message: persistedAgentMessageSchema,
     messageId: z.string().optional(),
     parentMessageId: z.string().optional(),
@@ -215,6 +218,12 @@ const sessionEventSchema = z.discriminatedUnion("type", [
     type: z.literal("message_version_selected"),
     messageId: z.string(),
     slotId: z.string(),
+    time: z.string().optional()
+  }).passthrough(),
+  z.object({
+    type: z.literal("message_metadata"),
+    messageId: z.string().min(1),
+    metadata: z.record(z.unknown()),
     time: z.string().optional()
   }).passthrough(),
   z.object({

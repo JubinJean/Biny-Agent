@@ -182,6 +182,7 @@ export class RuntimeHostServer {
           }
           return (await this.registry.createFresh({ isolation: "shared" })).runtime;
         },
+      isBusy: () => this.registry.list().some((entry) => runtimeIsBusy(entry.runtime.getSnapshot())),
       canStartAutomationRun: () => this.quota.canStartRun(this.registry),
       restartRuntime: async () => {
         await this.restartRuntime(undefined);
@@ -305,9 +306,7 @@ export class RuntimeHostServer {
       for (const entry of this.registry.list()) {
         if (entry.runtime.getSnapshot().state.kind !== "idle") entry.runtime.cancelCurrentRun();
       }
-      await Promise.all([...this.sessionWriterOwners.keys()].map(async (sessionId) => {
-        await this.registry.get(sessionId)?.runtime.releaseSessionClaim(sessionId);
-      }));
+      // 执行者真正退出时由 Runtime 释放 lease，不能在取消刚发出时提前放行新 writer。
       this.sessionWriterOwners.clear();
       const runtimeClose = this.registry.closeAll();
       let shutdownTimedOut = false;
@@ -475,11 +474,7 @@ export class RuntimeHostServer {
       const requestedSessionId = optionalString(payload.sessionId);
       const requestedIsolation = readRuntimeIsolation(payload.isolation);
       const writeIntent = payload.writeIntent === true;
-      const autoWorktree = requestedSessionId === undefined
-        && requestedIsolation === undefined
-        && writeIntent
-        && await this.shouldIsolateNewWriteSession();
-      const sessionId = requestedSessionId ?? (requestedIsolation === "worktree" || autoWorktree ? randomUUID() : undefined);
+      const sessionId = requestedSessionId ?? (requestedIsolation === "worktree" ? randomUUID() : undefined);
       if (writeIntent && sessionId !== undefined) this.assertSessionWriterAvailable(connection, sessionId);
       const catalog = sessionId === undefined
         ? undefined
@@ -496,10 +491,11 @@ export class RuntimeHostServer {
       // 物理 worktree 是 catalog 写入失败后的最后事实来源；一旦 session 已有 runtime，
       // isolation 也不能靠传入的新参数静默改写，否则同一份 transcript 会同时绑定两个 checkout。
       const configuredIsolation = worktree === undefined ? catalog?.isolation ?? "shared" : "worktree";
-      if (requestedIsolation !== undefined && requestedIsolation !== configuredIsolation) {
+      if (requestedIsolation !== undefined && requestedIsolation !== configuredIsolation
+        && (catalog !== undefined || worktree !== undefined || sessionFileExists || (sessionId !== undefined && this.registry.get(sessionId) !== undefined))) {
         throw new Error(`Session ${sessionId} is already configured for ${configuredIsolation} isolation.`);
       }
-      const isolation = requestedIsolation ?? (autoWorktree ? "worktree" : configuredIsolation);
+      const isolation = requestedIsolation ?? configuredIsolation;
       const existing = sessionId === undefined ? undefined : this.registry.get(sessionId);
       if (existing !== undefined && !this.runtimeMatchesIsolation(existing.runtime, isolation, worktree)) {
         throw new Error(`Session ${sessionId} is already attached to a different checkout; isolation is immutable while it is active.`);
@@ -594,9 +590,9 @@ export class RuntimeHostServer {
           readSessionFilter(payload.sessions)
         );
       case "submit": {
-        this.quota.assertRunCapacity(this.registry, managed);
         this.assertRevision(payload, runtime);
         if (payload.writeIntent === true) await this.ensureSessionWriter(connection, runtime);
+        this.quota.assertRunCapacity(this.registry, managed);
         const ids = readRequestIds(payload);
         const submitted = runtime.submitPrompt(
           requiredString(payload.input, "input"),
@@ -614,9 +610,9 @@ export class RuntimeHostServer {
       }
       case "run.submit":
         return await this.executeAdmission(async () => {
-          this.quota.assertRunCapacity(this.registry, managed);
           this.assertRevision(payload, runtime);
           if (payload.writeIntent === true) await this.ensureSessionWriter(connection, runtime);
+          this.quota.assertRunCapacity(this.registry, managed);
           const ids = readRequestIds(payload);
           const submitted = runtime.submitPrompt(
             requiredString(payload.input, "input"),
@@ -632,6 +628,7 @@ export class RuntimeHostServer {
       case "queue": {
         this.assertRevision(payload, runtime);
         if (payload.writeIntent === true) await this.ensureSessionWriter(connection, runtime);
+        this.quota.assertRunCapacity(this.registry, managed);
         const ids = readRequestIds(payload);
         const input = requiredString(payload.input, "input");
         const attachments = readAttachments(payload.attachments);
@@ -645,6 +642,7 @@ export class RuntimeHostServer {
         return await this.executeAdmission(async () => {
           this.assertRevision(payload, runtime);
           if (payload.writeIntent === true) await this.ensureSessionWriter(connection, runtime);
+          this.quota.assertRunCapacity(this.registry, managed);
           const ids = readRequestIds(payload);
           const input = requiredString(payload.input, "input");
           const attachments = readAttachments(payload.attachments);
@@ -673,9 +671,9 @@ export class RuntimeHostServer {
           return undefined;
         }, runtime);
       case "start-interrupted": {
-        this.quota.assertRunCapacity(this.registry, managed);
         this.assertRevision(payload, runtime);
         if (payload.writeIntent === true) await this.ensureSessionWriter(connection, runtime);
+        this.quota.assertRunCapacity(this.registry, managed);
         const submitted = await runtime.startInterruptedTurn(readRequestIds(payload));
         if (submitted) this.trackCompletion(submitted);
         return submitted === undefined
@@ -706,8 +704,8 @@ export class RuntimeHostServer {
         }, runtime);
       case "run.continue":
         return await this.executeAdmission(async () => {
-          this.quota.assertRunCapacity(this.registry, managed);
           if (payload.writeIntent === true) await this.ensureSessionWriter(connection, runtime);
+          this.quota.assertRunCapacity(this.registry, managed);
           return await this.continueRun(payload, runtime, commands);
         }, runtime);
       case "run.inspect": {
@@ -1230,6 +1228,8 @@ export class RuntimeHostServer {
   }
 
   private async runtimeEntry(operation: string, payload: Record<string, unknown>): Promise<ManagedSessionRuntime> {
+    // 重建期间旧 store 已关闭；查询和新运行要等注册表替换完成后再取句柄。
+    await Promise.all(this.runtimeRestartPromises.values());
     const explicitSessionId = optionalString(payload.sessionId);
     const sessionFromFile = typeof payload.session === "string" ? sessionIdFromFile(payload.session) : undefined;
     const taskRunId = operation.startsWith("task.") ? optionalString(payload.taskRunId) : undefined;
@@ -1477,17 +1477,7 @@ export class RuntimeHostServer {
       ? this.registry.primary()
       : await this.registry.ensure(targetSessionId, await this.factoryOptionsForSession(targetSessionId));
     if (this.createRuntime) {
-      const isolation = await this.shouldIsolateNewWriteSession() ? "worktree" : "shared";
-      const sessionId = isolation === "worktree" ? randomUUID() : undefined;
-      const factoryOptions = sessionId === undefined
-        ? undefined
-        : await this.prepareWorktreeSession(sessionId, undefined, true);
-      const managed = await this.registry.createFresh({
-        workspaceRoot: factoryOptions?.workspaceRoot,
-        sessionId,
-        fresh: true,
-        isolation
-      });
+      const managed = await this.registry.createFresh({ fresh: true, isolation: "shared" });
       this.publishSnapshot(managed.runtime);
       return managed.runtime.getSnapshot().info;
     }
@@ -1536,6 +1526,8 @@ export class RuntimeHostServer {
       throw new Error(`Cannot rebuild the Runtime Host while session ${target.sessionId} is busy.`);
     }
     const previousSessionId = target.sessionId;
+    // 旧实例先停止并释放 session lease，新实例才能以相同身份恢复；关闭同时拒绝新 submit。
+    await target.runtime.close();
     const factoryOptions = await this.factoryOptionsForSession(previousSessionId);
     const next = await this.createRuntime(previousSessionId, factoryOptions);
     const managed = await this.registry.replace(previousSessionId, next);
@@ -1562,21 +1554,6 @@ export class RuntimeHostServer {
       return sessionFileExists ? undefined : { sessionId, fresh: true, isolation: "shared" };
     }
     return await this.prepareWorktreeSession(sessionId, catalog, !sessionFileExists);
-  }
-
-  /**
-   * 只在明确表示“这次会写工作区”且共享主 checkout 已有另一个 full-access 回合时隔离。
-   * 已经是 worktree 的 runtime 不占用共享 checkout，因此不会把所有并行任务无限套娃。
-   */
-  private async shouldIsolateNewWriteSession(): Promise<boolean> {
-    if (!(await this.worktrees.isAvailable())) return false;
-    const worktreeSessionIds = new Set((await this.worktrees.list()).map((record) => record.sessionId));
-    return this.registry.list().some((entry) => {
-      const snapshot = entry.runtime.getSnapshot();
-      return !worktreeSessionIds.has(entry.sessionId)
-        && snapshot.permissionMode === "full-access"
-        && runtimeIsBusy(snapshot);
-    });
   }
 
   private runtimeMatchesIsolation(runtime: InteractiveRuntimeHandle, isolation: "shared" | "worktree", worktree: Awaited<ReturnType<WorktreeManager["get"]>>): boolean {

@@ -15,6 +15,7 @@ import {
   removeStaleRegistration,
   runtimeHostPaths,
   spawnRuntimeHostProcess,
+  terminateSpawnedHost,
   waitForHostRegistration
 } from "./lifecycle.js";
 import { runtimeHostProtocolVersion as protocolVersion } from "./protocol.js";
@@ -111,8 +112,14 @@ export async function spawnRuntimeHost(
 ): Promise<SpawnedRuntimeHost> {
   if (process.platform === "win32") throw new Error("Runtime Host currently requires Unix domain sockets.");
   const child = spawnRuntimeHostProcess(persistenceRoot, options);
-  const client = await waitForSpawnedRuntimeHost(persistenceRoot, options, child);
-  return { process: child, client };
+  try {
+    const client = await waitForSpawnedRuntimeHost(persistenceRoot, options, child);
+    child.unref();
+    return { process: child, client };
+  } catch (error) {
+    if (child.exitCode === null) await terminateSpawnedHost(child);
+    throw error;
+  }
 }
 
 export async function findLatestInterruptedSession(persistenceRoot: string): Promise<string | undefined> {

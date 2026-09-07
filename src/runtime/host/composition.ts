@@ -31,6 +31,7 @@ export interface RuntimeHostBusinessComposition {
 export interface RuntimeHostBusinessCompositionOptions {
   getRuntime(): InteractiveRuntimeHandle;
   getCommands(): CommandRuntime;
+  isBusy?: () => boolean;
   createRuntime?: RuntimeHostFactory;
   createFreshRuntime?: (sessionId?: string) => Promise<InteractiveRuntimeHandle>;
   canStartAutomationRun?: () => boolean;
@@ -44,7 +45,8 @@ export function createRuntimeHostBusinessComposition(
   let graphSupervisor: GraphSupervisor | undefined;
   const memoryMaintenance: RuntimeHostMemoryMaintenance = createRuntimeHostMemoryMaintenance({
     getRuntime: options.getRuntime,
-    getCommands: options.getCommands
+    getCommands: options.getCommands,
+    isBusy: options.isBusy
   });
   let stopped = false;
 

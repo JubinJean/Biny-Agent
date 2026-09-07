@@ -22,6 +22,26 @@ export interface SessionMessageReference {
   slotId?: string;
 }
 
+/** metadata 更新是追加事实，不复制消息正文；恢复时只合并属于该消息的补丁。 */
+export function sessionMessageMetadata(events: readonly SessionEvent[], messageId: string): Record<string, unknown> {
+  let exists = false;
+  let metadata: Record<string, unknown> = {};
+  for (const event of events) {
+    if ((event.type === "user_message" || event.type === "agent_message" || event.type === "assistant_message") && event.messageId === messageId && !exists) {
+      exists = true;
+      metadata = { ...event.metadata };
+    }
+    if (!exists || event.type !== "message_metadata" || event.messageId !== messageId) continue;
+    const previousUsage = metadata.usage;
+    metadata = { ...metadata, ...event.metadata };
+    // usage 只合并自身一层；其他嵌套字段由新补丁整体替换。
+    if (previousUsage || event.metadata.usage) {
+      metadata.usage = { ...Object(previousUsage || {}), ...Object(event.metadata.usage || {}) };
+    }
+  }
+  return metadata;
+}
+
 /** 新格式保留 canonical 消息的父子关系；旧事件没有 ID 时由时间线继续按扁平事件展示。 */
 export function sessionMessageTree(events: SessionEvent[]): SessionMessageNode[] {
   return events.flatMap((event, eventIndex): SessionMessageNode[] => {
@@ -97,7 +117,7 @@ export function activeSessionEventsForPath(events: readonly SessionEvent[]): Ses
     if (event.type === "user_message" || event.type === "agent_message") {
       return event.messageId === undefined || activeIds.has(event.messageId);
     }
-    if (event.type === "assistant_message" && event.messageId !== undefined) {
+    if ((event.type === "assistant_message" || event.type === "message_metadata") && event.messageId !== undefined) {
       return activeIds.has(event.messageId);
     }
     if (event.runtime?.runId !== undefined && activeRuns.size > 0) {

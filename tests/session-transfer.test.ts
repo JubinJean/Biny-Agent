@@ -261,5 +261,7 @@ try {
 
   console.log("session-transfer tests passed");
 } finally {
-  for (const root of createdRoots) await rm(root, { recursive: true, force: true });
+  for (const root of createdRoots) {
+    await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
 }

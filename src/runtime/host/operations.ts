@@ -94,7 +94,7 @@ export function operationLane(operation: string): OperationLane {
     || operation === "capability.get"
     || operation === "host.info"
   ) return "query";
-  if (operation === "memory.embedding.cancel-download-v3" || operation === "memory.embedding.cancel-rebuild-v3") return "control";
+  if (operation === "memory.sleep.cancel" || operation === "memory.embedding.cancel-download-v3" || operation === "memory.embedding.cancel-rebuild-v3") return "control";
   if (operation === "capability.cancel" || operation === "capability.fail" || operation === "capability.release" || operation === "capability.reject") return "control";
   if (operation === "goal.pause" || operation === "goal.cancel" || operation === "graph.pause" || operation === "graph.cancel") return "control";
   if (operation === "capability.register" || operation === "capability.replace" || operation === "capability.invoke" || operation === "capability.accept" || operation === "capability.start" || operation === "capability.result" || operation === "capability.chunk" || operation === "capability.admit" || operation === "graph.start" || operation === "graph.resume" || operation === "goal.resume") return "admission";

@@ -11,6 +11,8 @@ import { GoalGraphStore, GraphSupervisor } from "../src/runtime/GoalGraphStore.j
 import { CapabilityStore } from "../src/runtime/CapabilityStore.js";
 import type { InteractiveRuntimeHandle } from "../src/runtime/InteractiveAgentRuntime.js";
 import { evaluateTaskRetry } from "../src/runtime/TaskRetryPolicy.js";
+import { SessionRecorder } from "../src/session/recorder.js";
+import { readSessionEvents } from "../src/session/events.js";
 
 const root = await mkdtemp(path.join(os.tmpdir(), "biny-authority-test-"));
 const authority = await RuntimeEventAuthority.open(root);
@@ -277,6 +279,7 @@ try {
   const page = authority.readEvents({ limit: 10 });
   assert.ok(page.events.every((event, index) => index === 0 || event.sequence > page.events[index - 1]!.sequence));
   await testSessionBackfillWatermark();
+  await testMemoryMetadataProjectionRecovery();
   await testGraphSupervisorDefersOnBusyRuntime();
   console.log("runtime authority tests passed");
 } finally {
@@ -286,6 +289,46 @@ try {
   tasks.close();
   authority.close();
   await rm(root, { recursive: true, force: true });
+}
+
+async function testMemoryMetadataProjectionRecovery(): Promise<void> {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "biny-memory-projection-test-"));
+  let current: RuntimeEventAuthority | undefined;
+  try {
+    current = await RuntimeEventAuthority.open(workspace);
+    const recorder = new SessionRecorder(workspace, "memory-projection", undefined, {
+      appendSessionEvent(input) {
+        if (input.event.type === "message_metadata") throw new Error("injected projection write failure");
+        current!.appendSessionEvent(input);
+      }
+    });
+    recorder.setRuntimeContext({ runId: "memory-run", turnId: "memory-turn" });
+    const message = recorder.record({ type: "agent_message", message: { role: "assistant", content: [{ type: "text", text: "Complete" }] } });
+    assert.ok("messageId" in message && message.messageId);
+    const metadata = { memoryExtracted: true, memoryExtractedAt: "2026-09-06T00:00:00.000Z", createdMemories: [{ id: "memory-1", content: "A durable preference", type: "created" }] };
+    assert.throws(() => recorder.record({ type: "message_metadata", messageId: message.messageId, metadata }), /injected projection write failure/u);
+    await recorder.close();
+    // 投影写入异常不抹掉已追加的事实，重新打开时应补齐而非生成新事件身份。
+    const update = (await readSessionEvents(recorder.filePath)).find((event) => event.type === "message_metadata");
+    assert.ok(update);
+    assert.equal(current.readEvents({ sessionId: recorder.sessionId }).events.length, 1);
+    current.close();
+    current = await RuntimeEventAuthority.open(workspace);
+    const projected = current.readEvents({ sessionId: recorder.sessionId }).events;
+    assert.equal(projected.length, 2);
+    const recovered = projected.find((event) => event.eventType === "session.message_metadata");
+    assert.ok(recovered);
+    assert.equal(recovered.eventId, update.runtime?.eventId);
+    assert.equal(recovered.runId, "memory-run");
+    assert.equal(recovered.turnId, "memory-turn");
+    assert.deepEqual(recovered.payload, update);
+    current.close();
+    current = await RuntimeEventAuthority.open(workspace);
+    assert.equal(current.readEvents({ sessionId: recorder.sessionId }).events.length, 2);
+  } finally {
+    current?.close();
+    await rm(workspace, { recursive: true, force: true });
+  }
 }
 
 async function testSessionBackfillWatermark(): Promise<void> {
