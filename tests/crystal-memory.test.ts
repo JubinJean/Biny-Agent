@@ -70,7 +70,7 @@ await testAnchorRetryAfterExtractionFailure();
     modelId: "crystal-extraction",
     stream: async (request, options) => {
       extractionCalls += 1;
-      assert.equal(createHash("sha256").update(request.systemPrompt ?? "").digest("hex"), "90363542cbb4404e7880315b444eac346667b56ed0d0aa38ec483f379ffbf17d");
+      assert.equal(createHash("sha256").update(request.systemPrompt ?? "").digest("hex"), "d8f0100261e8ba5acdbe5ef9fadb8ba6a476e8853be90b6635f0a69b7eb89978");
       assert.deepEqual(request.messages, [{ role: "user", content: [{ type: "text", text: "ProjectX review" }] }]);
       assert.equal(options?.maxOutputTokens, undefined);
       assert.equal(options?.reasoning, undefined);
