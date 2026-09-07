@@ -12,6 +12,7 @@ import type { PermissionAction, PermissionResult } from "../../../../permission/
 import { permissionScopeForAlways } from "../../../../permission/permissionScope.js";
 import { tokenizeCommand } from "../commandHighlight.js";
 import { classifyTool, firstLine, toolRowState, VARIANT_TITLES } from "../chatModel.js";
+import { collapseContext, computeLineDiff } from "../lineDiff.js";
 import type { TimelineCommand, TimelineTool } from "../sessionTimeline.js";
 import { projectWebSearchView, type WebSearchResultView, type WebSearchView } from "../webSearchPresentation.js";
 import { CopyButton } from "./CopyButton.js";
@@ -281,46 +282,36 @@ function fileChangeDetails(tool: TimelineTool): FileChangeDetails | undefined {
   return undefined;
 }
 
-interface FileChangeLine {
-  kind: "add" | "del";
-  number?: number;
-  text: string;
-}
+const fileChangeVisibleLines = 40;
 
-function fileChangeLines(change: FileChangeDetails): FileChangeLine[] {
-  const split = (value: string): string[] => {
-    const lines = value.split("\n");
-    if (lines.at(-1) === "") lines.pop();
-    return lines;
-  };
-  if (change.operation === "write") {
-    return split(change.content ?? "").map((text, index) => ({ kind: "add", number: index + 1, text }));
-  }
-  return [
-    ...split(change.before ?? "").map((text): FileChangeLine => ({ kind: "del", text })),
-    ...split(change.after ?? "").map((text): FileChangeLine => ({ kind: "add", text }))
-  ];
-}
-
-const fileChangeVisibleLines = 24;
-
+/** edit 卡片：before/after 逐行对齐成行内 diff，ctx 收窄到变更附近 ±3 行。 */
 function FileChangeView({ change, onPreviewFile }: { change: FileChangeDetails; onPreviewFile(path: string): void }): React.JSX.Element {
   const [showAll, setShowAll] = useState(false);
-  const lines = useMemo(() => fileChangeLines(change), [change]);
-  const visible = showAll ? lines : lines.slice(0, fileChangeVisibleLines);
-  const fileName = change.path?.replaceAll("\\", "/").split("/").at(-1);
-  // 写入是整段新内容：直接走高亮代码卡片（行号 + 语言标签），比满屏绿色 add 行更清爽。
+  const lines = useMemo(
+    () => change.operation === "edit" ? collapseContext(computeLineDiff(change.before ?? "", change.after ?? "")) : [],
+    [change]
+  );
+  const stats = useMemo(() => diffEntryStats(lines), [lines]);
   if (change.operation === "write") {
+    const total = countLines(change.content ?? "");
     return (
       <section className="tool-section">
-        <h4 className="tool-section-label">内容<span className="tool-section-meta">+{lines.length} 行</span></h4>
+        <h4 className="tool-section-label">内容<span className="tool-section-meta">{String(total)} 行</span></h4>
         <CodeView code={change.content ?? ""} filePath={change.path} onPreviewFile={change.path ? onPreviewFile : undefined} />
       </section>
     );
   }
+  const visible = showAll ? lines : lines.slice(0, fileChangeVisibleLines);
+  const fileName = change.path?.replaceAll("\\", "/").split("/").at(-1);
   return (
     <section className="tool-section">
-      <h4 className="tool-section-label">变更</h4>
+      <h4 className="tool-section-label">
+        变更
+        <span className="diff-stats tool-section-meta">
+          <span className="diff-add">+{String(stats.add)}</span>
+          <span className="diff-delete">-{String(stats.del)}</span>
+        </span>
+      </h4>
       <div className="code-card">
         {change.path ? (
           <button className="code-card-header" onClick={() => onPreviewFile(change.path ?? "")} title={`在右侧预览 ${change.path}`} type="button">
@@ -330,20 +321,37 @@ function FileChangeView({ change, onPreviewFile }: { change: FileChangeDetails; 
         ) : null}
         <div className="code-card-body">
           <CopyButton className="copy-button" label="复制新内容" value={change.after ?? ""} />
-          <pre className="code-lines"><code>
-            {visible.map((line, index) => (
+          <pre className="code-lines inline-diff"><code>
+            {visible.map((line, index) => line.kind === "gap" ? (
+              <span className="inline-diff-gap" key={String(index)}>⋯ {String(line.count)} 行未改动{"\n"}</span>
+            ) : (
               <span className={`code-line is-${line.kind}`} key={`${String(index)}-${line.text.slice(0, 20)}`}>
-                <span className="code-line-number">{line.number ?? ""}</span>
-                <span className="code-line-sign">{line.kind === "add" ? "+" : "-"}</span>
+                <span className="code-line-sign">{line.kind === "add" ? "+" : line.kind === "del" ? "-" : " "}</span>
                 <span className="code-line-text">{line.text}</span>{"\n"}
               </span>
             ))}
           </code></pre>
         </div>
-        {lines.length > visible.length ? <button className="expand-output" onClick={() => setShowAll(true)} type="button">展开全部 {lines.length} 行</button> : null}
+        {lines.length > visible.length ? <button className="expand-output" onClick={() => setShowAll(true)} type="button">展开全部 {String(lines.length)} 行</button> : null}
       </div>
     </section>
   );
+}
+
+function countLines(value: string): number {
+  const lines = value.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  return lines.length;
+}
+
+function diffEntryStats(entries: Array<{ kind: string }>): { add: number; del: number } {
+  let add = 0;
+  let del = 0;
+  for (const entry of entries) {
+    if (entry.kind === "add") add += 1;
+    if (entry.kind === "del") del += 1;
+  }
+  return { add, del };
 }
 
 function WebSearchLog({ view, tool, onOpenExternal }: { view: WebSearchView; tool: TimelineTool; onOpenExternal(url: string): void }): React.JSX.Element {

@@ -1,32 +1,22 @@
 /* eslint-disable react-refresh/only-export-components -- Inspector 请求状态与私有视图必须共享同一生命周期。 */
 /**
- * Workspace 右侧工具区的状态与视图（对照 Alma 的 ArtifactSidebar2 格局）。
+ * Workspace 右侧工具区的状态与命令。
  *
  * 右缘是一条常驻的浮动 rail（文件/终端/审阅/侧聊/浏览器），点击前四个打开 tab 化的
- * dock 面板，浏览器是直接动作。文件树、文件预览、终端切换和面板尺寸都属于 Inspector
- * 自己的交互状态；会话区只拿到 rail/dock 节点与 `previewFile` 命令，不再理解目录请求
- * 或终端布局。
+ * dock 面板，浏览器是直接动作。文件树、文件预览的展示在 FilePreviewPanel；这里只负责
+ * 预览/目录的请求状态、面板尺寸与 previewFile 命令，会话区只拿到 rail/dock 节点。
  */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { IconButton } from "@astryxdesign/core/IconButton";
-import { TextInput } from "@astryxdesign/core/TextInput";
-import type {
-  DesktopWorkspaceDirectory,
-  DesktopWorkspaceDirectoryEntry,
-  DesktopWorkspaceFilePreview,
-  DesktopSlashResult
-} from "../../../../protocol.js";
+import type { DesktopWorkspaceDirectory, DesktopWorkspaceFilePreview, DesktopSlashResult } from "../../../../protocol.js";
 import {
   clampFilePanelWidth,
   MAX_FILE_PANEL_WIDTH,
   MIN_FILE_PANEL_WIDTH
 } from "../../../../filePanelSizing.js";
-import { highlightWorkspaceFile } from "../../syntaxHighlight.js";
-import { workspaceFileMarker } from "../../workspaceFileMarker.js";
-import { CopyButton } from "../CopyButton.js";
 import { Icon, type IconName } from "../Icon.js";
 import { TerminalView } from "../TerminalView.js";
 import { useClosingPresence } from "../../useClosingPresence.js";
+import { FilePreviewPanel, type FileDirectoryState, type FilePreviewState } from "./FilePreviewPanel.js";
 import {
   InspectorReview,
   InspectorSideChat,
@@ -48,20 +38,6 @@ interface UseWorkspaceInspectorOptions {
   onRunCommand(command: string): Promise<DesktopSlashResult>;
   /** rail 动作（浏览器打开等）失败的提示通道。 */
   onWarning(message: string): void;
-}
-
-interface FilePreviewState {
-  source: string;
-  path: string;
-  status: "loading" | "ready" | "error";
-  file?: DesktopWorkspaceFilePreview;
-  error?: string;
-}
-
-interface FileDirectoryState {
-  status: "loading" | "ready" | "error";
-  entries?: DesktopWorkspaceDirectoryEntry[];
-  error?: string;
 }
 
 type InspectorView = "files" | "terminal" | "review" | "side-chat";
@@ -277,7 +253,7 @@ export function useWorkspaceInspector({
       runReview();
       return;
     }
-    // rail 上点当前已打开的 tab 再点一次是收起面板（与 Alma 的 rail 开合一致）。
+    // rail 上点当前已打开的 tab 再点一次是收起面板。
     if (inspectorOpen && inspectorView === action) {
       setInspectorOpen(false);
       return;
@@ -323,6 +299,7 @@ export function useWorkspaceInspector({
         onShowFiles={showFileBrowser}
         onToggleDirectory={toggleDirectory}
         preview={activePreview}
+        projectId={projectId}
       />
     ) : inspectorView === "review" ? <InspectorReview onRetry={runReview} state={reviewState} />
       : <InspectorSideChat onSend={runSideChat} state={sideChatState} />;
@@ -483,130 +460,9 @@ function clampFilePanelWidthForLayout(width: number, layoutRoot: HTMLElement | n
   return clampFilePanelWidth(width, appWidth, sidebarWidth);
 }
 
-function FilePreviewPanel({ preview, directoryStates, expandedDirectories, onOpenFile, onPreviewFile, onShowFiles, onToggleDirectory }: {
-  preview?: FilePreviewState;
-  directoryStates: ReadonlyMap<string, FileDirectoryState>;
-  expandedDirectories: ReadonlySet<string>;
-  onOpenFile(path: string): void;
-  onPreviewFile(path: string): void;
-  onShowFiles(): void;
-  onToggleDirectory(path: string): void;
-}): React.JSX.Element {
-  const file = preview?.file;
-  const path = file?.path ?? preview?.path;
-  const [query, setQuery] = useState("");
-  const [fileTreeOpen, setFileTreeOpen] = useState(true);
-  const browserOnly = !preview;
-  const treeVisible = browserOnly || fileTreeOpen;
-  return (
-    <aside aria-label={preview ? "文件预览" : "文件浏览器"} className="file-preview-panel file-browser-panel">
-      <header className="file-browser-path">
-        <span className="file-browser-current-path">{path ? `/${path}` : "/"}</span>
-        <div className="file-browser-path-actions">
-          {preview?.status === "ready" && path ? <IconButton icon={<Icon name="external" size={14} />} label="使用系统应用打开" onClick={() => onOpenFile(path)} size="sm" tooltip="使用系统应用打开" variant="ghost" /> : null}
-          {preview ? <IconButton icon={<Icon name="close" size={14} />} label="关闭当前文件" onClick={onShowFiles} size="sm" tooltip="返回文件列表" variant="ghost" /> : null}
-          {preview ? (
-            <IconButton
-              aria-pressed={fileTreeOpen}
-              icon={<Icon name="folder-panel" size={15} />}
-              label={fileTreeOpen ? "隐藏文件树" : "显示文件树"}
-              onClick={() => setFileTreeOpen((current) => !current)}
-              size="sm"
-              tooltip={fileTreeOpen ? "隐藏文件树" : "显示文件树"}
-              variant={fileTreeOpen ? "secondary" : "ghost"}
-            />
-          ) : null}
-        </div>
-      </header>
-      <div className={`file-browser-body${treeVisible ? "" : " is-tree-hidden"}${browserOnly ? " is-browser-only" : ""}`}>
-        {preview ? <div className="file-browser-content"><FilePreviewContent preview={preview} /></div> : null}
-        <div aria-hidden={treeVisible ? undefined : true} className="file-browser-tree" inert={treeVisible ? undefined : true}>
-          <TextInput hasClear isLabelHidden label="筛选文件" onChange={setQuery} placeholder="筛选文件…" size="sm" startIcon={<Icon name="search" size={13} />} value={query} width="100%" />
-          <FileTree
-            directoryStates={directoryStates}
-            expandedDirectories={expandedDirectories}
-            onPreviewFile={onPreviewFile}
-            onToggleDirectory={onToggleDirectory}
-            path="."
-            query={query}
-          />
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-function FilePreviewContent({ preview }: { preview: FilePreviewState }): React.JSX.Element {
-  const file = preview.file;
-  if (preview.status === "loading") return <div className="file-preview-state"><span className="large-spinner" /><span>正在读取文件…</span></div>;
-  if (preview.status === "error") return <div className="file-preview-state is-error"><Icon name="warning" size={18} /><span>{preview.error}</span></div>;
-  if (file?.binary) return <div className="file-preview-state"><Icon name="file" size={18} /><span>这是二进制文件，请使用系统应用打开。</span></div>;
-  if (!file) return <div className="file-preview-state"><span>无法读取文件</span></div>;
-  if (!file.content) return <div className="file-preview-state"><span>空文件</span></div>;
-  const highlighted = highlightWorkspaceFile(file.path, file.content);
-  return (
-    <>
-      <div className="file-preview-meta">
-        <span>{highlighted.language ?? "纯文本"}</span>
-        <div className="file-preview-meta-actions">
-          <span>{formatBytes(file.bytes)}{file.truncated ? " · 仅显示前 512 KB" : ""}</span>
-          <CopyButton className="copy-button" label="复制文件内容" value={file.content} />
-        </div>
-      </div>
-      <pre className="file-preview-code"><code className={highlighted.language ? `hljs language-${highlighted.language}` : "hljs"} dangerouslySetInnerHTML={{ __html: highlighted.html }} /></pre>
-    </>
-  );
-}
-
-function FileTree({ path, query, directoryStates, expandedDirectories, onToggleDirectory, onPreviewFile, depth = 0 }: {
-  path: string;
-  query: string;
-  directoryStates: ReadonlyMap<string, FileDirectoryState>;
-  expandedDirectories: ReadonlySet<string>;
-  onToggleDirectory(path: string): void;
-  onPreviewFile(path: string): void;
-  depth?: number;
-}): React.JSX.Element {
-  const state = directoryStates.get(path);
-  if (!state || state.status === "loading") return <div className="file-tree-state"><span className="mini-spinner" /><span>正在读取目录…</span></div>;
-  if (state.status === "error") return <div className="file-tree-state is-error"><Icon name="warning" size={14} /><span>{state.error}</span></div>;
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const entries = (state.entries ?? []).filter((entry) => !normalizedQuery || entry.name.toLocaleLowerCase().includes(normalizedQuery));
-  if (!entries.length) return <div className="file-tree-state">{normalizedQuery ? "没有匹配文件" : "目录为空"}</div>;
-  return (
-    <div className="file-tree-level">
-      {entries.map((entry) => {
-        const isDirectory = entry.kind === "directory";
-        const isExpanded = isDirectory && expandedDirectories.has(entry.path);
-        return (
-          <div key={entry.path}>
-            <button className={`file-tree-row${isDirectory ? " is-directory" : ""}`} onClick={() => isDirectory ? onToggleDirectory(entry.path) : onPreviewFile(entry.path)} style={{ paddingLeft: `${8 + depth * 16}px` }} title={entry.path} type="button">
-              {isDirectory ? <span className={`file-tree-disclosure${isExpanded ? " is-expanded" : ""}`}><Icon name="chevron" size={13} /></span> : <span aria-hidden="true" className="file-tree-disclosure is-file-slot" />}
-              {isDirectory ? <Icon className="file-tree-folder-icon" name="folder" size={14} /> : <FileTreeMarker name={entry.name} />}
-              <span>{entry.name}</span>
-            </button>
-            {isDirectory && isExpanded ? <FileTree directoryStates={directoryStates} depth={depth + 1} expandedDirectories={expandedDirectories} onPreviewFile={onPreviewFile} onToggleDirectory={onToggleDirectory} path={entry.path} query={query} /> : null}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-function FileTreeMarker({ name }: { name: string }): React.JSX.Element {
-  const marker = workspaceFileMarker(name);
-  return <span aria-hidden="true" className={`file-type-marker is-${marker.tone}${marker.label.length > 2 ? " is-wide" : ""}`}>{marker.label}</span>;
-}
-
 function normalizeWorkspacePath(value: string): string {
   const normalized = value.replaceAll("\\", "/").replace(/^\.\//, "");
   return normalized || ".";
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1_024) return `${String(bytes)} B`;
-  if (bytes < 1_024 * 1_024) return `${(bytes / 1_024).toFixed(bytes >= 10_240 ? 0 : 1)} KB`;
-  return `${(bytes / 1_024 / 1_024).toFixed(1)} MB`;
 }
 
 function errorMessage(error: unknown): string {

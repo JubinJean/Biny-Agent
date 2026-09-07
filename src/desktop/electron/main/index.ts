@@ -23,9 +23,7 @@ import { DesktopSettingsTransaction } from "./DesktopSettingsTransaction.js";
 import { DesktopTerminalManager } from "./DesktopTerminalManager.js";
 import { DesktopUserDataStore } from "./DesktopUserDataStore.js";
 import { globalConfigDir } from "../../../config/paths.js";
-import { LocalMemory, withFreshRevision } from "../../../agent/context/LocalMemory.js";
-import type { MemoryEntryInput } from "../../../agent/context/memoryTypes.js";
-import type { ActivityMemoryCandidate, ActivityMemoryWriteContext } from "../../../activity/analyzer.js";
+import { createActivityMemoryPipeline } from "../../../activity/memoryPipeline.js";
 import { registerDesktopIpc } from "./ipc.js";
 import { installApplicationMenu } from "./menu.js";
 import { QuickChatContextService } from "./QuickChatContextService.js";
@@ -128,61 +126,15 @@ async function startDesktopApplication(): Promise<void> {
     agents,
     net.fetch.bind(net) as unknown as typeof globalThis.fetch
   );
-  const writeActivityMemories = async (
-    candidates: readonly ActivityMemoryCandidate[],
-    context: ActivityMemoryWriteContext
-  ): Promise<void> => {
-    // Activity 分析发生在后台，当前选中的聊天项目可能早已变化；只能使用分析模型返回的
-    // project 元数据映射目标工作区，找不到时宁可跳过 workspace 候选，也不能写进 active 项目。
-    const targetProject = resolveActivityProject(context.project, state.projects());
-    const workspaceRoot = targetProject?.missing === false
-      ? targetProject.path
-      : await projects.globalDataRoot();
-    const memory = new LocalMemory(
-      workspaceRoot,
-      () => context.model,
-      undefined,
-      5,
-      undefined,
-      undefined,
-      {
-        indexEntry: async (entry) => await agents.indexActivityMemoryEntry(entry)
-      },
-      async (query, options) => await agents.findMemorySimilarEntries(query, options)
-    );
-    for (const candidate of candidates) {
-      if (candidate.type !== "user" && (targetProject === undefined || targetProject.missing)) continue;
-      const isUniversal = candidate.type === "user";
-      const input: MemoryEntryInput = {
-        audience: isUniversal ? "universal" : "workspace",
-        kind: isUniversal ? "working_style" : candidate.type === "feedback" ? "gotcha" : "fact",
-        topic: isUniversal ? "user" : candidate.type,
-        title: candidate.content.slice(0, 120),
-        summary: candidate.content,
-        // Keep the Activity type and project tag in keywords so later semantic
-        // and manual searches remain explainable without adding another metadata table.
-        keywords: [
-          candidate.type,
-          ...(!isUniversal && context.project?.trim() ? [`project:${context.project.trim()}`] : [])
-        ],
-        importance: candidate.type === "feedback" || isUniversal ? 4 : 3,
-        durability: "permanent",
-        lineage: {
-          source: "completed_task",
-          externalContext: false,
-          sessionId: context.sessionId,
-          userEvidence: candidate.why
-        }
-      };
-      await withFreshRevision(memory, undefined, async (expectedRevision) => (
-        await memory.writeAutoEntry(input, {
-          expectedRevision,
-          now: new Date(context.analyzedAt),
-          requireSemantic: true
-        })
-      ));
-    }
-  };
+  const globalDataRoot = await projects.globalDataRoot();
+  const activityMemoryPipeline = await createActivityMemoryPipeline({
+    workspaceRoot: globalDataRoot,
+    resolveWorkspace: async (projectName) => resolveActivityProject(projectName, state.projects())?.path,
+    skipUnknownWorkspace: true,
+    indexEntry: async (entry) => await agents.indexActivityMemoryEntry(entry),
+    findSimilarEntries: async (query, options) => await agents.findMemorySimilarEntries(query, options),
+    requireSemantic: false
+  });
   const activity = new ActivityRecorderService({
     configStore,
     sidecarPath: defaultActivitySidecarPath({
@@ -190,7 +142,8 @@ async function startDesktopApplication(): Promise<void> {
       resourcesPath: process.resourcesPath,
       appPath: app.getAppPath()
     }),
-    writeMemories: writeActivityMemories,
+    writeMemories: activityMemoryPipeline.writeMemories,
+    onAnalyzed: activityMemoryPipeline.onAnalyzed,
     getEmbeddingRuntime: async () => await agents.getActivityEmbeddingRuntime(),
     emit: (snapshot) => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(desktopIpc.activityEvent, snapshot);
@@ -249,7 +202,6 @@ async function startDesktopApplication(): Promise<void> {
       selectedSessionId,
       activeView,
       workspace: visibleWorkspace,
-      sidebarWidth: state.sidebarWidth(),
       filePanelWidth: state.filePanelWidth(),
       themePreference: state.themePreference(),
       fontPreference: state.fontPreference()
@@ -380,6 +332,7 @@ async function startDesktopApplication(): Promise<void> {
         globalShortcut.unregisterAll();
         quickChatWindow?.destroy();
         await activity.stop();
+        activityMemoryPipeline.close();
         await browser.dispose();
         mainWindow?.destroy();
         await Promise.race([

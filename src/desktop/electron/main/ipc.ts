@@ -107,7 +107,7 @@ const terminalDataSchema = z.string().max(1_000_000);
 const activityQuerySchema = z.string().trim().max(500);
 const activityLimitSchema = z.number().int().min(1).max(100).optional();
 const activitySessionIdSchema = z.string().trim().min(1).max(128);
-const activitySnapshotIdSchema = z.number().int().positive();
+const activitySnapshotIdSchema = z.string().trim().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/u);
 const activityReportDateSchema = z.string().trim().min(1).max(40).optional();
 const modelLoginProviderSchema = z.enum(["claude-code", "openai-codex"]);
 const settingsCredentialScopeSchema = z.object({
@@ -145,7 +145,7 @@ const memoryKeywordListSchema = z.array(z.string().trim().min(1).max(120)).max(1
 const memoryUserEvidenceSchema = z.string().trim().min(1).max(1_000).optional();
 const memoryQuerySchema = z.string().trim().min(1).max(2_000);
 const memoryEntryIdSchema = z.string().min(1).max(512);
-const localEmbeddingModelSchema = z.enum(["multilingual-e5-small", "paraphrase-multilingual-MiniLM-L12-v2"]);
+const localEmbeddingModelSchema = z.enum(["all-MiniLM-L6-v2", "bge-small-en-v1.5", "multilingual-e5-small", "paraphrase-multilingual-MiniLM-L12-v2"]);
 const memoryRevisionSchema = z.number().int().nonnegative();
 const memorySettingsInputSchema = z.object({
   expectedRevision: configRevisionSchema,
@@ -160,7 +160,7 @@ const memoryEntryInputSchema = z.object({
   decisions: memoryDecisionListSchema,
   paths: memoryPathListSchema,
   keywords: memoryKeywordListSchema,
-  importance: z.number().int().min(1).max(5),
+  importance: z.number().finite(),
   userEvidence: memoryUserEvidenceSchema
 }).strict();
 const memoryEntryPatchSchema = z.object({
@@ -171,7 +171,7 @@ const memoryEntryPatchSchema = z.object({
   decisions: memoryDecisionListSchema.optional(),
   paths: memoryPathListSchema.optional(),
   keywords: memoryKeywordListSchema.optional(),
-  importance: z.number().int().min(1).max(5).optional(),
+  importance: z.number().finite().optional(),
   userEvidence: memoryUserEvidenceSchema
 }).strict();
 const runtimeMutationSchema = z.enum([
@@ -809,7 +809,7 @@ export function registerDesktopIpc(context: IpcContext): void {
       applyNativeThemePreference(preference);
       const window = context.getWindow();
       if (window && !window.isDestroyed()) {
-        window.setBackgroundColor(process.platform === "darwin" ? "#00000000" : themeBackgroundColor(preference));
+        window.setBackgroundColor(themeBackgroundColor(preference));
       }
     }
     return result;
@@ -1138,10 +1138,6 @@ export function registerDesktopIpc(context: IpcContext): void {
     await shell.openExternal(urls[selected]);
   });
 
-  handle(desktopIpc.setSidebarWidth, async (_event, width: unknown) => {
-    await context.state.setSidebarWidth(z.number().finite().parse(width));
-  });
-
   handle(desktopIpc.setFilePanelWidth, async (_event, width: unknown) => {
     await context.state.setFilePanelWidth(z.number().finite().parse(width));
   });
@@ -1152,7 +1148,7 @@ export function registerDesktopIpc(context: IpcContext): void {
     applyNativeThemePreference(preference);
     const window = context.getWindow();
     if (window && !window.isDestroyed()) {
-      window.setBackgroundColor(process.platform === "darwin" ? "#00000000" : themeBackgroundColor(preference));
+      window.setBackgroundColor(themeBackgroundColor(preference));
     }
     return preference;
   });

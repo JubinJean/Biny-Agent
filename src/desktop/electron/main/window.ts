@@ -28,6 +28,7 @@ export function createDesktopWindow(
   const preference = state.themePreference();
   nativeTheme.themeSource = preference;
   const savedBounds = visibleBounds(state.windowBounds());
+  // macOS 也保持主题底色，避免 ready-to-show 后切透明时露出与渲染层不同步的白色原生底。
   const window = new BrowserWindow({
     width: savedBounds?.width ?? 1480,
     height: savedBounds?.height ?? 920,
@@ -36,13 +37,10 @@ export function createDesktopWindow(
     minWidth: 800,
     minHeight: 600,
     show: false,
-    // macOS 用透明底色让 CSS 液态玻璃效果透出桌面背景；
-    // 其他平台保持跟随主题的不透明底色，避免加载期闪白。
-    backgroundColor: process.platform === "darwin" ? "#00000000" : themeBackgroundColor(preference),
+    backgroundColor: themeBackgroundColor(preference),
     title: "Biny",
     titleBarStyle: "hidden",
-    // macOS 不再使用系统 vibrancy（themeSource 切换时不更新），改为 CSS
-    // backdrop-filter 液态玻璃，light/dark 效果一致且随主题变量自动刷新。
+    // macOS 不使用系统 vibrancy，窗口底色固定跟随主题；局部浮层仍由渲染层 CSS 自己处理。
     visualEffectState: process.platform === "darwin" ? "active" : undefined,
     titleBarOverlay: process.platform === "darwin" ? true : undefined,
     trafficLightPosition: process.platform === "darwin" ? { x: 14, y: 16 } : undefined,
@@ -56,14 +54,13 @@ export function createDesktopWindow(
   });
 
   const syncBackgroundColor = (): void => {
-    if (process.platform === "darwin") {
-      // macOS 玻璃侧栏需要透明窗口底色，CSS backdrop-filter 负责毛玻璃效果。
-      if (!window.isDestroyed()) window.setBackgroundColor("#00000000");
-      return;
-    }
-    if (!window.isDestroyed()) window.setBackgroundColor(themeBackgroundColor(state.themePreference()));
+    if (window.isDestroyed()) return;
+    window.setBackgroundColor(themeBackgroundColor(state.themePreference()));
   };
   nativeTheme.on("updated", syncBackgroundColor);
+  window.once("ready-to-show", () => {
+    window.show();
+  });
   window.on("closed", () => {
     nativeTheme.off("updated", syncBackgroundColor);
   });
@@ -114,11 +111,18 @@ export function createDesktopWindow(
     if (url.startsWith("file://") || (developmentUrl && url.startsWith(developmentUrl))) return;
     event.preventDefault();
   });
-  window.once("ready-to-show", () => window.show());
 
   const developmentUrl = process.env.ELECTRON_RENDERER_URL;
-  if (developmentUrl) void window.loadURL(developmentUrl);
-  else void window.loadFile(path.join(fileURLToPath(new URL(".", import.meta.url)), "../renderer/index.html"));
+  // 把主题偏好经启动参数传给渲染层：index.html 的内联脚本在 CSS 加载前读取它写
+  // data-theme，避免首帧用浅色 fallback 刷白。
+  if (developmentUrl) {
+    const joiner = developmentUrl.includes("?") ? "&" : "?";
+    void window.loadURL(`${developmentUrl}${joiner}theme=${encodeURIComponent(preference)}`);
+  } else {
+    void window.loadFile(path.join(fileURLToPath(new URL(".", import.meta.url)), "../renderer/index.html"), {
+      query: { theme: preference }
+    });
+  }
   return window;
 }
 

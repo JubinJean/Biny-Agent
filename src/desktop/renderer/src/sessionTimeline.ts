@@ -374,6 +374,7 @@ function buildHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
     if (event.type === "context_checkpoint") continue;
     if (event.type === "model_request") continue;
     if (event.type === "message_version_selected") continue;
+    if (event.type === "message_metadata") continue;
     const turn = ensureTurn(event.time);
     turn.error = event.message;
     turn.durationMs = elapsedMs(turn.timestamp, event.time) ?? turn.durationMs;
@@ -539,7 +540,7 @@ function buildVersionedHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
       }
       continue;
     }
-    if (event.type === "agent_message" || event.type === "tool_execution" || event.type === "context_checkpoint" || event.type === "model_request" || event.type === "message_version_selected") continue;
+    if (event.type === "agent_message" || event.type === "tool_execution" || event.type === "context_checkpoint" || event.type === "model_request" || event.type === "message_version_selected" || event.type === "message_metadata") continue;
     const turn = turnForEvent(event, event.time);
     turn.error = event.message;
     turn.durationMs = elapsedMs(turn.timestamp, event.time) ?? turn.durationMs;

@@ -16,21 +16,7 @@ import { Icon } from "../Icon.js";
 import { CopyButton } from "../CopyButton.js";
 import { BreathingDot } from "./BreathingDot.js";
 import { Collapse } from "./Collapse.js";
-
-/** 工具是否可进合并行：edit + 有 diff + 有路径 + 无权限卡。 */
-export function isMergeableEdit(tool: TimelineTool): boolean {
-  return tool.display?.kind === "file_io"
-    && tool.display.operation === "edit"
-    && typeof tool.diff === "string"
-    && tool.diff.length > 0
-    && editToolPath(tool) !== undefined
-    && tool.permission === undefined;
-}
-
-export function editToolPath(tool: TimelineTool): string | undefined {
-  if (tool.display?.kind === "file_io" && tool.display.path) return tool.display.path;
-  return tool.path;
-}
+import { editToolPath } from "./mergedFileEditsUtils.js";
 
 export const MergedFileEdits = memo(function MergedFileEdits({
   tools,

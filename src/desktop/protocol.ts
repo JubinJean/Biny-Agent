@@ -22,6 +22,7 @@ import type {
   MemoryArchiveReason,
   MemoryDurability,
   MemoryMaintenanceStatus,
+  MemorySleepPreview,
   MemorySleepRun
 } from "../agent/context/memoryTypes.js";
 import type {
@@ -171,7 +172,6 @@ export const desktopIpc = {
   openWorkspaceFile: "desktop:file:open",
   openExternal: "desktop:external:open",
   openSystemSettings: "desktop:system-settings:open",
-  setSidebarWidth: "desktop:ui:sidebar-width",
   setFilePanelWidth: "desktop:ui:file-panel-width",
   setThemePreference: "desktop:ui:theme",
   setFontPreference: "desktop:ui:font",
@@ -471,7 +471,6 @@ export interface DesktopBootstrap {
   selectedSessionId?: string;
   activeView: DesktopActiveView;
   workspace?: DesktopWorkspaceSnapshot;
-  sidebarWidth: number;
   filePanelWidth: number;
   themePreference: DesktopThemePreference;
   fontPreference: DesktopFontPreference;
@@ -1069,8 +1068,8 @@ export interface DesktopMemoryEntry {
   lineage: DesktopMemoryLineage[];
   durability: MemoryDurability;
   expiresAt?: string;
-  recallCount: number;
-  lastRecalledAt?: string;
+  accessCount: number;
+  lastAccessedAt?: string;
   archivedAt?: string;
   archivedReason?: MemoryArchiveReason;
   mergedInto?: string;
@@ -1158,22 +1157,15 @@ export interface DesktopMemorySearchMatch {
   path: string;
   excerpt: string;
   score: number;
-  recallCount: number;
-  lastRecalledAt?: string;
+  accessCount: number;
+  lastAccessedAt?: string;
   archivedAt?: string;
   archivedReason?: MemoryArchiveReason;
   mergedInto?: string;
   archivedBy?: string;
 }
 
-export interface DesktopMemorySleepPreview {
-  available: boolean;
-  entries: number;
-  temporaryToArchive: number;
-  archivedToDelete: number;
-  recentRuns: number;
-  lastRun?: import("../agent/context/memoryTypes.js").MemorySleepRun;
-}
+export type DesktopMemorySleepPreview = MemorySleepPreview;
 
 /** Renderer 只接收主进程计算好的 endpoint 摘要，不能为了 SHA-256 引入 Node-only agent 模块。 */
 export interface DesktopEmbeddingModelDescriptor extends EmbeddingModelDescriptor {
@@ -1550,7 +1542,7 @@ export interface DesktopApi {
   requestActivityPermission(pane: DesktopSystemSettingsPane): Promise<void>;
   searchActivity(query: string, limit?: number): Promise<ActivitySearchResult[]>;
   activitySessionDetail(sessionId: string): Promise<DesktopActivitySessionDetail | undefined>;
-  activitySnapshotPreview(snapshotId: number): Promise<string | undefined>;
+  activitySnapshotPreview(snapshotId: string): Promise<string | undefined>;
   /** 生成指定日期（today/yesterday/YYYY-MM-DD，默认 today）的 Activity 打工日记。 */
   activityReport(date?: string): Promise<DesktopActivityReport>;
   /** 读取指定日期的 Markdown 工作日志；不读取 durable memory SQLite。 */
@@ -1587,7 +1579,6 @@ export interface DesktopApi {
   openWorkspaceFile(projectId: string, relativePath: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   openSystemSettings(pane: DesktopSystemSettingsPane): Promise<void>;
-  setSidebarWidth(width: number): Promise<void>;
   setFilePanelWidth(width: number): Promise<void>;
   setThemePreference(theme: DesktopThemePreference): Promise<DesktopThemePreference>;
   setFontPreference(font: DesktopFontPreference): Promise<DesktopFontPreference>;

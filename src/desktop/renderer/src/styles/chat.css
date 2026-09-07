@@ -39,6 +39,11 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes chat-user-message-enter {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
 /* 微光文字：流式进行中的标题（「正在思考」「正在搜索」等）。 */
 .biny-chat-scroll .chat-shimmer-text,
 .biny-thinking-status .chat-shimmer-text {
@@ -981,6 +986,106 @@
   color: var(--biny-text-tertiary);
 }
 
+/* ---- edit 工具的行内 diff（before/after 对齐） ---- */
+
+/* ctx 行淡出，只给变更行提供上下文锚点。 */
+.code-lines .code-line.is-ctx {
+  color: var(--biny-text-tertiary);
+  opacity: 0.85;
+}
+
+.code-lines .inline-diff-gap {
+  display: block;
+  padding: 2px 12px;
+  color: var(--biny-text-tertiary);
+  opacity: 0.7;
+  user-select: none;
+}
+
+/* ============ 回合收尾：修改文件卡片（ChangesSummary） ============ */
+
+.chat-changes {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border: 1px solid color-mix(in srgb, var(--biny-success) 22%, var(--biny-border));
+  border-radius: var(--biny-radius-card, 10px);
+  background: color-mix(in srgb, var(--biny-success) 4%, var(--biny-surface-soft));
+}
+
+.chat-changes-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 2px 4px;
+  color: var(--biny-text-secondary);
+  font-size: calc(11.5px * var(--font-scale, 1));
+}
+
+.chat-changes-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.chat-changes-file {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  min-width: 0;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  color: var(--biny-text-secondary);
+  font: inherit;
+  font-size: calc(12px * var(--font-scale, 1));
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-changes-file:hover {
+  background: color-mix(in srgb, var(--biny-text) 6%, transparent);
+  color: var(--biny-text);
+}
+
+.chat-changes-file .chat-changes-name {
+  flex: none;
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  color: var(--biny-text);
+}
+
+/* 目录让位压缩：文件名优先，长目录 ellipsis。 */
+.chat-changes-file .chat-changes-dir {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: calc(11px * var(--font-scale, 1));
+  color: var(--biny-text-tertiary);
+}
+
+.chat-changes-badge {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--biny-text) 7%, transparent);
+  color: var(--biny-text-tertiary);
+  font-size: calc(10.5px * var(--font-scale, 1));
+}
+
 /* ============ 同文件编辑合并行 ============ */
 
 .merged-edits-row {
@@ -1471,19 +1576,21 @@
   overflow-wrap: break-word;
 }
 
-/* 轮次级失败/未完成卡片：固定在输入框上方，错误、详情和下一步操作保持同一视觉上下文。 */
-.biny-chat-composer .run-error-card {
+/* 轮次级失败/未完成卡片：随轮次内联渲染在助手消息区，与思考行、正文、footer 同列。
+   宽度随内容收缩：通栏会让「重试」按钮飘到 900px 外，动作与文案脱节。 */
+.biny-chat-scroll .run-error-card {
   position: relative;
   display: flex;
   align-items: flex-start;
   gap: 10px;
-  margin: 0 0 10px;
-  padding: 12px 38px 12px 12px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 2px 0 0;
+  padding: 11px 36px 11px 12px;
   border: 1px solid color-mix(in srgb, var(--biny-danger) 30%, transparent);
   border-radius: 12px;
   background: color-mix(in srgb, var(--biny-danger) 4%, transparent);
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
+  animation: chat-step-enter 200ms ease both;
 }
 
 .run-error-card[data-variant="warning"] {
@@ -1506,7 +1613,8 @@
   color: var(--biny-warning);
 }
 
-.biny-chat-composer .run-error-card-dismiss {
+/* 关闭按钮沿用时间线的 hover 揭示语言：常驻一个 × 在历史错误堆里太吵。 */
+.biny-chat-scroll .run-error-card-dismiss {
   position: absolute;
   top: 6px;
   right: 6px;
@@ -1521,11 +1629,16 @@
   background: transparent;
   color: var(--biny-text-tertiary, var(--biny-text-secondary));
   cursor: pointer;
-  opacity: 0.6;
+  opacity: 0;
   transition: opacity var(--biny-motion-quick, 120ms) ease, background var(--biny-motion-quick, 120ms) ease;
 }
 
-.biny-chat-composer .run-error-card-dismiss:hover {
+.biny-chat-scroll .run-error-card:hover .run-error-card-dismiss,
+.biny-chat-scroll .run-error-card-dismiss:focus-visible {
+  opacity: 0.6;
+}
+
+.biny-chat-scroll .run-error-card-dismiss:hover {
   opacity: 1;
   background: color-mix(in srgb, var(--biny-text) 8%, transparent);
   color: var(--biny-text);
@@ -1610,8 +1723,8 @@
   padding-top: 1px;
 }
 
-.biny-chat-composer .run-error-card-action {
-  min-height: 30px;
+.biny-chat-scroll .run-error-card-action {
+  min-height: 28px;
   padding: 0 12px;
   border: 1px solid var(--biny-border);
   border-radius: var(--biny-radius-control, 8px);
@@ -1622,36 +1735,21 @@
   transition: background var(--biny-motion-quick, 120ms) ease;
 }
 
-.biny-chat-composer .run-error-card-action:hover {
+.biny-chat-scroll .run-error-card-action:hover {
   background: var(--biny-surface-hover);
 }
 
-.biny-chat-composer .run-error-card-action.is-primary {
+.biny-chat-scroll .run-error-card-action.is-primary {
   border-color: var(--biny-danger);
   background: var(--biny-danger);
   color: var(--biny-selection-text);
 }
 
-.biny-chat-composer .run-error-card-action:focus-visible,
-.biny-chat-composer .run-error-card-dismiss:focus-visible,
+.biny-chat-scroll .run-error-card-action:focus-visible,
+.biny-chat-scroll .run-error-card-dismiss:focus-visible,
 .run-error-card-details summary:focus-visible {
   outline: 2px solid var(--biny-focus);
   outline-offset: 2px;
-}
-
-@media (max-width: 720px) {
-  .biny-chat-composer .run-error-card {
-    flex-wrap: wrap;
-  }
-
-  .run-error-card-body {
-    flex-basis: calc(100% - 28px);
-  }
-
-  .run-error-card-actions {
-    width: 100%;
-    padding-left: 28px;
-  }
 }
 
 /* ============ 消息时钟 ============ */
@@ -1694,6 +1792,13 @@
   gap: 10px;
 }
 
+/* 消息行基础版式（替代 astryx ChatMessage）：助手消息通栏、用户消息由 .user-message 右对齐。 */
+.biny-chat-scroll .chat-message {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
 .biny-chat-scroll .agent-response {
   display: flex;
   flex-direction: column;
@@ -1733,39 +1838,59 @@
 
 /* ============ 用户消息与操作条 ============ */
 
-/* 用户消息：右对齐主色气泡（非对称圆角 24px/4px、阴影、最大 85% 宽）。 */
+/* 用户消息：右对齐。 */
 .biny-chat-scroll .user-message {
   display: flex;
   flex-direction: column;
   align-items: flex-end;
 }
 
+/* 首条消息先以临时投影进入时间线，真实事件接管后保持同一段轻量入场。 */
+.biny-chat-scroll .user-message.is-pending-entry,
+.biny-chat-scroll .timeline-turn.is-running > .user-message,
+.biny-chat-scroll .timeline-turn.is-waiting_permission > .user-message {
+  animation: chat-user-message-enter var(--motion-enter, 250ms) var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;
+  will-change: transform, opacity;
+}
+
 .biny-chat-scroll .user-message.is-editing {
   align-items: stretch;
 }
 
+/* 用户气泡：非对称圆角 24px/4px、85% 宽、
+   同色系中间层底 + 白字、极轻阴影；不用黑白反转强反差）。 */
 .biny-chat-scroll .user-bubble {
+  min-width: 0;
   max-width: 85%;
+  overflow: hidden;
+  overflow-wrap: break-word;
   padding: 12px 16px;
   border: 0;
   border-radius: 24px 4px 24px 24px;
-  background: var(--biny-focus);
-  box-shadow: 0 1px 2px var(--biny-shadow-color);
-  color: #fff;
+  background: var(--biny-chat-user-bg);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  color: var(--biny-chat-user-fg);
+  line-height: 1.5;
   white-space: pre-wrap;
 }
 
 .biny-chat-scroll .user-bubble .markdown-body {
-  color: #fff;
+  color: var(--biny-chat-user-fg);
+}
+
+/* astryx Theme 运行时注入的全局排版规则（:where(p) { color: var(--color-text-primary) }）
+   会直接命中段落、压过继承——气泡是反色实底，必须把这些元素显式拉回继承色。 */
+.biny-chat-scroll .user-bubble .markdown-body :where(p, li, h1, h2, h3, h4, h5, h6, blockquote) {
+  color: inherit;
 }
 
 .biny-chat-scroll .user-bubble .markdown-body code {
-  background: rgb(255 255 255 / 16%);
-  color: #fff;
+  background: color-mix(in srgb, var(--biny-chat-user-fg) 10%, transparent);
+  color: var(--biny-chat-user-fg);
 }
 
 .biny-chat-scroll .user-bubble .markdown-body a {
-  color: #fff;
+  color: var(--biny-chat-user-fg);
   text-decoration: underline;
 }
 

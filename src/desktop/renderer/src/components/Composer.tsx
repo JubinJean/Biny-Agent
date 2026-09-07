@@ -12,7 +12,6 @@ import type { AgentSessionInfo, InteractiveAgentRunMode } from "../../../../agen
 import type { AgentCapabilitySelection } from "../../../../agent/capabilitySelection.js";
 import type { ModelChoice } from "../../../../llm/ModelManager.js";
 import { modelThinkingSelections, thinkingSelectionForModel, type ThinkingSelection } from "../../../../llm/modelThinking.js";
-import type { PermissionMode } from "../../../../permission/PermissionManager.js";
 import type { DesktopAttachment, DesktopCapabilityDefaults, DesktopProject, DesktopSkillCatalogEntry, DesktopToolCatalogEntry } from "../../../protocol.js";
 import { DESKTOP_SLASH_COMMANDS } from "../../../protocol.js";
 import { catalogForConnection } from "../providerCatalog.js";
@@ -21,9 +20,10 @@ import { AttachmentList } from "./composer/AttachmentList.js";
 import type { PendingAttachment } from "./composer/AttachmentList.js";
 import { ComposerActionButton } from "./composer/ComposerActionButton.js";
 import { CapabilitiesMenu } from "./composer/CapabilitiesMenu.js";
-import { AddMenu, PermissionMenu } from "./composer/ComposerMenus.js";
+import { explicitCapabilityCount } from "./composer/capabilitySelectionView.js";
+import { AddMenu } from "./composer/ComposerMenus.js";
 import { ModelPickerMenu } from "./composer/ModelPickerMenu.js";
-import { permissionIcon, permissionLabel, thinkingLabel } from "./composer/composerLabels.js";
+import { thinkingLabel } from "./composer/composerLabels.js";
 import { Icon } from "./Icon.js";
 import { ProviderBrandGlyph } from "./ProviderBrandGlyph.js";
 import { SendOrStopButton } from "./composer/SendOrStopButton.js";
@@ -37,7 +37,6 @@ export type ComposerMemoryState = "unknown" | "enabled" | "disabled";
 interface ComposerProps {
   project?: DesktopProject;
   runtimeInfo?: AgentSessionInfo;
-  permissionMode: PermissionMode;
   models: ModelChoice[];
   /** 已解析好的上下文用量；取不到真实数字时为空，此时不展示用量。 */
   contextUsage?: ContextUsage;
@@ -45,7 +44,6 @@ interface ComposerProps {
   memoryToggleBusy: boolean;
   memoryToggleDisabled: boolean;
   memoryToggleDisabledReason?: string;
-  permissionModePending: boolean;
   running: boolean;
   runtimeBusy: boolean;
   sessionWriterConflict: boolean;
@@ -64,13 +62,16 @@ interface ComposerProps {
   onExpandSkillCommand(input: string): Promise<string>;
   onStop(): Promise<void>;
   onToggleMemory(): Promise<void>;
-  onPermissionMode(mode: PermissionMode): Promise<void>;
   onSwitchModel(alias: string, thinking: ThinkingSelection): Promise<void>;
   onSaveAttachment(file: File): Promise<DesktopAttachment>;
+  /** 打开 MCP 设置页（能力菜单的 MCP 区跳转入口）。 */
+  onOpenMcpSettings?(): void;
+  /** 重新拉取工具目录与技能目录（能力菜单的刷新入口）。 */
+  onRefreshCatalog?(): void;
   onWarning(message: string): void;
 }
 
-type ComposerMenu = "permission" | "model" | "add" | "capabilities" | null;
+type ComposerMenu = "model" | "add" | "capabilities" | null;
 type PendingModelSelection = { alias: string; thinking: ThinkingSelection };
 
 const MAX_COMPOSER_ATTACHMENTS = 8;
@@ -86,14 +87,12 @@ function selectionFromDefaults(defaults: DesktopCapabilityDefaults): AgentCapabi
 export const Composer = memo(function Composer({
   project,
   runtimeInfo,
-  permissionMode,
   models,
   contextUsage,
   memoryState,
   memoryToggleBusy,
   memoryToggleDisabled,
   memoryToggleDisabledReason,
-  permissionModePending,
   running,
   runtimeBusy,
   sessionWriterConflict,
@@ -110,9 +109,10 @@ export const Composer = memo(function Composer({
   onExpandSkillCommand,
   onStop,
   onToggleMemory,
-  onPermissionMode,
   onSwitchModel,
   onSaveAttachment,
+  onOpenMcpSettings,
+  onRefreshCatalog,
   onWarning
 }: ComposerProps): React.JSX.Element {
   const [input, setInput] = useState("");
@@ -131,7 +131,6 @@ export const Composer = memo(function Composer({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const addAnchorRef = useRef<HTMLDivElement>(null);
   const capabilityAnchorRef = useRef<HTMLDivElement>(null);
-  const permissionAnchorRef = useRef<HTMLDivElement>(null);
   const modelAnchorRef = useRef<HTMLDivElement>(null);
   const modelSwitchQueueRef = useRef<Promise<void>>(Promise.resolve());
   const modelSwitchPromiseRef = useRef<Promise<void> | undefined>(undefined);
@@ -206,7 +205,7 @@ export const Composer = memo(function Composer({
 
   const submit = async (delivery?: "steer" | "followUp", submittedInput = input): Promise<void> => {
     const value = submittedInput.trim() || (attachments.length ? "请分析这些附件。" : "");
-    if (!project || !value || busy || submitFlightRef.current || pendingAttachments.length || permissionModePending || memoryToggleBusy) return;
+    if (!project || !value || busy || submitFlightRef.current || pendingAttachments.length || memoryToggleBusy) return;
     submitFlightRef.current = true;
     try {
       const pendingModelSwitch = modelSwitchPromiseRef.current;
@@ -375,15 +374,13 @@ export const Composer = memo(function Composer({
   const usage = formatContextUsage(contextUsage);
   const inputDisabled = sessionWriterConflict || busy;
   const attachmentCount = attachments.length + pendingAttachments.length;
-  const sendDisabled = permissionModePending || memoryToggleBusy || (running
+  const sendDisabled = memoryToggleBusy || (running
     ? false
     : (!input.trim() && !attachments.length) || !project || sessionWriterConflict || modelSetupRequired || busy || pendingAttachments.length > 0);
   const sendDisabledReason = !project
     ? "请先打开一个项目。"
       : modelSetupRequired
         ? "还没有可用的模型连接，请先配置模型。"
-        : permissionModePending
-          ? "正在确认权限模式，请稍候。"
         : memoryToggleBusy
           ? "正在确认当前聊天的记忆状态，请稍候。"
         : sessionWriterConflict
@@ -411,23 +408,6 @@ export const Composer = memo(function Composer({
         : busy
           ? "当前附件或命令正在处理，请稍候。"
           : undefined;
-  const permissionSwitchDisabled = !project || permissionModePending || sessionWriterConflict || runtimeBusy || busy;
-  const permissionDisabledReason = !project
-    ? "请先打开一个项目。"
-    : permissionModePending
-      ? "正在确认权限模式，请稍候。"
-    : sessionWriterConflict
-      ? "会话已在另一个应用中打开。"
-      : running
-        ? "当前对话正在运行，请等待结束后再切换权限模式。"
-        : runtimeBusy
-          ? "Runtime 正在处理其他操作，请稍候再切换权限模式。"
-        : busy
-          ? "当前附件或命令正在处理，请稍候。"
-          : undefined;
-  useEffect(() => {
-    if (permissionSwitchDisabled && menu === "permission") setMenu(null);
-  }, [menu, permissionSwitchDisabled]);
   const capabilitySwitchDisabled = !project || running || runtimeBusy || busy || sessionWriterConflict;
   const capabilitySwitchDisabledReason = !project
     ? "请先打开一个项目。"
@@ -491,9 +471,9 @@ export const Composer = memo(function Composer({
                 data-composer-menu="add"
                 disabled={!project || busy || running}
                 disabledReason={!project ? "请先打开一个项目。" : running ? "当前对话正在运行，请等待结束后再添加附件。" : busy ? "当前附件或命令正在处理，请稍候。" : undefined}
-                label="添加附件或开启规划模式"
+                label="添加附件"
                 onClick={() => setMenu(menu === "add" ? null : "add")}
-                tooltip="添加文件，或勾选规划模式"
+                tooltip="添加文件或目录"
               >
                 <Icon name="add" size={15} />
               </ComposerActionButton>
@@ -503,12 +483,7 @@ export const Composer = memo(function Composer({
                   setMenu(null);
                   fileInputRef.current?.click();
                 }}
-                onPlanModeChange={(active) => {
-                  setMenu(null);
-                  setMode(active ? "plan" : "chat");
-                }}
                 open={menu === "add"}
-                planActive={mode === "plan"}
               />
             </div>
             {/* 规划模式激活后显示为可退出的模式 pill。 */}
@@ -533,50 +508,28 @@ export const Composer = memo(function Composer({
                 data-composer-menu="capabilities"
                 disabled={capabilitySwitchDisabled}
                 disabledReason={capabilitySwitchDisabledReason}
-                label="选择本条消息可用的工具与 Skill"
+                label="能力"
                 onClick={() => setMenu(menu === "capabilities" ? null : "capabilities")}
-                tooltip={menu === "capabilities" ? undefined : "选择本条消息可用的工具与 Skill"}
+                tooltip={menu === "capabilities" ? undefined : "能力：选择本条消息可用的工具、Skill 与规划模式"}
               >
-                <Icon name="wand" size={14} />
-                <span>能力</span>
-                <Icon name="chevron" size={10} />
+                <Icon name="sliders" size={15} />
+                {/* 有显式选择时展示数量，auto / all 不计数，保持图标简洁。 */}
+                {explicitCapabilityCount(capabilitySelection) > 0 ? <span className="biny-capabilities-count">{explicitCapabilityCount(capabilitySelection)}</span> : null}
               </ComposerActionButton>
               <CapabilitiesMenu
                 anchorRef={capabilityAnchorRef}
                 onChange={setCapabilitySelection}
+                onOpenMcpSettings={onOpenMcpSettings}
+                onRefreshCatalog={onRefreshCatalog}
+                onWarning={onWarning}
                 open={menu === "capabilities"}
+                onPlanModeChange={(active) => setMode(active ? "plan" : "chat")}
+                planActive={mode === "plan"}
+                projectId={project?.id}
                 selection={capabilitySelection}
                 skills={skills}
                 tools={toolCatalog}
                 toolsSupported={toolsSupported}
-              />
-            </div>
-            <div className="composer-menu-anchor" ref={permissionAnchorRef}>
-              <ComposerActionButton
-                className="biny-permission-pill"
-                data-composer-menu="permission"
-                disabled={permissionSwitchDisabled}
-                disabledReason={permissionDisabledReason}
-                active={menu === "permission"}
-                aria-expanded={menu === "permission"}
-                aria-haspopup="menu"
-                data-permission-mode={permissionMode}
-                label={permissionLabel(permissionMode)}
-                loading={permissionModePending}
-                onClick={() => setMenu(menu === "permission" ? null : "permission")}
-                tooltip={menu === "permission" ? undefined : "选择当前会话的权限模式"}
-              >
-                <Icon name={permissionIcon(permissionMode)} size={13} />
-                <Icon name="chevron" size={11} />
-              </ComposerActionButton>
-              <PermissionMenu
-                anchorRef={permissionAnchorRef}
-                mode={permissionMode}
-                open={menu === "permission"}
-                onChange={(nextMode) => {
-                  setMenu(null);
-                  void onPermissionMode(nextMode).catch((permissionError) => onWarning(permissionErrorMessage(permissionError)));
-                }}
               />
             </div>
             <div className="composer-menu-anchor" ref={modelAnchorRef}>
@@ -703,11 +656,4 @@ export const Composer = memo(function Composer({
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-function permissionErrorMessage(error: unknown): string {
-  const message = errorMessage(error);
-  return message.includes("Cannot start permission update while the runtime is busy")
-    ? "当前对话正在运行，权限模式需等本轮结束后再修改。"
-    : message;
 }

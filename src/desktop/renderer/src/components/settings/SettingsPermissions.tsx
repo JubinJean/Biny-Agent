@@ -25,7 +25,7 @@ export function SettingsPermissions(): React.JSX.Element {
     <div className="settings-sections agent-permission-settings">
       <section id="agent-permission-mode" tabIndex={-1}>
         <div className="section-heading-row">
-          <div><h3>Agent 权限模式</h3><p>这是工具执行的批准策略；输入框里的权限按钮可以临时覆盖当前会话。</p></div>
+          <div><h3>Agent 权限模式</h3><p>这是工具执行的批准策略，对当前安装里的所有会话生效。</p></div>
           <span className="settings-scope-badge">全局</span>
         </div>
         <div aria-label="Agent 权限模式" className="agent-permission-options" role="radiogroup">

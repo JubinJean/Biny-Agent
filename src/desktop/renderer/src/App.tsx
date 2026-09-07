@@ -10,7 +10,7 @@ import type { InteractiveAgentRunMode } from "../../../agent/AgentSession.js";
 import type { AgentCapabilitySelection } from "../../../agent/capabilitySelection.js";
 import type { ContextBudgetStatus } from "../../../agent/context/types.js";
 import { defaultEffectiveContextWindowPercent } from "../../../ai/capabilities.js";
-import type { PermissionMode, PermissionResult } from "../../../permission/PermissionManager.js";
+import type { PermissionResult } from "../../../permission/PermissionManager.js";
 import { defaultChatPersonalizationOverride, resolveChatPersonalization } from "../../../personalization/index.js";
 import { activeRun, pendingPermission } from "../../../runtime/agentEvents.js";
 import type {
@@ -26,6 +26,7 @@ import type {
   DesktopSessionWriterConflict,
   DesktopSessionSummary,
   DesktopSessionTreePage,
+  DesktopRunReceipt,
   DesktopSettingsCloseRequest,
   DesktopSettingsCloseResponse,
   DesktopSettingsSnapshot,
@@ -69,7 +70,7 @@ import { type ContextUsage } from "./usagePresentation.js";
 import { DesktopShell } from "./components/DesktopShell.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { SkillHubView } from "./components/SkillHubView.js";
-import { Workspace } from "./components/Workspace.js";
+import { Workspace, type PendingHomePrompt } from "./components/Workspace.js";
 import { DesktopToast } from "./components/overlays/DesktopToast.js";
 import { RenameOverlay } from "./components/overlays/RenameOverlay.js";
 import { SearchOverlay } from "./components/overlays/SearchOverlay.js";
@@ -100,6 +101,7 @@ function DesktopApp(): React.JSX.Element {
   const [workspace, setWorkspace] = useState<DesktopWorkspaceSnapshot>();
   const [composerSkills, setComposerSkills] = useState<DesktopSkillCatalogEntry[]>([]);
   const [composerTools, setComposerTools] = useState<DesktopToolCatalogEntry[]>([]);
+  const [composerCatalogNonce, setComposerCatalogNonce] = useState(0);
   const [document, setDocument] = useState<DesktopSessionDocument>();
   const documentRef = useRef<DesktopSessionDocument | undefined>(undefined);
   const [writerConflict, setWriterConflict] = useState<DesktopSessionWriterConflict>();
@@ -107,15 +109,19 @@ function DesktopApp(): React.JSX.Element {
   const [loading, setLoading] = useState(true);
   const [filePanelWidth, setFilePanelWidth] = useState(DEFAULT_FILE_PANEL_WIDTH);
   const [filePanelResizing, setFilePanelResizing] = useState(false);
-  const [themePreference, setThemePreference] = useState<DesktopThemePreference>("system");
+  // index.html 会在 CSS 加载前写入首帧主题；首次渲染必须沿用它，否则 Astryx Theme
+  // 仍按 system 初始化，而 Biny 自有 token 已经按启动参数切到另一套颜色。
+  const [themePreference, setThemePreference] = useState<DesktopThemePreference>(() => {
+    const theme = window.document.documentElement.dataset.theme;
+    return theme === "light" || theme === "dark" || theme === "system" ? theme : "system";
+  });
   const [fontPreference, setFontPreference] = useState<DesktopFontPreference>(DEFAULT_FONT_PREFERENCE);
   const [focusToken, setFocusToken] = useState(0);
   const [composerDraft, setComposerDraft] = useState<string>();
   /** 建议 pill 直达提交（nonce 变化触发 Composer 统一提交路径）。 */
   const [composerSubmitDraft, setComposerSubmitDraft] = useState<{ text: string; nonce: number }>();
-  /** 首页 → 聊天过场信号；发送失败清空触发 Workspace 回滚，落地后由 Workspace 回调清空。 */
-  const [homeFlight, setHomeFlight] = useState<{ text: string; nonce: number } | null>(null);
-  const homeFlightNonceRef = useRef(0);
+  /** 首页首条消息的乐观投影；真实 message.user 到达后按 messageId 移除。 */
+  const [pendingHomePrompt, setPendingHomePrompt] = useState<PendingHomePrompt>();
   /** 项目行「新建任务」直达的空白草稿：true 时 Workspace 渲染空白聊天而非首页欢迎态。 */
   const [blankDraft, setBlankDraft] = useState(false);
   /** 未发送草稿的目标项目；只改变输入框归属，不提前切换工作区。 */
@@ -132,7 +138,6 @@ function DesktopApp(): React.JSX.Element {
   const [contextBudget, setContextBudget] = useState<ContextBudgetStatus>();
   const [draftMemoryOverride, setDraftMemoryOverride] = useState<boolean>();
   const [memoryToggleBusy, setMemoryToggleBusy] = useState(false);
-  const [pendingPermissionMode, setPendingPermissionMode] = useState<PermissionMode>();
   const [renameTarget, setRenameTarget] = useState<RenameTarget>();
   const [slashResult, setSlashResult] = useState<DesktopSlashResult>();
   const [toast, setToast] = useState<string>();
@@ -149,19 +154,13 @@ function DesktopApp(): React.JSX.Element {
   const branchRequestRef = useRef(0);
   const menuActionRef = useRef<(action: DesktopMenuAction) => void>(() => undefined);
 
-  const persistSidebarWidth = useCallback((width: number): void => {
-    void window.biny.setSidebarWidth(width);
-  }, []);
   const {
     layout: sidebarLayout,
     drawerHandlers: sidebarPeekDrawerHandlers,
     drawerRef: sidebarPeekDrawerRef,
     triggerHandlers: sidebarPeekTriggerHandlers,
-    hydrateExpandedWidth: hydrateSidebarWidth,
-    toggle: toggleSidebar,
-    onResizeKeyDown: onSidebarResizeKeyDown,
-    onResizePointerDown: onSidebarResizePointerDown
-  } = useSidebarLayout({ persistWidth: persistSidebarWidth });
+    toggle: toggleSidebar
+  } = useSidebarLayout();
 
   const openSettings = useCallback((targetTab?: SettingsTab): void => {
     setSettingsTargetTab(targetTab);
@@ -249,7 +248,12 @@ function DesktopApp(): React.JSX.Element {
       setWarning(`无法加载 Skill 补全：${errorMessage(error)}`);
     });
     return () => { active = false; };
-  }, [page, settingsOpen, workspace?.project.id]);
+  }, [composerCatalogNonce, page, settingsOpen, workspace?.project.id]);
+
+  /** 能力菜单的刷新按钮：强制重拉工具/技能目录（MCP 重连后目录可能变化）。 */
+  const refreshComposerCatalog = useCallback((): void => {
+    setComposerCatalogNonce((nonce) => nonce + 1);
+  }, []);
 
   const commitNavigation = useCallback((next: DesktopNavigationState): void => {
     navigationRef.current = next;
@@ -394,7 +398,6 @@ function DesktopApp(): React.JSX.Element {
       if (nextWorkspace) {
         if (projectRef.current !== nextWorkspace.project.id) {
           permissionModeRequestRef.current += 1;
-          setPendingPermissionMode(undefined);
         }
         projectRef.current = nextWorkspace.project.id;
         mergeWorkspaceProject(nextWorkspace);
@@ -445,7 +448,6 @@ function DesktopApp(): React.JSX.Element {
     if (preferredSessionId) return await openSession(snapshot.project.id, preferredSessionId, true, request, snapshot);
     if (projectRef.current !== snapshot.project.id) {
       permissionModeRequestRef.current += 1;
-      setPendingPermissionMode(undefined);
     }
     memoryToggleRequestRef.current += 1;
     setMemoryToggleBusy(false);
@@ -528,7 +530,6 @@ function DesktopApp(): React.JSX.Element {
       setVersion(bootstrap.version);
       setProjects(bootstrap.projects);
       setSidebarSessions(bootstrap.sidebarSessions);
-      hydrateSidebarWidth(bootstrap.sidebarWidth);
       setFilePanelWidth(bootstrap.filePanelWidth ?? DEFAULT_FILE_PANEL_WIDTH);
       setThemePreference(bootstrap.themePreference ?? "system");
       setFontPreference(bootstrap.fontPreference ?? DEFAULT_FONT_PREFERENCE);
@@ -560,7 +561,7 @@ function DesktopApp(): React.JSX.Element {
       setWarning(`Biny 启动失败：${errorMessage(error)}`);
     });
     return () => { active = false; };
-  }, [commitNavigation, hydrateSidebarWidth, mergeWorkspaceProject, openSession]);
+  }, [commitNavigation, mergeWorkspaceProject, openSession]);
 
   useDesktopEventBridge({
     activeProjectIdRef: projectRef,
@@ -802,7 +803,7 @@ function DesktopApp(): React.JSX.Element {
     };
   }, [newTask, openProject, openSearch, openSettings, toggleSidebar]);
 
-  const sendPrompt = useCallback(async (input: string, mode: InteractiveAgentRunMode, attachments: DesktopAttachment[], delivery?: "steer" | "followUp", idempotencyKey?: string, capabilitySelection?: AgentCapabilitySelection): Promise<void> => {
+  const sendPrompt = useCallback(async (input: string, mode: InteractiveAgentRunMode, attachments: DesktopAttachment[], delivery?: "steer" | "followUp", idempotencyKey?: string, capabilitySelection?: AgentCapabilitySelection): Promise<DesktopRunReceipt> => {
     const activeProjectId = projectRef.current;
     const projectId = selectedRef.current === undefined
       ? draftProjectId ?? activeProjectId
@@ -831,18 +832,18 @@ function DesktopApp(): React.JSX.Element {
     );
     if (switchingDraftProject) {
       // 消息已在目标项目创建后再切换界面；这样切换前不会重绘左侧栏，也不会丢掉目标运行产生的首批事件。
-      if (loadRequestRef.current !== navigationRequest) return;
+      if (loadRequestRef.current !== navigationRequest) return receipt;
       try {
         const snapshot = await window.biny.selectProject(projectId);
-        if (loadRequestRef.current !== navigationRequest) return;
+        if (loadRequestRef.current !== navigationRequest) return receipt;
         const opened = await openSession(projectId, receipt.sessionId, false, navigationRequest, snapshot);
-        if (!opened || loadRequestRef.current !== navigationRequest) return;
+        if (!opened || loadRequestRef.current !== navigationRequest) return receipt;
       } catch (error) {
         setWarning(`消息已发送，但无法切换到目标文件夹：${errorMessage(error)}`);
-        return;
+        return receipt;
       }
       commitNavigation(pushNavigation(previousNavigation, { projectId, sessionId: receipt.sessionId }));
-      return;
+      return receipt;
     }
     setSelectedSessionId(receipt.sessionId);
     setDraftProjectId(undefined);
@@ -858,6 +859,7 @@ function DesktopApp(): React.JSX.Element {
       const summary = workspace?.sessions.find((session) => session.id === receipt.sessionId) ?? syntheticSession(projectId, receipt.sessionId, input);
       setDocument({ session: summary, events: [], liveEvents: [] });
     }
+    return receipt;
   }, [commitNavigation, document, draftMemoryOverride, draftProjectId, openSession, workspace?.sessions]);
 
   const retryWriterConflict = useCallback(async (): Promise<void> => {
@@ -871,21 +873,25 @@ function DesktopApp(): React.JSX.Element {
     }
   }, [openSession]);
 
-  // 首页（无会话）首条消息：先播过场动画再让聊天布局接管。失败回滚交给 Workspace。
-  // 空白草稿的 Composer 本就在底部停靠，无需过场，直接发送。
-  const sendPromptWithFlight = useCallback(async (input: string, mode: InteractiveAgentRunMode, attachments: DesktopAttachment[], delivery?: "steer" | "followUp", idempotencyKey?: string, capabilitySelection?: AgentCapabilitySelection): Promise<void> => {
-    const isHomeSubmit = Boolean(projectRef.current)
+  // 首页首条消息直接进入聊天布局；临时用户消息覆盖 IPC/事件桥的空窗，真实事件到达后自动替换。
+  // 空白草稿本就在底部停靠，不需要额外投影。
+  const sendPromptWithTransition = useCallback(async (input: string, mode: InteractiveAgentRunMode, attachments: DesktopAttachment[], delivery?: "steer" | "followUp", idempotencyKey?: string, capabilitySelection?: AgentCapabilitySelection): Promise<void> => {
+    const homeProjectId = projectRef.current;
+    const isHomeSubmit = Boolean(homeProjectId)
       && selectedRef.current === undefined
       && !blankDraft
-      && (draftProjectId === undefined || draftProjectId === projectRef.current);
-    if (isHomeSubmit) {
-      homeFlightNonceRef.current += 1;
-      setHomeFlight({ text: input, nonce: homeFlightNonceRef.current });
-    }
+      && (draftProjectId === undefined || draftProjectId === homeProjectId);
+    const pendingId = idempotencyKey ?? globalThis.crypto.randomUUID();
+    if (isHomeSubmit && homeProjectId) setPendingHomePrompt({ id: pendingId, projectId: homeProjectId, text: input });
     try {
-      await sendPrompt(input, mode, attachments, delivery, idempotencyKey, capabilitySelection);
+      const receipt = await sendPrompt(input, mode, attachments, delivery, idempotencyKey, capabilitySelection);
+      if (isHomeSubmit && homeProjectId) {
+        setPendingHomePrompt((current) => current?.id === pendingId
+          ? { ...current, sessionId: receipt.sessionId, messageId: receipt.messageId }
+          : current);
+      }
     } catch (error) {
-      if (isHomeSubmit) setHomeFlight(null);
+      if (isHomeSubmit) setPendingHomePrompt((current) => current?.id === pendingId ? undefined : current);
       throw error;
     }
   }, [blankDraft, draftProjectId, sendPrompt]);
@@ -1058,7 +1064,6 @@ function DesktopApp(): React.JSX.Element {
       if (projectRef.current === projectId) {
         permissionModeRequestRef.current += 1;
         memoryToggleRequestRef.current += 1;
-        setPendingPermissionMode(undefined);
         setMemoryToggleBusy(false);
       }
       setProjects(bootstrap.projects);
@@ -1114,24 +1119,6 @@ function DesktopApp(): React.JSX.Element {
     void openSessionMenu(session);
   }, [openSessionMenu]);
 
-  const setPermissionMode = useCallback(async (mode: PermissionMode): Promise<void> => {
-    const projectId = projectRef.current;
-    if (!projectId) return;
-    const requestId = permissionModeRequestRef.current + 1;
-    permissionModeRequestRef.current = requestId;
-    setPendingPermissionMode(mode);
-    try {
-      const snapshot = await window.biny.setPermissionMode(projectId, mode);
-      if (projectRef.current !== projectId || permissionModeRequestRef.current !== requestId) return;
-      mergeWorkspaceProject(snapshot);
-      setPendingPermissionMode(undefined);
-    } catch (error) {
-      if (projectRef.current === projectId && permissionModeRequestRef.current === requestId) {
-        setPendingPermissionMode(undefined);
-      }
-      throw error;
-    }
-  }, [mergeWorkspaceProject]);
 
   const saveAttachment = useCallback(async (file: File): Promise<DesktopAttachment> => {
     const projectId = selectedRef.current === undefined ? draftProjectId ?? projectRef.current : projectRef.current;
@@ -1189,6 +1176,19 @@ function DesktopApp(): React.JSX.Element {
   useEffect(() => {
     turnsRef.current = turns;
   }, [turns]);
+  useEffect(() => {
+    const pending = pendingHomePrompt;
+    if (!pending) return;
+    const stillSelected = pending.projectId === workspace?.project.id
+      && (pending.sessionId === undefined
+        ? selectedSessionId === undefined
+        : pending.sessionId === selectedSessionId);
+    const hasRealMessage = pending.messageId !== undefined
+      && turns.some((turn) => turn.userMessageId === pending.messageId);
+    if (!stillSelected || hasRealMessage) {
+      setPendingHomePrompt((current) => current?.id === pending.id ? undefined : current);
+    }
+  }, [pendingHomePrompt, selectedSessionId, turns, workspace?.project.id]);
   // 以下三个回调会一路传到 MessageTimeline 的 Turn（React.memo）；内联箭头会让引用每帧变化、
   // memo 失效，所以这里用 useCallback 固定下来，配合轮次引用稳定让流式期间只重渲染变化的轮次。
   const retryTimelinePrompt = useCallback(async (targetMessageId: string, input: string, idempotencyKey: string): Promise<void> => {
@@ -1310,8 +1310,6 @@ function DesktopApp(): React.JSX.Element {
     (workspace?.runtime && workspace.runtime.state.kind !== "idle")
     || Object.values(workspace?.sessionRuntimes ?? {}).some((snapshot) => snapshot.state.kind !== "idle")
   );
-  const confirmedPermissionMode = workspace?.permissionMode ?? workspace?.runtime?.permissionMode ?? "ask";
-  const permissionMode = pendingPermissionMode ?? confirmedPermissionMode;
   // 记忆开关只消费 workspace 的只读策略投影；真正的记忆概览和召回在发送回合内由 Runtime 完成。
   const memoryPolicy = workspace?.memory;
   const currentChatPersonalization = selectedSession?.personalization ?? defaultChatPersonalizationOverride;
@@ -1418,12 +1416,12 @@ function DesktopApp(): React.JSX.Element {
       capabilityDefaults={workspace?.capabilityDefaults ?? { tools: "auto", skills: "auto" }}
       skills={composerSkills}
       toolCatalog={composerTools}
+      onOpenMcpSettings={() => openSettings("MCP 服务器")}
+      onRefreshCatalog={refreshComposerCatalog}
       modelSetupRequired={Boolean(workspace?.requiresModelConfiguration)}
       models={workspace?.pickerModels ?? workspace?.models ?? []}
-      onPermissionMode={setPermissionMode}
-      permissionModePending={pendingPermissionMode !== undefined}
       onSaveAttachment={saveAttachment}
-      onSend={sendPromptWithFlight}
+      onSend={sendPromptWithTransition}
       onSlashCommand={runSlashCommand}
       onExpandSkillCommand={expandSkillCommand}
       onStop={async () => {
@@ -1434,7 +1432,6 @@ function DesktopApp(): React.JSX.Element {
       onToggleMemory={toggleChatMemory}
       onSwitchModel={switchModel}
       onWarning={setWarning}
-      permissionMode={permissionMode}
       project={workspace?.project}
       running={selectedRunning}
       runtimeBusy={runtimeBusy}
@@ -1554,8 +1551,6 @@ function DesktopApp(): React.JSX.Element {
           onLoadSessionChildren={loadSessionChildren}
           onSessionMenu={openSidebarSessionMenu}
           onSettings={openSettings}
-          onResizeKeyDown={onSidebarResizeKeyDown}
-          onResizePointerDown={onSidebarResizePointerDown}
           onToggleSidebar={toggleSidebar}
           layout={sidebarLayout}
           projects={projects}
@@ -1613,8 +1608,7 @@ function DesktopApp(): React.JSX.Element {
         onSubmitPrompt={submitComposerPrompt}
         workspaceContext={workspaceContext}
         inspectorRail={inspector.rail}
-        homeFlight={homeFlight ?? undefined}
-        onHomeFlightLanded={() => setHomeFlight(null)}
+        pendingHomePrompt={pendingHomePrompt}
         onOpenRuntime={openRuntimePanel}
         onOpenExtensions={openExtensions}
       >

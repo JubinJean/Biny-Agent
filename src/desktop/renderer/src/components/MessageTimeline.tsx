@@ -7,7 +7,6 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { ThinkingOrb } from "thinking-orbs";
-import { ChatMessage, ChatMessageBubble } from "@astryxdesign/core/Chat";
 import type { PermissionResult } from "../../../../permission/PermissionManager.js";
 import type { SessionUsage } from "../../../../session/metadata.js";
 import { splitAttachmentReferences, type AttachmentReference } from "../../../attachmentReferences.js";
@@ -15,7 +14,7 @@ import { copyToClipboard } from "../copyToClipboard.js";
 import { useInlineImage } from "../inlineImage.js";
 import { listChangedFiles, type TimelineReasoningStep, type TimelineStep, type TimelineTurn } from "../sessionTimeline.js";
 import { reasoningDetailText } from "../reasoningPresentation.js";
-import { buildUsageDetailRows, finishReasonTone, formatDuration, formatMessageClock, formatRunDuration, isRunErrorStatus, runErrorSeenKey, turnMetrics, type TurnMetrics } from "../chatModel.js";
+import { buildUsageDetailRows, finishReasonTone, formatDuration, formatMessageClock, formatRunDuration, isRunErrorRetryable, isRunErrorStatus, runErrorSeenKey, turnMetrics, type TurnMetrics } from "../chatModel.js";
 import { speak, speechSupported } from "../speech.js";
 import { CopyButton } from "./CopyButton.js";
 import { Icon } from "./Icon.js";
@@ -26,13 +25,16 @@ import { CompactionRow } from "./chat/NoticeRow.js";
 import { MessageClock } from "./chat/MessageClock.js";
 import { ThinkingBlock } from "./chat/ThinkingBlock.js";
 import { ExecutionGroup, type ExecutionGroupStep } from "./chat/ExecutionGroup.js";
-import { markRunErrorsSeen, pruneRunErrorsSeen } from "./chat/runErrorDismissal.js";
+import { ChangesSummary } from "./chat/ChangesSummary.js";
+import { RunErrorCard } from "./chat/RunErrorCard.js";
+import { isRunErrorSeen, markRunErrorsSeen, pruneRunErrorsSeen } from "./chat/runErrorDismissal.js";
 import { pickThinkingMessage } from "../thinkingMessages.js";
 
 interface MessageTimelineProps {
   projectId: string;
   sessionId?: string;
   turns: TimelineTurn[];
+  pendingUserMessage?: PendingUserMessage;
   onPreviewFile(path: string): void;
   onOpenExternal(url: string): void;
   onResolvePermission(requestId: string, result: PermissionResult): Promise<void>;
@@ -45,6 +47,12 @@ interface MessageTimelineProps {
   onDeleteUserMessage(turnId: string): void;
 }
 
+interface PendingUserMessage {
+  id: string;
+  messageId?: string;
+  content: string;
+}
+
 interface OptimisticRewrite {
   turnId: string;
   user: string;
@@ -54,7 +62,7 @@ interface OptimisticRewrite {
   settled: boolean;
 }
 
-export const MessageTimeline = memo(function MessageTimeline({ projectId, sessionId, turns, onPreviewFile, onOpenExternal, onResolvePermission, thinking, onRetry, onSwitchVersion, onEditUserMessage, onCreateBranch, onRollbackFiles, onDeleteUserMessage }: MessageTimelineProps): React.JSX.Element {
+export const MessageTimeline = memo(function MessageTimeline({ projectId, sessionId, turns, pendingUserMessage, onPreviewFile, onOpenExternal, onResolvePermission, thinking, onRetry, onSwitchVersion, onEditUserMessage, onCreateBranch, onRollbackFiles, onDeleteUserMessage }: MessageTimelineProps): React.JSX.Element {
   const [editing, setEditing] = useState<{ turnId: string; value: string; userMessageIndex: number }>();
   // 重试/重写会先把目标之后的消息从视图中撤掉，再等待新回合流入；这里保留同样的
   // 乐观投影。持久化仍由 App/Runtime 负责，组件只在请求尚未完成时负责视觉上的覆盖。
@@ -145,30 +153,6 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
     }
   }, [optimisticRewrite, turns]);
 
-  // 错误卡按「一个错误只打扰一次」展示：每个会话各记一份当前未读错误清单，切走（或组件
-  // 卸载）的一瞬整份标成已看过——用户点进失败的会话第一眼能看到，错过或划走就不再提。
-  const unreadRunErrorsRef = useRef(new Map<string, readonly string[]>());
-  useEffect(() => {
-    const keys = turns
-      .filter((turn) => Boolean(turn.error) && isRunErrorStatus(turn.status))
-      .map((turn) => runErrorSeenKey(projectId, sessionId, turn));
-    // 无依赖 effect 是拿「最新一帧」未读清单的手段：切换发生在提交之后、清理之前，
-    // 清理闭包读到的必须是上一帧数据，所以 ref 要跟每次提交同步。列表很小，成本可忽略。
-    unreadRunErrorsRef.current.set(sessionId ?? "", keys);
-  });
-
-  // 消费「被离开的会话」的全部未读错误：清理闭包里的 sessionKey 固定为创建该 effect
-  // 时的会话，切走时正是上一个会话；应用关闭等卸场也顺路消费，重启后不再复活。
-  useEffect(() => {
-    const sessionKey = sessionId ?? "";
-    return () => {
-      const leaving = unreadRunErrorsRef.current.get(sessionKey);
-      unreadRunErrorsRef.current.delete(sessionKey);
-      if (leaving?.length) markRunErrorsSeen(leaving);
-    };
-    // 只跟随会话身份；依赖清单一变化就会让「上次未读」变成空集，语义就错了。
-  }, [sessionId]);
-
   // 新一轮开跑（本会话出现新的进行中轮次）时回收一次失效标记：编辑/重试会让轮次身份
   // 变化或消失，死标记不该一直占着 localStorage，也不该顶着别的轮次的坑位。
   const roundFingerprintsRef = useRef<{ sessionKey: string; fingerprints: Set<string> }>({ sessionKey: "", fingerprints: new Set() });
@@ -186,6 +170,11 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
     roundFingerprintsRef.current = { sessionKey, fingerprints };
   }, [projectId, sessionId, turns]);
 
+  const hasRealPendingMessage = pendingUserMessage !== undefined && turns.some((turn) => (
+    pendingUserMessage.messageId !== undefined
+      ? turn.userMessageId === pendingUserMessage.messageId
+      : turn.user === pendingUserMessage.content
+  ));
   const displayedTurns = useMemo(() => {
     const pending = optimisticRewrite;
     if (!pending) return turns;
@@ -236,6 +225,15 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
 
   return (
     <div className="message-timeline">
+      {pendingUserMessage && !hasRealPendingMessage ? (
+        <PendingUserMessage
+          content={pendingUserMessage.content}
+          id={pendingUserMessage.id}
+          onOpenExternal={onOpenExternal}
+          onPreviewFile={onPreviewFile}
+          projectId={projectId}
+        />
+      ) : null}
       {displayedTurns.map((turn) => (
         <Turn
           key={turn.id}
@@ -255,6 +253,7 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
           onRetrySettled={settleOptimisticRewrite}
           onSwitchVersion={onSwitchVersion}
           projectId={projectId}
+          sessionId={sessionId}
           turn={turn}
         />
       ))}
@@ -265,6 +264,24 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
         </div>
       ) : null}
     </div>
+  );
+});
+
+const PendingUserMessage = memo(function PendingUserMessage({ content, id, onOpenExternal, onPreviewFile, projectId }: {
+  content: string;
+  id: string;
+  onOpenExternal(url: string): void;
+  onPreviewFile(path: string): void;
+  projectId: string;
+}): React.JSX.Element {
+  const message = splitAttachmentReferences(content);
+  return (
+    <article className="chat-message user-message is-pending-entry" data-message-id={id} data-sender="user">
+      <div className="user-bubble">
+        {message.text ? <MarkdownContent content={message.text} onOpenExternal={onOpenExternal} onPreviewFile={onPreviewFile} projectId={projectId} /> : null}
+        {message.attachments.length ? <MessageAttachments attachments={message.attachments} projectId={projectId} /> : null}
+      </div>
+    </article>
   );
 });
 
@@ -296,6 +313,7 @@ function optimisticRewriteTurn(turn: TimelineTurn, user: string): TimelineTurn {
 
 const Turn = memo(function Turn({
   projectId,
+  sessionId,
   turn,
   editing,
   onPreviewFile,
@@ -314,6 +332,7 @@ const Turn = memo(function Turn({
   onDeleteUserMessage
 }: {
   projectId: string;
+  sessionId?: string;
   turn: TimelineTurn;
   editing?: { value: string };
   onPreviewFile(path: string): void;
@@ -332,6 +351,8 @@ const Turn = memo(function Turn({
   onDeleteUserMessage(turnId: string): void;
 }): React.JSX.Element {
   const running = turn.status === "running" || turn.status === "waiting_permission";
+  // 失败/未完成的轮次和正常结束一样渲染完整收尾：错误卡落在模型消息位置，footer 照常出现。
+  const runFailed = !running && isRunErrorStatus(turn.status);
   const retryPromiseRef = useRef<Promise<void> | undefined>(undefined);
   const retry = useCallback((): Promise<void> => {
     const targetMessageId = turn.assistantMessageId ?? turn.userMessageId;
@@ -359,6 +380,11 @@ const Turn = memo(function Turn({
   }, [onSwitchVersion, turn.assistantMessageId]);
   const canRetry = Boolean(turn.user && (turn.assistantMessageId ?? turn.userMessageId));
   const executionSteps = turn.steps.length ? turn.steps : fallbackExecutionSteps(turn);
+  // 收尾的「修改文件」卡：只在本轮真正落定（非运行态）且存在完成写入/编辑时出现。
+  const completedChangedFiles = useMemo(
+    () => running ? [] : listChangedFiles(turn).filter((file) => file.status === "completed"),
+    [running, turn]
+  );
   return (
     <section className={`timeline-turn is-${turn.status}`}>
       {turn.user ? (
@@ -380,7 +406,7 @@ const Turn = memo(function Turn({
           time={turn.timestamp}
         />
       ) : null}
-      <ChatMessage className="desktop-assistant-message" sender="assistant">
+      <article className="chat-message desktop-assistant-message" data-sender="assistant">
         <div className="agent-response">
         {executionSteps.length || turn.skills.length ? (
           <ExecutionTimeline
@@ -395,8 +421,20 @@ const Turn = memo(function Turn({
         ) : null}
         {!executionSteps.some((step) => step.kind === "assistant") && turn.assistant ? <TypewriterMarkdown active={running} content={turn.assistant} onOpenExternal={onOpenExternal} onPreviewFile={onPreviewFile} projectId={projectId} /> : null}
 
+        {runFailed && turn.error ? (
+          <TurnRunError
+            message={turn.error}
+            onRetry={retry}
+            projectId={projectId}
+            retryable={canRetry && !turn.resumable && isRunErrorRetryable(turn.error)}
+            sessionId={sessionId}
+            status={turn.status}
+            timestamp={turn.timestamp}
+            turnId={turn.id}
+          />
+        ) : null}
 
-        {turn.assistant ? (
+        {turn.assistant || runFailed ? (
           <AssistantActions
             content={turn.assistant}
             finishReason={turn.finishReason}
@@ -412,8 +450,12 @@ const Turn = memo(function Turn({
           />
         ) : null}
 
+        {completedChangedFiles.length ? (
+          <ChangesSummary files={completedChangedFiles} onPreviewFile={onPreviewFile} />
+        ) : null}
+
         </div>
-      </ChatMessage>
+      </article>
     </section>
   );
 });
@@ -429,6 +471,45 @@ function fallbackExecutionSteps(turn: TimelineTurn): TimelineStep[] {
     completed: turn.status !== "running" && turn.status !== "waiting_permission"
   }];
 }
+
+/** 轮次内联的失败/未完成卡片：跟随轮次持久展示，点关闭只隐藏这一张。 */
+const TurnRunError = memo(function TurnRunError({
+  message,
+  onRetry,
+  projectId,
+  retryable,
+  sessionId,
+  status,
+  timestamp,
+  turnId
+}: {
+  message: string;
+  onRetry(): Promise<void>;
+  projectId: string;
+  retryable: boolean;
+  sessionId?: string;
+  status: TimelineTurn["status"];
+  timestamp?: string;
+  turnId: string;
+}): React.JSX.Element | null {
+  const seenKey = runErrorSeenKey(projectId, sessionId, { id: turnId, timestamp });
+  const [dismissed, setDismissed] = useState(() => isRunErrorSeen(seenKey));
+  useEffect(() => {
+    setDismissed(isRunErrorSeen(seenKey));
+  }, [seenKey]);
+  if (dismissed) return null;
+  return (
+    <RunErrorCard
+      message={message}
+      onDismiss={() => {
+        markRunErrorsSeen([seenKey]);
+        setDismissed(true);
+      }}
+      onRetry={retryable ? onRetry : undefined}
+      status={status}
+    />
+  );
+});
 
 /** 流式打字机版 Markdown：仅 reveal 新增量，历史/完结内容直出 */
 const TypewriterMarkdown = memo(function TypewriterMarkdown({ active, content, onOpenExternal, onPreviewFile, projectId }: {
@@ -629,27 +710,27 @@ function UserMessage({
   const message = useMemo(() => splitAttachmentReferences(content), [content]);
 
   if (editing) {
-    // 编辑态不套 ChatMessageBubble：气泡自带主题底色/内边距，会把编辑器包成「盒中盒」。
+    // 编辑态不套气泡：气泡自带主题底色/内边距，会把编辑器包成「盒中盒」。
     return (
-      <ChatMessage className="user-message is-editing" sender="user">
+      <article className="chat-message user-message is-editing" data-sender="user">
         <InlineUserMessageEditor
           value={editing.value}
           onCancel={onCancelEdit}
           onChange={onChangeEdit}
           onSubmit={onSubmitEdit}
         />
-      </ChatMessage>
+      </article>
     );
   }
 
   const closeMenu = (): void => setMenuOpen(false);
   const clock = time ? <MessageClock time={Date.parse(time)} /> : null;
   return (
-    <ChatMessage className="user-message" sender="user">
-      <ChatMessageBubble className="user-bubble">
+    <article className="chat-message user-message" data-sender="user">
+      <div className="user-bubble">
         {message.text ? <MarkdownContent content={message.text} onOpenExternal={onOpenExternal} onPreviewFile={onPreviewFile} projectId={projectId} /> : null}
         {message.attachments.length ? <MessageAttachments attachments={message.attachments} projectId={projectId} /> : null}
-      </ChatMessageBubble>
+      </div>
       <div className={`user-message-actions${menuOpen ? " is-open" : ""}`} data-time-hover-root ref={actionsRef}>
         {clock}
         <button aria-label="复制消息" className="user-message-action" onClick={() => copyText(message.text)} title="复制消息" type="button"><Icon name="copy" size={16} /></button>
@@ -667,7 +748,7 @@ function UserMessage({
           </div>
         ) : null}
       </div>
-    </ChatMessage>
+    </article>
   );
 }
 
@@ -916,6 +997,8 @@ function AssistantActions({ content, timestamp, metrics, runMs, usage, finishRea
     }
     return parts.join(" · ");
   }, [runMs, metrics, timestamp]);
+  // 失败轮可能没有任何正文：复制/朗读无从作用，只保留重试、版本与更多菜单。
+  const hasContent = content.trim().length > 0;
   const hasInfoSection = usageRows.length > 0 || Boolean(finishReason);
   return (
     <div className={`assistant-actions${menuOpen ? " is-open" : ""}`}>
@@ -924,8 +1007,8 @@ function AssistantActions({ content, timestamp, metrics, runMs, usage, finishRea
         <span>{durationText}</span>
       </div>
       <div className="assistant-actions-buttons">
-        <CopyButton className="assistant-action" label="复制回复" size={16} value={content} />
-        {speechSupported() ? (
+        {hasContent ? <CopyButton className="assistant-action" label="复制回复" size={16} value={content} /> : null}
+        {hasContent && speechSupported() ? (
           <button aria-label={speaking ? "停止朗读" : "朗读回复"} className={`assistant-action${speaking ? " is-active" : ""}`} onClick={toggleSpeech} title={speaking ? "停止朗读" : "朗读回复"} type="button"><Icon name={speaking ? "volume-off" : "volume"} size={16} /></button>
         ) : null}
         {onRegenerate ? (
@@ -976,12 +1059,16 @@ function AssistantActions({ content, timestamp, metrics, runMs, usage, finishRea
               <div className="message-menu-separator" />
             </>
           ) : null}
-          <button className={`message-menu-item${copiedKind === "markdown" ? " is-success" : ""}`} onClick={() => copyAs("markdown")} role="menuitem" type="button">
-            <Icon name={copiedKind === "markdown" ? "check" : "copy"} size={14} /><span>复制为 Markdown</span>
-          </button>
-          <button className={`message-menu-item${copiedKind === "plain" ? " is-success" : ""}`} onClick={() => copyAs("plain")} role="menuitem" type="button">
-            <Icon name={copiedKind === "plain" ? "check" : "copy"} size={14} /><span>复制为纯文本</span>
-          </button>
+          {hasContent ? (
+            <>
+              <button className={`message-menu-item${copiedKind === "markdown" ? " is-success" : ""}`} onClick={() => copyAs("markdown")} role="menuitem" type="button">
+                <Icon name={copiedKind === "markdown" ? "check" : "copy"} size={14} /><span>复制为 Markdown</span>
+              </button>
+              <button className={`message-menu-item${copiedKind === "plain" ? " is-success" : ""}`} onClick={() => copyAs("plain")} role="menuitem" type="button">
+                <Icon name={copiedKind === "plain" ? "check" : "copy"} size={14} /><span>复制为纯文本</span>
+              </button>
+            </>
+          ) : null}
           <button className="message-menu-item" onClick={() => { onCreateBranch(); closeMenu(); }} role="menuitem" type="button"><Icon name="branch" size={14} /><span>创建分支</span></button>
         </div>,
         document.body

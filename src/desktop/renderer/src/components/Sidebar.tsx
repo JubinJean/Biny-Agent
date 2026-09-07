@@ -8,7 +8,6 @@
 import { createPortal } from "react-dom";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SidebarLayoutSnapshot } from "../../../sidebarLayout.js";
-import { MAX_SIDEBAR_WIDTH, SIDEBAR_RAIL_WIDTH } from "../../../sidebarSizing.js";
 import type { DesktopProject, DesktopSessionSummary, DesktopSessionTreePage } from "../../../protocol.js";
 import type { SidebarPeekHandlers } from "../app/useSidebarLayout.js";
 import { useClosingPresence } from "../useClosingPresence.js";
@@ -54,8 +53,6 @@ interface SidebarProps {
   onRemoveProject(projectId: string): void;
   onSearch(): void;
   onSettings(): void;
-  onResizeKeyDown: React.KeyboardEventHandler<HTMLDivElement>;
-  onResizePointerDown: React.PointerEventHandler<HTMLDivElement>;
   onToggleSidebar(): void;
 }
 
@@ -84,8 +81,6 @@ export const Sidebar = memo(function Sidebar({
   onRemoveProject,
   onSearch,
   onSettings,
-  onResizeKeyDown,
-  onResizePointerDown,
   onToggleSidebar
 }: SidebarProps): React.JSX.Element {
   const [expandedSections, setExpandedSections] = useState<Record<SidebarSectionName, boolean>>({
@@ -99,7 +94,7 @@ export const Sidebar = memo(function Sidebar({
   const [loadedSessionParents, setLoadedSessionParents] = useState<Set<string>>(() => new Set());
   const [loadingSessionIds, setLoadingSessionIds] = useState<Set<string>>(() => new Set());
   const [sessionNextCursors, setSessionNextCursors] = useState<Map<string, string>>(() => new Map());
-  // 侧栏内联过滤（Alma 式）：只影响展示，命中项目名时保留整个项目的会话。
+  // 侧栏内联过滤：只影响展示，命中项目名时保留整个项目的会话。
   const [query, setQuery] = useState("");
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const searching = normalizedQuery.length > 0;
@@ -136,13 +131,13 @@ export const Sidebar = memo(function Sidebar({
   }, [projectCreateMenuOpen, projectMenuOpen, projectOrganizationMenuOpen]);
 
   useEffect(() => {
-    if (layout.mode !== "collapsed" && !layout.resizing) return;
+    if (layout.mode !== "collapsed") return;
     setProjectMenuOpen(undefined);
     setProjectOrganizationMenuOpen(false);
     setProjectCreateMenuOpen(false);
     setDragState(undefined);
     dragStateRef.current = undefined;
-  }, [layout.mode, layout.resizing]);
+  }, [layout.mode]);
 
   const sessionsByProject = useMemo(() => {
     const grouped = new Map<string, DesktopSessionSummary[]>();
@@ -381,7 +376,7 @@ export const Sidebar = memo(function Sidebar({
       <aside
         aria-label="主导航"
         aria-hidden={contentVisible ? undefined : true}
-        className={`biny-sidebar${contentVisible ? "" : " is-hidden"}${compact ? " is-compact" : ""}${layout.resizing ? " is-resizing" : ""}${peekOpen ? ` is-peek-overlay is-peek-${layout.transition === "peek-closing" ? "closing" : layout.transition === "pinning" ? "pinning" : "peeking"}` : ""}`}
+        className={`biny-sidebar${contentVisible ? "" : " is-hidden"}${compact ? " is-compact" : ""}${peekOpen ? ` is-peek-overlay is-peek-${layout.transition === "peek-closing" ? "closing" : layout.transition === "pinning" ? "pinning" : "peeking"}` : ""}`}
         ref={peekOpen ? peekDrawerRef : undefined}
         style={{
           width: "var(--biny-sidebar-animated-visual-width)"
@@ -392,7 +387,7 @@ export const Sidebar = memo(function Sidebar({
         onPointerDown={peekOpen ? peekDrawerHandlers.onPointerDown : undefined}
         onPointerUp={peekOpen ? peekDrawerHandlers.onPointerUp : undefined}
       >
-        {/* Alma 式浮动卡片：aside 只负责宽度动画与裁剪，视觉壳在 card 上。 */}
+        {/* 浮动卡片：aside 只负责宽度动画与裁剪，视觉壳在 card 上。 */}
         <div className="biny-sidebar-card">
           {/* 顶部行是侧栏内容的固定锚点；收起时也保留它，避免导航内容向上跳 46px。 */}
           <div aria-hidden="true" className="biny-sidebar-topbar-spacer" />
@@ -486,7 +481,7 @@ export const Sidebar = memo(function Sidebar({
             )}
             expanded={searching || expandedSections.projects}
             icon="folder"
-            label="你的项目"
+            label="项目"
             onToggle={() => toggleSection("projects")}
           >
             {unpinnedProjects.filter(projectVisible).map((project) => renderProject(project, "projects"))}
@@ -519,20 +514,6 @@ export const Sidebar = memo(function Sidebar({
           <span>设置</span>
         </button>
       </div>
-      {contentVisible ? (
-        <div
-          aria-label="调整侧栏宽度"
-          aria-orientation="vertical"
-          aria-valuemax={MAX_SIDEBAR_WIDTH}
-          aria-valuemin={SIDEBAR_RAIL_WIDTH}
-          aria-valuenow={layout.visualWidth}
-          className="biny-sidebar-resizer"
-          onKeyDown={onResizeKeyDown}
-          onPointerDown={onResizePointerDown}
-          role="separator"
-          tabIndex={0}
-        />
-      ) : null}
       </div>
       </aside>
       <SidebarChrome
@@ -549,7 +530,6 @@ export const Sidebar = memo(function Sidebar({
 function SidebarChrome({ collapsed, floating = false, onNewTask, onSearch, onToggle }: { collapsed: boolean; floating?: boolean; onNewTask(): void; onSearch(): void; onToggle(): void }): React.JSX.Element {
   return (
     <>
-      {floating ? <div aria-hidden="true" className="biny-sidebar-topbar-visual" /> : null}
       <div className={`biny-sidebar-topbar${floating ? " biny-sidebar-topbar-floating" : ""}`}>
         <div className={floating ? "biny-sidebar-topbar-hit-layer" : undefined}>
           <button

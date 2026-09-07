@@ -16,7 +16,8 @@ import type { TimelineReasoningStep, TimelineTool, TimelineToolStep } from "../.
 import { Icon } from "../Icon.js";
 import { ToolActivity } from "../ToolActivity.js";
 import { Collapse } from "./Collapse.js";
-import { editToolPath, isMergeableEdit, MergedFileEdits } from "./MergedFileEdits.js";
+import { MergedFileEdits } from "./MergedFileEdits.js";
+import { editToolPath, isMergeableEdit } from "./mergedFileEditsUtils.js";
 
 /** 可进聚合组的步骤：工具调用，或思考相位。 */
 export type ExecutionGroupStep = TimelineToolStep | TimelineReasoningStep;

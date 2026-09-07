@@ -34,18 +34,22 @@ function itemData(item: SearchableItem): DesktopComposerItemData {
   return item.auxiliaryData as DesktopComposerItemData;
 }
 
+/**
+ * 行渲染保持单行命令名（等宽字体）和可选参数提示，第二行只放一句截断的描述；
+ * 类型差异交给分组标题和图标颜色，不再使用右侧徽标和多行堆叠。
+ */
 function renderDesktopSlashItem(item: SearchableItem): React.ReactNode {
   const data = itemData(item);
   return (
     <div className={`desktop-slash-option is-${data.kind}`}>
-      <span className="desktop-slash-option-icon"><Icon name={data.icon} size={16} /></span>
+      <span className="desktop-slash-option-icon"><Icon name={data.icon} size={14} /></span>
       <span className="desktop-slash-option-copy">
-        <strong>{item.label}</strong>
-        <span className="desktop-slash-option-title">{data.title}</span>
-        <small>{data.description}</small>
-        <code>{data.usage}</code>
+        <span className="desktop-slash-option-name">
+          <code>{item.label}</code>
+          {data.hint ? <em className="desktop-slash-option-hint">{"<"}{data.hint}{">"}</em> : undefined}
+        </span>
+        <span className="desktop-slash-option-desc">{data.description}</span>
       </span>
-      <span className="desktop-slash-option-kind">{data.kind === "skill" ? "Skill" : data.acceptsArgs ? "参数" : "执行"}</span>
     </div>
   );
 }

@@ -32,7 +32,7 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
   const [sessionDetailLoading, setSessionDetailLoading] = useState(false);
   const [sessionDetailError, setSessionDetailError] = useState<string>();
   const [previewError, setPreviewError] = useState<string>();
-  const [previewSnapshotId, setPreviewSnapshotId] = useState<number>();
+  const [previewSnapshotId, setPreviewSnapshotId] = useState<string>();
   const [previewSource, setPreviewSource] = useState<string>();
   const [previewLoading, setPreviewLoading] = useState(false);
   const [activityQuery, setActivityQuery] = useState("");
@@ -200,7 +200,7 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
     setPreviewSnapshotId(undefined);
     setPreviewSource(undefined);
   };
-  const loadSnapshotPreview = (snapshotId: number): void => {
+  const loadSnapshotPreview = (snapshotId: string): void => {
     if (previewSnapshotId === snapshotId && previewSource) return;
     const requestId = ++previewRequestId.current;
     setPreviewSnapshotId(snapshotId);
@@ -508,10 +508,10 @@ function ActivitySessionDetailPanel({
   error: string | undefined;
   loading: boolean;
   onClose(): void;
-  onPreviewSnapshot(snapshotId: number): void;
+  onPreviewSnapshot(snapshotId: string): void;
   previewError: string | undefined;
   previewLoading: boolean;
-  previewSnapshotId: number | undefined;
+  previewSnapshotId: string | undefined;
   previewSource: string | undefined;
 }): React.JSX.Element {
   return (

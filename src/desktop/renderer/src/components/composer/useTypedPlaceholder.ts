@@ -6,8 +6,8 @@ const TYPE_MS = 55;
 const HOLD_MS = 6000;
 /** 快速退格 */
 const DELETE_MS = 22;
-/** 退格完稍作停顿再开始下一轮 */
-const REST_MS = 600;
+/* 退格完的停顿要短：占位符是空输入框唯一的视觉线索，停久了输入框看起来像坏了。 */
+const REST_MS = 150;
 
 type Phase = "typing" | "holding" | "deleting" | "resting";
 

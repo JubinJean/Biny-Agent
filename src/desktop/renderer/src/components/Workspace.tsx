@@ -5,26 +5,26 @@
  * 权限和文件检查器回调。页面层只负责把这些能力放到正确的视觉区域。
  */
 import type { PermissionResult } from "../../../../permission/PermissionManager.js";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ThinkingOrb } from "thinking-orbs";
 import type { DesktopProject, DesktopRuntimeMutation, DesktopRuntimeProjection, DesktopSessionLimits, DesktopSessionWriterConflict } from "../../../protocol.js";
 import type { SkillDraftNotice } from "../app/useDesktopEventBridge.js";
 import type { TimelineTurn } from "../sessionTimeline.js";
-import { isRunErrorRetryable, isRunErrorStatus, runErrorSeenKey } from "../chatModel.js";
 import { pickThinkingMessage } from "../thinkingMessages.js";
 import { desktopWorktreeView } from "../worktreePresentation.js";
 import { Icon } from "./Icon.js";
 import { MessageTimeline } from "./MessageTimeline.js";
 import { RuntimePanel } from "./RuntimePanel.js";
-import { RunErrorCard } from "./chat/RunErrorCard.js";
-import { isRunErrorSeen, markRunErrorsSeen } from "./chat/runErrorDismissal.js";
 import { SkillDraftNoticeCard } from "./SkillDraftNoticeCard.js";
 import { WelcomeState } from "./WelcomeState.js";
 
-/** 首页提交过场信号：App 在「无会话的首页」发出首条消息时下发，text 用于渲染气泡预览。 */
-export interface HomeFlightSignal {
+/** 首页首条消息的临时投影；真实 message.user 到达后由 App 清掉。 */
+export interface PendingHomePrompt {
+  id: string;
+  projectId: string;
   text: string;
-  nonce: number;
+  sessionId?: string;
+  messageId?: string;
 }
 
 interface WorkspaceProps {
@@ -75,10 +75,8 @@ interface WorkspaceProps {
   inspectorRail?: React.ReactNode;
   /** 项目行「新建任务」直达的空白草稿：跳过欢迎态，直接渲染空白聊天 + 底部 Composer。 */
   blankDraft?: boolean;
-  /** 首页提交过场信号；发送失败时 App 会清空它触发回滚。 */
-  homeFlight?: HomeFlightSignal;
-  /** 过场动画落地完成（500ms）后回调，App 借此清掉信号。 */
-  onHomeFlightLanded(): void;
+  /** 首页首条消息的临时投影；真实事件到达后由 App 清掉。 */
+  pendingHomePrompt?: PendingHomePrompt;
   /** 顶部工具条：自动化/技能入口（搜索与新建任务在侧栏 chrome）。 */
   onOpenRuntime(): void;
   onOpenExtensions(): void;
@@ -123,20 +121,20 @@ export function Workspace({
   onRuntimeRefresh,
   onSubmitPrompt,
   blankDraft = false,
-  homeFlight,
-  onHomeFlightLanded,
+  pendingHomePrompt,
   workspaceContext,
   inspectorRail,
   onOpenRuntime: _onOpenRuntime,
   onOpenExtensions: _onOpenExtensions,
   children
 }: WorkspaceProps): React.JSX.Element {
-  const streaming = running || turns.some((turn) => turn.status === "running" || turn.status === "waiting_permission");
+  const pendingPrompt = pendingHomePrompt && pendingHomePrompt.projectId === projectId
+    && (pendingHomePrompt.sessionId === undefined || pendingHomePrompt.sessionId === sessionId)
+    ? pendingHomePrompt
+    : undefined;
+  const streaming = running || pendingPrompt !== undefined || turns.some((turn) => turn.status === "running" || turn.status === "waiting_permission");
   const isHome = !loading && !runtimeError && !projectId;
   const showWelcome = !loading && !runtimeError && !sessionId && !streaming && turns.length === 0;
-  // 错误提示只跟随最后一轮：用户发出新消息后，旧错误仍留在时间线里，但不应继续占据输入框上方。
-  const lastTurn = turns[turns.length - 1];
-  const latestRunError = lastTurn && lastTurn.error && isRunErrorStatus(lastTurn.status) ? lastTurn : undefined;
   // 上限预警按会话 dismiss：换会话要重新提示，同会话点掉后不再打扰。
   const [limitBannerDismissedFor, setLimitBannerDismissedFor] = useState<string>();
   const showLimitBanner = Boolean(sessionLimits?.nearSizeLimit && sessionId && limitBannerDismissedFor !== sessionId);
@@ -145,113 +143,8 @@ export function Workspace({
     : runtimeProjection?.worktrees.find((worktree) => worktree.sessionId === sessionId);
   const worktreeView = sessionIsolation === "worktree" ? desktopWorktreeView(selectedWorktree) : undefined;
 
-  // —— 首页 → 聊天过场（FLIP，0.5s cubic-bezier(.32,.72,0,1)）——
-  // flying：保持首页布局、播动画；landed：落地完成、切聊天布局（此时 sessionId/消息通常已就位，
-  // 正好无缝接管）。发送失败时 App 清空 homeFlight，走回滚分支。
-  const [flight, setFlight] = useState<{ text: string } | null>(null);
-  const [landed, setLanded] = useState(false);
-  const bodyRef = useRef<HTMLDivElement>(null);
-  const composerSlotRef = useRef<HTMLDivElement>(null);
-  const flightCleanupRef = useRef<(() => void) | null>(null);
-  const onHomeFlightLandedRef = useRef(onHomeFlightLanded);
-  useEffect(() => {
-    onHomeFlightLandedRef.current = onHomeFlightLanded;
-  });
-
-  // 新会话/新项目后允许再次过场。
-  useEffect(() => {
-    if (!sessionId) setLanded(false);
-  }, [sessionId]);
-
-  useEffect(() => {
-    if (!homeFlight || flight) return;
-    if (!composerSlotRef.current || !bodyRef.current) return;
-    setFlight({ text: homeFlight.text });
-  }, [homeFlight, flight]);
-
-  // 回滚：发送失败（App 清空信号）且过场仍在飞 → 取消动画、撤掉气泡、还原首页。
-  useEffect(() => {
-    if (homeFlight || !flight) return;
-    flightCleanupRef.current?.();
-    flightCleanupRef.current = null;
-    setFlight(null);
-  }, [homeFlight, flight]);
-
-  useEffect(() => {
-    if (!flight) return;
-    const slot = composerSlotRef.current;
-    const body = bodyRef.current;
-    if (!slot || !body) {
-      setFlight(null);
-      return;
-    }
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
-      setFlight(null);
-      setLanded(true);
-      onHomeFlightLandedRef.current();
-      return;
-    }
-    let cancel: (() => void) | undefined;
-    const raf = requestAnimationFrame(() => {
-      const rect = slot.getBoundingClientRect();
-      const bodyRect = body.getBoundingClientRect();
-      // dock 几何：composer 宽 = 内容宽（100% - 48px）水平居中，顶边 = body 底边。
-      const deltaY = bodyRect.bottom - rect.top;
-      const targetWidth = bodyRect.width - 48;
-      const ease = "cubic-bezier(.32,.72,0,1)";
-      slot.style.width = `${String(rect.width)}px`;
-      const composerAnim = slot.animate(
-        [
-          { transform: "translateY(0px)", width: `${String(rect.width)}px` },
-          { transform: `translateY(${String(deltaY)}px)`, width: `${String(targetWidth)}px` }
-        ],
-        { duration: 500, easing: ease, fill: "forwards" }
-      );
-      // 用户气泡预览：fixed 在最终落点（消息区顶 28px、右缩 24px 内容沟），
-      // 从 composer 顶边上滑入——视觉上像消息「从输入框升起来、输入框顺势沉到底部」。
-      const bubbleTop = bodyRect.top + 28;
-      const bubble = document.createElement("div");
-      bubble.className = "biny-flight-bubble";
-      bubble.textContent = flight.text;
-      bubble.style.top = `${String(bubbleTop)}px`;
-      bubble.style.right = `${String(window.innerWidth - bodyRect.right + 24)}px`;
-      bubble.style.maxWidth = `${String((bodyRect.width - 48) * 0.85)}px`;
-      document.body.appendChild(bubble);
-      const bubbleAnim = bubble.animate(
-        [
-          { transform: `translateY(${String(rect.top - bubbleTop)}px)`, opacity: 0 },
-          { transform: "translateY(0px)", opacity: 1 }
-        ],
-        { duration: 500, easing: ease, fill: "forwards" }
-      );
-      const timer = window.setTimeout(() => {
-        flightCleanupRef.current = null;
-        composerAnim.cancel();
-        bubbleAnim.cancel();
-        bubble.remove();
-        slot.style.width = "";
-        setFlight(null);
-        setLanded(true);
-        onHomeFlightLandedRef.current();
-      }, 500);
-      cancel = () => {
-        window.clearTimeout(timer);
-        composerAnim.cancel();
-        bubbleAnim.cancel();
-        bubble.remove();
-        slot.style.width = "";
-      };
-      flightCleanupRef.current = cancel;
-    });
-    return () => {
-      cancelAnimationFrame(raf);
-      cancel?.();
-      flightCleanupRef.current = null;
-    };
-  }, [flight]);
-
-  // blankDraft（项目行新建）跳过欢迎态与过场：正文落空白聊天空态，Composer 直接停靠底部。
-  const renderWelcome = !blankDraft && ((showWelcome && !landed) || flight !== null);
+  // blankDraft（项目行新建）跳过欢迎态；首页首条消息由 pendingPrompt 直接进入聊天时间线。
+  const renderWelcome = !blankDraft && showWelcome;
 
   if (isHome) {
     return (
@@ -329,7 +222,7 @@ export function Workspace({
           selectedSessionId={sessionId}
           worktreeSession={sessionIsolation === "worktree"}
         />
-        <div className={`biny-chat-body${renderWelcome ? " is-welcome" : ""}`} ref={bodyRef}>
+        <div className={`biny-chat-body${renderWelcome ? " is-welcome" : ""}`}>
           {showLimitBanner && sessionLimits && sessionId ? (
             <div className="biny-session-limit-banner" role="status">
               <span>
@@ -341,12 +234,12 @@ export function Workspace({
             </div>
           ) : null}
           {loading ? <LoadingState /> : runtimeError ? <RuntimeError error={runtimeError} onOpenProject={onOpenProject} /> : renderWelcome ? (
-            <WelcomeState hasProject={Boolean(projectId)} leaving={flight !== null} onOpenProject={onOpenProject} onPickSuggestion={onSubmitPrompt}>
-              <div className="biny-welcome-composer-slot biny-hero-fade" ref={composerSlotRef}>
+            <WelcomeState hasProject={Boolean(projectId)} onOpenProject={onOpenProject} onPickSuggestion={onSubmitPrompt}>
+              <div className="biny-welcome-composer-slot biny-hero-fade">
                 {writerConflict ? <SessionWriterConflictBanner onRetry={onRetryWriterConflict} /> : children}
               </div>
             </WelcomeState>
-          ) : (turns.length > 0 || thinking) && projectId ? (
+          ) : (turns.length > 0 || thinking || pendingPrompt !== undefined) && projectId ? (
             <ChatScroll sessionId={sessionId} streaming={streaming}>
               <MessageTimeline
                 onCreateBranch={onCreateBranch}
@@ -358,6 +251,9 @@ export function Workspace({
                 onRollbackFiles={onRollbackFiles}
                 onRetry={onRetry}
                 onSwitchVersion={onSwitchVersion}
+                pendingUserMessage={pendingPrompt
+                  ? { id: pendingPrompt.id, messageId: pendingPrompt.messageId, content: pendingPrompt.text }
+                  : undefined}
                 thinking={thinking}
                 projectId={projectId}
                 sessionId={sessionId}
@@ -379,68 +275,20 @@ export function Workspace({
                 </div>
               ) : null}
               {/* 运行状态行：消息流末尾，与 DSH 的 TurnStatus 同位置。 */}
-              {thinking ? <ThinkingStatus key={thinkingStartedAt ?? "thinking"} startedAt={thinkingStartedAt} /> : null}
+              {thinking || pendingPrompt ? <ThinkingStatus key={thinkingStartedAt ?? "thinking"} startedAt={thinkingStartedAt} /> : null}
             </ChatScroll>
           ) : (
             <div className="biny-chat-empty"><Icon name="message" size={20} /><span>开始一段新的对话</span></div>
           )}
         </div>
         {renderWelcome ? null : (
-          <div className="biny-chat-composer">
-            {writerConflict ? <SessionWriterConflictBanner onRetry={onRetryWriterConflict} /> : (
-              <>
-                {!streaming && latestRunError && projectId ? (
-                  <ConversationRunError
-                    onRetry={onRetry}
-                    projectId={projectId}
-                    sessionId={sessionId}
-                    turn={latestRunError}
-                  />
-                ) : null}
-                {children}
-              </>
-            )}
+          <div className={`biny-chat-composer${pendingPrompt ? " is-entering" : ""}`}>
+            {writerConflict ? <SessionWriterConflictBanner onRetry={onRetryWriterConflict} /> : children}
           </div>
         )}
       </div>
       {streaming ? <span className="biny-streaming-state" aria-hidden="true" /> : null}
     </div>
-  );
-}
-
-function ConversationRunError({ projectId, sessionId, turn, onRetry }: {
-  projectId: string;
-  sessionId?: string;
-  turn: TimelineTurn;
-  onRetry(targetMessageId: string, input: string, idempotencyKey: string): Promise<void>;
-}): React.JSX.Element | null {
-  const message = turn.error ?? "";
-  const dismissedKey = runErrorSeenKey(projectId, sessionId, turn);
-  const [dismissed, setDismissed] = useState(() => isRunErrorSeen(dismissedKey));
-  const targetMessageId = turn.assistantMessageId ?? turn.userMessageId;
-  const canRetry = Boolean(turn.user && targetMessageId && !turn.resumable && isRunErrorRetryable(message));
-  useEffect(() => {
-    setDismissed(isRunErrorSeen(dismissedKey));
-  }, [dismissedKey]);
-  const dismiss = useCallback((): void => {
-    markRunErrorsSeen([dismissedKey]);
-    setDismissed(true);
-  }, [dismissedKey]);
-  const retry = useCallback(async (): Promise<void> => {
-    if (!canRetry || !targetMessageId || !turn.user) return;
-    markRunErrorsSeen([dismissedKey]);
-    setDismissed(true);
-    await onRetry(targetMessageId, turn.user, globalThis.crypto.randomUUID());
-  }, [canRetry, dismissedKey, onRetry, targetMessageId, turn.user]);
-
-  if (!message || isRunErrorSeen(dismissedKey) || dismissed) return null;
-  return (
-    <RunErrorCard
-      message={message}
-      onDismiss={dismiss}
-      onRetry={canRetry ? retry : undefined}
-      status={turn.status}
-    />
   );
 }
 

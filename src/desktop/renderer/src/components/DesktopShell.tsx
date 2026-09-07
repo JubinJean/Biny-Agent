@@ -44,7 +44,6 @@ export function DesktopShell({ children, overlays, rightPanel, rightSidebar, sid
     "--biny-sidebar-visual-width": `${sidebarLayout.visualWidth}px`,
     "--biny-sidebar-flow-width": `${sidebarLayout.flowWidth}px`,
     "--biny-sidebar-content-width": `${sidebarLayout.contentWidth}px`,
-    "--biny-sidebar-expanded-width": `${sidebarLayout.expandedWidth}px`,
     // 和左栏一样，右侧只改变目标流宽度；动画插值由外壳统一驱动，主区因此会被连续推向左侧。
     "--biny-inspector-flow-width": `${rightSidebar?.open ? rightSidebar.width : 0}px`
   } as React.CSSProperties;
@@ -54,7 +53,6 @@ export function DesktopShell({ children, overlays, rightPanel, rightSidebar, sid
         className="desktop-root biny-root"
         data-sidebar-mode={sidebarLayout.mode}
         data-inspector-resizing={rightSidebar?.resizing ? "true" : undefined}
-        data-sidebar-resizing={sidebarLayout.resizing ? "true" : undefined}
         data-sidebar-transition={sidebarLayout.transition === "idle" ? undefined : sidebarLayout.transition}
         style={rootStyle}
       >

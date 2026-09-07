@@ -32,8 +32,8 @@ import { DesktopStateStore } from "../src/desktop/electron/main/DesktopStateStor
 import { DesktopSettingsTransaction } from "../src/desktop/electron/main/DesktopSettingsTransaction.js";
 import { DesktopUserDataStore } from "../src/desktop/electron/main/DesktopUserDataStore.js";
 import { clampFilePanelWidth, DEFAULT_FILE_PANEL_WIDTH, MAX_FILE_PANEL_WIDTH, MIN_FILE_PANEL_WIDTH } from "../src/desktop/filePanelSizing.js";
-import { clampSidebarResizeWidth, clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH, isCompactSidebarWidth, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, normalizeSidebarWidth, SIDEBAR_RAIL_THRESHOLD, SIDEBAR_RAIL_WIDTH } from "../src/desktop/sidebarSizing.js";
-import { adjustSidebarWithKeyboard, commitSidebarResize, normalizeSidebarExpandedWidth, previewSidebarResize, resolveSidebarLayout, sidebarResizeStart } from "../src/desktop/sidebarLayout.js";
+import { DEFAULT_SIDEBAR_WIDTH, SIDEBAR_RAIL_WIDTH } from "../src/desktop/sidebarSizing.js";
+import { resolveSidebarLayout } from "../src/desktop/sidebarLayout.js";
 import type {
   DesktopAgentEventEnvelope,
   DesktopProject,
@@ -119,7 +119,6 @@ testWorkspaceFileMarkers();
 await testFilePanelSizing();
 testSidebarSizing();
 testSidebarLayoutState();
-await testSidebarStateNormalizesWidth();
 await testDesktopThemePreference();
 await testDesktopActiveViewPersistence();
 await testDesktopMemoryV3CasAndOriginFilters();
@@ -232,6 +231,7 @@ async function testInteractiveRuntimePublishesRunStartedBeforeSkillRefresh(): Pr
   });
 
   const submitted = runtime.submitPrompt("status-snapshot");
+  assert.deepEqual(events.map((event) => event.type), ["message.user", "run.started"]);
   await started;
   assert.equal(events.some((event) => event.type === "run.started"), true);
   releaseRefresh();
@@ -1319,207 +1319,51 @@ async function testFilePanelSizing(): Promise<void> {
 function testSidebarSizing(): void {
   assert.equal(DEFAULT_SIDEBAR_WIDTH, 260);
   assert.equal(SIDEBAR_RAIL_WIDTH, 78);
-  assert.equal(SIDEBAR_RAIL_THRESHOLD, 120);
-  for (const width of [78, 86, 87, 119, 120, 179, 180, 260, 480]) {
-    assert.equal(clampSidebarResizeWidth(width), width, `drag width ${width}`);
-  }
-  assert.equal(clampSidebarResizeWidth(0), SIDEBAR_RAIL_WIDTH);
-  assert.equal(clampSidebarResizeWidth(500), MAX_SIDEBAR_WIDTH);
-  assert.equal(clampSidebarWidth(MIN_SIDEBAR_WIDTH - 1), MIN_SIDEBAR_WIDTH);
-  assert.equal(clampSidebarWidth(MAX_SIDEBAR_WIDTH + 1), MAX_SIDEBAR_WIDTH);
-  assert.equal(clampSidebarWidth(287.6), 288);
-  assert.equal(clampSidebarWidth(120), MIN_SIDEBAR_WIDTH, "提交时才应用普通最小宽度");
-  assert.equal(clampSidebarWidth(179), MIN_SIDEBAR_WIDTH);
-  assert.equal(isCompactSidebarWidth(78), true);
-  assert.equal(isCompactSidebarWidth(86), true);
-  assert.equal(isCompactSidebarWidth(87), true);
-  assert.equal(isCompactSidebarWidth(119), true);
-  assert.equal(isCompactSidebarWidth(120), false);
-  assert.equal(isCompactSidebarWidth(MIN_SIDEBAR_WIDTH), false);
-  for (let width = 74; width <= 86; width += 1) assert.equal(normalizeSidebarWidth(width), DEFAULT_SIDEBAR_WIDTH, `legacy rail width ${width}`);
-  assert.equal(normalizeSidebarWidth(180), MIN_SIDEBAR_WIDTH);
 }
 
 function testSidebarLayoutState(): void {
-  assert.equal(normalizeSidebarExpandedWidth(74), DEFAULT_SIDEBAR_WIDTH, "legacy rail width keeps the default expanded width");
-  assert.equal(normalizeSidebarExpandedWidth(10_000), MAX_SIDEBAR_WIDTH);
-
-  const expandedStart = sidebarResizeStart({ baseMode: "expanded", expandedWidth: 260, startX: 100 });
-  assert.deepEqual(expandedStart, { startX: 100, startWidth: 260, expandedWidth: 260 });
-  assert.deepEqual(previewSidebarResize(expandedStart, 30), { mode: "expanded", width: 190 });
-  assert.deepEqual(previewSidebarResize(expandedStart, -40), { mode: "expanded", width: SIDEBAR_RAIL_THRESHOLD });
-  assert.deepEqual(previewSidebarResize(expandedStart, -41), { mode: "rail", width: SIDEBAR_RAIL_THRESHOLD - 1 });
-
-  const railStart = sidebarResizeStart({ baseMode: "rail", expandedWidth: 320, startX: 100 });
-  assert.equal(railStart.startWidth, SIDEBAR_RAIL_WIDTH);
-  assert.equal(railStart.expandedWidth, 320, "rail drag retains the last valid expanded width");
-  assert.deepEqual(commitSidebarResize({ mode: "rail", width: SIDEBAR_RAIL_WIDTH }, 320), {
-    mode: "rail",
-    expandedWidth: 320,
-    persistRail: true
-  });
-  assert.deepEqual(commitSidebarResize({ mode: "expanded", width: MAX_SIDEBAR_WIDTH + 20 }, 320), {
-    mode: "expanded",
-    expandedWidth: MAX_SIDEBAR_WIDTH,
-    persistRail: false,
-    persistWidth: MAX_SIDEBAR_WIDTH
-  });
-
-  assert.deepEqual(resolveSidebarLayout({
-    baseMode: "expanded",
-    expandedWidth: 260,
-    resizing: false,
-    peekPhase: "idle"
-  }), {
+  assert.deepEqual(resolveSidebarLayout({ baseMode: "expanded", peekPhase: "idle" }), {
     mode: "expanded",
     visualWidth: 260,
     flowWidth: 260,
     contentWidth: 260,
-    expandedWidth: 260,
-    resizing: false,
     transition: "idle"
   });
-  assert.deepEqual(resolveSidebarLayout({
-    baseMode: "rail",
-    expandedWidth: 320,
-    resizing: false,
-    peekPhase: "idle"
-  }), {
+  assert.deepEqual(resolveSidebarLayout({ baseMode: "rail", peekPhase: "idle" }), {
     mode: "rail",
     visualWidth: SIDEBAR_RAIL_WIDTH,
     flowWidth: SIDEBAR_RAIL_WIDTH,
     contentWidth: SIDEBAR_RAIL_WIDTH,
-    expandedWidth: 320,
-    resizing: false,
     transition: "idle"
   });
-  assert.deepEqual(resolveSidebarLayout({
-    baseMode: "collapsed",
-    expandedWidth: 320,
-    resizing: false,
-    peekPhase: "idle"
-  }), {
+  assert.deepEqual(resolveSidebarLayout({ baseMode: "collapsed", peekPhase: "idle" }), {
     mode: "collapsed",
     visualWidth: 0,
     flowWidth: 0,
-    contentWidth: 320,
-    expandedWidth: 320,
-    resizing: false,
+    contentWidth: 260,
     transition: "idle"
   });
-  assert.deepEqual(resolveSidebarLayout({
-    baseMode: "collapsed",
-    expandedWidth: 320,
-    resizing: false,
-    peekPhase: "peeking"
-  }), {
+  assert.deepEqual(resolveSidebarLayout({ baseMode: "collapsed", peekPhase: "peeking" }), {
     mode: "peek",
-    visualWidth: 320,
+    visualWidth: 260,
     flowWidth: 0,
-    contentWidth: 320,
-    expandedWidth: 320,
-    resizing: false,
+    contentWidth: 260,
     transition: "idle"
   });
-  assert.deepEqual(resolveSidebarLayout({
-    baseMode: "collapsed",
-    expandedWidth: 320,
-    resizing: false,
-    peekPhase: "peekExited"
-  }), {
+  assert.deepEqual(resolveSidebarLayout({ baseMode: "collapsed", peekPhase: "peekExited" }), {
     mode: "collapsed",
     visualWidth: 0,
     flowWidth: 0,
-    contentWidth: 320,
-    expandedWidth: 320,
-    resizing: false,
+    contentWidth: 260,
     transition: "peek-exited"
   });
-  assert.deepEqual(resolveSidebarLayout({
-    baseMode: "collapsed",
-    expandedWidth: 320,
-    resizing: false,
-    peekPhase: "pinning"
-  }), {
+  assert.deepEqual(resolveSidebarLayout({ baseMode: "collapsed", peekPhase: "pinning" }), {
     mode: "peek",
-    visualWidth: 320,
-    flowWidth: 320,
-    contentWidth: 320,
-    expandedWidth: 320,
-    resizing: false,
+    visualWidth: 260,
+    flowWidth: 260,
+    contentWidth: 260,
     transition: "pinning"
   });
-  assert.deepEqual(resolveSidebarLayout({
-    baseMode: "expanded",
-    expandedWidth: 260,
-    previewWidth: SIDEBAR_RAIL_THRESHOLD - 1,
-    resizing: true,
-    peekPhase: "idle"
-  }), {
-    mode: "rail",
-    visualWidth: SIDEBAR_RAIL_THRESHOLD - 1,
-    flowWidth: SIDEBAR_RAIL_THRESHOLD - 1,
-    contentWidth: SIDEBAR_RAIL_THRESHOLD - 1,
-    expandedWidth: 260,
-    resizing: true,
-    transition: "idle"
-  });
-  assert.deepEqual(resolveSidebarLayout({
-    baseMode: "expanded",
-    expandedWidth: 260,
-    previewWidth: 148,
-    resizing: true,
-    peekPhase: "idle"
-  }), {
-    mode: "expanded",
-    visualWidth: 148,
-    flowWidth: 148,
-    contentWidth: 148,
-    expandedWidth: 260,
-    resizing: true,
-    transition: "idle"
-  });
-
-  assert.deepEqual(adjustSidebarWithKeyboard({ mode: "expanded", expandedWidth: 260, direction: "left" }), {
-    mode: "expanded",
-    expandedWidth: 244,
-    persistRail: false,
-    persistWidth: 244
-  });
-  assert.deepEqual(adjustSidebarWithKeyboard({ mode: "expanded", expandedWidth: MIN_SIDEBAR_WIDTH, direction: "left" }), {
-    mode: "rail",
-    expandedWidth: MIN_SIDEBAR_WIDTH,
-    persistRail: true
-  });
-  assert.deepEqual(adjustSidebarWithKeyboard({ mode: "rail", expandedWidth: 320, direction: "right" }), {
-    mode: "expanded",
-    expandedWidth: 320,
-    persistRail: false
-  });
-  assert.deepEqual(adjustSidebarWithKeyboard({ mode: "collapsed", expandedWidth: 320, direction: "right" }), {
-    mode: "collapsed",
-    expandedWidth: 320,
-    persistRail: false
-  });
-}
-
-async function testSidebarStateNormalizesWidth(): Promise<void> {
-  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "biny-sidebar-width-"));
-  try {
-    const statePath = path.join(workspaceRoot, "desktop-state.json");
-    await writeFile(statePath, JSON.stringify({ sidebarWidth: 74 }));
-    const state = new DesktopStateStore(statePath);
-    await state.load();
-    assert.equal(state.sidebarWidth(), DEFAULT_SIDEBAR_WIDTH);
-    await state.setSidebarWidth(179);
-    assert.equal(JSON.parse(await readFile(statePath, "utf8")).sidebarWidth, MIN_SIDEBAR_WIDTH);
-    await state.setSidebarWidth(260);
-    assert.equal(state.sidebarWidth(), 260);
-    await state.setSidebarWidth(480);
-    assert.equal(state.sidebarWidth(), MAX_SIDEBAR_WIDTH);
-  } finally {
-    await rm(workspaceRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
-  }
 }
 
 async function testDesktopThemePreference(): Promise<void> {
@@ -2418,7 +2262,7 @@ async function testDesktopPermissionModePersistsThroughExistingHost(): Promise<v
       configStore,
       attachmentRoot: projects.attachmentsRoot(project)
     });
-    host = await startRuntimeHost(dataRoot, localHost.runtime, localHost.commands, { configDir: desktopRoot });
+    host = await startRuntimeHost(dataRoot, async () => ({ runtime: localHost.runtime, commands: localHost.commands }), { configDir: desktopRoot });
 
     agents = new DesktopAgentManager(state, projects, configStore, () => undefined);
     await agents.setPermissionMode(project.id, "full-access");
@@ -2463,7 +2307,7 @@ async function testDesktopReconcilesPersistedPermissionWithExistingHost(): Promi
       hostPermissionMode = mode;
     };
     const runtime = new InteractiveAgentRuntime(commands);
-    host = await startRuntimeHost(dataRoot, runtime, commands, { configDir: desktopRoot });
+    host = await startRuntimeHost(dataRoot, async () => ({ runtime: runtime, commands: commands }), { configDir: desktopRoot });
 
     const persisted = await configStore.load(project.path);
     persisted.permission.mode = "full-access";
@@ -2519,7 +2363,7 @@ async function testDesktopMemoryChangesKeepPermissionMode(): Promise<void> {
       }
     };
     localHost = await createRuntime();
-    host = await startRuntimeHost(dataRoot, localHost.runtime, localHost.commands, {
+    host = await startRuntimeHost(dataRoot, async () => ({ runtime: localHost.runtime, commands: localHost.commands }), {
       configDir: desktopRoot,
       createRuntime
     });
@@ -4247,17 +4091,13 @@ function testDesktopComposerSlashItems(): void {
   const skillItems = items.filter((item) => item.auxiliaryData?.kind === "skill");
 
   assert.deepEqual(commandItems.map((item) => item.label), [
-    "/usage",
     "/compact",
-    "/status",
-    "/mcp",
-    "/skills",
-    "/plugins",
     "/subagent",
     "/review",
     "/undo"
   ]);
   assert.equal(commandItems.some((item) => item.label === "/tasks"), false);
+  assert.equal(commandItems.some((item) => item.label === "/status"), false);
   assert.equal(commandItems.every((item) => DESKTOP_COMPOSER_COMMAND_NAMES.includes(item.label as typeof DESKTOP_COMPOSER_COMMAND_NAMES[number])), true);
   assert.deepEqual(skillItems.map((item) => item.label), ["/skills:AI-slop", "/skills:zeta"]);
   assert.equal(isSkillSlashCommand("/skills:AI-slop"), true);

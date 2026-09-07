@@ -1,29 +1,127 @@
-/** 本条消息的工具与 Skill 选择器：默认值来自设置，数组只随当前回合传给 Runtime。 */
-import { useEffect, useMemo, useState } from "react";
+/**
+ * 本条消息的工具与技能选择器（能力菜单）。
+ *
+ * 布局分为顶部「自动 / 全选 / 全不选」模式区，中部按类别
+ * 分组的能力列表（列表 / 图标两种布局），可折叠的 MCP 服务器区，共享搜索框和底部
+ * 「工具 / 技能」页签。选择值沿用 AgentCapabilitySelection 协议：auto / all 之外是
+ * 工具名数组，只随当前这条消息传给 Runtime，不写入会话配置。
+ *
+ * 内置工具的中文展示信息在 TOOL_PRESENTATIONS 里静态维护；目录里没有映射的工具按
+ * source 落入兜底分组（插件 / 其他），MCP 工具按描述里的 `[MCP 服务器名]` 前缀再按
+ * 服务器分组。
+ */
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Tooltip } from "@astryxdesign/core/Tooltip";
 import type { AgentCapabilitySelection, CapabilitySelectionValue } from "../../../../../agent/capabilitySelection.js";
-import type { DesktopSkillCatalogEntry, DesktopToolCatalogEntry } from "../../../../protocol.js";
+import type { DesktopMcpServerSummary, DesktopSkillCatalogEntry, DesktopToolCatalogEntry } from "../../../../protocol.js";
 import { useClosingPresence } from "../../useClosingPresence.js";
-import { Icon } from "../Icon.js";
+import { Icon, type IconName } from "../Icon.js";
 import { ComposerPopover } from "./ComposerPopover.js";
 
 type CapabilityTab = "tools" | "skills";
+type ToolLayout = "list" | "grid";
 
-const sourceLabels: Record<DesktopToolCatalogEntry["source"], string> = {
-  builtin: "内置工具",
-  mcp: "MCP",
-  plugin: "插件",
-  skill: "Skill 工具",
-  subagent: "子 Agent"
+type ToolGroupId = "web" | "workspace" | "shell" | "planning" | "memory";
+
+/** 展示分组；与注册表 source 无关，仅决定菜单里的类别与顺序。 */
+const TOOL_GROUPS: Array<{ id: ToolGroupId; label: string; icon: IconName }> = [
+  { id: "web", label: "网络与搜索", icon: "site" },
+  { id: "workspace", label: "项目与文件", icon: "folder-open" },
+  { id: "shell", label: "Shell 与进程", icon: "terminal" },
+  { id: "planning", label: "规划与指令", icon: "list-tree" },
+  { id: "memory", label: "记忆与活动", icon: "brain" }
+];
+
+interface ToolPresentation {
+  group: ToolGroupId;
+  label: string;
+  /** 中文一句话描述；省略时回落到工具目录里的原始描述。 */
+  detail?: string;
+  icon: IconName;
+}
+
+/** 内置工具的展示映射；键为工具注册名。 */
+const TOOL_PRESENTATIONS: Record<string, ToolPresentation> = {
+  web_fetch: { group: "web", label: "网络获取", detail: "抓取 URL 的原始内容。", icon: "site" },
+  web_search: { group: "web", label: "网络搜索", detail: "在网上搜索最新信息。", icon: "search" },
+  read_file: { group: "workspace", label: "读取文件", detail: "读取文件内容以获取上下文。", icon: "file" },
+  list_files: { group: "workspace", label: "列出文件", detail: "按 glob 模式列出匹配的文件。", icon: "folder-open" },
+  search_files: { group: "workspace", label: "搜索文件", detail: "在工作区文件中搜索文本。", icon: "search" },
+  read_tool_result: { group: "workspace", label: "读取工具输出", detail: "分页读取归档的工具输出。", icon: "archive" },
+  write_file: { group: "workspace", label: "写入文件", detail: "用提供的内容覆盖文件。", icon: "edit" },
+  edit_file: { group: "workspace", label: "编辑文件", detail: "精确替换文件中的文本片段。", icon: "edit" },
+  multi_edit: { group: "workspace", label: "多处编辑", detail: "在一次修改里应用多个替换。", icon: "edit" },
+  apply_patch: { group: "workspace", label: "补丁编辑", detail: "应用结构化补丁修改文件。", icon: "diff" },
+  delete_file: { group: "workspace", label: "删除文件", detail: "删除工作区内的文件。", icon: "trash" },
+  move_file: { group: "workspace", label: "移动文件", detail: "移动或重命名文件。", icon: "arrow-right" },
+  git_status: { group: "workspace", label: "Git 状态", detail: "查看工作区变更状态。", icon: "branch" },
+  git_diff: { group: "workspace", label: "Git 差异", detail: "查看文件差异。", icon: "diff" },
+  git_commit: { group: "workspace", label: "Git 提交", detail: "提交暂存的变更。", icon: "check" },
+  run_command: { group: "shell", label: "执行命令", detail: "在工作区执行 Shell 命令。", icon: "terminal" },
+  start_process: { group: "shell", label: "启动进程", detail: "启动由 Biny 托管的长驻进程。", icon: "terminal" },
+  read_process_output: { group: "shell", label: "读取进程输出", detail: "读取托管进程的日志输出。", icon: "archive" },
+  process_status: { group: "shell", label: "进程状态", detail: "查看托管进程的运行状态。", icon: "activity" },
+  stop_process: { group: "shell", label: "停止进程", detail: "停止托管进程组。", icon: "close" },
+  update_todos: { group: "planning", label: "待办同步", detail: "执行计划时更新共享待办列表。", icon: "list-tree" },
+  delegate_task: { group: "planning", label: "任务委派", detail: "启动子代理处理多步骤任务。", icon: "person" },
+  invoke_skill: { group: "planning", label: "技能调用", detail: "调用已启用的技能或工作流。", icon: "wand" },
+  read_skill_resource: { group: "planning", label: "读取技能资源", detail: "读取技能附带的资源文件。", icon: "file" },
+  save_memory: { group: "memory", label: "保存记忆", detail: "把值得记住的信息写入记忆。", icon: "brain" },
+  recall_memory: { group: "memory", label: "召回记忆", detail: "按语义检索历史记忆。", icon: "brain" },
+  update_emotion: { group: "memory", label: "情绪状态", detail: "更新当前对话的情绪上下文。", icon: "spark" },
+  activity_report: { group: "memory", label: "活动报告", detail: "汇总活动记录生成报告。", icon: "activity" },
+  activity_digest: { group: "memory", label: "活动摘要", detail: "生成活动记录的每日摘要。", icon: "activity" },
+  activity_search: { group: "memory", label: "活动检索", detail: "语义搜索历史活动记录。", icon: "search" },
+  activity_sessions: { group: "memory", label: "活动会话", detail: "查看活动会话聚合。", icon: "calendar" }
+};
+
+/** 没有静态映射的工具按来源落入兜底分组。 */
+const SOURCE_GROUPS: Record<Exclude<DesktopToolCatalogEntry["source"], "mcp">, { label: string; icon: IconName }> = {
+  builtin: { label: "其他工具", icon: "wrench" },
+  plugin: { label: "插件工具", icon: "puzzle" },
+  skill: { label: "技能工具", icon: "wand" },
+  subagent: { label: "子 Agent", icon: "person" }
 };
 
 const skillSourceLabels: Record<DesktopSkillCatalogEntry["source"], string> = {
-  agents: "外部 Agent Skill",
-  biny: "Biny Skill"
+  agents: "外部 Agent 技能",
+  biny: "Biny 技能"
 };
 
-export function CapabilitiesMenu({ anchorRef, open, onChange, selection, skills, tools, toolsSupported }: {
+const AUTO_DESCRIPTIONS: Record<CapabilityTab, string> = {
+  tools: "让 Biny 根据你的消息自动选择最相关的工具。",
+  skills: "Biny 会根据消息自动挑选相关技能。"
+};
+
+/** MCP 工具描述以 `[MCP 服务器名]` 开头；用它把工具归回所属服务器。 */
+const MCP_DESCRIPTION_PREFIX = /^\[MCP ([^\]]+)\]\s*/;
+
+interface ToolGroup {
+  key: string;
+  label: string;
+  icon: IconName;
+  /** 分组标签右侧的小徽标文字（如 MCP 服务器名旁的 “MCP”）。 */
+  badge?: string;
+  entries: Array<{
+    name: string;
+    label: string;
+    detail: string;
+    icon: IconName;
+  }>;
+}
+
+export function CapabilitiesMenu({ anchorRef, onOpenMcpSettings, onRefreshCatalog, onWarning, onPlanModeChange, open, planActive, projectId, onChange, selection, skills, toolsSupported, tools }: {
   anchorRef: React.RefObject<HTMLElement | null>;
+  /** 打开 MCP 设置页；未提供时隐藏设置入口。 */
+  onOpenMcpSettings?(): void;
+  /** 让上层重新拉取工具目录（MCP 刷新按钮用到）。 */
+  onRefreshCatalog?(): void;
+  onWarning?(message: string): void;
+  /** 规划模式开关（原加号菜单项迁入）：开启后先产出计划再执行。 */
+  onPlanModeChange(active: boolean): void;
   open: boolean;
+  planActive: boolean;
+  projectId?: string;
   onChange(selection: AgentCapabilitySelection): void;
   selection: AgentCapabilitySelection;
   skills: DesktopSkillCatalogEntry[];
@@ -32,120 +130,399 @@ export function CapabilitiesMenu({ anchorRef, open, onChange, selection, skills,
 }): React.JSX.Element | null {
   const presence = useClosingPresence(open);
   const [tab, setTab] = useState<CapabilityTab>("tools");
+  const [layout, setLayout] = useState<ToolLayout>("list");
   const [query, setQuery] = useState("");
+  const [mcpOpen, setMcpOpen] = useState(false);
+  const [mcpServers, setMcpServers] = useState<DesktopMcpServerSummary[]>();
+  const [mcpBusy, setMcpBusy] = useState(false);
 
   useEffect(() => {
     if (open) return;
     setQuery("");
+    setMcpOpen(false);
   }, [open]);
 
-  const filteredTools = useMemo(() => filterTools(tools, query), [query, tools]);
-  const filteredSkills = useMemo(() => filterSkills(skills, query), [query, skills]);
+  const loadMcpServers = useCallback(async (): Promise<void> => {
+    if (!projectId) return;
+    setMcpBusy(true);
+    try {
+      const snapshot = await window.biny.mcpSnapshot(projectId);
+      setMcpServers(snapshot.servers.filter((server) => server.enabled));
+    } catch (error) {
+      onWarning?.(`无法读取 MCP 服务器状态：${errorMessage(error)}`);
+    } finally {
+      setMcpBusy(false);
+    }
+  }, [onWarning, projectId]);
+
+  // MCP 区按需加载：第一次展开时再读服务器快照，避免每次打开菜单都建立连接查询。
+  useEffect(() => {
+    if (!mcpOpen || mcpServers !== undefined) return;
+    void loadMcpServers();
+  }, [loadMcpServers, mcpOpen, mcpServers]);
+
+  const refreshMcp = useCallback(async (): Promise<void> => {
+    await loadMcpServers();
+    onRefreshCatalog?.();
+  }, [loadMcpServers, onRefreshCatalog]);
+
+  const toolGroups = useMemo(() => buildToolGroups(tools, normalizedQuery(query)), [query, tools]);
+  const skillGroups = useMemo(() => buildSkillGroups(skills, normalizedQuery(query)), [query, skills]);
+
   if (!presence.present) return null;
 
-  const activeCount = tab === "tools"
-    ? toolsSupported ? selectionCount(selection.tools, tools.map((tool) => tool.name)) : 0
-    : selectionCount(selection.skills, skills.map((skill) => skill.ref));
-  const activeItems = tab === "tools" ? filteredTools : filteredSkills;
-  const hasItems = activeItems.length > 0;
+  const value = selection[tab];
+  const isAuto = value === "auto";
+  const explicit = explicitNames(value);
+  const allToolNames = tools.map((tool) => tool.name);
+  const activeGroups = tab === "tools" ? toolGroups : skillGroups;
+  const hasItems = activeGroups.length > 0;
+  const mcpServerSelection = mcpServerSelectionState(value, tools, mcpServers);
+  const allMcpToolNames = tools.filter((tool) => tool.source === "mcp").map((tool) => tool.name);
+
+  const setMode = (next: CapabilitySelectionValue): void => {
+    onChange({ ...selection, [tab]: next });
+  };
+  const toggleEntry = (name: string): void => {
+    onChange({ ...selection, [tab]: toggleName(value, name, allToolNames) });
+  };
+  const toggleGroupEntries = (group: ToolGroup): void => {
+    const keys = group.entries.map((entry) => entry.name);
+    const allSelected = groupSelectionState(value, keys) === "all";
+    onChange({ ...selection, [tab]: applyNames(value, keys, allToolNames, !allSelected) });
+  };
 
   return (
     <ComposerPopover anchorRef={anchorRef} className={`t-dropdown composer-popover biny-composer-popover capabilities-menu ${presenceClass(presence.phase)}`} phase={presence.phase}>
       <div className="capabilities-panel">
-        <div className="capabilities-toolbar">
-          <div aria-label="能力类型" className="capabilities-tabs" role="tablist">
-            <button aria-selected={tab === "tools"} className={tab === "tools" ? "is-selected" : ""} onClick={() => setTab("tools")} role="tab" type="button">工具 <span>{String(tools.length)}</span></button>
-            <button aria-selected={tab === "skills"} className={tab === "skills" ? "is-selected" : ""} onClick={() => setTab("skills")} role="tab" type="button">Skill <span>{String(skills.length)}</span></button>
+        <div className="capabilities-modes">
+          <div aria-label="能力选择模式" className="capabilities-mode-row" role="radiogroup">
+            <button aria-checked={isAuto} className="capability-mode-button is-outline" onClick={() => setMode("auto")} role="radio" type="button">自动</button>
+            <button aria-checked={value === "all"} className="capability-mode-button is-secondary" onClick={() => setMode("all")} role="radio" type="button">全选</button>
+            <button aria-checked={explicit !== undefined && explicit.length === 0} className="capability-mode-button" onClick={() => setMode([])} role="radio" type="button">全不选</button>
           </div>
-          <div aria-label="能力选择模式" className="capability-mode-row" role="radiogroup">
-            <ModeButton label="自动" selected={selection[tab] === "auto"} onClick={() => onChange({ ...selection, [tab]: "auto" })} />
-            <ModeButton label="全部" selected={selection[tab] === "all"} onClick={() => onChange({ ...selection, [tab]: "all" })} />
-            <ModeButton label="清空" selected={Array.isArray(selection[tab]) && selection[tab].length === 0} onClick={() => onChange({ ...selection, [tab]: [] })} />
-          </div>
+          {tab === "tools" && !toolsSupported ? (
+            <p className="capabilities-mode-desc is-warning">当前模型的能力声明不支持工具调用，切换支持工具的模型后生效。</p>
+          ) : isAuto ? (
+            <p className="capabilities-mode-desc">{AUTO_DESCRIPTIONS[tab]}</p>
+          ) : null}
+          <button aria-checked={planActive} className="capabilities-plan-toggle" onClick={() => onPlanModeChange(!planActive)} role="menuitemcheckbox" type="button">
+            <span className="menu-check">{planActive ? <Icon name="check" size={14} /> : null}</span>
+            <span className="menu-option-copy"><strong>规划模式</strong><small>先分析任务并制定计划，确认后再执行修改</small></span>
+          </button>
         </div>
+        {/* 滚动区常驻底部渐隐：内容超过可视高度时提示下方还有更多分组。 */}
+        <div aria-label={tab === "tools" ? "工具列表" : "技能列表"} aria-multiselectable="true" className="capabilities-scroll is-faded" role="listbox">
+          {tab === "tools" ? (
+            <ToolGroups groups={toolGroups} layout={layout} value={value} onToggle={toggleEntry} onToggleGroup={toggleGroupEntries} />
+          ) : (
+            <SkillGroups groups={skillGroups} explicit={explicit ?? []} onToggle={(ref) => onChange({ ...selection, skills: toggleName(selection.skills, ref, skills.map((skill) => skill.ref)) })} />
+          )}
+          {!hasItems ? <p className="capabilities-empty">{query.trim() ? "没有匹配的能力" : tab === "tools" ? "当前项目没有可用工具" : "当前项目没有启用的技能"}</p> : null}
+        </div>
+        {tab === "tools" ? (
+          <div className="capabilities-mcp">
+            <div className="capabilities-mcp-head">
+              <button aria-expanded={mcpOpen} className="capabilities-mcp-toggle" onClick={() => setMcpOpen((current) => !current)} type="button">
+                <Icon className="is-chevron" name="chevron" size={12} />
+                <Icon name="plug" size={13} />
+                <span>MCP 服务器</span>
+                {mcpServerSelection.selected > 0 ? <span className="capabilities-mcp-count">{mcpServerSelection.selected}</span> : null}
+              </button>
+              <div className="capabilities-mcp-actions">
+                <button aria-label="刷新 MCP 服务器" className="capabilities-mcp-action" disabled={mcpBusy} onClick={() => void refreshMcp()} type="button"><Icon name="refresh" size={13} /></button>
+                {onOpenMcpSettings ? (
+                  <button aria-label="打开 MCP 设置" className="capabilities-mcp-action" onClick={onOpenMcpSettings} type="button"><Icon name="settings" size={13} /></button>
+                ) : null}
+              </div>
+            </div>
+            {mcpOpen ? (
+              <div className="capabilities-mcp-body">
+                <p className="capabilities-mcp-desc">选择这条消息可以使用的 MCP 服务器。</p>
+                {mcpServers === undefined ? (
+                  <p className="capabilities-mcp-desc">正在读取 MCP 服务器…</p>
+                ) : mcpServers.length === 0 ? (
+                  <div className="capabilities-mcp-empty">
+                    <Icon name="server" size={18} />
+                    <span>未安装 MCP 服务器</span>
+                    {onOpenMcpSettings ? <button onClick={onOpenMcpSettings} type="button">前往设置</button> : null}
+                  </div>
+                ) : (
+                  <>
+                    <div className="capabilities-mcp-quick">
+                      <button disabled={mcpServerSelection.selected === mcpServers.length} onClick={() => onChange({ ...selection, tools: applyNames(value, allMcpToolNames, allToolNames, true) })} type="button">全选</button>
+                      <button disabled={mcpServerSelection.selected === 0} onClick={() => onChange({ ...selection, tools: applyNames(value, allMcpToolNames, allToolNames, false) })} type="button">全不选</button>
+                    </div>
+                    <div className="capabilities-mcp-rows">
+                      {mcpServers.map((server) => {
+                        const checked = mcpServerSelection.checked.has(server.name);
+                        return (
+                          <div className="capabilities-mcp-row" data-state={server.state} key={server.name}>
+                            <button aria-checked={checked} aria-label={`${checked ? "停用" : "启用"} ${server.name}`} className="capability-check" onClick={() => {
+                              const serverTools = tools.filter((tool) => tool.source === "mcp" && mcpServerOf(tool) === server.name).map((tool) => tool.name);
+                              if (serverTools.length === 0) return;
+                              onChange({ ...selection, tools: applyNames(value, serverTools, allToolNames, !checked) });
+                            }} role="switch" type="button"><Icon name="check" size={10} /></button>
+                            <span className={`capabilities-mcp-state is-${server.state}`} />
+                            <span className="capabilities-mcp-name" title={server.description ?? server.name}>{server.name}</span>
+                            {server.state === "disconnected" ? <span className="capabilities-mcp-badge is-error">未连接</span> : null}
+                            {server.state === "disabled" ? <span className="capabilities-mcp-badge">已禁用</span> : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
         <label className="capabilities-search">
           <Icon name="search" size={13} />
-          <input aria-label={tab === "tools" ? "搜索工具" : "搜索 Skill"} onChange={(event) => setQuery(event.target.value)} placeholder={tab === "tools" ? "搜索工具" : "搜索 Skill"} type="search" value={query} />
+          <input aria-label="搜索工具与技能" onChange={(event) => setQuery(event.target.value)} placeholder="搜索工具与技能…" type="search" value={query} />
         </label>
-        <div className="capabilities-list" role="listbox" aria-label={tab === "tools" ? "工具列表" : "Skill 列表"} aria-multiselectable="true">
-          {tab === "tools" && !toolsSupported ? (
-            <p className="capabilities-empty">当前模型的能力声明不支持工具调用，切换支持工具的模型后生效。</p>
-          ) : tab === "tools" ? (
-            <ToolList items={filteredTools} selection={selection.tools} onToggle={(name) => onChange({ ...selection, tools: toggleSelection(selection.tools, name, tools.map((tool) => tool.name)) })} />
-          ) : (
-            <SkillList items={filteredSkills} selection={selection.skills} onToggle={(ref) => onChange({ ...selection, skills: toggleSelection(selection.skills, ref, skills.map((skill) => skill.ref)) })} />
-          )}
-          {!hasItems ? <p className="capabilities-empty">{query.trim() ? "没有匹配的能力" : tab === "tools" ? "当前项目没有可用工具" : "当前项目没有启用的 Skill"}</p> : null}
+        <div className="capabilities-foot">
+          <div aria-label="能力类型" className="capabilities-tabs" role="tablist">
+            <TabButton active={tab === "tools"} count={explicitNames(selection.tools)?.length} label="工具" onSelect={() => setTab("tools")} />
+            <TabButton active={tab === "skills"} count={explicitNames(selection.skills)?.length} label="技能" onSelect={() => setTab("skills")} />
+          </div>
+          {tab === "tools" ? (
+            <button aria-label="切换布局" className="capabilities-layout" onClick={() => setLayout(layout === "list" ? "grid" : "list")} title="切换布局" type="button">
+              <Icon name={layout === "list" ? "layout-grid" : "layout-list"} size={15} />
+            </button>
+          ) : null}
         </div>
-        <div className="capabilities-footer"><Icon name="wand" size={13} /><span>{activeCount ? `已选择 ${String(activeCount)} 项` : "未选择能力"} · 可在设置中修改默认值</span></div>
       </div>
     </ComposerPopover>
   );
 }
 
-function ModeButton({ label, onClick, selected }: { label: string; onClick(): void; selected: boolean }): React.JSX.Element {
-  return <button aria-checked={selected} className={`capability-mode-button${selected ? " is-selected" : ""}`} onClick={onClick} role="radio" type="button">{label}</button>;
+/** 工具/Skill 分组（列表与图标两种布局共用分组结构）。 */
+function ToolGroups({ groups, layout, value, onToggle, onToggleGroup }: {
+  groups: ToolGroup[];
+  layout: ToolLayout;
+  value: CapabilitySelectionValue;
+  onToggle(name: string): void;
+  onToggleGroup(group: ToolGroup): void;
+}): React.JSX.Element {
+  return <>{groups.map((group) => {
+    const state = groupSelectionState(value, group.entries.map((entry) => entry.name));
+    return (
+      <div className="capability-group" key={group.key}>
+        <div className="capability-group-head">
+          <span className="capability-group-title"><Icon name={group.icon} size={13} />{group.label}{group.badge ? <span className="capability-group-badge">{group.badge}</span> : null}</span>
+          <button aria-checked={state === "all" ? true : state === "some" ? "mixed" : false} aria-label={state === "all" ? "全不选该分类" : "全选该分类"} className="capability-group-check" onClick={() => onToggleGroup(group)} role="checkbox" type="button">
+            {state === "all" ? <Icon name="check" size={12} /> : state === "some" ? <Icon name="minus" size={12} /> : null}
+          </button>
+        </div>
+        {layout === "list" ? group.entries.map((entry) => (
+          <ListRow ariaChecked={isNameSelected(value, entry.name)} detail={entry.detail} key={entry.name} label={entry.label} onToggle={() => onToggle(entry.name)} />
+        )) : (
+          <div className="capability-grid">
+            {group.entries.map((entry) => (
+              <GridCell ariaChecked={isNameSelected(value, entry.name)} detail={entry.detail} icon={entry.icon} key={entry.name} label={entry.label} onToggle={() => onToggle(entry.name)} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  })}</>;
 }
 
-function ToolList({ items, onToggle, selection }: { items: DesktopToolCatalogEntry[]; onToggle(name: string): void; selection: CapabilitySelectionValue }): React.JSX.Element {
-  return <>{groupBy(items, (item) => sourceLabels[item.source]).map(([group, groupItems]) => <div className="capability-group" key={group}>
-    <div className="capability-group-heading">{group}</div>
-    {groupItems.map((tool) => <CapabilityItem checked={isSelected(selection, tool.name)} detail={tool.description} key={tool.name} label={tool.name} meta={tool.risk} onClick={() => onToggle(tool.name)} />)}
-  </div>)}</>;
+/** 技能列表：按来源分组，仅列表布局。 */
+function SkillGroups({ explicit, groups, onToggle }: {
+  explicit: string[];
+  groups: ToolGroup[];
+  onToggle(ref: string): void;
+}): React.JSX.Element {
+  return <>{groups.map((group) => (
+    <div className="capability-group" key={group.key}>
+      <div className="capability-group-head">
+        <span className="capability-group-title"><Icon name={group.icon} size={13} />{group.label}</span>
+      </div>
+      {group.entries.map((entry) => (
+        <ListRow ariaChecked={explicit.includes(entry.name)} detail={entry.detail} key={entry.name} label={entry.label} onToggle={() => onToggle(entry.name)} />
+      ))}
+    </div>
+  ))}</>;
 }
 
-function SkillList({ items, onToggle, selection }: { items: DesktopSkillCatalogEntry[]; onToggle(ref: string): void; selection: CapabilitySelectionValue }): React.JSX.Element {
-  return <>{groupBy(items, (item) => skillSourceLabels[item.source] ?? item.source).map(([group, groupItems]) => <div className="capability-group" key={group}>
-    <div className="capability-group-heading">{group}</div>
-    {groupItems.map((skill) => <CapabilityItem checked={isSelected(selection, skill.ref)} detail={skill.description} key={skill.ref} label={skill.name} meta={skill.scope} onClick={() => onToggle(skill.ref)} />)}
-  </div>)}</>;
+function ListRow({ ariaChecked, detail, label, onToggle }: { ariaChecked: boolean; detail: string; label: string; onToggle(): void }): React.JSX.Element {
+  return (
+    <button aria-checked={ariaChecked} className="capability-row" onClick={onToggle} role="option" type="button">
+      <span className="capability-check"><Icon name="check" size={10} /></span>
+      <span className="capability-row-copy"><strong>{label}</strong><small>{detail}</small></span>
+    </button>
+  );
 }
 
-function CapabilityItem({ checked, detail, label, meta, onClick }: { checked: boolean; detail: string; label: string; meta?: string; onClick(): void }): React.JSX.Element {
-  return <button aria-checked={checked} className={`capability-item${checked ? " is-selected" : ""}`} onClick={onClick} role="option" type="button">
-    <span className="capability-item-check">{checked ? <Icon name="check" size={12} /> : null}</span>
-    <span className="capability-item-copy"><strong>{label}</strong><small>{detail || "无描述"}</small></span>
-    {meta ? <span className="capability-item-meta">{meta}</span> : null}
-  </button>;
+/** 图标布局的单格：小尺寸下靠 tooltip 补充名称与描述。 */
+function GridCell({ ariaChecked, detail, icon, label, onToggle }: { ariaChecked: boolean; detail: string; icon: IconName; label: string; onToggle(): void }): React.JSX.Element {
+  return (
+    <Tooltip content={<span className="capability-cell-tip"><strong>{label}</strong><small>{detail}</small></span>} delay={250}>
+      <button aria-checked={ariaChecked} className="capability-cell" onClick={onToggle} role="option" type="button">
+        <Icon name={icon} size={15} />
+      </button>
+    </Tooltip>
+  );
 }
 
-function filterTools(tools: DesktopToolCatalogEntry[], query: string): DesktopToolCatalogEntry[] {
-  const normalized = query.trim().toLocaleLowerCase();
-  if (!normalized) return tools;
-  return tools.filter((tool) => `${tool.name} ${tool.description} ${tool.source}`.toLocaleLowerCase().includes(normalized));
+function TabButton({ active, count, label, onSelect }: { active: boolean; count: number | undefined; label: string; onSelect(): void }): React.JSX.Element {
+  return (
+    <button aria-selected={active} className={`capabilities-tab${active ? " is-selected" : ""}`} onClick={onSelect} role="tab" type="button">
+      {label}
+      {count !== undefined && count > 0 ? <small>{count}</small> : null}
+    </button>
+  );
 }
 
-function filterSkills(skills: DesktopSkillCatalogEntry[], query: string): DesktopSkillCatalogEntry[] {
-  const normalized = query.trim().toLocaleLowerCase();
-  if (!normalized) return skills;
-  return skills.filter((skill) => `${skill.name} ${skill.description} ${skill.ref}`.toLocaleLowerCase().includes(normalized));
-}
-
-function selectionCount(selection: CapabilitySelectionValue, allNames: string[]): number {
-  if (selection === "auto" || selection === "all") return allNames.length;
-  return selection.length;
-}
-
-function isSelected(selection: CapabilitySelectionValue, name: string): boolean {
-  return selection === "auto" || selection === "all" ? true : selection.includes(name);
-}
-
-function toggleSelection(selection: CapabilitySelectionValue, name: string, allNames: string[]): string[] {
-  const current = selection === "auto" || selection === "all" ? new Set(allNames) : new Set(selection);
-  if (current.has(name)) current.delete(name);
-  else current.add(name);
-  return allNames.filter((candidate) => current.has(candidate));
-}
-
-function groupBy<T>(items: T[], getKey: (item: T) => string): Array<[string, T[]]> {
-  const groups = new Map<string, T[]>();
-  for (const item of items) {
-    const key = getKey(item);
-    const group = groups.get(key);
-    if (group) group.push(item);
-    else groups.set(key, [item]);
+/** 工具目录 → 展示分组；顺序保持目录注册顺序，MCP 工具按服务器再分组。 */
+function buildToolGroups(tools: DesktopToolCatalogEntry[], query: string): ToolGroup[] {
+  const buckets = new Map<string, ToolGroup>();
+  const bucket = (key: string, label: string, icon: IconName, badge?: string): ToolGroup => {
+    const existing = buckets.get(key);
+    if (existing) return existing;
+    const created: ToolGroup = { key, label, icon, badge, entries: [] };
+    buckets.set(key, created);
+    return created;
+  };
+  for (const tool of tools) {
+    const presentation = TOOL_PRESENTATIONS[tool.name];
+    let group: ToolGroup;
+    let label: string;
+    let detail: string;
+    if (presentation) {
+      const declared = TOOL_GROUPS.find((entry) => entry.id === presentation.group);
+      group = bucket(presentation.group, declared?.label ?? "其他工具", declared?.icon ?? "wrench");
+      label = presentation.label;
+      detail = presentation.detail ?? tool.description;
+    } else if (tool.source === "mcp") {
+      const server = mcpServerOf(tool);
+      group = server
+        ? bucket(`mcp:${server}`, server, "plug", "MCP")
+        : bucket("mcp:generic", "MCP 工具", "plug");
+      ({ label, detail } = mcpDisplay(tool, server));
+    } else {
+      const source = SOURCE_GROUPS[tool.source];
+      group = bucket(`source:${tool.source}`, source.label, source.icon);
+      label = tool.name;
+      detail = tool.description;
+    }
+    if (query && !`${label} ${detail} ${tool.name}`.toLocaleLowerCase().includes(query)) continue;
+    group.entries.push({ name: tool.name, label, detail, icon: presentation?.icon ?? group.icon });
   }
-  return [...groups.entries()];
+  // 分组按 TOOL_GROUPS 声明顺序输出；来源与 MCP 分组按首次出现顺序跟在后面。
+  const ordered: ToolGroup[] = [];
+  for (const declared of TOOL_GROUPS) {
+    const found = buckets.get(declared.id);
+    if (found && found.entries.length > 0) ordered.push(found);
+    buckets.delete(declared.id);
+  }
+  for (const remaining of buckets.values()) {
+    if (remaining.entries.length > 0) ordered.push(remaining);
+  }
+  return ordered;
+}
+
+function buildSkillGroups(skills: DesktopSkillCatalogEntry[], query: string): ToolGroup[] {
+  const buckets = new Map<DesktopSkillCatalogEntry["source"], ToolGroup>();
+  for (const skill of skills) {
+    const label = skill.name;
+    const detail = skill.description || "暂无描述";
+    if (query && !`${label} ${detail} ${skill.ref}`.toLocaleLowerCase().includes(query)) continue;
+    const bucket = buckets.get(skill.source) ?? {
+      key: `skill:${skill.source}`,
+      label: skillSourceLabels[skill.source] ?? skill.source,
+      icon: "wand" as const,
+      entries: []
+    };
+    bucket.entries.push({ name: skill.ref, label, detail, icon: "wand" });
+    buckets.set(skill.source, bucket);
+  }
+  return [...buckets.values()];
+}
+
+/** 展示用服务器勾选状态：auto / all 视为全选；显式数组按「该服务器工具全部勾选」判定。 */
+function mcpServerSelectionState(value: CapabilitySelectionValue, tools: DesktopToolCatalogEntry[], servers: DesktopMcpServerSummary[] | undefined): { checked: Set<string>; selected: number } {
+  const checked = new Set<string>();
+  if (!servers) return { checked, selected: 0 };
+  for (const server of servers) {
+    const serverTools = tools.filter((tool) => tool.source === "mcp" && mcpServerOf(tool) === server.name).map((tool) => tool.name);
+    if (serverTools.length === 0) continue;
+    if (groupSelectionState(value, serverTools) === "all") checked.add(server.name);
+  }
+  return { checked, selected: checked.size };
+}
+
+/** 单个能力是否勾选：all 视为全选；auto 不展示勾选（首次点击即从 auto 进入逐项选择）。 */
+function isNameSelected(value: CapabilitySelectionValue, name: string): boolean {
+  if (value === "auto") return false;
+  if (value === "all") return true;
+  return value !== "none" && value.includes(name);
+}
+
+/** 分组勾选状态：all=全选 some=部分 none=未选；auto 与「未逐项选择」同义。 */
+function groupSelectionState(value: CapabilitySelectionValue, names: string[]): "all" | "some" | "none" {
+  if (value === "auto") return "none";
+  if (value === "all") return "all";
+  const current = value === "none" ? [] : value;
+  const selected = names.filter((name) => current.includes(name)).length;
+  if (selected === 0) return "none";
+  return selected === names.length ? "all" : "some";
+}
+
+/** 显式数组；auto / all 返回 undefined 表示未进入逐项选择。 */
+function explicitNames(value: CapabilitySelectionValue): string[] | undefined {
+  if (value === "auto" || value === "all") return undefined;
+  return value === "none" ? [] : value;
+}
+
+/**
+ * 以 allNames 的目录顺序返回应用了 add / remove 之后的数组。
+ * auto 模式从空数组起步（勾选一项即进入「只选这项」）；all 模式从全集中摘除。
+ */
+function applyNames(value: CapabilitySelectionValue, names: string[], allNames: string[], add: boolean): string[] {
+  const base = value === "all" ? allNames : value === "auto" ? [] : value === "none" ? [] : value;
+  const next = new Set(base);
+  for (const name of names) {
+    if (add) next.add(name);
+    else next.delete(name);
+  }
+  return allNames.filter((candidate) => next.has(candidate));
+}
+
+function toggleName(value: CapabilitySelectionValue, name: string, allNames: string[]): string[] {
+  return applyNames(value, [name], allNames, !isNameSelected(value, name));
+}
+
+function mcpServerOf(tool: DesktopToolCatalogEntry): string | undefined {
+  if (tool.source !== "mcp") return undefined;
+  return MCP_DESCRIPTION_PREFIX.exec(tool.description)?.[1];
+}
+
+/** MCP 工具的展示信息：描述剥掉 `[MCP 服务器]` 前缀，工具名剥掉注册时的服务器段。 */
+function mcpDisplay(tool: DesktopToolCatalogEntry, server: string | undefined): { label: string; detail: string } {
+  const match = MCP_DESCRIPTION_PREFIX.exec(tool.description);
+  const detail = match ? tool.description.slice(match[0].length) : tool.description;
+  if (!server) return { label: tool.name, detail };
+  const registeredPrefix = `mcp_${normalizeMcpSegment(server)}_`;
+  const label = tool.name.startsWith(registeredPrefix) ? tool.name.slice(registeredPrefix.length) : tool.name;
+  return { label, detail };
+}
+
+/** 与 runtime 侧 MCP 工具注册使用同一段名规整规则，用于还原展示用工具名。 */
+function normalizeMcpSegment(value: string): string {
+  const normalized = value.replace(/[^A-Za-z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+  return normalized.slice(0, 42) || "tool";
+}
+
+/** 当前显式选择的总项数；auto / all 不计入（触发 pill 与页签计数只反映逐项选择）。 */
+function normalizedQuery(query: string): string {
+  return query.trim().toLocaleLowerCase();
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function presenceClass(phase: "closed" | "opening" | "open" | "closing"): string {

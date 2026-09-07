@@ -131,8 +131,8 @@ export function SettingsMemory({
         lineage: match.lineage,
         durability: match.durability,
         expiresAt: match.expiresAt,
-        recallCount: match.recallCount,
-        lastRecalledAt: match.lastRecalledAt,
+        accessCount: match.accessCount,
+        lastAccessedAt: match.lastAccessedAt,
         archivedAt: match.archivedAt,
         archivedReason: match.archivedReason,
         mergedInto: match.mergedInto,
@@ -388,7 +388,7 @@ export function SettingsMemory({
                   {entry.archivedAt ? <span>已归档</span> : null}
                 </div>
                 <p>{entry.summary}</p>
-                <small>{entry.recallCount} 次访问 · {formatDate(entry.updatedAt)}</small>
+                <small>{entry.accessCount} 次访问 · {formatDate(entry.updatedAt)}</small>
               </div>
               <div className="activity-memory-entry-actions">
                 <button aria-label="编辑记忆" className="icon-button" disabled={saving || entry.archivedAt !== undefined} onClick={() => setEditor({ id: entry.id, value: entry.summary })} type="button"><Icon name="edit" size={13} /></button>

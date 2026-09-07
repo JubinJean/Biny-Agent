@@ -7,6 +7,21 @@
     <meta http-equiv="Content-Security-Policy" content="img-src 'self' data: https:" />
     <meta name="color-scheme" content="light dark" />
     <title>Biny</title>
+    <script>
+      // 首帧防闪白：样式表的深色 token 挂在 data-theme 属性上，而属性原本要等 React
+      // 首个 effect 才写入，之前那一帧会先刷浅色 fallback。这里在 CSS 加载前就把主题
+      // 写到 <html>；精确值由主进程经启动参数注入，拿不到时按系统深浅色猜测，
+      // JS 启动后会以真实偏好覆盖。
+      (function () {
+        try {
+          var theme = new URLSearchParams(window.location.search).get("theme");
+          if (theme !== "dark" && theme !== "light" && theme !== "system") {
+            theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+          }
+          document.documentElement.dataset.theme = theme;
+        } catch (error) { /* 保底失败无妨：JS 启动后会重新同步。 */ }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

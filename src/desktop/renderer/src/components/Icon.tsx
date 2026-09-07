@@ -48,9 +48,12 @@ export type IconName =
   | "info"
   | "list-tree"
   | "lock"
+  | "layout-grid"
+  | "layout-list"
   | "menu"
   | "message"
   | "mic"
+  | "minus"
   | "moon"
   | "more"
   | "network"
@@ -79,6 +82,7 @@ export type IconName =
   | "volume"
   | "volume-off"
   | "warning"
+  | "sliders"
   | "wand"
   | "wrench";
 
@@ -156,7 +160,11 @@ function pathFor(name: IconName): React.JSX.Element {
     case "info": return <><circle {...common} cx="12" cy="12" r="9" /><path {...common} d="M12 11v5" /><path {...common} d="M12 8h.01" /></>;
     case "list-tree": return <><path {...common} d="M21 12h-8" /><path {...common} d="M21 6H8" /><path {...common} d="M21 18h-8" /><path {...common} d="M3 6v4c0 1.1.9 2 2 2h3" /><path {...common} d="M3 10v6c0 1.1.9 2 2 2h3" /></>;
     case "lock": return <><rect {...common} height="9" rx="1.5" width="14" x="5" y="10" /><path {...common} d="M8 10V7a4 4 0 0 1 8 0v3" /></>;
+    // 能力菜单布局切换：网格 = 四宫格；列表 = 两块 + 右侧行（对应 lucide LayoutGrid / LayoutList）。
+    case "layout-grid": return <><rect {...common} height="7" rx="1.5" width="7" x="3.5" y="3.5" /><rect {...common} height="7" rx="1.5" width="7" x="13.5" y="3.5" /><rect {...common} height="7" rx="1.5" width="7" x="3.5" y="13.5" /><rect {...common} height="7" rx="1.5" width="7" x="13.5" y="13.5" /></>;
+    case "layout-list": return <><rect {...common} height="7" rx="1.5" width="7" x="3.5" y="3.5" /><rect {...common} height="7" rx="1.5" width="7" x="3.5" y="13.5" /><path {...common} d="M14 5h6.5M14 10h6.5M14 16h6.5M14 21h6.5" /></>;
     case "menu": return <path {...common} d="M5 7h14M5 12h14M5 17h14" />;
+    case "minus": return <path {...common} d="M5 12h14" />;
     case "message": return <path {...common} d="M22 17a2 2 0 0 1-2 2H6.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 2 21.286V5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2z" />;
     case "mic": return <><rect {...common} height="11" rx="3.5" width="7" x="8.5" y="3" /><path {...common} d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M8.5 21h7" /></>;
     case "moon": return <path {...common} d="M20.5 13.2A8 8 0 1 1 10.8 3.5a6.8 6.8 0 0 0 9.7 9.7Z" />;
@@ -189,6 +197,7 @@ function pathFor(name: IconName): React.JSX.Element {
     case "volume": return <><path {...common} d="M11 5 6.5 9H3.5v6h3L11 19V5Z" /><path {...common} d="M14.5 9.5a3.5 3.5 0 0 1 0 5M17 7a7 7 0 0 1 0 10" /></>;
     case "volume-off": return <><path {...common} d="M11 5 6.5 9H3.5v6h3L11 19V5Z" /><path {...common} d="m15 10 5 4M20 10l-5 4" /></>;
     case "warning": return <><path {...common} d="M11 4.5 3.7 18a1 1 0 0 0 .9 1.5h14.8a1 1 0 0 0 .9-1.5L13 4.5a1.1 1.1 0 0 0-2 0Z" /><path {...common} d="M12 9v4M12 16.5h.01" /></>;
+    case "sliders": return <path {...common} d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4" />;
     case "wand": return <><path {...common} d="m5 19 10.5-10.5M7 5h.01M17 4h.01M19 9h.01M5 12h.01M17 16h.01" /><path {...common} d="m15.5 3.5.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3Z" /></>;
     case "wrench": return <path {...common} d="M14.5 6.2a4.5 4.5 0 0 0-5.8 5.7l-5.1 5.2a1.8 1.8 0 0 0 2.5 2.5l5.2-5.1a4.5 4.5 0 0 0 5.7-5.8l-3 3-2.5-.7-.7-2.5 3-3Z" />;
   }
