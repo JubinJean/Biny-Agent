@@ -35,6 +35,45 @@ async function testEmbeddingSchedulerRunsOnceAndStops(): Promise<void> {
   assert.equal(runs, 2);
 }
 
+async function testEmbeddingSchedulerDefersWhileActiveAndWaitsForCompletion(): Promise<void> {
+  const timers = new FakeTimers();
+  let active = true;
+  let resolveRun: (() => void) | undefined;
+  let runs = 0;
+  const scheduler = new ActivityEmbeddingScheduler({
+    run: () => {
+      runs += 1;
+      return new Promise<void>((resolve) => { resolveRun = resolve; });
+    },
+    isUserActive: () => active,
+    initialDelayMs: 10,
+    sweepIntervalMs: 20,
+    timers
+  });
+  scheduler.start();
+  timers.advance(10);
+  await flush();
+  assert.equal(runs, 0);
+  timers.advance(29_999);
+  assert.equal(runs, 0);
+  active = false;
+  timers.advance(1);
+  await flush();
+  assert.equal(runs, 1);
+  timers.advance(20);
+  assert.equal(runs, 1);
+  resolveRun?.();
+  await flush();
+  timers.advance(19);
+  assert.equal(runs, 1);
+  timers.advance(1);
+  await flush();
+  assert.equal(runs, 2);
+  scheduler.stop();
+  resolveRun?.();
+  await flush();
+}
+
 async function testBackgroundEmbeddingPrecomputesOcr(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-background-"));
   const store = new ActivityStore();
@@ -59,6 +98,61 @@ async function testBackgroundEmbeddingPrecomputesOcr(): Promise<void> {
     if (!result.ok) return;
     assert.equal(result.embedded, 1);
     assert.equal(store.listOcrEmbeddingRows(runtime.fingerprint).length, 1);
+    for (let index = 0; index < 33; index += 1) {
+      await store.recordFallbackCapture({
+        sessionId,
+        occurredAt: new Date(Date.UTC(2026, 7, 31, 9, 2, index)).toISOString(),
+        eventType: "fallback_capture",
+        application: "Editor",
+        rawOcrText: `待处理帧 ${index}`,
+        jpeg: Buffer.from(`jpeg-${index}`)
+      });
+    }
+    const originalEmbed = runtime.embed.bind(runtime);
+    const frameTimes: number[] = [];
+    runtime.embed = async (request) => {
+      frameTimes.push(performance.now());
+      assert.equal(request.texts.length, 1);
+      if (request.texts[0] === "待处理帧 0") throw new Error("frame embedding failed");
+      return originalEmbed(request);
+    };
+    const next = await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => runtime });
+    assert.equal(next.ok, true);
+    if (!next.ok) return;
+    assert.equal(next.embedded, 31);
+    assert.equal(frameTimes.length, 32);
+    for (let index = 4; index < frameTimes.length; index += 4) {
+      assert.ok(frameTimes[index]! - frameTimes[index - 1]! >= 240);
+    }
+    assert.ok(performance.now() - frameTimes.at(-1)! >= 240);
+    assert.equal(store.listOcrEmbeddingSources(runtime.fingerprint).length, 2);
+    runtime.embed = originalEmbed;
+    const last = await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => runtime });
+    assert.equal(last.ok, true);
+    if (!last.ok) return;
+    assert.equal(last.embedded, 2);
+    assert.deepEqual(store.listOcrEmbeddingSources(runtime.fingerprint), []);
+    const controller = new AbortController();
+    let calls = 0;
+    const cancelledRuntime = { ...runtime, fingerprint: "cancelled-generation", embed: async (request: Parameters<typeof runtime.embed>[0]) => {
+      calls += 1;
+      if (calls === 4) setImmediate(() => controller.abort());
+      return originalEmbed(request);
+    } };
+    await assert.rejects(precomputeActivityEmbeddings({
+      store,
+      getEmbeddingRuntime: async () => cancelledRuntime,
+      signal: controller.signal
+    }), { name: "AbortError" });
+    assert.equal(calls, 4);
+    assert.equal(store.listOcrEmbeddingRows("cancelled-generation").length, 4);
+    assert.equal(store.listOcrEmbeddingSources("cancelled-generation").length, 30);
+    cancelledRuntime.embed = originalEmbed;
+    const resumed = await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => cancelledRuntime });
+    assert.equal(resumed.ok, true);
+    if (!resumed.ok) return;
+    assert.equal(resumed.embedded, 30);
+    assert.deepEqual(store.listOcrEmbeddingSources("cancelled-generation"), []);
   } finally {
     await store.close();
     await rm(root, { recursive: true, force: true });
@@ -102,7 +196,6 @@ done
     sidecarPath,
     dailySummaryTimers: timers,
     dailySummaryInitialDelayMs: 10,
-    dailySummaryIntervalMs: 20,
     embeddingInitialDelayMs: 60_000,
     embeddingSweepIntervalMs: 0,
     writeDailyNote: async (_dateKey, content) => {
@@ -118,7 +211,7 @@ done
     await waitForSummary(root, yesterdayKey);
     assert.equal(notes, 1);
     assert.match(lastNote ?? "", new RegExp(`^# ${yesterdayKey} 每日摘要`, "u"));
-    timers.advance(20);
+    timers.advance(15 * 60 * 1_000);
     await waitFor(() => notes === 2);
   } finally {
     await service.stop();
@@ -203,5 +296,6 @@ async function flush(): Promise<void> {
 }
 
 await testEmbeddingSchedulerRunsOnceAndStops();
+await testEmbeddingSchedulerDefersWhileActiveAndWaitsForCompletion();
 await testBackgroundEmbeddingPrecomputesOcr();
 await testDailySummaryTimerPersistsSummary();

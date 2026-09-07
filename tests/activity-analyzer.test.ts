@@ -14,6 +14,7 @@ import {
   type ActivityReportResult
 } from "../src/activity/analyzer.js";
 import { ActivityPrivacyPolicy } from "../src/activity/privacyPolicy.js";
+import { activityMemoryInput } from "../src/activity/memoryInput.js";
 import { ActivityStore, type ActivitySessionAnalysis } from "../src/activity/store.js";
 import type { ActivityDataResidency } from "../src/activity/settings.js";
 import type { ActivityModelRuntime } from "../src/activity/types.js";
@@ -21,7 +22,23 @@ import type { AgentModel, ModelStreamEvent } from "../src/agent/core/types.js";
 
 const NOW = new Date(2026, 7, 26, 15, 30, 0); // 本地 2026-08-26 15:30
 
+for (const type of ["feedback", "user", "project", "reference"] as const) {
+  const context = { sessionId: "activity-source", analyzedAt: NOW.toISOString(), project: "  Project A  ", model: {} as AgentModel };
+  const candidate = { type, content: "A stable activity fact that should be retained.", why: "  repeated observation  " };
+  const input = activityMemoryInput(candidate, context);
+  assert.equal(input.importance, type === "feedback" || type === "user" ? 0.8 : 0.7);
+  assert.deepEqual(input.tags, [type, "project:Project A"]);
+  assert.equal(input.rationale, "repeated observation");
+  assert.equal(input.source, "auto");
+  assert.equal(input.activitySource, "activity_session");
+  assert.equal(input.activitySessionId, "activity-source");
+  assert.equal(input.audience, type === "user" ? "universal" : "workspace");
+  assert.deepEqual(activityMemoryInput(candidate, { ...context, project: undefined }).tags, [type]);
+  assert.equal(activityMemoryInput({ ...candidate, why: " " }, context).rationale, undefined);
+}
+
 const ANALYSIS_JSON = JSON.stringify({
+  worth: true,
   project: "biny",
   summary: "在 biny 仓库实现活动分析层",
   topics: ["实现 analyzer", "接入 activity_report 工具"],
@@ -34,13 +51,17 @@ const ANALYSIS_JSON = JSON.stringify({
 });
 
 await testTrivialSessionSkipsModel();
+await testMergesPendingAdjacentSessions();
 await testUnendedSessionSkipped();
 await testAnalyzeThenCacheIsIdempotent();
+await testLateOcrRequeuesAnalyzedSession();
+await testAnalysisFeedsMemoryAndCrystalCallbacks();
+await testWorthGateSkipsLongTermProjections();
 await testPolicyBlocksExternalModel();
 await testSweepRespectsAnalysisPolicyGate();
 await testSweepRetriesAfterModelError();
-await testAnalysisModelErrorKeepsPending();
-await testParseFailureFallsBackToPlaceholder();
+  await testAnalysisModelErrorRecordsFailed();
+  await testParseFailureRecordsFailedStatus();
 await testBuildReportGroupsAndFilters();
 await testBuildReportAnalyzesPendingInRange();
 await testBuildReportBlockedPolicy();
@@ -66,6 +87,19 @@ async function testTrivialSessionSkipsModel(): Promise<void> {
     assert.equal(stored?.analyzerModel, "none");
     assert.equal(stored?.confidence, 0);
     assert.equal(stored?.sourceEventCount, 2);
+  });
+}
+
+/** 相邻且使用同一应用的待分析 session 在 sweep 前合并，避免一次活动被切成两段。 */
+async function testMergesPendingAdjacentSessions(): Promise<void> {
+  await withStore(async (store) => {
+    const first = seedEndedSession(store, todayAt(9), new Date(Date.parse(todayAt(9)) + 5 * 60_000).toISOString(), 2);
+    const second = seedEndedSession(store, new Date(Date.parse(todayAt(9)) + 7 * 60_000).toISOString(), todayAt(10), 2);
+    assert.equal(store.mergePendingAdjacent(), 1);
+    const pending = store.listSessionsPendingAnalysis();
+    assert.deepEqual(pending.map((session) => session.id), [first]);
+    assert.equal(pending[0]?.eventCount, 4);
+    assert.equal(store.getEndedSession(second), undefined);
   });
 }
 
@@ -118,6 +152,93 @@ async function testAnalyzeThenCacheIsIdempotent(): Promise<void> {
   });
 }
 
+/** 分析完成后补到的 OCR 会使同一 session 回到 pending，并清掉过期分析投影。 */
+async function testLateOcrRequeuesAnalyzedSession(): Promise<void> {
+  await withStore(async (store) => {
+    const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
+    const { model } = scriptedModel([ANALYSIS_JSON]);
+    assert.equal((await analyzeActivitySession(deps(store, localPolicy(), model), sessionId)).status, "analyzed");
+    const capture = await store.recordFallbackCapture({
+      sessionId,
+      occurredAt: todayAt(10),
+      eventType: "screenshot",
+      source: "screenshot_fallback",
+      application: "Test App",
+      jpeg: new Uint8Array([1, 2, 3])
+    });
+    assert.ok(capture.snapshotId !== undefined);
+    store.updateSnapshotOcr(capture.snapshotId!, "late OCR text");
+    assert.equal(store.getAnalysis(sessionId), undefined);
+    assert.ok(store.listSessionsPendingAnalysis().some((session) => session.id === sessionId));
+  });
+}
+
+/** 分析结果既写入活动分析表，也通过幂等旁路交给统一记忆和主题层。 */
+async function testAnalysisFeedsMemoryAndCrystalCallbacks(): Promise<void> {
+  await withStore(async (store) => {
+    const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
+    const { model } = scriptedModel([JSON.stringify({
+      ...JSON.parse(ANALYSIS_JSON) as Record<string, unknown>,
+      memoryCandidates: [{ type: "project", content: "项目采用主动活动回顾", why: "多个事件显示该流程已稳定使用。" }],
+      worthMemory: true,
+      worthKnowledge: true
+    })]);
+    const memories: string[] = [];
+    const analyzed: string[] = [];
+    const dependencies = {
+      ...deps(store, localPolicy(), model),
+      writeMemories: async (candidates: readonly { content: string }[]) => {
+        memories.push(...candidates.map((candidate) => candidate.content));
+      },
+      onAnalyzed: async (analysis: ActivitySessionAnalysis) => {
+        analyzed.push(analysis.sessionId);
+      }
+    } satisfies ActivityAnalyzerDeps;
+    const first = await analyzeActivitySession(dependencies, sessionId);
+    assert.equal(first.status, "analyzed");
+    assert.deepEqual(memories, ["项目采用主动活动回顾"]);
+    assert.deepEqual(analyzed, [sessionId]);
+    const cached = await analyzeActivitySession(dependencies, sessionId);
+    assert.equal(cached.status, "analyzed");
+    assert.deepEqual(memories, ["项目采用主动活动回顾"]);
+    assert.deepEqual(analyzed, [sessionId, sessionId]);
+  });
+}
+
+async function testWorthGateSkipsLongTermProjections(): Promise<void> {
+  await withStore(async (store) => {
+    const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
+    const { model } = scriptedModel([JSON.stringify({
+      worth: false,
+      project: "biny",
+      title: "普通浏览",
+      description: "这次活动没有可长期保留的结论。",
+      summary: "这次活动没有可长期保留的结论。",
+      memoryCandidates: [{ type: "project", content: "不应写入长期记忆", why: "测试 worth 门控" }],
+      worthKnowledge: true
+    })]);
+    const memories: string[] = [];
+    const analyzed: string[] = [];
+    const outcome = await analyzeActivitySession({
+      ...deps(store, localPolicy(), model),
+      writeMemories: async (candidates) => { memories.push(...candidates.map((candidate) => candidate.content)); },
+      onAnalyzed: async (analysis) => { analyzed.push(analysis.sessionId); }
+    }, sessionId);
+    assert.equal(outcome.status, "analyzed");
+    if (outcome.status !== "analyzed") return;
+    assert.equal(outcome.analysis.analysisStatus, "not_worth");
+    assert.equal(outcome.analysis.worthMemory, false);
+    assert.equal(outcome.analysis.worthKnowledge, false);
+    assert.deepEqual(memories, []);
+    assert.deepEqual(analyzed, []);
+    assert.equal(store.getAnalysis(sessionId)?.analysisStatus, "not_worth");
+    assert.equal(store.listAnalysisForDateRange(
+      new Date(Date.parse(todayAt(0))).toISOString(),
+      new Date(Date.parse(todayAt(24))).toISOString()
+    ).length, 1, "not_worth 行仍应可审计读取");
+  });
+}
+
 /** 外部模型 + local_only 策略：不分析、不落库，session 保持待分析。 */
 async function testPolicyBlocksExternalModel(): Promise<void> {
   await withStore(async (store) => {
@@ -152,7 +273,7 @@ async function testSweepRespectsAnalysisPolicyGate(): Promise<void> {
   });
 }
 
-/** sweep 的自然重试：模型瞬时失败保持 pending，不消耗 attempt，下一轮 sweep 恢复后补上。 */
+/** 分析失败先落 failed；显式回到 pending 后，下一轮 sweep 可以恢复。 */
 async function testSweepRetriesAfterModelError(): Promise<void> {
   await withStore(async (store) => {
     const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
@@ -161,8 +282,10 @@ async function testSweepRetriesAfterModelError(): Promise<void> {
     assert.equal(first.evaluated, 1);
     assert.equal(first.errors, 1);
     assert.equal(first.analyzed, 0);
-    assert.equal(store.getAnalysis(sessionId), undefined, "失败不落库，session 保持待分析");
+    assert.equal(store.getAnalysis(sessionId), undefined, "失败不生成伪分析行");
+    assert.equal(store.listSessionsPendingAnalysis().some((session) => session.id === sessionId), false);
 
+    store.recordAnalysisStatus(sessionId, "pending");
     const recovering = scriptedModel([ANALYSIS_JSON]);
     const second = await analyzePendingActivitySessions(deps(store, localPolicy(), recovering.model));
     assert.equal(second.errors, 0);
@@ -171,8 +294,8 @@ async function testSweepRetriesAfterModelError(): Promise<void> {
   });
 }
 
-/** 模型/网络瞬时失败：返回 error 且不落库，session 留给下一周期重试。 */
-async function testAnalysisModelErrorKeepsPending(): Promise<void> {
+/** 模型/网络失败：返回 error 且记录 failed，不生成伪分析行。 */
+async function testAnalysisModelErrorRecordsFailed(): Promise<void> {
   await withStore(async (store) => {
     const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
     const { model, calls } = scriptedModel([new Error("boom")]);
@@ -181,19 +304,20 @@ async function testAnalysisModelErrorKeepsPending(): Promise<void> {
     assert.equal(outcome.status === "error" ? outcome.error : undefined, "boom");
     assert.equal(calls(), 1);
     assert.equal(store.getAnalysis(sessionId), undefined);
+    assert.equal(store.listSessionsPendingAnalysis().some((session) => session.id === sessionId), false);
   });
 }
 
-/** 两次输出都无法解析时落「活动分析失败」占位（confidence 0），仍算已处理、不反复重试。 */
-async function testParseFailureFallsBackToPlaceholder(): Promise<void> {
+/** 两次输出都无法解析时记录 failed 状态，不把失败伪装成可用分析。 */
+async function testParseFailureRecordsFailedStatus(): Promise<void> {
   await withStore(async (store) => {
     const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
     const { model, calls } = scriptedModel(["not json", "still not json"]);
     const outcome = await analyzeActivitySession(deps(store, localPolicy(), model), sessionId);
-    assert.equal(outcome.status, "analyzed");
-    assert.equal(calls(), 2, "解析失败重试一次后落占位");
-    assert.equal(store.getAnalysis(sessionId)?.summary, ACTIVITY_ANALYSIS_FAILED_SUMMARY);
-    assert.equal(store.getAnalysis(sessionId)?.confidence, 0);
+    assert.equal(outcome.status, "error");
+    assert.equal(calls(), 2, "解析失败重试一次后记录 failed");
+    assert.equal(store.getAnalysis(sessionId), undefined);
+    assert.equal(store.listSessionsPendingAnalysis().some((session) => session.id === sessionId), false);
   });
 }
 

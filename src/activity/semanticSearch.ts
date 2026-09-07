@@ -8,17 +8,18 @@
  * 固定使用本地 multilingual-e5-small；模型未下载/不可用
  * 时返回 ok=false，工具层渲染成友好提示，由模型回退到关键词 activity_search，不抛给调用方。
  */
-import type { ActivityStore } from "./store.js";
+import { setTimeout as delay } from "node:timers/promises";
+import type { ActivityStore, ActivityOcrEmbeddingSource } from "./store.js";
 import type { EmbeddingModelRuntime, EmbeddingResult } from "../llm/embedding/types.js";
 import { cosineSimilarity } from "../llm/embedding/vector.js";
 import { ACTIVITY_ANALYSIS_FAILED_SUMMARY, ACTIVITY_TRIVIAL_SUMMARY } from "./analyzer.js";
 
 /** 单次调用最多补嵌入的分析行数；其余留到下一次调用继续补。 */
 const EMBED_BATCH_LIMIT = 200;
-const OCR_EMBED_BATCH_LIMIT = 400;
+const OCR_EMBED_BATCH_LIMIT = 32;
 /** 参与 cosine 排序的向量上限（取最新 N 条，防库体无限增长拖慢检索）。 */
 const EMBED_SCORE_LIMIT = 1_000;
-const OCR_SCORE_LIMIT = 2_000;
+const OCR_SCORE_LIMIT = 5_000;
 const EMBED_BATCH_SIZE = 32;
 
 export interface ActivitySemanticSearchDeps {
@@ -82,8 +83,7 @@ export async function precomputeActivityEmbeddings(
 }
 
 export async function searchActivitySemantic(deps: ActivitySemanticSearchDeps): Promise<ActivitySemanticSearchResult> {
-  const normalized = deps.query.trim();
-  if (!normalized) return { ok: false, reason: "no_vectors", message: "查询不能为空。" };
+  if (!deps.query.trim()) return { ok: false, reason: "no_vectors", message: "查询不能为空。" };
 
   const runtime = await resolveActivityEmbeddingRuntime(deps.getEmbeddingRuntime);
   if (!runtime) return unsupportedRuntimeResult();
@@ -94,7 +94,7 @@ export async function searchActivitySemantic(deps: ActivitySemanticSearchDeps): 
   const analysisRows = deps.store.listAnalysisEmbeddingRows(fingerprint, EMBED_SCORE_LIMIT);
   if (!ocrRows.length && !analysisRows.length) return { ok: false, reason: "no_vectors", message: "还没有可检索的 Activity 文本记录。" };
 
-  const queryResult = await runtime.embed({ texts: [normalized], inputType: "query", signal: deps.signal });
+  const queryResult = await runtime.embed({ texts: [deps.query], inputType: "query", signal: deps.signal });
   const queryVector = queryResult.embeddings[0];
   if (!queryVector) return { ok: false, reason: "no_vectors", message: "查询向量生成失败。" };
 
@@ -144,12 +144,12 @@ export async function searchActivitySemantic(deps: ActivitySemanticSearchDeps): 
   }
   const scored = [...bestBySession.values()]
     .sort((left, right) => right.similarity - left.similarity)
-    .slice(0, Math.max(1, Math.min(20, deps.limit ?? 5)));
+    .slice(0, Math.max(1, Math.min(100, deps.limit ?? 5)));
 
   return {
     ok: true,
     embedded,
-    model: `${runtime.descriptor.ref.kind}:${"model" in runtime.descriptor.ref ? runtime.descriptor.ref.model : ""}`,
+    model: activityEmbeddingModelName(runtime),
     dimensions: queryResult.dimensions,
     hits: scored
   };
@@ -182,7 +182,7 @@ function unsupportedRuntimeResult(): { ok: false; reason: "no_runtime"; message:
 
 function activityEmbeddingModelName(runtime: EmbeddingModelRuntime): string {
   const ref = runtime.descriptor.ref;
-  return `${ref.kind}:${ref.kind === "local" ? ref.model : `${ref.provider}/${ref.model}`}`;
+  return ref.kind === "local" ? ref.model : `${ref.provider}/${ref.model}`;
 }
 
 async function embedMissingActivitySources(
@@ -202,25 +202,30 @@ async function embedOcrPassages(
   deps: ActivityEmbeddingPrecomputeDeps,
   runtime: EmbeddingModelRuntime,
   fingerprint: string,
-  sources: ReadonlyArray<{ id: number; sessionId: string; text: string }>
+  sources: ReadonlyArray<ActivityOcrEmbeddingSource>
 ): Promise<number> {
   let embedded = 0;
-  for (let offset = 0; offset < sources.length; offset += EMBED_BATCH_SIZE) {
+  for (const [index, source] of sources.entries()) {
     deps.signal?.throwIfAborted();
-    const batch = sources.slice(offset, offset + EMBED_BATCH_SIZE);
-    let result: EmbeddingResult;
     try {
-      result = await runtime.embed({ texts: batch.map((source) => source.text), inputType: "passage", signal: deps.signal });
+      const result = await runtime.embed({ texts: [source.text], inputType: "passage", signal: deps.signal });
+      const vector = result.embeddings[0];
+      if (vector?.length) {
+        deps.store.upsertOcrEmbedding(
+          source.id,
+          fingerprint,
+          vector,
+          (deps.now?.() ?? new Date()).toISOString(),
+          runtime.descriptor.ref.model
+        );
+        embedded += 1;
+      }
     } catch (error) {
       if (deps.signal?.aborted) throw error;
-      continue;
     }
-    result.embeddings.forEach((vector, index) => {
-      const source = batch[index];
-      if (!source) return;
-      deps.store.upsertOcrEmbedding(source.id, fingerprint, vector, (deps.now?.() ?? new Date()).toISOString());
-      embedded += 1;
-    });
+    if ((index + 1) % 4 === 0 || index === sources.length - 1) {
+      await delay(250, undefined, { signal: deps.signal });
+    }
   }
   return embedded;
 }

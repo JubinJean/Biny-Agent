@@ -20,7 +20,7 @@ import {
   type ActivityAnalyzerDeps,
   type ActivityReportResult
 } from "../../../activity/analyzer.js";
-import { refreshActivitySummary } from "../../../activity/summary.js";
+import { refreshActivitySummaryWithNarrative } from "../../../activity/summary.js";
 import { resolveActivityAnalysisModel } from "../../../activity/analysisModel.js";
 import { ActivityAnalysisScheduler } from "../../../activity/analysisScheduler.js";
 import { ActivityEmbeddingScheduler } from "../../../activity/embeddingScheduler.js";
@@ -125,6 +125,8 @@ export interface ActivityRecorderServiceOptions {
   writeDailyNote?: (dateKey: string, content: string) => Promise<string>;
   /** Activity 分析提取出的稳定事实写入统一记忆库。 */
   writeMemories?: ActivityAnalyzerDeps["writeMemories"];
+  /** Activity 分析完成后更新主题材料。 */
+  onAnalyzed?: ActivityAnalyzerDeps["onAnalyzed"];
 }
 
 export class ActivityRecorderService {
@@ -161,13 +163,14 @@ export class ActivityRecorderService {
   private readonly dailySummaryIntervalMs: number;
   private readonly writeDailyNote: (dateKey: string, content: string) => Promise<string>;
   private readonly writeMemories: ActivityAnalyzerDeps["writeMemories"];
+  private readonly onAnalyzed: ActivityAnalyzerDeps["onAnalyzed"];
   private dailySummaryInitialTimer?: ReturnType<typeof setTimeout>;
   private dailySummaryTimer?: ReturnType<typeof setTimeout>;
   /** stop 在 operation queue 内执行；sidecar 收尾期间的事件不能再排到当前操作之后。 */
   private sidecarStopping = false;
   private bufferedSidecarMessages: PersistableSidecarMessage[] = [];
   /** capture 先落库，OCR 完成后通过 captureId 更新同一张 snapshot。 */
-  private pendingOcrCaptures = new Map<string, number>();
+  private pendingOcrCaptures = new Map<string, string>();
 
   constructor(options: ActivityRecorderServiceOptions) {
     this.configStore = options.configStore;
@@ -179,9 +182,10 @@ export class ActivityRecorderService {
       clearTimeout: (handle) => clearTimeout(handle)
     };
     this.dailySummaryInitialDelayMs = options.dailySummaryInitialDelayMs ?? 120_000;
-    this.dailySummaryIntervalMs = options.dailySummaryIntervalMs ?? 24 * 60 * 60 * 1_000;
+    this.dailySummaryIntervalMs = options.dailySummaryIntervalMs ?? 15 * 60 * 1_000;
     this.writeDailyNote = options.writeDailyNote ?? writeDailyActivityNote;
     this.writeMemories = options.writeMemories;
+    this.onAnalyzed = options.onAnalyzed;
     // 分析由 session 结束时的立即 sweep、启动后的首次检查和周期 sweep 触发；门禁与模型
     // 选择在 runAnalysisSweep 里每次新鲜加载。
     this.analysisScheduler = new ActivityAnalysisScheduler({
@@ -281,7 +285,7 @@ export class ActivityRecorderService {
   }
 
   /** 只在用户点击具体快照时读取 JPEG，避免打开设置页就把大图全部搬进 renderer。 */
-  async snapshotPreview(snapshotId: number): Promise<string | undefined> {
+  async snapshotPreview(snapshotId: string): Promise<string | undefined> {
     return await this.enqueue(async () => {
       const snapshotPath = this.store.getSnapshotPath(snapshotId);
       if (!snapshotPath) return undefined;
@@ -303,7 +307,7 @@ export class ActivityRecorderService {
     const store = new ActivityStore();
     await store.open(config.activity.outputDirectory);
     try {
-      const result = await buildActivityReport({ store, policy, model, writeMemories: this.writeMemories }, date ?? "today");
+      const result = await buildActivityReport({ store, policy, model, writeMemories: this.writeMemories, onAnalyzed: this.onAnalyzed }, date ?? "today");
       await this.writeDailyNote(result.date, formatActivityDailyNote(result));
       return result;
     } finally {
@@ -341,7 +345,7 @@ export class ActivityRecorderService {
     const store = new ActivityStore();
     await store.open(config.activity.outputDirectory);
     try {
-      await analyzePendingActivitySessions({ store, policy, model, signal: this.analysisAbort.signal, writeMemories: this.writeMemories });
+      await analyzePendingActivitySessions({ store, policy, model, signal: this.analysisAbort.signal, writeMemories: this.writeMemories, onAnalyzed: this.onAnalyzed });
     } finally {
       await store.close();
     }
@@ -610,6 +614,7 @@ export class ActivityRecorderService {
         axTitle: message.axTitle,
         rawText: message.text,
         rawOcrText: message.ocrText,
+        captureId: message.captureId,
         fallbackReason: message.fallbackReason,
         inputEventCount: message.inputEventCount,
         captureTrigger: message.captureTrigger,
@@ -632,10 +637,13 @@ export class ActivityRecorderService {
 
   private async persistOcr(message: SidecarOcrMessage): Promise<void> {
     if (!this.settings || !this.child) return;
-    const snapshotId = this.pendingOcrCaptures.get(message.captureId);
-    if (snapshotId === undefined) return;
     try {
-      this.store.updateSnapshotOcr(snapshotId, message.ocrText);
+      const persisted = this.store.updateSnapshotOcrByCaptureId(message.captureId, message.ocrText);
+      if (!persisted) {
+        const snapshotId = this.pendingOcrCaptures.get(message.captureId);
+        if (snapshotId === undefined) return;
+        this.store.updateSnapshotOcr(snapshotId, message.ocrText);
+      }
       this.publish();
     } catch (error) {
       this.setState("error", safeError(error));
@@ -754,7 +762,6 @@ export class ActivityRecorderService {
         const dateKey = formatLocalDateKey(yesterday);
         const config = await this.configStore.load();
         const policy = new ActivityPrivacyPolicy(config.activity);
-        // 日结只读取已落库的 session 分析并做确定性聚合，不能在这个时间点再调用模型。
         // 独立连接让事件在生成日报期间继续落盘。
         const store = new ActivityStore();
         await store.open(config.activity.outputDirectory);
@@ -766,8 +773,14 @@ export class ActivityRecorderService {
             signal: this.analysisAbort.signal,
             analyzePending: false
           }, dateKey);
-          // activity_summaries 保留确定性统计缓存；daily note 写入按项目归纳的完整日报。
-          refreshActivitySummary(store, "daily", dateKey, now);
+          // activity_summaries 同时保留统计和可重试的 narrative；daily note 写入按项目归纳的完整日报。
+          await refreshActivitySummaryWithNarrative(store, "daily", dateKey, {
+            model: resolveActivityAnalysisModel(config),
+            policy,
+            signal: this.analysisAbort.signal,
+            now,
+            withNarrative: true
+          });
           await this.writeDailyNote(report.date, formatActivityDailyNote(report));
         } finally {
           await store.close();

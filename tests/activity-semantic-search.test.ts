@@ -16,11 +16,44 @@ const FINGERPRINT = "test-fingerprint";
 const NOW = new Date(2026, 7, 26, 15, 0, 0);
 
 await testSemanticSearchEmbedsAndRanks();
+await testSemanticSearchHonorsTop100Limit();
+await testSemanticQueryPreservesWhitespace();
 await testSemanticSearchFallsBackWhenNoRuntime();
 await testSemanticSearchExcludesPlaceholderSessions();
 await testSemanticSearchSkipsTrivialSessionsInBackfill();
 await testSemanticSearchToleratesPassageBatchFailure();
 await testSemanticSearchKeepsExistingVectorsWhenBatchFails();
+
+async function testSemanticQueryPreservesWhitespace(): Promise<void> {
+  await withStore(async (store) => {
+    seedAnalyzedSession(store, todayAt(9), { summary: "登录", sourceEventCount: 5 });
+    const runtime = ruleRuntime([{ match: /登录/u, vector: vec([1, 0, 0, 0]) }]);
+    const embed = runtime.embed.bind(runtime);
+    const queries: string[][] = [];
+    const listOcrRows = store.listOcrEmbeddingRows.bind(store);
+    const candidateLimits: Array<number | undefined> = [];
+    store.listOcrEmbeddingRows = (fingerprint, limit) => {
+      candidateLimits.push(limit);
+      return listOcrRows(fingerprint, limit);
+    };
+    runtime.embed = async (request) => {
+      if (request.inputType === "query") queries.push([...request.texts]);
+      return embed(request);
+    };
+    const query = "  登录\n\t";
+    const result = await searchActivitySemantic({ store, getEmbeddingRuntime: async () => runtime, query });
+    assert.equal(result.ok, true);
+    assert.deepEqual(queries, [[query]]);
+    assert.deepEqual(candidateLimits, [5_000]);
+    const empty = await searchActivitySemantic({
+      store,
+      getEmbeddingRuntime: async () => { throw new Error("空白查询不应加载模型"); },
+      query: " \n\t "
+    });
+    assert.equal(empty.ok, false);
+    assert.deepEqual(queries, [[query]]);
+  });
+}
 
 /** 语义检索：补嵌入缺失向量 → 查询向量 → cosine top N 命中相关 session。 */
 async function testSemanticSearchEmbedsAndRanks(): Promise<void> {
@@ -56,6 +89,29 @@ async function testSemanticSearchEmbedsAndRanks(): Promise<void> {
     assert.equal(hit.hits[0]?.sessionId, login);
     assert.ok(hit.hits[0]!.similarity > 0.9);
     assert.equal(hit.hits[0]!.project, "biny");
+  });
+}
+
+/** 语义检索结果上限与 OCR 检索协议一致，limit=100 不应被内部 20 条上限截断。 */
+async function testSemanticSearchHonorsTop100Limit(): Promise<void> {
+  await withStore(async (store) => {
+    for (let index = 0; index < 21; index += 1) {
+      seedAnalyzedSession(store, new Date(NOW.getTime() + index * 60 * 60 * 1_000).toISOString(), {
+        summary: `登录活动 ${index}`,
+        sourceEventCount: 5
+      });
+    }
+    const runtime = ruleRuntime([{ match: /登录/u, vector: vec([1, 0, 0, 0]) }]);
+    const result = await searchActivitySemantic({
+      store,
+      getEmbeddingRuntime: async () => runtime,
+      query: "登录",
+      limit: 100
+    });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    assert.equal(result.model, "multilingual-e5-small");
+    assert.equal(result.hits.length, 21);
   });
 }
 

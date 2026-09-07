@@ -14,7 +14,7 @@
 import { createHash } from "node:crypto";
 import { z } from "zod";
 import type { AgentModel } from "../agent/core/types.js";
-import { generateNativeText, nativeJsonMessages, parseNativeJson } from "../llm/nativeJson.js";
+import { generateNativeText, nativeJsonMessages } from "../llm/nativeJson.js";
 import type { ActivityAnalysisDecision, ActivityPrivacyPolicy } from "./privacyPolicy.js";
 import type {
   ActivityAnalysisCommit,
@@ -40,8 +40,6 @@ export const ACTIVITY_TRIVIAL_SUMMARY = "零星活动";
 /** 模型两次输出都无法解析时落库的占位摘要；同样不进报告。 */
 export const ACTIVITY_ANALYSIS_FAILED_SUMMARY = "活动分析失败";
 
-const ANALYSIS_MAX_OUTPUT_TOKENS = 1_200;
-const ANALYSIS_TIMEOUT_MS = 60_000;
 const KNOWN_PROJECT_LOOKBACK_MS = 30 * 24 * 60 * 60 * 1000;
 const KNOWN_PROJECT_LIMIT = 20;
 /** 进入 inputHash 的 prompt/解析版本；改动它会让已分析 session 因 hash 变化而重跑。 */
@@ -75,8 +73,8 @@ const analysisPersonSchema = z.union([
 
 const memoryCandidateSchema = z.object({
   type: z.enum(["project", "feedback", "reference", "user"]),
-  content: z.string().trim().min(1).max(200),
-  why: z.string().trim().min(1).max(160)
+  content: z.string().trim().min(1).max(240),
+  why: z.string().trim().max(200).default("")
 });
 
 const analysisEntityDetailsSchema = z.object({
@@ -92,7 +90,7 @@ const analysisEntityDetailsSchema = z.object({
   urls: z.array(z.string().trim().min(1).max(500)).max(64).default([])
 });
 
-/** 模型输出的强校验契约；数组字段给默认值，summary 缺失视为解析失败。 */
+/** 模型输出的结构契约；解析前先做宽松归一化，避免格式噪声把有效 session 丢回未知状态。 */
 const analysisOutputSchema = z.object({
   project: z.string().trim().min(1).max(120).nullish(),
   title: z.string().trim().min(1).max(160).optional(),
@@ -116,7 +114,7 @@ const analysisOutputSchema = z.object({
   events: z.array(z.string().trim().min(1).max(300)).max(32).default([]),
   urls: z.array(z.string().trim().min(1).max(500)).max(64).default([]),
   memoryCandidates: z.array(memoryCandidateSchema).max(16).default([]),
-  worth: z.boolean().optional(),
+  worth: z.boolean().default(false),
   worthMemory: z.boolean().default(false),
   worthKnowledge: z.boolean().default(false),
   isMeeting: z.boolean().default(false),
@@ -165,6 +163,8 @@ export interface ActivityAnalyzerDeps {
     candidates: readonly ActivityMemoryCandidate[],
     context: ActivityMemoryWriteContext
   ) => Promise<void>;
+  /** 分析完成后的统一主题投影；重复调用必须由下游锚点去重。 */
+  onAnalyzed?: (analysis: ActivitySessionAnalysis, session: ActivityPendingAnalysisSession) => Promise<void>;
 }
 
 export interface ActivitySweepResult {
@@ -198,33 +198,82 @@ export interface ActivityReportResult {
   message?: string;
 }
 
-const ANALYSIS_SYSTEM_PROMPT = [
-  "You analyze one session of a user's on-screen activity and extract rich, citable structure for a later work-journal generator.",
-  "Respond ONLY with a single JSON object — no prose, no markdown fence, no commentary.",
-  "Schema:",
-  '{',
-  '  "worth": boolean,',
-  '  "title": string,                     // <=80 chars, concrete and specific',
-  '  "description": string,               // 2-4 factual sentences; no filler',
-  '  "project": string | null,             // canonical project or workspace, null if unclear',
-  '  "topics": string[],                  // 1-5 short tags',
-  '  "highlights": string[],              // 0-3 short accomplishments or decisions',
-  '  "entities": {',
-  '    "prs": [{"label": string, "ref"?: string, "repo"?: string, "url"?: string}],',
-  '    "issues": [{"label": string, "ref"?: string, "repo"?: string, "url"?: string}],',
-  '    "commits": [{"label": string, "ref"?: string, "repo"?: string, "url"?: string}],',
-  '    "people": [{"handle": string, "name"?: string}],',
-  '    "identifiers": string[], "repos": string[], "versions": string[],',
-  '    "events": string[], "decisions": string[], "urls": string[]',
-  '  },',
-  '  "memoryCandidates": [{"type": "project"|"feedback"|"reference"|"user", "content": string, "why": string}],',
-  '  "worthKnowledge": boolean,',
-  '  "isMeeting": boolean',
-  '}',
-  "Only use evidence in the event stream and redacted OCR. Do not invent people, identifiers, versions, PRs, issues, or URLs.",
-  "Do not put ordinary activity, one-off reviews, code details, or debugging steps in memoryCandidates.",
-  "The parser also accepts Biny compatibility fields summary, top-level entity arrays, storageTier, and confidence."
-].join("\n");
+const ANALYSIS_SYSTEM_PROMPT = String.raw`
+You analyze one session of a user's on-screen activity and extract rich, citable structure for a later work-journal generator.
+
+Respond ONLY with a single JSON object — no prose, no markdown fence, no commentary.
+
+Schema:
+{
+  "worth": boolean,
+  "title": string,                     // <=80 chars, concrete, names things ("Review PR #282 screen-capture service")
+  "description": string,               // 2-4 sentences; WHAT got done and WHY; avoid filler like "browsed", "looked at"
+  "project": string | null,            // canonical project/codebase/workspace this belongs to (e.g. "example-app", "tokenspeed", "littlebird"). null if unclear/mixed.
+  "topics": string[],                  // 1-5 short tags for clustering ("grpc", "activity-recorder", "onboarding-flow")
+  "highlights": string[],              // 1-3 ultra-short bullets of accomplishments/decisions ("Shipped PR #282 activity recorder", "Decided to self-host grpc proto"). Empty if nothing concrete.
+  "entities": {
+    "prs":         [{"label": string, "ref"?: string, "repo"?: string, "url"?: string}],  // e.g. {"label":"PR #282","ref":"282","repo":"example-org/example-repo","url":"https://..."}
+    "issues":      [{"label": string, "ref"?: string, "repo"?: string, "url"?: string}],
+    "commits":     [{"label": string, "ref"?: string, "repo"?: string, "url"?: string}],
+    "people":      [{"handle": string, "name"?: string}], // people other than the user themselves. Include @mentions from Slack/GitHub/Twitter.
+    "identifiers": string[],           // file names, function names, type names, proto names, config keys, CLI subcommands worth quoting verbatim
+    "repos":       string[],           // "org/repo" slugs
+    "versions":    string[],           // "v0.0.760", "1.24.1"
+    "events":      string[],           // meeting/event names ("refactor standup")
+    "decisions":   string[],           // short phrases describing decisions reached
+    "urls":        string[]            // full URLs visible in this session (browser or OCR)
+  },
+  "memoryCandidates": [                // ZERO OR MORE durable facts worth long-term recall. Default is []. See rules below.
+    {
+      "type": "project" | "feedback" | "reference" | "user",
+      "content": string,               // ONE clean, self-contained fact (<= 200 chars). See "content style" rules. This is stored verbatim and shown to the user — make it elegant.
+      "why": string                    // <= 160 chars. INTERNAL gate only — never stored in the fact. Justify why this survives 6+ months. If you cannot, set content to "" and drop it.
+    }
+  ],
+  "worthKnowledge": boolean,           // reusable knowledge (docs, APIs, code techniques)
+  "isMeeting": boolean                 // true if this session was a sync meeting (Zoom/Meet/Teams/Feishu call)
+}
+
+Rules:
+- "worth" must be false for idle scrolling, random browsing, system idle, transient app switches, or empty OCR.
+- Be specific. Prefer "Merged PR #282 (activity-recorder service) into main" over "Worked on a project".
+- Every entity you list MUST appear verbatim in the OCR/events/visits. Never invent a PR number, person, version, or URL.
+- Identifiers: only things a technical reader would recognize as named code/config (e.g. "spec_verify_ct", "tokenspeed-grpc-proto"). Skip common English words.
+- If you can't attribute a project, set "project" to null. Do not guess.
+- Return arrays even when empty — never omit keys in "entities".
+
+memoryCandidates rules (CRITICAL — the bar is HIGH; the great majority of sessions must produce []):
+- Default is the empty array. Emitting [] is the correct, expected outcome for normal work sessions. Only emit a candidate when a fact would still earn its place in a hand-curated memory list 6+ months from now, WITHOUT replaying the timeline.
+- Each candidate is ONE durable fact / preference / decision / reference — never a recap of what happened this session.
+- The "why" field is your INTERNAL precision gate. Write it first, honestly. If the strongest "why" you can muster is "it happened" or "might be useful", that is a fail → drop the candidate (do not emit it). The "why" is NOT stored anywhere; it only forces you to justify durability.
+- Types:
+  - "project"   = a standing fact/decision/constraint about ongoing work. (e.g. "The project defaults to disabling MCPHub because auto-loaded MCP servers confused users.")
+  - "feedback"  = the user's stated, reusable preference about how they work or want to be helped. (e.g. "User prefers Linode over Hetzner for EU regions due to past billing reliability.")
+  - "reference" = a pointer to an external system/dashboard/doc the user returns to repeatedly. (e.g. "Zeabur billing dashboard (zeabur.com/billing) is where saved cards and invoice history live.")
+  - "user"      = stable info about the user's role/expertise/responsibilities.
+
+CONTENT STYLE (this is stored verbatim and shown to the user — it must read as a clean, elegant knowledge-base entry):
+- Write it as a STANDALONE third-person fact about the world/project/user. Not a diary entry, not a task, not a sentence about "this session".
+- NO narration verbs about the user's clicks: never start with or contain "User browsed / checked / looked at / opened / reviewed / triaged / investigated / spent time on".
+- NO timeline or session framing: no timestamps, durations, "today", "this session", "while working", "was seen".
+- NO first person ("I", "we"). Present tense. Name concrete things (projects, services, URLs, decisions) so the fact is self-explanatory with zero context.
+- Self-contained: a reader who never saw the session must fully understand it. Resolve pronouns and vague referents.
+- Examples:
+  - ❌ "User opened Zeabur to investigate a $6 payment failure."   ✅ "Zeabur billing dashboard (zeabur.com/billing) holds saved cards and invoice history."
+  - ❌ "Spent 20 minutes reviewing PR #282."                        ✅ (usually emit [] — a single review pass is not durable)
+  - ❌ "User decided to use grpc."                                  ✅ "The project self-hosts the tokenspeed grpc proto rather than pulling it from the upstream registry."
+  - ❌ "Was looking at the activity-recorder code."                 ✅ (emit [] — code details are derivable from the repo)
+
+DO NOT emit candidates for any of the following — emit [] instead:
+- Timeline facts: "User browsed/checked/looked-at/triaged X". The activity log already captures this.
+- One-time operational tasks: a failed payment retry, a single PR review pass, an email triage round.
+- Code patterns, file paths, function names, architecture details — derivable from the code.
+- Commit/PR summaries, who-changed-what — git history is authoritative.
+- Debugging steps or fix recipes — the fix lives in the diff/commit message.
+- Anything that would feel embarrassing, obvious, or noisy to find in a curated memory list 6 months later.
+
+When in doubt, emit []. One clean durable fact is worth more than ten plausible ones; a noisy memory store is far worse than a sparse one.
+`;
 
 /**
  * 分析单个已结束 session。幂等：输入 hash 未变时直接返回已落库结果，不重复调用模型。
@@ -243,6 +292,15 @@ export async function analyzeActivitySession(
   const inputHash = activityAnalysisInputHash(events);
   const existing = store.getAnalysis(sessionId);
   if (existing && existing.inputHash === inputHash) {
+    if (existing.analysisStatus === "skipped" && existing.summary === ACTIVITY_TRIVIAL_SUMMARY) {
+      return { status: "trivial", analysis: existing };
+    }
+    if (existing.analysisStatus === "failed") {
+      return { status: "error", error: "LLM did not return parseable JSON" };
+    }
+    if (existing.analysisStatus !== "not_worth") {
+      await deps.onAnalyzed?.(existing, session).catch(() => undefined);
+    }
     return { status: "analyzed", analysis: existing, cached: true };
   }
   const now = deps.now?.() ?? new Date();
@@ -257,14 +315,17 @@ export async function analyzeActivitySession(
     store.recordAnalysis(analysis);
     return { status: "trivial", analysis };
   }
-  if (!deps.model) return { status: "skipped", reason: "no_model" };
+  if (!deps.model) {
+    store.recordAnalysisStatus(session.id, "skipped", { description: "No tool model configured." });
+    return { status: "skipped", reason: "no_model" };
+  }
   const model = deps.model;
   const knownProjects = store.listRecentProjects(
     new Date(now.getTime() - KNOWN_PROJECT_LOOKBACK_MS).toISOString(),
     KNOWN_PROJECT_LIMIT
   );
 
-  let parsed: AnalysisOutput;
+  let parsed: AnalysisOutput | undefined;
   try {
     const run = await deps.policy.runAnalysis(model, async () => await requestSessionAnalysis(
       model,
@@ -273,10 +334,31 @@ export async function analyzeActivitySession(
       deps.signal
     ));
     if (run.status === "blocked") return { status: "blocked", decision: run.decision };
-    if (!run.value) return { status: "error", error: "analysis returned no value" };
+    if (!run.value) {
+      store.recordAnalysisStatus(session.id, "failed", {
+        model: model.modelId,
+        error: "LLM did not return parseable JSON",
+        analyzedAt
+      });
+      return { status: "error", error: "LLM did not return parseable JSON" };
+    }
     parsed = run.value;
   } catch (error) {
+    store.recordAnalysisStatus(session.id, "failed", {
+      model: model.modelId,
+      error: errorMessage(error),
+      analyzedAt
+    });
     return { status: "error", error: errorMessage(error) };
+  }
+
+  if (!parsed) {
+    store.recordAnalysisStatus(session.id, "failed", {
+      model: model.modelId,
+      error: "LLM did not return parseable JSON",
+      analyzedAt
+    });
+    return { status: "error", error: "LLM did not return parseable JSON" };
   }
 
   const entityDetails = normalizeEntityDetails(parsed);
@@ -297,6 +379,7 @@ export async function analyzeActivitySession(
     sessionId: session.id,
     analyzedAt,
     analyzerModel: model.modelId,
+    analysisStatus: parsed.worth ? "analyzed" : "not_worth",
     project,
     title: parsed.title?.trim() || deriveTitle(summary),
     description: parsed.description?.trim() || summary,
@@ -315,9 +398,9 @@ export async function analyzeActivitySession(
     events: entityDetails.events,
     urls: entityDetails.urls,
     entityDetails,
-    // 根据临时记忆数组判定 worthMemory；模型直接给出的 boolean 只兼容旧协议。
-    worthMemory: memoryCandidates.length > 0,
-    worthKnowledge: parsed.worthKnowledge,
+    // 只有通过 session worth 门控的分析才允许进入长期记忆或知识标记。
+    worthMemory: parsed.worth && memoryCandidates.length > 0,
+    worthKnowledge: parsed.worth && parsed.worthKnowledge,
     isMeeting: parsed.isMeeting,
     storageTier: parsed.storageTier,
     confidence: parsed.confidence,
@@ -325,7 +408,7 @@ export async function analyzeActivitySession(
     inputHash
   };
   store.recordAnalysis(analysis);
-  if (memoryCandidates.length > 0) {
+  if (parsed.worth && memoryCandidates.length > 0) {
     try {
       await deps.writeMemories?.(memoryCandidates, {
         sessionId: session.id,
@@ -337,14 +420,22 @@ export async function analyzeActivitySession(
       // 统一记忆库是分析结果的旁路投影；写入失败不能让 Activity 分析失败或阻塞下次 sweep。
     }
   }
+  if (parsed.worth) {
+    try {
+      await deps.onAnalyzed?.(analysis, session);
+    } catch {
+      // 主题投影是派生旁路；分析结果已经落库，投影可在下次读取时重试。
+    }
+  }
   return { status: "analyzed", analysis, cached: false };
 }
 
 /** 兜底 sweep：分析所有「已结束但还没分析行」的 session，按结束时间升序逐个处理。 */
 export async function analyzePendingActivitySessions(
   deps: ActivityAnalyzerDeps,
-  limit = 50
+  limit = 10
 ): Promise<ActivitySweepResult> {
+  deps.store.mergePendingAdjacent();
   const pending = deps.store.listSessionsPendingAnalysis(limit);
   const result: ActivitySweepResult = { evaluated: pending.length, analyzed: 0, trivial: 0, blocked: 0, errors: 0 };
   for (const session of pending) {
@@ -467,7 +558,7 @@ export function renderActivityReport(rows: readonly ActivityAnalysisReportRow[],
 
 /**
  * 解析 activity_report 的日期参数。`today`/`yesterday` 相对当前本地时间，`YYYY-MM-DD`
- * 按本地日界解析；start/end 转回 ISO（UTC）用于和 started_at 的字典序比较。
+ * 按本地日界解析；start/end 转为 UTC ISO，存储层会将其转换为 epoch-ms 查询参数。
  */
 export function resolveActivityReportRange(date: string, now: Date = new Date()): ActivityReportRange {
   const trimmed = date.trim().toLowerCase();
@@ -530,6 +621,7 @@ function buildTrivialAnalysis(
     sessionId: session.id,
     analyzedAt,
     analyzerModel: "none",
+    analysisStatus: "skipped",
     title: "零星活动",
     description: ACTIVITY_TRIVIAL_SUMMARY,
     summary: ACTIVITY_TRIVIAL_SUMMARY,
@@ -551,59 +643,169 @@ function buildTrivialAnalysis(
   };
 }
 
+function parseActivityAnalysisOutput(text: string): AnalysisOutput | undefined {
+  const normalized = text.replace(/```(?:json)?/giu, "").replace(/```/gu, "").trim();
+  const start = normalized.indexOf("{");
+  const end = normalized.lastIndexOf("}");
+  if (start < 0 || end < start) return undefined;
+
+  let value: unknown;
+  try {
+    value = JSON.parse(normalized.slice(start, end + 1));
+  } catch {
+    return undefined;
+  }
+  if (!isRecord(value)) return undefined;
+
+  const entityValue = isRecord(value.entities) ? value.entities : undefined;
+  const entityArray = Array.isArray(value.entities) ? normalizeStrings(value.entities, 64, 200) : undefined;
+  const result = analysisOutputSchema.safeParse({
+    project: typeof value.project === "string" ? value.project.slice(0, 120) : null,
+    title: optionalString(value.title, 160),
+    description: optionalString(value.description, 800),
+    summary: optionalString(value.summary, 1_000),
+    topics: normalizeStrings(value.topics, 5, 40),
+    prs: normalizeReferences(value.prs, 32),
+    issues: normalizeReferences(value.issues, 32),
+    people: normalizePeopleValues(value.people, 32),
+    versions: normalizeStrings(value.versions, 32, 60),
+    decisions: normalizeStrings(value.decisions, 32, 500),
+    entities: entityValue ? normalizeEntityGroup(entityValue) : entityArray ?? [],
+    highlights: normalizeStrings(value.highlights, 3, 200),
+    commits: normalizeCommits(value.commits, 64),
+    identifiers: normalizeStrings(value.identifiers, 64, 200),
+    repos: normalizeStrings(value.repos, 32, 200),
+    events: normalizeStrings(value.events, 32, 300),
+    urls: normalizeStrings(value.urls, 64, 500),
+    memoryCandidates: normalizeMemoryCandidates(value.memoryCandidates),
+    worth: Boolean(value.worth),
+    worthMemory: Boolean(value.worthMemory),
+    worthKnowledge: Boolean(value.worthKnowledge),
+    isMeeting: Boolean(value.isMeeting),
+    storageTier: value.storageTier === "ephemeral" || value.storageTier === "important"
+      ? value.storageTier
+      : "standard",
+    confidence: typeof value.confidence === "number" && Number.isFinite(value.confidence)
+      ? Math.min(1, Math.max(0, value.confidence))
+      : 0
+  });
+  return result.success ? result.data : undefined;
+}
+
+function normalizeEntityGroup(value: Record<string, unknown>): ActivityAnalysisEntityDetails {
+  return {
+    prs: normalizeReferences(value.prs, 20),
+    issues: normalizeReferences(value.issues, 20),
+    commits: normalizeCommits(value.commits, 20),
+    people: normalizePeople(normalizePeopleValues(value.people, 20)),
+    identifiers: normalizeStrings(value.identifiers, 30, 120),
+    repos: normalizeStrings(value.repos, 10, 120),
+    versions: normalizeStrings(value.versions, 10, 40),
+    events: normalizeStrings(value.events, 10, 80),
+    decisions: normalizeStrings(value.decisions, 10, 200),
+    urls: normalizeStrings(value.urls, 30, 500).filter((url) => /^https?:\/\//iu.test(url))
+  };
+}
+
+function normalizeReferences(value: unknown, limit: number): ActivityAnalysisReference[] {
+  if (!Array.isArray(value)) return [];
+  const result: ActivityAnalysisReference[] = [];
+  for (const item of value) {
+    const parsed = analysisReferenceSchema.safeParse(item);
+    if (!parsed.success) continue;
+    result.push(parsed.data);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+function normalizeCommits(value: unknown, limit: number): ActivityAnalysisCommit[] {
+  if (!Array.isArray(value)) return [];
+  const result: ActivityAnalysisCommit[] = [];
+  for (const item of value) {
+    const parsed = analysisCommitSchema.safeParse(item);
+    if (!parsed.success) continue;
+    result.push(parsed.data);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+function normalizePeopleValues(value: unknown, limit: number): Array<string | { handle: string; name?: string }> {
+  if (!Array.isArray(value)) return [];
+  const result: Array<string | { handle: string; name?: string }> = [];
+  for (const item of value) {
+    const parsed = analysisPersonSchema.safeParse(item);
+    if (!parsed.success) continue;
+    result.push(parsed.data);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+function normalizeStrings(value: unknown, limit: number, maxLength: number): string[] {
+  if (!Array.isArray(value)) return [];
+  const result: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") continue;
+    const normalized = item.trim().slice(0, maxLength);
+    if (!normalized) continue;
+    result.push(normalized);
+    if (result.length >= limit) break;
+  }
+  return result;
+}
+
+function normalizeMemoryCandidates(value: unknown): Array<{ type: "project" | "feedback" | "reference" | "user"; content: string; why: string }> {
+  if (!Array.isArray(value)) return [];
+  const result: Array<{ type: "project" | "feedback" | "reference" | "user"; content: string; why: string }> = [];
+  for (const item of value) {
+    if (!isRecord(item) || typeof item.type !== "string" || !isMemoryCandidateType(item.type)) continue;
+    const content = typeof item.content === "string" ? item.content.trim().slice(0, 240) : "";
+    if (!content) continue;
+    const why = typeof item.why === "string" ? item.why.trim().slice(0, 200) : "";
+    result.push({ type: item.type, content, why });
+    if (result.length >= 5) break;
+  }
+  return result;
+}
+
+function optionalString(value: unknown, maxLength: number): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().slice(0, maxLength);
+  return normalized || undefined;
+}
+
+function isMemoryCandidateType(value: string): value is "project" | "feedback" | "reference" | "user" {
+  return value === "project" || value === "feedback" || value === "reference" || value === "user";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /**
- * 调用分析模型并强校验输出；解析/校验失败重试一次，再失败返回 confidence=0 的占位输出
- * （由调用方落库）。网络错误、中止等不在此兜底，直接抛给调用方保持「待分析」。
+ * 调用分析模型并校验输出；解析失败重试一次，再失败交给调用方记录 failed 状态。
+ * 网络错误、中止等不在此兜底，直接抛给调用方保持「待分析」。
  */
 async function requestSessionAnalysis(
   model: AgentModel,
   session: ActivityPendingAnalysisSession,
   events: readonly ActivityEventSummary[],
   signal: AbortSignal | undefined
-): Promise<AnalysisOutput> {
+): Promise<AnalysisOutput | undefined> {
   const prompt = buildAnalysisPrompt(session, events);
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const result = await generateNativeText(model, nativeJsonMessages(ANALYSIS_SYSTEM_PROMPT, prompt), {
-      signal,
-      maxOutputTokens: ANALYSIS_MAX_OUTPUT_TOKENS,
-      reasoning: "off",
-      timeoutMs: ANALYSIS_TIMEOUT_MS
-    });
+    const result = await generateNativeText(model, nativeJsonMessages(ANALYSIS_SYSTEM_PROMPT, prompt), { signal });
     try {
-      const parsed = analysisOutputSchema.parse(parseNativeJson(result.text));
-      if (!parsed.summary?.trim() && !parsed.title?.trim() && !parsed.description?.trim()) {
-        throw new Error("analysis output is missing title, description, and summary");
-      }
+      const parsed = parseActivityAnalysisOutput(result.text);
+      if (!parsed) throw new Error("analysis output is not parseable");
       return parsed;
     } catch {
-      // 解析失败重试一次；第二次仍失败则落到下面的低置信度占位。
+      // 解析失败重试一次；第二次仍失败由调用方记录 failed 状态。
     }
   }
-  return {
-    project: null,
-    title: "活动分析失败",
-    description: ACTIVITY_ANALYSIS_FAILED_SUMMARY,
-    summary: ACTIVITY_ANALYSIS_FAILED_SUMMARY,
-    topics: [],
-    prs: [],
-    issues: [],
-    people: [],
-    versions: [],
-    decisions: [],
-    entities: [],
-    highlights: [],
-    commits: [],
-    identifiers: [],
-    repos: [],
-    events: [],
-    urls: [],
-    memoryCandidates: [],
-    worthMemory: false,
-    worthKnowledge: false,
-    isMeeting: false,
-    storageTier: "ephemeral",
-    confidence: 0
-  };
+  return undefined;
 }
 
 /** 按四段结构组装事件、窗口标题、浏览器访问和已脱敏 OCR。 */
@@ -799,6 +1001,7 @@ function deriveTitle(summary: string): string {
 const PLACEHOLDER_SUMMARIES = new Set([ACTIVITY_TRIVIAL_SUMMARY, ACTIVITY_ANALYSIS_FAILED_SUMMARY]);
 
 function isReportableAnalysis(row: ActivityAnalysisReportRow): boolean {
+  if (row.analysisStatus !== "analyzed") return false;
   const itemCount = row.topics.length + row.prs.length + row.issues.length + row.decisions.length
     + row.people.length + row.versions.length + row.highlights.length + row.entities.length;
   if (itemCount > 0) return true;

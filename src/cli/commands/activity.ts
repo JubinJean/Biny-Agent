@@ -15,9 +15,13 @@ import { writeDailyActivityNote } from "../../activity/dailyNotes.js";
 import { refreshActivitySummaryWithNarrative } from "../../activity/summary.js";
 import { generateActivitySuggestions } from "../../activity/suggestions.js";
 import { ActivityStore, resolveActivityDirectory } from "../../activity/store.js";
+import { createActivityMemoryPipeline } from "../../activity/memoryPipeline.js";
 import { startActivityHttpServer } from "../../activity/httpServer.js";
 import type { ActivitySettings } from "../../activity/settings.js";
+import { CrystalService } from "../../agent/context/crystalService.js";
 import { ActivityRecorderService, defaultActivitySidecarPath } from "../../desktop/electron/main/ActivityRecorderService.js";
+import { readSessionEvents } from "../../session/events.js";
+import { resolveSessionFile, sessionIdFromFile } from "../../session/store.js";
 
 export interface ActivityOutputOptions {
   json?: boolean;
@@ -141,14 +145,27 @@ export async function activityReportCommand(
 ): Promise<void> {
   const config = await createFileConfigStore(workspaceRoot).load();
   const store = await openActivityStore(config.activity);
+  let memoryPipeline: Awaited<ReturnType<typeof createActivityMemoryPipeline>> | undefined;
   try {
+    memoryPipeline = await createActivityMemoryPipeline({
+      workspaceRoot,
+      getCrystalConfig: () => config.crystal,
+      requireSemantic: false
+    });
     const policy = new ActivityPrivacyPolicy(config.activity);
-    const result = await buildActivityReport({ store, policy, model: resolveActivityAnalysisModel(config) }, date);
+    const result = await buildActivityReport({
+      store,
+      policy,
+      model: resolveActivityAnalysisModel(config),
+      writeMemories: memoryPipeline.writeMemories,
+      onAnalyzed: memoryPipeline.onAnalyzed
+    }, date);
     await writeDailyActivityNote(result.date, formatActivityDailyNote(result));
     if (options.json) console.log(JSON.stringify(result));
     else console.log(formatActivityReportResult(result));
   } finally {
     await store.close();
+    memoryPipeline?.close();
   }
 }
 
@@ -215,35 +232,77 @@ export async function activityServeCommand(
   options: ActivityServeCommandOptions = {}
 ): Promise<void> {
   const configStore = createFileConfigStore(workspaceRoot);
+  let currentConfig = await configStore.load();
+  const memoryPipeline = await createActivityMemoryPipeline({
+    workspaceRoot,
+    getCrystalConfig: () => currentConfig.crystal,
+    requireSemantic: false
+  });
+  const crystalHttpService = new CrystalService({
+    getConfig: () => currentConfig.crystal,
+    getModel: () => resolveActivityAnalysisModel(currentConfig),
+    readAnchorText: async ({ threadId, anchorId }) => {
+      if (!threadId || !/^[A-Za-z0-9_-]+$/u.test(threadId)) return undefined;
+      const filePath = await resolveSessionFile(workspaceRoot, threadId).catch(() => undefined);
+      if (!filePath || sessionIdFromFile(filePath) !== threadId) return undefined;
+      const events = await readSessionEvents(filePath).catch(() => []);
+      const event = events.find((candidate) => (
+        (candidate.type === "user_message" || candidate.type === "assistant_message")
+        && candidate.messageId === anchorId
+      ));
+      return event?.type === "user_message" || event?.type === "assistant_message" ? event.content : undefined;
+    }
+  });
+  await crystalHttpService.initialize();
   const recorder = new ActivityRecorderService({
     configStore,
     sidecarPath: defaultActivitySidecarPath({
       packaged: false,
       resourcesPath: activityPackageRoot,
       appPath: activityPackageRoot
-    })
+    }),
+    writeMemories: memoryPipeline.writeMemories,
+    onAnalyzed: memoryPipeline.onAnalyzed
   });
-  await recorder.initialize();
-  const api = await startActivityHttpServer({
-    loadSettings: async () => (await configStore.load()).activity,
-    getModel: async () => resolveActivityAnalysisModel(await configStore.load()),
-    getRuntimeSnapshot: () => recorder.snapshot(),
-    start: async () => {
-      await updateConfig(configStore, undefined, (config) => ({
-        ...config,
-        activity: { ...config.activity, enabled: true }
-      }));
-      await recorder.refresh();
-    },
-    stop: async () => await recorder.stop(),
-    clear: async () => await recorder.clear()
-  }, { port: options.port ?? 0 });
-  console.log(`Activity API listening on http://${api.host}:${String(api.port)}`);
+  let api: Awaited<ReturnType<typeof startActivityHttpServer>> | undefined;
   try {
+    await recorder.initialize();
+    api = await startActivityHttpServer({
+      loadSettings: async () => {
+        currentConfig = await configStore.load();
+        return currentConfig.activity;
+      },
+      getModel: async () => {
+        currentConfig = await configStore.load();
+        return resolveActivityAnalysisModel(currentConfig);
+      },
+      getRuntimeSnapshot: () => recorder.snapshot(),
+      start: async () => {
+        currentConfig = await updateConfig(configStore, undefined, (config) => ({
+          ...config,
+          activity: { ...config.activity, enabled: true }
+        }));
+        await recorder.refresh();
+      },
+      stop: async () => await recorder.stop(),
+      clear: async () => await recorder.clear(),
+      writeMemories: memoryPipeline.writeMemories,
+      onAnalyzed: memoryPipeline.onAnalyzed,
+      crystal: {
+        service: crystalHttpService,
+        getConfig: () => currentConfig.crystal,
+        setConfig: async (crystal) => {
+          currentConfig = await updateConfig(configStore, undefined, (config) => ({ ...config, crystal }));
+        }
+      }
+    }, { port: options.port ?? 0 });
+    console.log(`Activity API listening on http://${api.host}:${String(api.port)}`);
     await waitForTermination();
   } finally {
-    await api.close().catch(() => undefined);
-    await recorder.stop();
+    await api?.close().catch(() => undefined);
+    await recorder.stop().catch(() => undefined);
+    crystalHttpService.close();
+    memoryPipeline.close();
   }
 }
 

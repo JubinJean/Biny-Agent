@@ -197,6 +197,10 @@ function aggregateActivitySummaryStats(
     }
 
     const analysis = session.analysis;
+    if (analysis?.analysisStatus === "not_worth") {
+      notWorthCount += 1;
+      continue;
+    }
     if (!isReportableAnalysis(analysis)) continue;
     analyzedCount += 1;
     if (!analysis.worthMemory && !analysis.worthKnowledge) notWorthCount += 1;
@@ -310,7 +314,9 @@ function activitySummaryNarrativePrompt(stats: ActivitySummaryStats): string {
 const PLACEHOLDER_SUMMARIES = new Set(["零星活动", "活动分析失败"]);
 
 function isReportableAnalysis(analysis: ActivitySessionAnalysis | undefined): analysis is ActivitySessionAnalysis {
-  return analysis !== undefined && !PLACEHOLDER_SUMMARIES.has(analysis.summary.trim());
+  return analysis !== undefined
+    && analysis.analysisStatus === "analyzed"
+    && !PLACEHOLDER_SUMMARIES.has(analysis.summary.trim());
 }
 
 function parseLocalDateKey(value: string): Date {

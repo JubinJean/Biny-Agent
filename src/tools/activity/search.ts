@@ -55,7 +55,7 @@ export function createActivitySearchTool(deps: ActivitySearchToolDeps): Tool<Act
       properties: {
         query: { type: "string", minLength: 1, maxLength: 200, description: "Keyword (keyword mode) or natural-language description (semantic mode) of the activity to find." },
         mode: { type: "string", enum: ["keyword", "semantic"], description: "keyword = FTS over event lines (default); semantic = embedding similarity over analyzed sessions." },
-        limit: { type: "number", minimum: 1, maximum: 50, description: "Max results (keyword default 20, semantic default 5)." }
+        limit: { type: "number", minimum: 1, maximum: 100, description: "Max results (keyword default 20, semantic default 5)." }
       },
       required: ["query"],
       additionalProperties: false
@@ -63,7 +63,7 @@ export function createActivitySearchTool(deps: ActivitySearchToolDeps): Tool<Act
     schema: z.object({
       query: z.string().trim().min(1).max(200),
       mode: z.enum(["keyword", "semantic"]).default("keyword"),
-      limit: z.number().int().min(1).max(50).optional()
+      limit: z.number().int().min(1).max(100).optional()
     }),
     capability: "activity.search",
     risk: "read",

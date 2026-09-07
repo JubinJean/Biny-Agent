@@ -12,14 +12,18 @@ import { ActivityPrivacyPolicy } from "./privacyPolicy.js";
 import type { ActivitySettings } from "./settings.js";
 import { ActivityStore } from "./store.js";
 import { buildActivityDigest } from "./digest.js";
-import { buildActivityReport, resolveActivityReportRange } from "./analyzer.js";
+import { buildActivityReport, resolveActivityReportRange, type ActivityAnalyzerDeps } from "./analyzer.js";
 import { refreshActivitySummaryWithNarrative } from "./summary.js";
 import { generateActivitySuggestions } from "./suggestions.js";
 import type { ActivityRuntimeSnapshot } from "./types.js";
+import { handleCrystalHttpRequest, type CrystalHttpDependencies } from "../agent/context/crystalHttp.js";
 
 export interface ActivityHttpApiDependencies {
   loadSettings(): Promise<ActivitySettings>;
   getModel?(): AgentModel | undefined | Promise<AgentModel | undefined>;
+  writeMemories?: ActivityAnalyzerDeps["writeMemories"];
+  onAnalyzed?: ActivityAnalyzerDeps["onAnalyzed"];
+  crystal?: CrystalHttpDependencies;
   getRuntimeSnapshot?(): ActivityRuntimeSnapshot | Promise<ActivityRuntimeSnapshot>;
   start?(): Promise<void>;
   stop?(): Promise<void>;
@@ -30,6 +34,7 @@ export interface ActivityHttpRequest {
   method: string;
   pathname: string;
   searchParams?: URLSearchParams;
+  body?: unknown;
 }
 
 export interface ActivityHttpResponse {
@@ -51,6 +56,15 @@ export async function handleActivityHttpRequest(
   const method = request.method.toUpperCase();
   const pathname = normalizePath(request.pathname);
   const searchParams = request.searchParams ?? new URLSearchParams();
+  if (deps.crystal) {
+    const crystalResponse = await handleCrystalHttpRequest({
+      method,
+      pathname,
+      searchParams,
+      body: request.body
+    }, deps.crystal);
+    if (crystalResponse) return crystalResponse;
+  }
   if (pathname !== "/api/activity-recorder" && !pathname.startsWith("/api/activity-recorder/")) {
     return notFound();
   }
@@ -119,7 +133,16 @@ export async function handleActivityHttpRequest(
         const range = resolveActivityReportRange(date, new Date());
         const model = await deps.getModel?.();
         const policy = new ActivityPrivacyPolicy(settings);
-        return { status: 200, body: await buildActivityReport({ store, policy, model }, range.label) };
+        return {
+          status: 200,
+          body: await buildActivityReport({
+            store,
+            policy,
+            model,
+            writeMemories: deps.writeMemories,
+            onAnalyzed: deps.onAnalyzed
+          }, range.label)
+        };
       }
       if (pathname.startsWith("/api/activity-recorder/summary/") && method === "GET") {
         const dateKey = decodePathPart(pathname.slice("/api/activity-recorder/summary/".length));
@@ -147,8 +170,8 @@ export async function handleActivityHttpRequest(
       }
       if (pathname.startsWith("/api/activity-recorder/snapshots/") && pathname.endsWith("/preview") && method === "GET") {
         const idText = pathname.slice("/api/activity-recorder/snapshots/".length, -"/preview".length);
-        const snapshotId = Number(idText);
-        if (!Number.isSafeInteger(snapshotId) || snapshotId < 1) return badRequest("snapshot id 无效。");
+        const snapshotId = idText.trim();
+        if (!snapshotId || snapshotId.length > 128 || !/^[A-Za-z0-9_-]+$/u.test(snapshotId)) return badRequest("snapshot id 无效。");
         const snapshotPath = store.getSnapshotPath(snapshotId);
         if (!snapshotPath) return notFound("没有找到可预览的截图。");
         const bytes = await readFile(snapshotPath);
@@ -203,10 +226,23 @@ async function respond(
   deps: ActivityHttpApiDependencies
 ): Promise<void> {
   const url = new URL(request.url ?? "/", "http://127.0.0.1");
+  let body: unknown;
+  if (["POST", "PUT", "PATCH"].includes((request.method ?? "GET").toUpperCase())) {
+    const parsed = await readJsonBody(request);
+    if (!parsed.ok) {
+      response.statusCode = parsed.status;
+      response.setHeader("Content-Type", "application/json; charset=utf-8");
+      response.setHeader("Cache-Control", "no-store");
+      response.end(JSON.stringify({ error: parsed.error }));
+      return;
+    }
+    body = parsed.body;
+  }
   const result = await handleActivityHttpRequest({
     method: request.method ?? "GET",
     pathname: url.pathname,
-    searchParams: url.searchParams
+    searchParams: url.searchParams,
+    body
   }, deps);
   response.statusCode = result.status;
   response.setHeader("Content-Type", "application/json; charset=utf-8");
@@ -216,6 +252,47 @@ async function respond(
     return;
   }
   response.end(JSON.stringify(result.body));
+}
+
+async function readJsonBody(
+  request: IncomingMessage
+): Promise<{ ok: true; body?: unknown } | { ok: false; status: number; error: string }> {
+  const maxBytes = 2 * 1024 * 1024;
+  return await new Promise((resolve) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let settled = false;
+    const finish = (result: { ok: true; body?: unknown } | { ok: false; status: number; error: string }): void => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+    request.on("data", (chunk: Buffer | string) => {
+      if (settled) return;
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      size += buffer.byteLength;
+      if (size > maxBytes) {
+        finish({ ok: false, status: 413, error: "request body too large" });
+        request.resume();
+        return;
+      }
+      chunks.push(buffer);
+    });
+    request.on("error", (error: Error) => finish({ ok: false, status: 400, error: error.message }));
+    request.on("end", () => {
+      if (settled) return;
+      const text = Buffer.concat(chunks).toString("utf8").trim();
+      if (!text) {
+        finish({ ok: true, body: undefined });
+        return;
+      }
+      try {
+        finish({ ok: true, body: JSON.parse(text) as unknown });
+      } catch {
+        finish({ ok: false, status: 400, error: "request body must be valid JSON" });
+      }
+    });
+  });
 }
 
 async function activityStatus(deps: ActivityHttpApiDependencies): Promise<unknown> {

@@ -181,6 +181,7 @@ private final class SidecarOutput {
     }
 }
 
+@MainActor
 private final class ActivityRecorder {
     private struct FrameSignature {
         let hash: UInt32
@@ -415,7 +416,9 @@ private final class ActivityRecorder {
             queue: OperationQueue.main
         ) { [weak self] notification in
             let application = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
-            self?.frontmostApplicationChanged(application ?? NSWorkspace.shared.frontmostApplication)
+            Task { @MainActor [weak self] in
+                self?.frontmostApplicationChanged(application ?? NSWorkspace.shared.frontmostApplication)
+            }
         }
     }
 
@@ -436,7 +439,10 @@ private final class ActivityRecorder {
                 object: nil,
                 queue: OperationQueue.main
             ) { [weak self] notification in
-                self?.screenLockChanged(notification.name.rawValue == "com.apple.screenIsLocked")
+                let locked = notification.name.rawValue == "com.apple.screenIsLocked"
+                Task { @MainActor [weak self] in
+                    self?.screenLockChanged(locked)
+                }
             }
         }
     }
@@ -460,14 +466,18 @@ private final class ActivityRecorder {
                 object: nil,
                 queue: OperationQueue.main
             ) { [weak self] _ in
-                self?.handlePowerSleep()
+                Task { @MainActor [weak self] in
+                    self?.handlePowerSleep()
+                }
             },
             center.addObserver(
                 forName: NSWorkspace.didWakeNotification,
                 object: nil,
                 queue: OperationQueue.main
             ) { [weak self] _ in
-                self?.handlePowerWake()
+                Task { @MainActor [weak self] in
+                    self?.handlePowerWake()
+                }
             }
         ]
     }
@@ -1655,7 +1665,9 @@ private func shortText(_ value: String?) -> String? {
 }
 
 private let output = SidecarOutput()
-private let recorder = ActivityRecorder(output: output)
+private let recorder: ActivityRecorder = MainActor.assumeIsolated {
+    ActivityRecorder(output: output)
+}
 private let inputQueue = DispatchQueue(label: "com.biny.activity-recorder.stdin")
 
 inputQueue.async {

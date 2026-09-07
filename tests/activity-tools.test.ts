@@ -23,6 +23,7 @@ import type { Tool } from "../src/tools/types.js";
 const NOW = new Date(2026, 7, 26, 15, 30, 0); // 本地 2026-08-26 15:30
 
 const ANALYSIS_JSON_NEW_SESSION = JSON.stringify({
+  worth: true,
   project: "biny",
   summary: "下午的收尾",
   topics: ["新会话主题"],
@@ -30,6 +31,7 @@ const ANALYSIS_JSON_NEW_SESSION = JSON.stringify({
 });
 
 const ANALYSIS_JSON = JSON.stringify({
+  worth: true,
   project: "biny",
   summary: "在 biny 仓库实现活动分析层",
   topics: ["实现 analyzer", "接入 activity 工具"],

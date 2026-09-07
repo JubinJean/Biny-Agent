@@ -13,10 +13,12 @@ import { refreshActivitySummary, refreshActivitySummaryWithNarrative } from "../
 import { ActivityRecorderService, defaultActivitySidecarPath } from "../src/desktop/electron/main/ActivityRecorderService.js";
 
 testDefaultActivitySidecarPath();
+await testCanonicalActivitySchema();
 await testActivityServiceLifecycleQueue();
 await testActivitySettingsRestartSidecar();
 await testSidecarPersistsCaptureBeforeOcr();
 await testEventAndFallbackStorage();
+await testSnapshotOrphanRecovery();
 await testKeyBurstFirstTimestamp();
 await testLegacyScreenshotMigration();
 await testSessionClosePersistsDuration();
@@ -49,6 +51,48 @@ function testDefaultActivitySidecarPath(): void {
     }),
     expectedPath
   );
+}
+
+async function testCanonicalActivitySchema(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-schema-"));
+  const store = new ActivityStore();
+  try {
+    await store.open(root);
+    const database = new DatabaseSync(path.join(root, "activity.sqlite"));
+    const columns = (table: string): Map<string, { type: string; pk: number }> => new Map(
+      (database.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string; type: string; pk: number }>)
+        .map((column) => [column.name, column])
+    );
+    assert.equal(columns("activity_events").get("id")?.type, "TEXT");
+    assert.equal(columns("activity_events").has("capture_id"), true);
+    assert.equal(columns("activity_snapshots").get("id")?.type, "TEXT");
+    assert.equal(columns("activity_snapshots").get("event_id")?.type, "TEXT");
+    assert.equal(columns("activity_ocr_frames").get("id")?.type, "TEXT");
+    assert.equal(columns("activity_ocr_frames").get("snapshot_id")?.type, "TEXT");
+    assert.equal(columns("activity_summaries").get("id")?.pk, 1);
+    const snapshotForeignKeys = database.prepare("PRAGMA foreign_key_list(activity_snapshots)").all() as Array<Record<string, unknown>>;
+    assert.ok(snapshotForeignKeys.some((foreignKey) => foreignKey.table === "activity_events" && foreignKey.on_delete === "CASCADE"));
+    const sessionId = store.startSession("2026-08-27T00:00:00.000Z");
+    const event = store.recordEvent({
+      sessionId,
+      occurredAt: "2026-08-27T00:00:01.000Z",
+      eventType: "focus_changed",
+      application: "Schema Test"
+    });
+    assert.match(event.id, /^[0-9a-f-]{36}$/u);
+    const capture = await store.recordFallbackCapture({
+      sessionId,
+      occurredAt: "2026-08-27T00:00:02.000Z",
+      eventType: "screenshot",
+      captureId: "schema-capture",
+      jpeg: Uint8Array.from([0xff, 0xd8, 0xff, 0xd9])
+    });
+    assert.match(capture.snapshotId ?? "", /^[0-9a-f-]{36}$/u);
+    database.close();
+  } finally {
+    await store.close();
+    await rm(root, { recursive: true, force: true });
+  }
 }
 
 async function testActivityServiceLifecycleQueue(): Promise<void> {
@@ -225,11 +269,64 @@ async function testEventAndFallbackStorage(): Promise<void> {
       occurredAt: "2026-08-24T00:00:03.000Z",
       eventType: "fallback_capture",
       application: "Test App",
+      captureId: "capture-restart",
       jpeg: Buffer.from("jpeg-2"),
       inputEventCount: 5
     });
     assert.equal(deferredCapture.ocrText, undefined);
+    const beforeOcr = Date.now();
     store.updateSnapshotOcr(deferredCapture.snapshotId!, "late-secret=hidden\nlate OCR");
+    store.updateSnapshotOcr(deferredCapture.snapshotId!, "late-secret=hidden\nlate OCR");
+    assert.equal(store.updateSnapshotOcrByCaptureId("capture-restart", "late-secret=hidden\nlate OCR"), true);
+    const ocrDatabase = new DatabaseSync(path.join(root, "activity.sqlite"), { readOnly: true });
+    try {
+      const frame = ocrDatabase.prepare("SELECT text, char_count, token_count, created_at FROM activity_ocr_frames WHERE snapshot_id = ?").get(deferredCapture.snapshotId!)!;
+      assert.equal(ocrDatabase.prepare("SELECT COUNT(*) AS count FROM activity_ocr_frames WHERE snapshot_id = ?").get(deferredCapture.snapshotId!)?.count, 1);
+      assert.equal(frame.char_count, String(frame.text).length);
+      assert.equal(frame.token_count, Math.ceil(String(frame.text).length / 4));
+      assert.ok(Number(frame.created_at) >= beforeOcr);
+      assert.ok(Number(frame.created_at) <= Date.now());
+    } finally {
+      ocrDatabase.close();
+    }
+    const orderingDatabase = new DatabaseSync(path.join(root, "activity.sqlite"));
+    try {
+      orderingDatabase.prepare("UPDATE activity_ocr_frames SET created_at = ? WHERE snapshot_id = ?").run(200, capture.snapshotId!);
+      orderingDatabase.prepare("UPDATE activity_ocr_frames SET created_at = ? WHERE snapshot_id = ?").run(100, deferredCapture.snapshotId!);
+      const frames = orderingDatabase.prepare("SELECT id FROM activity_ocr_frames ORDER BY created_at DESC").all();
+      const oldestFirst = [...frames].reverse().map((frame) => String(frame.id));
+      assert.deepEqual(store.listOcrEmbeddingSources("ordering-test").map((frame) => frame.id), oldestFirst);
+      assert.equal(store.listOcrEmbeddingSources("ordering-test", 1)[0]?.id, oldestFirst[0]);
+      for (const frame of frames) store.upsertOcrEmbedding(String(frame.id), "ordering-test", new Float32Array([1, 0]), new Date().toISOString());
+      assert.deepEqual(store.listOcrEmbeddingSources("ordering-test"), []);
+      assert.deepEqual(store.listOcrEmbeddingRows("ordering-test").map((frame) => frame.id), frames.map((frame) => String(frame.id)));
+      assert.equal(store.listOcrEmbeddingRows("ordering-test", 1)[0]?.id, String(frames[0]!.id));
+      const embeddingModels = orderingDatabase
+        .prepare("SELECT DISTINCT embedding_model FROM activity_ocr_frames WHERE model_fingerprint = ?")
+        .all("ordering-test") as Array<{ embedding_model: string }>;
+      assert.deepEqual(embeddingModels.map((row) => row.embedding_model), ["multilingual-e5-small"]);
+      const missingVectorId = String(frames[0]!.id);
+      orderingDatabase.prepare("UPDATE activity_ocr_frames SET embedding = NULL WHERE id = ?").run(missingVectorId);
+      assert.deepEqual(store.listOcrEmbeddingSources("ordering-test").map((frame) => frame.id), [missingVectorId]);
+      assert.equal(store.listOcrEmbeddingRows("ordering-test").some((frame) => frame.id === missingVectorId), false);
+      store.upsertOcrEmbedding(missingVectorId, "ordering-test", new Float32Array([1, 0]), new Date().toISOString());
+      assert.deepEqual(store.listOcrEmbeddingSources("ordering-test"), []);
+    } finally {
+      orderingDatabase.close();
+    }
+    await store.close();
+    await store.open(root);
+    const duplicateCapture = await store.recordFallbackCapture({
+      sessionId,
+      occurredAt: "2026-08-24T00:00:04.000Z",
+      eventType: "fallback_capture",
+      application: "Test App",
+      captureId: "capture-restart",
+      jpeg: Buffer.from("duplicate-must-not-be-written")
+    });
+    assert.equal(duplicateCapture.id, deferredCapture.id);
+    assert.equal(duplicateCapture.snapshotId, deferredCapture.snapshotId);
+    assert.equal(store.snapshot().fallbackCaptures, 2);
     const ocrSummaries = store.listSessionEventSummaries(sessionId).filter((event) => event.eventType === "screenshot_ocr");
     assert.equal(ocrSummaries.some((event) => event.ocrText?.includes("late OCR") === true), true);
     assert.equal(store.search("late").some((event) => event.ocrText?.includes("late OCR") === true), true);
@@ -250,6 +347,26 @@ async function testEventAndFallbackStorage(): Promise<void> {
     await store.clear();
     assert.deepEqual(store.snapshot(), { sessions: 0, events: 0, fallbackCaptures: 0, storageBytes: 0, recentSessions: [] });
     assert.equal((await stat(path.join(root, "snapshots"))).mode & 0o777, 0o700);
+  } finally {
+    await store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+async function testSnapshotOrphanRecovery(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-orphan-"));
+  const store = new ActivityStore();
+  try {
+    await store.open(root);
+    await store.close();
+    const orphanPath = path.join(root, "snapshots", "2026-09-07", "orphan.jpg");
+    await mkdir(path.dirname(orphanPath), { recursive: true });
+    await writeFile(orphanPath, Buffer.from("orphan"));
+    await mkdir(path.join(root, ".capture-tmp"), { recursive: true });
+    await writeFile(path.join(root, ".capture-tmp", "stale.tmp"), Buffer.from("stale"));
+    await store.open(root);
+    await assert.rejects(stat(orphanPath));
+    await assert.rejects(stat(path.join(root, ".capture-tmp", "stale.tmp")));
   } finally {
     await store.close();
     await rm(root, { recursive: true, force: true });
@@ -345,12 +462,16 @@ async function testSessionClosePersistsDuration(): Promise<void> {
     const sessionId = store.startSession("2026-08-25T10:00:00.000Z");
     store.endSession(sessionId, "2026-08-25T10:01:02.345Z");
     const database = new DatabaseSync(path.join(root, "activity.sqlite"));
-    const row = database.prepare("SELECT duration_ms, updated_at FROM activity_sessions WHERE id = ?").get(sessionId) as {
+    const row = database.prepare("SELECT typeof(started_at) AS started_type, typeof(ended_at) AS ended_type, duration_ms, updated_at FROM activity_sessions WHERE id = ?").get(sessionId) as {
+      started_type: string;
+      ended_type: string;
       duration_ms: number;
-      updated_at: string;
+      updated_at: number;
     };
+    assert.equal(row.started_type, "integer");
+    assert.equal(row.ended_type, "integer");
     assert.equal(row.duration_ms, 62_345);
-    assert.match(row.updated_at, /^\d{4}-\d{2}-\d{2}T/u);
+    assert.ok(Number.isSafeInteger(row.updated_at));
     database.close();
   } finally {
     await store.close();
@@ -425,7 +546,7 @@ async function testBrowserTabUrlStructuredStorageAndSearch(): Promise<void> {
       windowTitle: "ChatGPT — writing a design doc",
       inputEventCount: 2
     });
-    // 结构化 URL 列原样保留（不经过内容脱敏），且不进入送分析的 summary。
+    // 结构化 URL 列保留站点与路径，且不进入送分析的 summary。
     assert.equal(event.url, "https://chat.openai.com/c/abc-123");
     assert.equal(event.windowTitle, "ChatGPT — writing a design doc");
     assert.doesNotMatch(event.summary, /chat\.openai\.com/u);
@@ -436,6 +557,17 @@ async function testBrowserTabUrlStructuredStorageAndSearch(): Promise<void> {
     assert.equal(store.search("design doc").length, 1);
     assert.equal(store.search("chat.openai.com")[0]?.url, "https://chat.openai.com/c/abc-123");
     assert.equal(store.search("https://chat.openai.com/c/abc-123").length, 1);
+
+    const privateUrl = store.recordEvent({
+      sessionId,
+      occurredAt: "2026-08-26T00:00:01.500Z",
+      eventType: "browser_visit",
+      application: "Safari",
+      url: "https://user:password@example.com/account?token=super-secret&email=user@example.com#access_token=fragment-secret"
+    });
+    assert.equal(privateUrl.url, "https://example.com/account");
+    assert.equal(store.search("super-secret").length, 0);
+    assert.equal(store.search("fragment-secret").length, 0);
 
     // 控制字符清理 + 限长：URL 列不落 NUL，超长截断到 2048。
     const dirty = store.recordEvent({
