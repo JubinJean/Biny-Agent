@@ -9,6 +9,7 @@
 import { createRequire } from "node:module";
 import { Command, InvalidArgumentError } from "commander";
 import { initCommand } from "./commands/init.js";
+import { registerCrystalCommands } from "./commands/crystal.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { runCommand, type RunCommandOptions } from "./commands/run.js";
 import { chatCommand } from "./commands/chat.js";
@@ -20,6 +21,7 @@ import type { SessionTransferFormat } from "../session/transfer.js";
 import { planCommand } from "./commands/plan.js";
 import { tuiCommand } from "./commands/tui.js";
 import { runtimeHostCommand } from "./commands/runtimeHost.js";
+import { emotionGetCommand, emotionSetBaseCommand, emotionSetContextCommand, emotionStatusCommand } from "./commands/emotion.js";
 import {
   activityClearCommand,
   activityConfigCommand,
@@ -65,6 +67,7 @@ const cliArgv = process.argv[2] === "--"
 const { version: cliVersion } = createRequire(import.meta.url)("../../package.json") as { version: string };
 
 program.name("biny").description("Biny local desktop assistant").version(cliVersion);
+registerCrystalCommands(program);
 
 program.command("init").description("Initialize config and .biny directories").action(wrap(() => initCommand(workspaceRoot)));
 program.command("doctor").description("Check local environment").action(wrap(() => doctorCommand(workspaceRoot)));
@@ -224,6 +227,27 @@ activity
   .description("Run the loopback Activity REST API and recorder")
   .option("--port <port>", "TCP port; 0 chooses a free port", parseNonNegativeInteger, 0)
   .action((options: { port?: number }) => wrap(() => activityServeCommand(workspaceRoot, options))());
+const emotion = program.command("emotion").description("Read and update local emotion snapshots");
+emotion.action(wrap(() => emotionStatusCommand()));
+emotion.command("status").description("Show current emotion state").action(wrap(() => emotionStatusCommand()));
+emotion
+  .command("set-base")
+  .argument("<mood>", "base mood")
+  .argument("<energy>", "energy from 0 to 10")
+  .argument("<valence>", "valence from 0 to 10")
+  .argument("[description...]", "reason")
+  .action((mood: string, energy: string, valence: string, description: string[]) => wrap(() => emotionSetBaseCommand(mood, energy, valence, description))());
+emotion
+  .command("set-context")
+  .argument("<sessionId>", "session or chat id")
+  .argument("<mood>", "context mood")
+  .argument("<valence>", "valence from 0 to 10")
+  .argument("[trigger...]", "reason")
+  .action((sessionId: string, mood: string, valence: string, trigger: string[]) => wrap(() => emotionSetContextCommand(sessionId, mood, valence, trigger))());
+emotion
+  .command("get")
+  .argument("[sessionId]", "session or chat id")
+  .action((sessionId?: string) => wrap(() => emotionGetCommand(sessionId))());
 program
   .command("plan")
   .description("Create a plan without executing write, edit, or command tools")
