@@ -27,7 +27,7 @@ export function migrateGlobalConfigDocument(value: unknown): ConfigMigrationResu
   migrateActivityEmbeddingPolicy(document);
   // 已移除的记忆策略仍可能存在于已版本化的配置；严格 schema 解析前必须无条件清理。
   migrateRemovedMemoryPolicyFields(document);
-  // 人格预设与自定义指令已下线（改由 SOUL/USER 承载）。顶层 personalization 块不再属于
+  // 人格预设与自定义指令已下线（改由内置 Soul 与 USER 承载）。顶层 personalization 块不再属于
   // 严格 schema，无条件剥离以兼容任何版本的存量配置文件。
   delete document.personalization;
   return { document };

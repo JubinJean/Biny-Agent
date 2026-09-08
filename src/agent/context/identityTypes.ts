@@ -1,10 +1,10 @@
 /**
  * Agent 身份资料的共享契约。
  *
- * 身份文档是用户可审计的 Markdown canonical state，直接由用户维护 SOUL/USER 等长期资料。
+ * 用户资料是用户可审计的 Markdown canonical state。Agent 的核心人格由应用内置，不属于这里的可编辑文档。
  */
 
-export const identityDocumentKinds = ["soul", "user"] as const;
+export const identityDocumentKinds = ["user"] as const;
 export type IdentityDocumentKind = (typeof identityDocumentKinds)[number];
 
 export interface IdentityDocument {

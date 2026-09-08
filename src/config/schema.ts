@@ -99,7 +99,7 @@ export const chatParamsSchema = z.object({
 });
 
 const identityPolicySchema = z.object({
-  /** SOUL/IDENTITY/STYLE 的全局身份区块开关。 */
+  /** 用户资料区块的全局开关；核心 Soul 始终来自应用内置资源。 */
   enabled: z.boolean().default(true),
   /** USER.md 是否进入模型上下文；用户资料可以独立关闭。 */
   userEnabled: z.boolean().default(true)

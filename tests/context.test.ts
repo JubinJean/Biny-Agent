@@ -167,7 +167,10 @@ async function main(): Promise<void> {
 
 function testConversationBoundaryPrompt(): void {
   const prompt = buildSystemPrompt({ mode: "qa", cwd: "/workspace" });
-  assert.match(prompt, /expert coding assistant operating inside Biny/u);
+  assert.match(prompt, /AI agent operating on the user's machine/u);
+  assert.match(prompt, /Keep simple answers simple; do not add headings or lists to simple answers/u);
+  assert.match(prompt, /simple greeting or casual exchange/u);
+  assert.match(prompt, /without inspecting or modifying the workspace/u);
   assert.match(prompt, /Available tools:\n\(none\)/u);
   assert.match(prompt, /only the latest user message as the active task/u);
   assert.match(prompt, /desired outcome, constraints, and explicit success criteria/u);

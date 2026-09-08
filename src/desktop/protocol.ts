@@ -995,7 +995,7 @@ export interface DesktopCookieJarStatus {
 export type DesktopChatInheritance = "inherit";
 
 /**
- * 按聊天的记忆开关覆盖。人格预设与自定义指令已下线（改由 SOUL/IDENTITY/STYLE 与 USER.md 承载），
+ * 按聊天的记忆开关覆盖。人格预设与自定义指令已下线（由内置 Soul 与 USER.md 承载），
  * 这里只保留记忆开关；读旧 catalog 记录时上游 schema 会丢弃废弃字段。
  */
 export interface DesktopChatPersonalizationOverride {

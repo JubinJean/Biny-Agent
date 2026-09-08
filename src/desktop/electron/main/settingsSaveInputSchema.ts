@@ -69,7 +69,7 @@ const permissionSettingsSchema = z.object({
   criticalAlwaysAsk: z.boolean()
 }).strict();
 /**
- * 按聊天的记忆开关覆盖。人格/指令字段已下线（改由 SOUL/USER 承载），这里只保留 use/contribute
+ * 按聊天的记忆开关覆盖。人格/指令字段已下线（由内置 Soul 和 USER 承载），这里只保留 use/contribute
  * 两个记忆开关。渲染层只发送这两个键；读取历史 catalog 的宽松兼容在上游 schema 处理。
  */
 export const chatPersonalizationSchema = z.object({
