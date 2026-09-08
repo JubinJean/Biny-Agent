@@ -78,6 +78,7 @@ import type {
   RuntimeIsolation
 } from "./types.js";
 import type { WorktreeRecord, WorktreeStatusView } from "./worktree.js";
+import { RuntimeResourceBaselinePendingError } from "./resources.js";
 
 interface RuntimeHostClientOptions extends HostClientOptions {
   registration: HostRegistration;
@@ -164,6 +165,7 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     capabilitySelection?: AgentCapabilitySelection
   ): SubmittedAgentRun {
     if (!input.trim()) throw new Error("Agent prompt cannot be empty.");
+    if (this.getSnapshot(sessionId).resourceReadiness?.state === "loading") throw new RuntimeResourceBaselinePendingError();
     const ids = normalizeRequestIds(requestIds);
     const completion = this.createCompletion(ids.runId);
     void this.request<{ runId: string; messageId: string }>("submit", {
@@ -200,9 +202,10 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     mode: AgentRunMode = "chat",
     attachments: AgentAttachment[] = [],
     requestIds?: RuntimeRequestIds,
+    promptContext?: string,
     capabilitySelection?: AgentCapabilitySelection
   ): Promise<HostOperationResult<{ runId: string; messageId: string }>> {
-    return await this.submitRunForSession(this.focusedSessionId, input, mode, attachments, requestIds, capabilitySelection);
+    return await this.submitRunForSession(this.focusedSessionId, input, mode, attachments, requestIds, promptContext, capabilitySelection);
   }
 
   async submitRunForSession(
@@ -211,9 +214,11 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     mode: AgentRunMode = "chat",
     attachments: AgentAttachment[] = [],
     requestIds?: RuntimeRequestIds,
+    promptContext?: string,
     capabilitySelection?: AgentCapabilitySelection
   ): Promise<HostOperationResult<{ runId: string; messageId: string }>> {
     if (!input.trim()) throw new Error("Agent prompt cannot be empty.");
+    if (this.getSnapshot(sessionId).resourceReadiness?.state === "loading") throw new RuntimeResourceBaselinePendingError();
     const ids = normalizeRequestIds(requestIds);
     return await this.request("run.submit", {
       input,
@@ -225,6 +230,7 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
       parentRunId: ids.parentRunId,
       continuationSource: ids.continuationSource,
       retryOfMessageId: ids.retryOfMessageId,
+      promptContext,
       replaceUserMessageId: ids.replaceUserMessageId,
       capabilitySelection,
       sessionId,
@@ -1411,6 +1417,8 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
 }
 
 function commandWritesSession(input: string): boolean {
-  const [command] = input.trim().replace(/^\/+/, "/").split(/\s+/u);
-  return command === "/compact";
+  const [command, action] = input.trim().replace(/^\/+/, "/").split(/\s+/u);
+  if (command === "/compact") return true;
+  return command === "/soul"
+    && (action === "set" || action === "append-trait" || action === "reset" || action === "delete");
 }

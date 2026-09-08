@@ -33,6 +33,7 @@ export const SLASH_COMMANDS: readonly SlashCommandDefinition[] = [
   { name: "/review", description: "Review current changes with a read-only subagent", category: "extension", acceptsArgs: true, surfaces: allInteractive },
   { name: "/memories", description: "Control whether this chat uses or contributes memories", category: "system", acceptsArgs: true, surfaces: allInteractive },
   { name: "/memory", description: "Manage durable workspace and universal memory (list/show/add/forget/search/compact)", category: "extension", acceptsArgs: true, surfaces: allInteractive },
+  { name: "/soul", description: "Show or edit the persistent Soul (show/edit/set/append-trait/reset)", category: "system", acceptsArgs: true, surfaces: allInteractive },
   { name: "/resume", description: "Choose a session and resume its history", category: "session", surfaces: terminalOnly },
   { name: "/sessions", description: "List active Runtime Host sessions and switch focus", category: "session", surfaces: terminalOnly },
   { name: "/worktree", description: "Inspect and safely manage isolated worktrees", category: "session", acceptsArgs: true, surfaces: terminalOnly },

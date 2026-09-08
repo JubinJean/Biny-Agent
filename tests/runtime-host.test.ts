@@ -80,7 +80,8 @@ async function main(): Promise<void> {
     index: {},
     totalEntries: 0,
     indexedEntries: 0,
-    pendingEntries: 0
+    pendingEntries: 0,
+    needsRebuild: false
   });
   const personalizationState = () => ({
     memory: memoryPolicy,
@@ -419,8 +420,8 @@ async function main(): Promise<void> {
     cancelled: true,
     status: embeddingStatus()
   });
-  const deletedEmbedding = await client.deleteMemoryEmbeddingModel("paraphrase-multilingual-MiniLM-L12-v2");
-  assert.equal(removedEmbeddingModel, "paraphrase-multilingual-MiniLM-L12-v2");
+  const deletedEmbedding = await client.deleteMemoryEmbeddingModel("multilingual-e5-small");
+  assert.equal(removedEmbeddingModel, "multilingual-e5-small");
   assert.equal(deletedEmbedding.filesDeleted, 2);
   assert.equal(deletedEmbedding.bytesFreed, 128);
   await client.rebuildMemoryEmbeddingIndex();

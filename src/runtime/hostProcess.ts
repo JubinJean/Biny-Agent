@@ -38,7 +38,9 @@ export async function runRuntimeHostProcess(argv: readonly string[] = process.ar
       persistenceRoot: options.persistenceRoot,
       configStore,
       attachmentRoot: options.attachmentRoot,
-      sessionId: fresh ? sessionId : undefined
+      sessionId: fresh ? sessionId : undefined,
+      resourceRegistry: factoryOptions?.resourceRegistry,
+      resourceBoot: factoryOptions?.resourceBoot ?? (factoryOptions?.resourceRegistry === undefined ? "blocking" : "background")
     });
     try {
       if (sessionId !== undefined && !fresh) await host.runtime.resumeSession(sessionId);
@@ -53,7 +55,11 @@ export async function runRuntimeHostProcess(argv: readonly string[] = process.ar
   const initialFactoryOptions = selectedSession === undefined
     ? undefined
     : await worktrees.runtimeFactoryOptions(selectedSession);
-  const server = await startRuntimeHost(options.persistenceRoot, () => createRuntime(selectedSession, initialFactoryOptions), {
+  const server = await startRuntimeHost(options.persistenceRoot, (resourceRegistry) => createRuntime(selectedSession, {
+    ...initialFactoryOptions,
+    resourceRegistry,
+    resourceBoot: "background"
+  }), {
     workspaceRoot: options.workspaceRoot,
     createRuntime,
     resumeInterrupted: options.resumeInterrupted,

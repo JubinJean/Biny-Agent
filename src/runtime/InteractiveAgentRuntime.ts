@@ -111,6 +111,7 @@ interface AgentRun extends ActiveRunSnapshot {
   turnId: string;
   startedAtMs: number;
   continuation: boolean;
+  emotionAnalysis: boolean;
   attachments: AgentAttachment[];
   promptContext?: string;
   capabilitySelection?: AgentCapabilitySelection;
@@ -161,6 +162,7 @@ export class InteractiveAgentRuntime {
   private commandRuntimeClosePromise: Promise<void> | undefined;
   private closed = false;
   private readonly shutdownDrainMs: number;
+  private resourceChangeUnsubscribe: (() => void) | undefined;
 
   constructor(
     private readonly commandRuntime: CommandRuntime,
@@ -176,6 +178,7 @@ export class InteractiveAgentRuntime {
         ? new SessionRunLedger(commandRuntime.persistenceRoot)
         : undefined);
     this.runtimeAuthority = options.runtimeAuthority ?? commandRuntime.runtimeAuthority;
+    this.resourceChangeUnsubscribe = commandRuntime.subscribeResourceChanges?.(() => this.publishSnapshot());
     // 自动技能提取在回合终态之后 fire-and-forget；宿主在这里把草稿通知转成 host event，
     // 经 wireRuntimeEvents 广播到渲染层。sessionId 回调时现取，避免沿用装配期快照。
     commandRuntime.agent.setOnSkillDraftCreated?.((notice) => {
@@ -263,6 +266,10 @@ export class InteractiveAgentRuntime {
       throw new Error("Cannot submit a prompt while the runtime is busy.");
     }
     if (!input.trim()) throw new Error("Agent prompt cannot be empty.");
+    // MCP/Skill 工具面在首个快照稳定前不可提交；检查发生在 writer lease、run ledger
+    // 和 user_message 之前，确保 Desktop 点击竞态不会留下半条会话记录。
+    this.commandRuntime.assertResourceBaselineReady?.();
+    this.commandRuntime.refreshExtensionTools?.();
     // 能力校验交给 AgentSession。它会先把输入和附件引用写入 JSONL，再返回明确的
     // vision/audio 错误，避免用户粘贴的内容在失败时从会话历史里消失。
     const sessionId = this.getInfo().sessionId;
@@ -284,6 +291,9 @@ export class InteractiveAgentRuntime {
       startedAt: new Date(startedAtMs).toISOString(),
       startedAtMs,
       continuation,
+      emotionAnalysis: !continuation
+        && requestIds?.retryOfMessageId === undefined
+        && requestIds?.continuationSource === undefined,
       promptContext,
       capabilitySelection,
       retryOfMessageId: requestIds?.retryOfMessageId,
@@ -557,7 +567,8 @@ export class InteractiveAgentRuntime {
       revision: this.revision,
       info: this.snapshotInfo(),
       permissionMode: this.commandRuntime.agent.getPermissionMode(),
-      state: cloneRunState(this.state)
+      state: cloneRunState(this.state),
+      resourceReadiness: this.commandRuntime.resourceSnapshot?.()
     };
   }
 
@@ -585,6 +596,8 @@ export class InteractiveAgentRuntime {
         this.activeOperationCompletion
       ]).then(() => undefined, () => undefined);
       if (await settlesWithin(activeWriters, this.shutdownDrainMs)) {
+        this.resourceChangeUnsubscribe?.();
+        this.resourceChangeUnsubscribe = undefined;
         await this.closeCommandRuntime();
         return;
       }
@@ -593,7 +606,11 @@ export class InteractiveAgentRuntime {
       // the recorder open until that writer really settles, while allowing the
       // UI host itself to close within a bounded time.
       void activeWriters
-        .then(async () => await this.closeCommandRuntime())
+        .then(async () => {
+          this.resourceChangeUnsubscribe?.();
+          this.resourceChangeUnsubscribe = undefined;
+          await this.closeCommandRuntime();
+        })
         .catch(() => undefined);
     })();
     return this.closePromise;
@@ -968,7 +985,8 @@ export class InteractiveAgentRuntime {
         replaceUserMessageId: run.replaceUserMessageId,
         replacementInput: run.replaceUserMessageId === undefined ? undefined : run.input,
         replacementUserMessageId: run.replacementUserMessageId,
-        turnId: run.turnId
+        turnId: run.turnId,
+        emotionAnalysis: run.emotionAnalysis
       };
       const stream = run.continuation
         ? agent.continueInterruptedTurn(runOptions)
@@ -1607,6 +1625,7 @@ function publicOperationName(operation: RuntimeOperation): string {
   if (operation === "compact") return "conversation compaction";
   if (operation === "mcp") return "MCP reconnection";
   if (operation === "memory") return "a memory command";
+  if (operation === "soul") return "a Soul command";
   if (operation === "personalization") return "personalization settings";
   if (operation === "checkpoint") return "checkpoint restore";
   if (operation === "message_version") return "message version switching";

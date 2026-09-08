@@ -93,8 +93,12 @@ await run("git", ["add", "README.md"], { cwd: workspaceRoot });
 await run("git", ["commit", "--quiet", "-m", "initial"], { cwd: workspaceRoot });
 const commands = {} as CommandRuntime;
 const primary = fakeRuntime("primary", workspaceRoot, "full-access");
-const createdFactoryOptions: Array<{ isolation?: string; workspaceRoot?: string }> = [];
-const host = await startRuntimeHost(workspaceRoot, async () => ({ runtime: primary, commands: commands }), {
+const createdFactoryOptions: Array<{ isolation?: string; workspaceRoot?: string; resourceRegistry?: unknown }> = [];
+let hostResourceRegistry: unknown;
+const host = await startRuntimeHost(workspaceRoot, async (resourceRegistry) => {
+  hostResourceRegistry = resourceRegistry;
+  return { runtime: primary, commands: commands };
+}, {
   workspaceRoot,
   createRuntime: async (sessionId, options) => {
     createdFactoryOptions.push(options ?? {});
@@ -130,6 +134,7 @@ try {
     assert.equal(client.getFocusedSessionId(), draft.sessionId, "创建草稿后客户端必须聚焦新 session");
     assert.equal(client.getSnapshot().info.sessionId, draft.sessionId);
     assert.equal(createdFactoryOptions.at(-1)?.isolation, "shared", "并行会话默认共享目录");
+    assert.equal(createdFactoryOptions.at(-1)?.resourceRegistry, hostResourceRegistry, "Draft Runtime 必须复用 Host 级资源注册表");
     assert.equal(draft.workspaceRoot, workspaceRoot);
     assert.equal(client.runtimeSnapshots().filter((entry) => entry.primary).length, 1);
     assert.equal(

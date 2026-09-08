@@ -3,6 +3,7 @@ import type { AgentSessionUpdate, AgentTurnStopReason, BlockedReason } from "../
 import type { ContextStatus } from "../agent/context/types.js";
 import type { PermissionAction, PermissionGrantScope, PermissionMode } from "../permission/PermissionManager.js";
 import type { SessionUsage } from "../session/metadata.js";
+import type { RuntimeResourceSnapshot } from "./host/resources.js";
 
 export type AgentRunStatus =
   | "thinking"
@@ -25,6 +26,7 @@ export type RuntimeOperation =
   | "mcp"
   | "permission"
   | "memory"
+  | "soul"
   | "personalization"
   | "model_catalog"
   | "checkpoint"
@@ -153,6 +155,8 @@ export interface InteractiveRuntimeSnapshot {
   info: AgentSessionInfo;
   permissionMode: PermissionMode;
   state: InteractiveRunState;
+  /** Host 级 MCP/Skill 基线；旧客户端缺省时按未知处理。 */
+  resourceReadiness?: RuntimeResourceSnapshot;
 }
 
 /** Runtime 发布的唯一实时信封；没有 event 时表示维护操作等纯状态变化。 */

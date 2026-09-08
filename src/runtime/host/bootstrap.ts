@@ -19,10 +19,11 @@ import {
 } from "./lifecycle.js";
 import { runtimeHostProtocolVersion as protocolVersion } from "./protocol.js";
 import type { HostRegistration, RuntimeHostStartOptions } from "./types.js";
+import { RuntimeHostResourceRegistry } from "./resources.js";
 
 export async function startRuntimeHost(
   persistenceRoot: string,
-  createInitialRuntime: () => Promise<InteractiveAgentHost>,
+  createInitialRuntime: (resourceRegistry: RuntimeHostResourceRegistry) => Promise<InteractiveAgentHost>,
   options: RuntimeHostStartOptions = {}
 ): Promise<RuntimeHostServer> {
   if (process.platform === "win32") throw new Error("Runtime Host currently requires Unix domain sockets.");
@@ -47,14 +48,16 @@ export async function startRuntimeHost(
   };
   let server: RuntimeHostServer | undefined;
   let initial: InteractiveAgentHost | undefined;
+  const resourceRegistry = new RuntimeHostResourceRegistry();
   try {
     await removeSocketIfStale(paths.endpoint);
-    initial = await createInitialRuntime();
+    initial = await createInitialRuntime(resourceRegistry);
     server = new RuntimeHostServer(initial.runtime, initial.commands, registration, lock, options.createRuntime, {
       workspaceRoot: options.workspaceRoot,
       maxSessionRuntimes: options.maxSessionRuntimes,
       maxConcurrentRuns: options.maxConcurrentRuns,
-      shutdownDrainMs: options.shutdownDrainMs
+      shutdownDrainMs: options.shutdownDrainMs,
+      resourceRegistry
     });
     await server.initialize();
     await server.listen();
@@ -67,6 +70,7 @@ export async function startRuntimeHost(
     await server?.close().catch(() => undefined);
     if (!server) {
       await initial?.runtime.close().catch(() => undefined);
+      await resourceRegistry.close().catch(() => undefined);
       await lock.close().catch(() => undefined);
     }
     await removeStaleRegistration(registration).catch(() => undefined);

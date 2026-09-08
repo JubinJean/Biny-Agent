@@ -7,6 +7,7 @@ import type { ChildProcess } from "node:child_process";
 import type { CommandSurface } from "../commandRegistry.js";
 import type { InteractiveAgentHost } from "../InteractiveAgentRuntime.js";
 import type { RuntimeHostClient } from "./client.js";
+import type { RuntimeHostResourceRegistry } from "./resources.js";
 
 export type HostSurface = CommandSurface | "cli";
 
@@ -69,6 +70,9 @@ export interface RuntimeHostFactoryOptions {
   readonly sessionId?: string;
   readonly fresh?: boolean;
   readonly isolation?: RuntimeIsolation;
+  /** Host 级 MCP/Skill 资源注册表；CLI/TUI 私有 runtime 不提供。 */
+  readonly resourceRegistry?: RuntimeHostResourceRegistry;
+  readonly resourceBoot?: "blocking" | "background";
 }
 
 export interface HostClientOptions {

@@ -21,12 +21,12 @@ import { buildActivityChatContext } from "../activity/context.js";
 import { TodoStore } from "../session/todoStore.js";
 import { CheckpointStore } from "../session/checkpointStore.js";
 import { PermissionManager } from "../permission/PermissionManager.js";
-import { createSkillResourceTool, createSkillTool, expandSkillCommand as expandSkillCommandText, loadSkills, type SkillBundle, type SkillDefinition } from "../extensions/skills.js";
+import { createSkillResourceTool, createSkillTool, expandSkillCommand as expandSkillCommandText, type SkillBundle, type SkillDefinition } from "../extensions/skills.js";
 import { skillPathsForSelection, skillPromptForSelection } from "../extensions/skills.js";
 import type { ToolRisk, ToolSource } from "../tools/types.js";
 import { perfNow, recordPerfPhase } from "../observability/perfTiming.js";
 import { loadPlugins } from "../extensions/plugins.js";
-import { createMcpResourceTools, McpToolHost } from "../extensions/mcp.js";
+import type { McpToolHost } from "../extensions/mcp.js";
 import { createSubagentTool, runSubagentTask as executeSubagentTask, type SubagentOptions } from "../extensions/subagent.js";
 import { buildSubagentDefinitionsPrompt, loadSubagentDefinitions, type SubagentDefinition } from "../extensions/agents.js";
 import { createMemoryTools } from "../extensions/memory.js";
@@ -52,7 +52,7 @@ import { DurableTaskRunStore } from "./TaskRunStore.js";
 import { AutomationStore } from "./AutomationScheduler.js";
 import { GoalGraphStore } from "./GoalGraphStore.js";
 import { CapabilityStore } from "./CapabilityStore.js";
-import { createProjectSkillKey } from "../extensions/skillRef.js";
+import { RuntimeHostResourceScope, RuntimeResourceBaselinePendingError, type RuntimeHostResourceRegistry, type RuntimeResourceSnapshot } from "./host/resources.js";
 import { listEnabledProjectPluginPaths } from "../extensions/pluginRegistry.js";
 import { DailyDiaryScheduler } from "../agent/context/chatDiary.js";
 import { HeartbeatScheduler } from "../agent/context/heartbeat.js";
@@ -84,6 +84,11 @@ export interface CommandRuntime {
   expandSkillCommand(input: string): Promise<string>;
   /** 每个新根回合前重新扫描 Skill，使新增和元数据修改无需重启即可生效。 */
   refreshSkills(): Promise<void>;
+  /** 刷新共享 MCP/Skill 代理；回合开始前调用，避免活动回合看到半套工具。 */
+  refreshExtensionTools?(): void;
+  resourceSnapshot?(): RuntimeResourceSnapshot;
+  assertResourceBaselineReady?(): void;
+  subscribeResourceChanges?(listener: (snapshot: RuntimeResourceSnapshot) => void): () => void;
   /** 实时重新扫描具名子代理定义（会话期间可编辑生效）。 */
   listSubagentAgents(): Promise<SubagentDefinition[]>;
   startSubagentTask(task: string, options?: SubagentTaskRunOptions): SubmittedSubagentTask;
@@ -108,6 +113,12 @@ export interface CommandRuntimeOptions {
   attachmentRoot?: string;
   /** Host 为新 session 预先分配的 id；历史 session 仍由 InteractiveAgentRuntime.resumeSession 载入。 */
   sessionId?: string;
+  /** Runtime Host 注入的 workspace 级共享扩展资源。 */
+  resourceScope?: RuntimeHostResourceScope;
+  /** Host 后台启动扩展；私有 CLI/TUI runtime 默认阻塞到首个能力快照。 */
+  resourceBoot?: "blocking" | "background";
+  /** Runtime Host 内部传递的 scope 注册表。 */
+  resourceRegistry?: RuntimeHostResourceRegistry;
 }
 
 export async function createCommandRuntime(workspaceRoot: string, options: CommandRuntimeOptions = {}): Promise<CommandRuntime> {
@@ -116,6 +127,16 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
   const projectAttachmentRoot = options.attachmentRoot ?? attachmentRoot(persistenceRoot);
   const configStore = options.configStore ?? createFileConfigStore(persistenceRoot);
   const config = await configStore.load(workspaceRoot);
+  const resourceScope = options.resourceScope
+    ?? options.resourceRegistry?.acquire(workspaceRoot, config)
+    ?? new RuntimeHostResourceScope(workspaceRoot, config);
+  let skills: SkillBundle = resourceScope.skills;
+  const ownsResourceScope = options.resourceScope === undefined && options.resourceRegistry === undefined;
+  const resourceBoot = options.resourceBoot ?? (ownsResourceScope ? "blocking" : "background");
+  const resourceStart = resourceScope.start();
+  const unsubscribeResources = resourceScope.subscribe(() => {
+    skills = resourceScope.skills;
+  });
   const ai = new AiRegistry();
   await ensureAgentDirs(persistenceRoot);
   await ensureAttachmentRoot(persistenceRoot);
@@ -141,12 +162,35 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
   await todos.initialize();
   toolRegistry.registerBuiltinTool(createTodoTool(todos));
   const permissionManager = new PermissionManager({ ...config.permission, source: "global config.json + project .biny/settings.json" });
-  const mcpHost = new McpToolHost();
-  let skills: SkillBundle | undefined;
+  const mcpHost = resourceScope.mcp;
   let agent: AgentSession | undefined;
   let modelManager: ModelManager | undefined;
   let subagentParentRunId: string | undefined;
   let subagentDefinitions: SubagentDefinition[] = [];
+  let registeredMcpTools: string[] = [];
+  const refreshExtensionTools = (): void => {
+    for (const name of registeredMcpTools) toolRegistry.unregister(name);
+    registeredMcpTools = [];
+    for (const tool of [...resourceScope.createTools(), ...resourceScope.createResourceTools()]) {
+      try {
+        toolRegistry.registerMcpTool(tool);
+        registeredMcpTools.push(tool.name);
+        try {
+          capabilities.ensureHostCapability(`host:mcp:${tool.name}`, tool.parameters);
+        } catch {
+          // 非法 schema 保留现有工具行为；调用时由统一 coordinator 记录失败。
+        }
+      } catch {
+        // session 内的 plugin/builtin 同名工具优先，单个 MCP 工具不影响其它能力。
+      }
+    }
+  };
+  const releaseResourceScope = async (): Promise<void> => {
+    unsubscribeResources();
+    if (ownsResourceScope) await resourceScope.close();
+    else if (options.resourceRegistry) await options.resourceRegistry.release(resourceScope);
+    else resourceScope.release();
+  };
   // 具名子代理定义每次委派时重新读取（会话期间可编辑生效）；启动时读一次用于 prompt 与报告。
   const loadAgentDefinitions = (): Promise<SubagentDefinition[]> => loadSubagentDefinitions({
     workspaceRoot,
@@ -174,27 +218,13 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     })
     : undefined;
   const loadedPlugins: string[] = [];
-  const skillProjectOverrides = config.extensions.skillProjectOverrides[createProjectSkillKey(workspaceRoot)];
   try {
-    // 技能扫描可能因项目内配置路径的软链/硬链问题抛错，放在清理保护内执行。
-    const loadSkillsPerfStartedAt = perfNow();
-    skills = await loadSkills({
-      workspaceRoot,
-      projectPaths: config.extensions.skills,
-      globalDefaults: config.extensions.skillDefaults,
-      projectOverrides: skillProjectOverrides
-    });
-    recordPerfPhase("host.loadSkills", loadSkillsPerfStartedAt, { count: skills.skills.length }, workspaceRoot);
+    // Desktop Host 的 MCP/Skill 启动在后台进行；私有 CLI/TUI runtime 仍在这里等待首个稳定快照。
+    if (resourceBoot === "blocking") await resourceStart;
+    skills = resourceScope.skills;
     toolRegistry.registerUserTool(createSkillTool(() => requireSkillBundle(skills)));
     toolRegistry.registerUserTool(createSkillResourceTool(() => requireSkillBundle(skills)));
-    // 先注册通用资源工具。若服务器工具归一化后撞名，connectConfiguredServers 中的
-    // 按工具隔离会跳过它，而不会让整个 runtime 在之后重复注册时失败。
-    if (Object.values(config.extensions.mcp).some((server) => server.enabled)) {
-      for (const tool of createMcpResourceTools(mcpHost)) toolRegistry.registerMcpTool(tool);
-    }
-    const mcpPerfStartedAt = perfNow();
-    await mcpHost.connectConfiguredServers(workspaceRoot, config, toolRegistry);
-    recordPerfPhase("host.mcpConnect", mcpPerfStartedAt, undefined, workspaceRoot);
+    refreshExtensionTools();
     const pluginsPerfStartedAt = perfNow();
     const managedPluginPaths = await listEnabledProjectPluginPaths(workspaceRoot).catch((error: unknown) => {
       loadedPlugins.push(`managed plugins (failed: ${error instanceof Error ? error.message : String(error)})`);
@@ -278,8 +308,7 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
       getEmbeddingRuntime: async () => await agent?.getActivityEmbeddingRuntime()
     }));
     toolRegistry.registerBuiltinTool(createActivitySessionsTool({ loadSettings: loadActivitySettings }));
-    // MCP/Plugin 仍由 Host 持有连接和执行权，但先把工具能力注册进统一 envelope，
-    // 这样 Desktop/TUI 查询 capability projection 时能看到已加载的 Host-owned 能力。
+    // MCP/Plugin 仍由 Host 持有连接和执行权；共享 MCP 工具在回合开始前按最新快照同步。
     for (const entry of toolRegistry.listEntries()) {
       if (entry.source !== "mcp" && entry.source !== "plugin") continue;
       try {
@@ -307,7 +336,22 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
       attachmentRoot: projectAttachmentRoot,
       runtimeEventSink: runtimeAuthority.asSink(),
       capabilities,
-      activityContext
+      activityContext,
+      createSelfReflectionTask: async (candidate) => {
+        taskRuns.create({
+          taskRunId: candidate.taskRunId,
+          sessionId: recorder.sessionId,
+          task: {
+            type: "self_reflection_action",
+            title: candidate.title,
+            description: candidate.description,
+            evidence: candidate.evidence,
+            sourceDate: candidate.dateKey,
+            sourceHash: candidate.sourceHash
+          }
+        });
+        return true;
+      }
     });
     await agent.initialize();
   } catch (error) {
@@ -315,7 +359,7 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     await agent?.close().catch(() => undefined);
     await subagentTaskManager?.close();
     await managedProcesses.close();
-    await mcpHost.close();
+    await releaseResourceScope();
     await recorder.close();
     automationStore.close();
     graphs.close();
@@ -324,7 +368,7 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     runtimeAuthority.close();
     throw error;
   }
-  if (!agent || !skills) throw new Error("Failed to initialize Biny agent runtime.");
+  if (!agent) throw new Error("Failed to initialize Biny agent runtime.");
 
   const dailyDiaryAgent = agent;
   const dailyDiaryScheduler = new DailyDiaryScheduler({
@@ -338,7 +382,7 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     getConfig: () => dailyDiaryAgent.getHeartbeatConfig(),
     agentDir: undefined,
     run: async (prompt, signal) => {
-      await dailyDiaryAgent.runTask(prompt, { abortSignal: signal, runId: randomUUID(), turnId: randomUUID() });
+      await dailyDiaryAgent.runTask(prompt, { abortSignal: signal, runId: randomUUID(), turnId: randomUUID(), emotionAnalysis: false });
     }
   });
   const backgroundOwner = {
@@ -422,21 +466,33 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     extensionReport: (section?: ExtensionSection): string => formatExtensionReport(extensionStatus(), section),
     extensionStatus: (): ExtensionStatus => extensionStatus(),
     listSkills: (): SkillDefinition[] => [...requireSkillBundle(skills).skills],
-    listTools: (): RuntimeToolCatalogEntry[] => toolRegistry.listEntries().map(({ source, tool }) => ({
-      name: tool.name,
-      description: tool.description,
-      source,
-      risk: tool.risk
-    })),
+    listTools: (): RuntimeToolCatalogEntry[] => {
+      const entries = toolRegistry.listEntries();
+      const knownNames = new Set(entries.map(({ tool }) => tool.name));
+      const extensionTools = [...resourceScope.createTools(), ...resourceScope.createResourceTools()]
+        .filter((tool) => !knownNames.has(tool.name))
+        .map((tool) => ({ name: tool.name, description: tool.description, source: "mcp" as const, risk: tool.risk }));
+      return [
+        ...entries.map(({ source, tool }) => ({
+          name: tool.name,
+          description: tool.description,
+          source,
+          risk: tool.risk
+        })),
+        ...extensionTools
+      ];
+    },
     expandSkillCommand: async (input: string): Promise<string> => await expandSkillCommandText(requireSkillBundle(skills), input),
     refreshSkills: async (): Promise<void> => {
-      skills = await loadSkills({
-        workspaceRoot,
-        projectPaths: config.extensions.skills,
-        globalDefaults: config.extensions.skillDefaults,
-        projectOverrides: skillProjectOverrides
-      });
+      await resourceScope.refreshSkills();
+      skills = resourceScope.skills;
     },
+    refreshExtensionTools,
+    resourceSnapshot: (): RuntimeResourceSnapshot => resourceScope.snapshot(),
+    assertResourceBaselineReady: (): void => {
+      if (!resourceScope.isReadyForSubmission()) throw new RuntimeResourceBaselinePendingError();
+    },
+    subscribeResourceChanges: (listener: (snapshot: RuntimeResourceSnapshot) => void): (() => void) => resourceScope.subscribe(listener),
     listSubagentAgents: async (): Promise<SubagentDefinition[]> => {
       subagentDefinitions = await loadAgentDefinitions();
       return [...subagentDefinitions];
@@ -458,7 +514,7 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
           await managedProcesses.close();
         } finally {
           try {
-            await mcpHost.close();
+            await releaseResourceScope();
           } finally {
             try {
               automationStore.close();

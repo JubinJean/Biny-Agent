@@ -172,6 +172,14 @@ export async function executeRuntimeCommand(
       await runtime.runExclusiveOperation("memory", async () => await services.agent.runMemoryCommand(args))
     );
   }
+  if (command === "/soul") {
+    const action = args[0]?.toLowerCase();
+    const execute = async (): Promise<string> => await services.agent.runSoulCommand(args);
+    const content = action === "set" || action === "append-trait" || action === "reset" || action === "delete"
+      ? await runtime.runExclusiveOperation("soul", execute)
+      : await execute();
+    return result(command, "Soul", content);
+  }
   if (command === "/subagent") return await executeSubagentCommand(runtime, services, command, args, source);
   if (command === "/review") {
     const task = args.join(" ").trim()

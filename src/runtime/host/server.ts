@@ -87,6 +87,7 @@ import {
 } from "./validation.js";
 import { isNotFound, removeRegistration, secureRuntimeSocket } from "./lifecycle.js";
 import type { HostOperationResult, HostRegistration, HostSurface, RuntimeHostFactory, RuntimeHostInfo, RuntimeHostFactoryOptions } from "./types.js";
+import { RuntimeHostResourceRegistry } from "./resources.js";
 import { listSessionFiles, sessionIdFromFile } from "../../session/store.js";
 import { readSessionCatalogRecord, writeSessionCatalogRecord } from "../../session/catalog.js";
 import { WorktreeDirtyError, WorktreeManager } from "./worktree.js";
@@ -127,6 +128,7 @@ export class RuntimeHostServer {
   private readonly worktrees: WorktreeManager;
   private readonly quota: RuntimeHostQuota;
   private readonly shutdownDrainMs: number;
+  private readonly resourceRegistry: RuntimeHostResourceRegistry;
   private readonly createRuntime: RuntimeHostFactory | undefined;
   private closePromise: Promise<void> | undefined;
   /** 重建只锁定目标 session，不能让一个 session 的配置刷新挡住其它 session。 */
@@ -148,9 +150,10 @@ export class RuntimeHostServer {
     private readonly registration: HostRegistration,
     private readonly lock: FileHandle,
     createRuntime?: RuntimeHostFactory,
-    options: { workspaceRoot?: string; maxSessionRuntimes?: number; maxConcurrentRuns?: number; shutdownDrainMs?: number } = {}
+    options: { workspaceRoot?: string; maxSessionRuntimes?: number; maxConcurrentRuns?: number; shutdownDrainMs?: number; resourceRegistry?: RuntimeHostResourceRegistry } = {}
   ) {
     this.createRuntime = createRuntime;
+    this.resourceRegistry = options.resourceRegistry ?? new RuntimeHostResourceRegistry();
     this.journalPath = path.join(registration.persistenceRoot, ".biny", "runs", hostJournalFile);
     this.worktrees = new WorktreeManager(
       options.workspaceRoot ?? registration.persistenceRoot,
@@ -180,7 +183,7 @@ export class RuntimeHostServer {
             }
             return (await this.registry.ensure(sessionId, await this.factoryOptionsForSession(sessionId))).runtime;
           }
-          return (await this.registry.createFresh({ isolation: "shared" })).runtime;
+          return (await this.registry.createFresh({ isolation: "shared", resourceRegistry: this.resourceRegistry })).runtime;
         },
       isBusy: () => this.registry.list().some((entry) => runtimeIsBusy(entry.runtime.getSnapshot())),
       canStartAutomationRun: () => this.quota.canStartRun(this.registry),
@@ -323,6 +326,7 @@ export class RuntimeHostServer {
       ]);
       if (shutdownTimer) clearTimeout(shutdownTimer);
       void runtimeClose.catch(() => undefined);
+      await this.resourceRegistry.close();
       for (const connection of this.connections) connection.socket.destroy();
       this.connections.clear();
       if (this.listening) {
@@ -1477,7 +1481,11 @@ export class RuntimeHostServer {
       ? this.registry.primary()
       : await this.registry.ensure(targetSessionId, await this.factoryOptionsForSession(targetSessionId));
     if (this.createRuntime) {
-      const managed = await this.registry.createFresh({ fresh: true, isolation: "shared" });
+      const managed = await this.registry.createFresh({
+        fresh: true,
+        isolation: "shared",
+        resourceRegistry: this.resourceRegistry
+      });
       this.publishSnapshot(managed.runtime);
       return managed.runtime.getSnapshot().info;
     }
@@ -1508,7 +1516,8 @@ export class RuntimeHostServer {
       workspaceRoot: undefined,
       sessionId: undefined,
       fresh: true,
-      isolation: "shared"
+      isolation: "shared",
+      resourceRegistry: this.resourceRegistry
     });
     const managed = await this.registry.replacePrimary(next);
     this.sessionWriterOwners.delete(previousSessionId);
@@ -1540,7 +1549,7 @@ export class RuntimeHostServer {
 
   private async factoryOptionsForSession(sessionId: string): Promise<RuntimeHostFactoryOptions | undefined> {
     const existing = await this.worktrees.runtimeFactoryOptions(sessionId);
-    if (existing) return existing;
+    if (existing) return { ...existing, resourceRegistry: this.resourceRegistry };
     const catalog = await readSessionCatalogRecord(this.registration.persistenceRoot, sessionId);
     let sessionFileExists = false;
     try {
@@ -1551,9 +1560,14 @@ export class RuntimeHostServer {
     if (catalog?.isolation !== "worktree") {
       // LRU 可能驱逐一个尚未落盘的草稿；重新取回它时必须用同一个 id fresh 创建，
       // 不能先随机创建一个 runtime 再调用 resumeSession。
-      return sessionFileExists ? undefined : { sessionId, fresh: true, isolation: "shared" };
+      return sessionFileExists
+        ? { resourceRegistry: this.resourceRegistry }
+        : { sessionId, fresh: true, isolation: "shared", resourceRegistry: this.resourceRegistry };
     }
-    return await this.prepareWorktreeSession(sessionId, catalog, !sessionFileExists);
+    return {
+      ...(await this.prepareWorktreeSession(sessionId, catalog, !sessionFileExists)),
+      resourceRegistry: this.resourceRegistry
+    };
   }
 
   private runtimeMatchesIsolation(runtime: InteractiveRuntimeHandle, isolation: "shared" | "worktree", worktree: Awaited<ReturnType<WorktreeManager["get"]>>): boolean {

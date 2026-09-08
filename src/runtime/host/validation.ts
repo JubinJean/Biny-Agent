@@ -136,7 +136,7 @@ export function readMemoryKind(value: unknown): MemoryKind {
 
 
 export function readLocalEmbeddingModel(value: unknown): LocalEmbeddingModelId {
-  if (value === "all-MiniLM-L6-v2" || value === "bge-small-en-v1.5" || value === "multilingual-e5-small" || value === "paraphrase-multilingual-MiniLM-L12-v2") return value;
+  if (value === "multilingual-e5-small") return value;
   throw new Error("Runtime Host local embedding model is invalid.");
 }
 
@@ -155,7 +155,7 @@ export function readMemoryLineage(value: unknown): MemoryLineage {
 }
 
 export function readMemoryLineageSource(value: unknown): MemoryLineageSource {
-  if (value === "explicit" || value === "explicit_edit" || value === "completed_task" || value === "sleep") {
+  if (value === "explicit" || value === "explicit_edit" || value === "completed_task" || value === "self_reflection" || value === "sleep") {
     return value;
   }
   throw new Error("Runtime Host memory lineage source is invalid.");
@@ -348,6 +348,7 @@ export function publicErrorCode(error: unknown): string | undefined {
     "host_draining",
     "runtime_capacity_exceeded",
     "runtime_concurrency_exceeded",
+    "resource_baseline_pending",
     "worktree_unavailable",
     "worktree_dirty",
     "worktree_merge_conflict",
