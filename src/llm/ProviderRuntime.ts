@@ -5,6 +5,7 @@
  * API 协议的 HTTP/SSE 实现由 ApiAdapterRegistry 负责，两层不互相冒充。
  */
 import type { AgentModel, ModelStreamContext, ModelStreamEvent, ModelStreamOptions } from "../agent/core/types.js";
+import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { effectiveThinkingSelection, modelCapabilities, modelReasoningConfig, modelThinkingLevelMap, nativeReasoningEffort, normalizeModelMetadata, reasoningBudgetTokens } from "../ai/capabilities.js";
 import { fetchModelCatalogSnapshot } from "../ai/modelCatalog.js";
 import { accessPathThinkingLevelMap, inferThinkingLevelMap, lookupModelMetadata, thinkingLevelMapForEfforts, type ModelMetadata } from "../ai/modelMetadata.js";
@@ -12,6 +13,7 @@ import { providerDefinition, providerProtocol } from "../ai/provider.js";
 import type { ModelCatalogEntry, ProviderDefinition } from "../ai/types.js";
 import type { AgentConfig, ModelAliasConfig, ModelApiBackend, ModelCompatibility, ModelProfile, ProviderConfig, ThinkingLevelMap } from "../config/schema.js";
 import { createNativeModel } from "./nativeModel.js";
+import { createVercelLanguageModel } from "./vercelModel.js";
 import { openAiCodexHeaders, refreshSubscriptionOAuthTokens } from "./subscriptionAuth.js";
 import { AiRegistry } from "./AiRegistry.js";
 import type { ModelsStore } from "./ModelsStore.js";
@@ -28,6 +30,9 @@ const oauthRefreshWindowMs = 5 * 60 * 1_000;
 
 export interface NativeModelSettings {
   model: AgentModel;
+  /** 主 Agent 的直连 Vercel model；后台模型调用仍使用上面的 AgentModel。 */
+  vercelModel?: LanguageModelV4;
+  maxRetries?: number;
   providerOptions?: Record<string, unknown>;
   reasoning?: "off" | AgentConfig["thinking"]["effort"];
   timeoutMs?: number;
@@ -209,6 +214,11 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
     const effort = enabled ? selection : undefined;
     const retry = this.config.retry ?? { maxAttempts: 1, initialDelayMs: 0, maxDelayMs: 0 };
     const providerOptions = createProviderOptions(reasoningProtocol, this.config, normalizedModel, api, enabled, effort);
+    const headers = {
+      ...(this.config.type === "openai-codex" ? openAiCodexHeaders(apiKey) : {}),
+      ...this.config.headers,
+      ...normalizedModel.headers
+    };
 
     const transport = createNativeModel({
       provider: this.config.type,
@@ -219,11 +229,7 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
       api,
       baseUrl,
       apiKey,
-      headers: {
-        ...(this.config.type === "openai-codex" ? openAiCodexHeaders(apiKey) : {}),
-        ...this.config.headers,
-        ...normalizedModel.headers
-      },
+      headers,
       fetch: this.fetcher,
       retry,
       maxTokensField: compatibility?.maxTokensField === "max_completion_tokens" ? "max_completion_tokens" : "max_tokens",
@@ -240,6 +246,19 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
     };
     return {
       model: executable,
+      vercelModel: createVercelLanguageModel({
+        providerAlias: this.id,
+        providerType: this.config.type,
+        authMode: this.config.authMode,
+        api,
+        modelId: normalizedModel.model,
+        supportsReasoning: capabilities.reasoning,
+        baseUrl,
+        apiKey,
+        headers,
+        fetcher: this.fetcher
+      }),
+      maxRetries: Math.max(0, retry.maxAttempts - 1),
       providerOptions,
       reasoning: selection,
       timeoutMs: this.config.timeoutMs,

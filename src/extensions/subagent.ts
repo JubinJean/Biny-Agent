@@ -1,7 +1,7 @@
 import { promises as fs } from "node:fs";
 import { z } from "zod";
 import type { AgentConfig } from "../config/schema.js";
-import { agentLoop } from "../agent/core/agentLoop.js";
+import { vercelAgentLoopContinue } from "../agent/core/vercelAgentLoop.js";
 import type { AgentAssistantMessage, AgentTool, AgentUsage } from "../agent/core/types.js";
 import type { NativeModelSettings } from "../llm/nativeFactory.js";
 import { calculateUsageCost, type ModelUsageObserver } from "../observability/usage.js";
@@ -141,12 +141,14 @@ async function runNativeSubagentTask(
   const assistantTexts: string[] = [];
   let lastAssistant: AgentAssistantMessage | undefined;
   let fatalError: string | undefined;
-  const loop = agentLoop([{ role: "user", content: task }], {
+  const loop = vercelAgentLoopContinue({
     systemPrompt: instructions,
-    messages: [],
+    messages: [{ role: "user", content: task }],
     tools
   }, {
     model,
+    vercelModel: modelSettings.vercelModel,
+    maxRetries: modelSettings.maxRetries,
     tools,
     modelOptions: {
       maxOutputTokens: subagentMaxOutputTokens(options.config, modelSettings.maxOutputTokens, modelAlias),

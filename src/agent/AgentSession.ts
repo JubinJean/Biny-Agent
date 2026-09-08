@@ -37,7 +37,7 @@ import {
   writeSessionCatalogRecord
 } from "../session/catalog.js";
 import type { ToolRegistry } from "../tools/registry.js";
-import { agentLoopContinue } from "./core/agentLoop.js";
+import { vercelAgentLoopContinue } from "./core/vercelAgentLoop.js";
 import type {
   AgentAssistantMessage,
   AgentModel,
@@ -1552,6 +1552,10 @@ export class AgentSession {
       completedStepsBeforeRun,
       messageQueues
     } = args;
+    const autoAnalyzeForTurn = !runOptions.continueFrom?.length
+      && runOptions.retryOfMessageId === undefined
+      && runOptions.recordSessionUserMessage !== false
+      && runOptions.emotionAnalysis !== false;
     let systemPrompt = initialSystemPrompt;
     const nativeModel = this.options.modelManager?.getModel() ?? this.options.model;
     const nativeSettings: NativeModelSettings | undefined = this.options.modelManager?.getModelSettings()
@@ -1686,8 +1690,10 @@ export class AgentSession {
       input: { systemPrompt: systemPromptForTelemetry(systemPrompt), messages }
     });
     try {
-      const loop = agentLoopContinue(nativeContext, {
+      const loop = vercelAgentLoopContinue(nativeContext, {
         model: activeModelSettings.model,
+        vercelModel: activeModelSettings.vercelModel,
+        maxRetries: activeModelSettings.maxRetries,
         tools: nativeContext.tools,
         modelOptions: {
           // 与 prepareNextTurn 对齐：全局聊天参数显式配置时覆盖模型别名默认；未配置则不下发温度。
@@ -1717,6 +1723,8 @@ export class AgentSession {
           return {
             context,
             model: settings.model,
+            vercelModel: settings.vercelModel,
+            maxRetries: settings.maxRetries,
             tools,
             modelOptions: {
               // 全局聊天参数显式配置时覆盖模型别名默认；未配置则不下发温度。

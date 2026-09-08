@@ -9,6 +9,7 @@ import type { ActivityModelRuntime } from "../../activity/types.js";
 import type { ActivityDataResidency } from "../../activity/settings.js";
 import type { ReasoningEffort } from "../../config/schema.js";
 import type { PromptEpochReason, PromptShapeDiagnostic, PromptShapeStatus } from "../../llm/promptCache.js";
+import type { LanguageModelV4 } from "@ai-sdk/provider";
 
 export type AgentTextContent = { type: "text"; text: string };
 export type AgentImageContent = { type: "image"; data: string; mimeType: string };
@@ -180,6 +181,7 @@ export interface ModelStreamOptions {
 
 export interface AgentModel {
   provider: string;
+  providerAlias?: string;
   modelId: string;
   /** 只有 builtin-llama.cpp 才能在 v1 作为 Activity 的可信本地 runtime。 */
   runtime?: ActivityModelRuntime;
@@ -231,12 +233,17 @@ export interface AgentLoopTurnContext {
 export interface AgentLoopNextTurnSnapshot {
   context?: AgentContext;
   model?: AgentModel;
+  vercelModel?: LanguageModelV4;
+  maxRetries?: number;
   modelOptions?: ModelStreamOptions;
   tools?: AgentTool[];
 }
 
 export interface AgentLoopConfig {
   model: AgentModel;
+  /** 主 Agent 可直接把已解析的 Vercel provider model 交给 ToolLoopAgent。 */
+  vercelModel?: LanguageModelV4;
+  maxRetries?: number;
   tools: AgentTool[];
   modelOptions?: ModelStreamOptions;
   maxSteps: number;
@@ -250,18 +257,5 @@ export interface AgentLoopConfig {
     context: AgentContext,
     signal?: AbortSignal
   ) => Promise<{ reason: string; attempt: number; compactedMessages: number } | undefined>;
-  beforeToolCall?: (context: {
-    assistantMessage: AgentAssistantMessage;
-    toolCall: AgentToolCallContent;
-    args: Record<string, unknown>;
-    context: AgentContext;
-  }, signal?: AbortSignal) => Promise<{ block?: boolean; reason?: string } | undefined>;
-  afterToolCall?: (context: {
-    assistantMessage: AgentAssistantMessage;
-    toolCall: AgentToolCallContent;
-    args: Record<string, unknown>;
-    result: AgentToolResult;
-    context: AgentContext;
-  }, signal?: AbortSignal) => Promise<Partial<AgentToolResult> | undefined>;
   toolExecution?: "parallel" | "sequential";
 }

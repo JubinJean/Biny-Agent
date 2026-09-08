@@ -161,10 +161,10 @@ async function testSubagentBudgetExhaustionReturnsPartialFindings(): Promise<voi
   try {
     await ensureAgentDirs(workspaceRoot);
     let requestCount = 0;
-    // 子代理走非流式 generate，返回 JSON chat completion；每步都继续请求工具。
+    // 子代理走 Vercel streaming loop；每步都继续请求工具。
     globalThis.fetch = (async (): Promise<Response> => {
       requestCount += 1;
-      return jsonCompletionResponse({
+      return streamingCompletionResponse({
         id: `cmpl-${String(requestCount)}`,
         object: "chat.completion",
         created: 0,
@@ -230,8 +230,18 @@ function listFilesTool(): Tool {
   } as Tool;
 }
 
-function jsonCompletionResponse(payload: Record<string, unknown>): Response {
-  return new Response(JSON.stringify(payload), { status: 200, headers: { "content-type": "application/json" } });
+function streamingCompletionResponse(payload: Record<string, unknown>): Response {
+  const choice = (payload.choices as Array<{ index: number; message: { content: string; tool_calls: unknown[] }; finish_reason: string }>)[0];
+  const chunks = [
+    { choices: [{ index: choice.index, delta: { role: "assistant" }, finish_reason: null }] },
+    { choices: [{ index: choice.index, delta: { content: choice.message.content }, finish_reason: null }] },
+    { choices: [{ index: choice.index, delta: { tool_calls: choice.message.tool_calls }, finish_reason: null }] },
+    { choices: [{ index: choice.index, delta: {}, finish_reason: choice.finish_reason }] }
+  ];
+  return new Response([
+    ...chunks.map((chunk) => `data: ${JSON.stringify(chunk)}`),
+    "data: [DONE]"
+  ].join("\n\n") + "\n\n", { status: 200, headers: { "content-type": "text/event-stream" } });
 }
 
 function unusedModel(): AgentModel {

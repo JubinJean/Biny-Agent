@@ -82,6 +82,7 @@ export function createNativeModel(config: NativeModelConfig): AgentModel {
   });
   return {
     provider: config.provider,
+    providerAlias: config.providerAlias,
     modelId: config.modelId,
     runtime: config.runtime ?? "provider",
     dataResidency: config.dataResidency,
