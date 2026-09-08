@@ -354,8 +354,16 @@ export class ActivityRecorderService {
   async requestPermission(permission: DesktopSystemSettingsPane): Promise<void> {
     // Accessibility 必须由 Electron 主进程请求，TCC 才会把条目归到 Biny.app；sidecar 只负责截图权限。
     if (permission === "accessibility") return;
+    const sidecarPath = this.sidecarPath;
+    if (sidecarPath === undefined) return;
     await this.enqueue(async () => {
-      this.send({ type: "request_permission", permission });
+      if (this.child !== undefined) {
+        this.send({ type: "request_permission", permission });
+        return;
+      }
+      // Activity 被暂停时没有常驻 sidecar，不能因此让「申请屏幕录制权限」退化成只打开设置页。
+      // 一次性进程只调用系统授权 API，不启动采集、不写入 Activity 数据。
+      await requestStandaloneScreenRecordingPermission(sidecarPath);
     });
   }
 
@@ -876,4 +884,38 @@ function formatLocalDateKey(date: Date): string {
 
 function safeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function requestStandaloneScreenRecordingPermission(sidecarPath: string): Promise<void> {
+  await access(sidecarPath);
+  await new Promise<void>((resolve, reject) => {
+    const child = spawn(sidecarPath, ["--request-permission", "screen-recording"], {
+      stdio: ["ignore", "ignore", "pipe"]
+    });
+    let settled = false;
+    let stderr = "";
+    const finish = (error?: Error): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (error) reject(error);
+      else resolve();
+    };
+    const timeout = setTimeout(() => {
+      child.kill();
+      finish(new Error("申请屏幕录制权限超时，请在 macOS 系统设置中手动授权。"));
+    }, 30_000);
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderr = `${stderr}${chunk.toString("utf8")}`.slice(-500);
+    });
+    child.once("error", (error) => finish(error));
+    child.once("exit", (code, signal) => {
+      if (code === 0) {
+        finish();
+        return;
+      }
+      const detail = stderr.trim() || `code=${code ?? "-"}, signal=${signal ?? "-"}`;
+      finish(new Error(`申请屏幕录制权限失败（${detail}）。`));
+    });
+  });
 }

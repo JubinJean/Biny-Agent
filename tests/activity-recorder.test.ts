@@ -15,6 +15,7 @@ import { ActivityRecorderService, defaultActivitySidecarPath } from "../src/desk
 testDefaultActivitySidecarPath();
 await testCanonicalActivitySchema();
 await testActivityServiceLifecycleQueue();
+await testPermissionRequestStartsStandaloneSidecar();
 await testActivitySettingsRestartSidecar();
 await testSidecarPersistsCaptureBeforeOcr();
 await testEventAndFallbackStorage();
@@ -159,6 +160,33 @@ done
     await service.updateSettings({ captureDebounceMs: 6_000 }, revision);
     await waitForActivitySnapshot(service, (snapshot) => snapshot.sessions === 2);
     assert.equal(config.activity.captureDebounceMs, 6_000);
+  } finally {
+    await service.stop();
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+async function testPermissionRequestStartsStandaloneSidecar(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-permission-"));
+  const marker = path.join(root, "permission-requested");
+  const sidecarPath = path.join(root, "fake-sidecar");
+  await writeFile(sidecarPath, `#!/bin/sh
+if [ "$1" = "--request-permission" ] && [ "$2" = "screen-recording" ]; then
+  touch "${marker}"
+  exit 0
+fi
+exit 64
+`);
+  await chmod(sidecarPath, 0o700);
+  const config = {
+    ...defaultConfig,
+    activity: { ...defaultActivitySettings, outputDirectory: root }
+  };
+  const configStore = { load: async () => config } as AgentConfigStore;
+  const service = new ActivityRecorderService({ configStore, sidecarPath });
+  try {
+    await service.requestPermission("screen-recording");
+    await stat(marker);
   } finally {
     await service.stop();
     await rm(root, { recursive: true, force: true });

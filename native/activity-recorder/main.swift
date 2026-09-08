@@ -1664,6 +1664,16 @@ private func shortText(_ value: String?) -> String? {
     return normalized.isEmpty ? nil : String(normalized.prefix(256))
 }
 
+if CommandLine.arguments.count == 3, CommandLine.arguments[1] == "--request-permission" {
+    guard CommandLine.arguments[2] == "screen-recording" else {
+        exit(64)
+    }
+    // Activity 未启动时由主进程拉起一次性 sidecar，确保授权请求仍由具备屏幕采集能力的
+    // native 进程发起；这里不建立采集器、不注册监听器，也不写入任何 Activity 数据。
+    _ = CGRequestScreenCaptureAccess()
+    exit(0)
+}
+
 private let output = SidecarOutput()
 private let recorder: ActivityRecorder = MainActor.assumeIsolated {
     ActivityRecorder(output: output)
