@@ -55,6 +55,7 @@ export interface VercelLoopState {
   wakePendingEvents: (() => void) | undefined;
   toolResults: Map<string, AgentToolResult>;
   stepRecords: VercelStepRecord[];
+  activeStepRecord: VercelStepRecord | undefined;
   lastStep: VercelStepRecord | undefined;
   completedSteps: number;
   terminateRequested: boolean;
@@ -104,6 +105,7 @@ export async function* vercelAgentLoopContinue(
     wakePendingEvents: undefined,
     toolResults: new Map(),
     stepRecords: [],
+    activeStepRecord: undefined,
     lastStep: undefined,
     completedSteps: 0,
     terminateRequested: false,
@@ -309,7 +311,9 @@ async function completeStep(state: VercelLoopState, step: StepResult<ToolSet>): 
   state.completedSteps += 1;
   const record = { message, toolResults, messages, hadToolCalls: step.toolCalls.length > 0 };
   state.stepRecords.push(record);
+  state.activeStepRecord = record;
   state.lastStep = record;
+  updateStepReasoningMetadata(state, record);
   const invalidToolCall = step.toolCalls.find((call) => call.invalid
     || !call.toolName.trim()
     || !state.tools.some((candidate) => candidate.name === call.toolName));
@@ -401,6 +405,7 @@ function handleVercelStreamPart(state: VercelLoopState, part: {
     state.currentText = "";
     state.currentReasoning.clear();
     state.currentToolCalls = [];
+    state.activeStepRecord = undefined;
     return [{ type: "turn_start" }, { type: "message_start", message: emptyAssistant() }];
   }
   if (part.type === "text-delta" && typeof part.text === "string") {
@@ -417,6 +422,7 @@ function handleVercelStreamPart(state: VercelLoopState, part: {
       text: "",
       providerMetadata: providerMetadata(part.providerMetadata)
     });
+    if (state.activeStepRecord) updateStepReasoningMetadata(state, state.activeStepRecord);
     return [{
       type: "message_update",
       message: assistantSnapshot(state),
@@ -429,6 +435,7 @@ function handleVercelStreamPart(state: VercelLoopState, part: {
     reasoning.text += part.text;
     reasoning.providerMetadata = providerMetadata(part.providerMetadata) ?? reasoning.providerMetadata;
     state.currentReasoning.set(part.id, reasoning);
+    if (state.activeStepRecord) updateStepReasoningMetadata(state, state.activeStepRecord);
     return [{
       type: "message_update",
       message: assistantSnapshot(state),
@@ -438,6 +445,7 @@ function handleVercelStreamPart(state: VercelLoopState, part: {
   if (part.type === "reasoning-end" && typeof part.id === "string") {
     const reasoning = state.currentReasoning.get(part.id);
     if (reasoning) reasoning.providerMetadata = providerMetadata(part.providerMetadata) ?? reasoning.providerMetadata;
+    if (state.activeStepRecord) updateStepReasoningMetadata(state, state.activeStepRecord);
     return [{
       type: "message_update",
       message: assistantSnapshot(state),
@@ -457,16 +465,8 @@ function handleVercelStreamPart(state: VercelLoopState, part: {
   if (part.type === "finish-step") {
     const record = state.stepRecords.shift();
     if (!record) return [];
-    const previousMessage = record.message;
-    const message = attachStreamedReasoningMetadata(previousMessage, state.currentReasoning);
-    if (message !== previousMessage) {
-      const contextIndex = state.context.messages.indexOf(previousMessage);
-      if (contextIndex >= 0) state.context.messages[contextIndex] = message;
-      const newMessageIndex = state.newMessages.indexOf(previousMessage);
-      if (newMessageIndex >= 0) state.newMessages[newMessageIndex] = message;
-      record.message = message;
-      record.messages = record.messages.map((candidate) => candidate === previousMessage ? message : candidate);
-    }
+    updateStepReasoningMetadata(state, record);
+    const message = record.message;
     return [
       { type: "message_end", message },
       {
@@ -483,6 +483,18 @@ function handleVercelStreamPart(state: VercelLoopState, part: {
     return state.vercelModel === undefined ? [{ type: "error", error, fatal: true }] : [];
   }
   return [];
+}
+
+function updateStepReasoningMetadata(state: VercelLoopState, record: VercelStepRecord): void {
+  const previousMessage = record.message;
+  const message = attachStreamedReasoningMetadata(previousMessage, state.currentReasoning);
+  if (message === previousMessage) return;
+  const contextIndex = state.context.messages.indexOf(previousMessage);
+  if (contextIndex >= 0) state.context.messages[contextIndex] = message;
+  const newMessageIndex = state.newMessages.indexOf(previousMessage);
+  if (newMessageIndex >= 0) state.newMessages[newMessageIndex] = message;
+  record.message = message;
+  record.messages = record.messages.map((candidate) => candidate === previousMessage ? message : candidate);
 }
 
 function attachStreamedReasoningMetadata(
