@@ -7,14 +7,17 @@
 export type EmbeddingInputType = "query" | "passage";
 
 export type LocalEmbeddingModelId =
-  | "all-MiniLM-L6-v2"
-  | "bge-small-en-v1.5"
-  | "multilingual-e5-small"
-  | "paraphrase-multilingual-MiniLM-L12-v2";
+  | "multilingual-e5-small";
 
 export type EmbeddingModelRef =
   | { kind: "local"; model: LocalEmbeddingModelId }
   | { kind: "provider"; provider: string; model: string };
+
+export const defaultLocalEmbeddingModel: LocalEmbeddingModelId = "multilingual-e5-small";
+export const defaultEmbeddingModelRef: EmbeddingModelRef = {
+  kind: "local",
+  model: defaultLocalEmbeddingModel
+};
 
 export interface EmbeddingThresholds {
   currentWorkspace: number;

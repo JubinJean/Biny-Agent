@@ -2029,11 +2029,11 @@ async function testCrystalSemanticDotProduct(): Promise<void> {
       models.push(model);
       return {
       fingerprint: "crystal-dot-test",
-      descriptor: { ref: { kind: "local", model: "all-MiniLM-L6-v2" }, fingerprint: "crystal-dot-test", displayName: "test", recommendedThresholds: { currentWorkspace: 0, crossWorkspace: 0 }, source: "local" },
+      descriptor: { ref: { kind: "local", model: "multilingual-e5-small" }, fingerprint: "crystal-dot-test", displayName: "test", recommendedThresholds: { currentWorkspace: 0, crossWorkspace: 0 }, source: "local" },
       embed: async (request) => {
         inputs.push([...request.texts]);
         if (failEmbedding || request.texts[0] === failedText) throw new Error("Embedding fixture failure");
-        return { embeddings: [request.texts[0] === "Unrelated input text" ? vector : new Float32Array([1, 0])], dimensions: 2, fingerprint: "crystal-dot-test", model: { kind: "local", model: "all-MiniLM-L6-v2" } };
+        return { embeddings: [request.texts[0] === "Unrelated input text" ? vector : new Float32Array([1, 0])], dimensions: 2, fingerprint: "crystal-dot-test", model: { kind: "local", model: "multilingual-e5-small" } };
       }
       };
     };

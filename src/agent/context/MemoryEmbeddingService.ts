@@ -53,6 +53,8 @@ export interface MemoryEmbeddingRuntimeStatus {
   totalEntries: number;
   indexedEntries: number;
   pendingEntries: number;
+  /** 配置或当前向量投影要求完整重建；供桌面设置页显示维护动作。 */
+  needsRebuild: boolean;
   operation?: MemoryEmbeddingOperationStatus;
   degradedReason?: string;
 }
@@ -121,6 +123,7 @@ export class MemoryEmbeddingService {
         totalEntries: entries.entries.length,
         indexedEntries: 0,
         pendingEntries: entries.entries.length,
+        needsRebuild: this.options.getNeedsRebuild?.() === true,
         operation: cloneOperation(this.operation),
         degradedReason: `向量索引不可用：${errorMessage(error)}`
       };
@@ -145,6 +148,7 @@ export class MemoryEmbeddingService {
       totalEntries: entries.entries.length,
       indexedEntries,
       pendingEntries,
+      needsRebuild,
       operation: cloneOperation(this.operation),
       degradedReason: degradedReason(
         activeModel,

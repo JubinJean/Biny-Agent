@@ -25,6 +25,7 @@ import { DesktopConfigStore } from "../src/desktop/electron/main/DesktopConfigSt
 
 await testGlobalPathResolution();
 testRunBudget();
+testMemoryEmbeddingDefaultsToE5();
 testRemovedModelFormatsRequireManualUpdate();
 await testProjectOverridesAndGlobalPersistence();
 await testConcurrentProjectSettingUpdates();
@@ -88,6 +89,17 @@ function testRunBudget(): void {
     ...defaultConfig,
     agent: { ...defaultConfig.agent, maxProviderRetries: 2 }
   }), /Unrecognized key/u);
+}
+
+function testMemoryEmbeddingDefaultsToE5(): void {
+  const parsed = configSchema.parse({
+    ...defaultConfig,
+    context: {
+      ...defaultConfig.context,
+      memory: { ...defaultConfig.context.memory, embeddingModel: undefined }
+    }
+  });
+  assert.deepEqual(parsed.context.memory.embeddingModel, { kind: "local", model: "multilingual-e5-small" });
 }
 
 function testRemovedModelFormatsRequireManualUpdate(): void {
@@ -713,7 +725,7 @@ async function testVersionedActivityEmbeddingFieldsMigrateToMemory(): Promise<vo
     const loaded = await loadConfigFile(root);
     assert.equal("embeddingConsents" in (loaded.activity as Record<string, unknown>), false, "activity 段的嵌入字段必须被清除");
     assert.deepEqual(loaded.context.memory.cloudEmbeddingConsents, consents, "已版本化文档的 embeddingConsents 也要迁回 memory.*");
-    assert.deepEqual(loaded.context.memory.embeddingModel, { kind: "local", model: "paraphrase-multilingual-MiniLM-L12-v2" });
+    assert.deepEqual(loaded.context.memory.embeddingModel, { kind: "local", model: "multilingual-e5-small" });
   } finally {
     await fs.rm(root, { recursive: true, force: true });
   }

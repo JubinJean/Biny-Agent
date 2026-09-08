@@ -25,6 +25,9 @@ export function migrateGlobalConfigDocument(value: unknown): ConfigMigrationResu
   // 嵌入字段曾在配置已版本化之后短暂写进 activity.*，版本门内的迁移够不到这批文件；
   // 严格 schema 不认识这两个键，所以这段清理必须对所有版本无条件执行。
   migrateActivityEmbeddingPolicy(document);
+  // 本地 embedding 只保留默认 E5。旧配置里的其它内置模型迁到同一向量空间，避免升级后
+  // 因为收窄模型枚举而无法读取配置；provider embedding 不在这里改写。
+  migrateMemoryEmbeddingPolicy(document);
   // 已移除的记忆策略仍可能存在于已版本化的配置；严格 schema 解析前必须无条件清理。
   migrateRemovedMemoryPolicyFields(document);
   // 人格预设与自定义指令已下线（改由内置 Soul 与 USER 承载）。顶层 personalization 块不再属于
@@ -116,6 +119,18 @@ function migrateRemovedMemoryPolicyFields(document: Record<string, unknown>): vo
   const context = isRecord(document.context) ? document.context : undefined;
   const memory = context && isRecord(context.memory) ? context.memory : undefined;
   if (memory) delete memory.telos;
+}
+
+function migrateMemoryEmbeddingPolicy(document: Record<string, unknown>): void {
+  const context = isRecord(document.context) ? document.context : undefined;
+  const memory = context && isRecord(context.memory) ? context.memory : undefined;
+  if (!memory) return;
+
+  const embeddingModel = isRecord(memory.embeddingModel) ? memory.embeddingModel : undefined;
+  if (memory.embeddingModel === undefined
+    || (embeddingModel?.kind === "local" && typeof embeddingModel.model === "string" && embeddingModel.model !== "multilingual-e5-small")) {
+    memory.embeddingModel = { kind: "local", model: "multilingual-e5-small" };
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

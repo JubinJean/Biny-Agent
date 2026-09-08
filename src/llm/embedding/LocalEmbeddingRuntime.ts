@@ -76,28 +76,6 @@ export interface LocalEmbeddingManagerOptions {
 
 export const localEmbeddingModels: readonly LocalModelDefinition[] = [
   {
-    id: "all-MiniLM-L6-v2",
-    repository: "Xenova/all-MiniLM-L6-v2",
-    revision: "751bff37182d3f1213fa05d7196b954e230abad9",
-    dtype: "q8",
-    displayName: "MiniLM L6 v2",
-    description: "轻量通用句向量模型。",
-    dimensions: 384,
-    modelSizeBytes: 23 * 1024 * 1024,
-    recommendedThresholds: { currentWorkspace: 0.45, crossWorkspace: 0.65 }
-  },
-  {
-    id: "bge-small-en-v1.5",
-    repository: "Xenova/bge-small-en-v1.5",
-    revision: "ea104dacec62c0de699686887e3f920caeb4f3e3",
-    dtype: "q8",
-    displayName: "BGE Small EN v1.5",
-    description: "面向英语语义检索的句向量模型。",
-    dimensions: 384,
-    modelSizeBytes: 33 * 1024 * 1024,
-    recommendedThresholds: { currentWorkspace: 0.45, crossWorkspace: 0.65 }
-  },
-  {
     id: "multilingual-e5-small",
     repository: "Xenova/multilingual-e5-small",
     revision: "761b726dd34fb83930e26aab4e9ac3899aa1fa78",
@@ -107,17 +85,6 @@ export const localEmbeddingModels: readonly LocalModelDefinition[] = [
     dimensions: 384,
     modelSizeBytes: 145 * 1024 * 1024,
     recommendedThresholds: { currentWorkspace: 0.8, crossWorkspace: 0.86 }
-  },
-  {
-    id: "paraphrase-multilingual-MiniLM-L12-v2",
-    repository: "Xenova/paraphrase-multilingual-MiniLM-L12-v2",
-    revision: "2c4055b12046f11709e9df2c122e59ffbdc2f900",
-    dtype: "q8",
-    displayName: "Multilingual MiniLM L12",
-    description: "覆盖 50 种语言的轻量句向量模型。",
-    dimensions: 384,
-    modelSizeBytes: 145 * 1024 * 1024,
-    recommendedThresholds: { currentWorkspace: 0.45, crossWorkspace: 0.65 }
   }
 ] as const;
 

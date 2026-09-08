@@ -1,10 +1,10 @@
 import { z } from "zod";
-import type { EmbeddingModelRef } from "../llm/embedding/types.js";
+import { defaultEmbeddingModelRef, type EmbeddingModelRef } from "../llm/embedding/types.js";
 
 export const embeddingModelRefSchema: z.ZodType<EmbeddingModelRef> = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("local"),
-    model: z.enum(["all-MiniLM-L6-v2", "bge-small-en-v1.5", "multilingual-e5-small", "paraphrase-multilingual-MiniLM-L12-v2"])
+    model: z.literal("multilingual-e5-small")
   }).strict(),
   z.object({
     kind: z.literal("provider"),
@@ -61,10 +61,14 @@ const rawMemoryPolicySchema = z.object({
   llmBatchSize: z.number().int().min(1).max(100).default(20),
 }).strict();
 
-export const memoryPolicySchema = rawMemoryPolicySchema.transform((policy) => ({
+type MemoryPolicyOutput = Omit<z.infer<typeof rawMemoryPolicySchema>, "enabled"> & { enabled: boolean };
+
+export const memoryPolicySchema = rawMemoryPolicySchema.transform((policy): MemoryPolicyOutput => ({
   ...policy,
   // 缺少总开关的旧配置按两个自动开关的 OR 推导；显式关闭总开关时由迁移结果保留关闭语义。
-  enabled: policy.enabled ?? (policy.useMemories || policy.generateMemories)
+  enabled: policy.enabled ?? (policy.useMemories || policy.generateMemories),
+  // 历史配置可能已经有 context.memory，但没有 embeddingModel；默认仍必须是本地 E5。
+  embeddingModel: policy.embeddingModel ?? { ...defaultEmbeddingModelRef }
 })).default({
   enabled: true,
   useMemories: true,
@@ -90,7 +94,7 @@ export const memoryPolicySchema = rawMemoryPolicySchema.transform((policy) => ({
   llmBatchSize: 20
 });
 
-export type MemoryPolicy = z.infer<typeof memoryPolicySchema>;
+export type MemoryPolicy = MemoryPolicyOutput;
 
 /**
  * 按聊天的记忆开关覆盖。人格/指令字段已从可编辑面移除，但旧 session catalog 记录里仍可能

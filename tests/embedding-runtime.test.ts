@@ -249,6 +249,7 @@ async function testLocalEmbeddingLifecycle(): Promise<void> {
     })
   });
   try {
+    assert.deepEqual(manager.descriptors().map((descriptor) => descriptor.ref), [{ kind: "local", model: "multilingual-e5-small" }]);
     const progress: number[] = [];
     await manager.download("multilingual-e5-small", { onProgress: (event) => {
       if (event.progress !== undefined) progress.push(event.progress);
