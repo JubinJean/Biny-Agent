@@ -109,8 +109,9 @@ export type IdentityPolicy = z.infer<typeof identityPolicySchema>;
 
 export const emotionPolicySchema = z.object({
   enabled: z.boolean().default(true),
-  allowModelUpdate: z.boolean().default(true)
-}).strict().default({ enabled: true, allowModelUpdate: true });
+  allowModelUpdate: z.boolean().default(true),
+  autoAnalyze: z.boolean().default(true)
+}).strict().default({ enabled: true, allowModelUpdate: true, autoAnalyze: true });
 
 export type EmotionPolicy = z.infer<typeof emotionPolicySchema>;
 
@@ -164,7 +165,7 @@ const contextSchema = z.object({
   instructionsMaxBytes: 32 * 1024,
   compaction: { enabled: true, reserveTokens: undefined, triggerPercent: undefined, keepRecentTokens: undefined, keepRecentMessages: undefined, maxSummaryTokens: 4_096, summaryModel: undefined },
   identity: { enabled: true, userEnabled: true },
-  emotion: { enabled: true, allowModelUpdate: true },
+  emotion: { enabled: true, allowModelUpdate: true, autoAnalyze: true },
   memory: {
     enabled: true,
     useMemories: true,
@@ -887,7 +888,7 @@ export const defaultConfig: AgentConfig = {
     instructionsMaxBytes: 32 * 1024,
     compaction: { enabled: true, reserveTokens: undefined, triggerPercent: undefined, keepRecentTokens: undefined, keepRecentMessages: undefined, maxSummaryTokens: 4_096, summaryModel: undefined },
     identity: { enabled: true, userEnabled: true },
-    emotion: { enabled: true, allowModelUpdate: true },
+    emotion: { enabled: true, allowModelUpdate: true, autoAnalyze: true },
     memory: {
       enabled: true,
       useMemories: true,

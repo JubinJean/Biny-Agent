@@ -4,7 +4,7 @@ import { renderPlanModePrompt } from "./planMode.js";
 import { BUILTIN_SOUL_PROMPT } from "./builtinSoul.js";
 
 export const GLOBAL_SYSTEM_PROMPT = `
-You are Biny, an AI agent operating on the user's machine. You help by reading files, running commands, editing code, researching information, answering questions, and completing other tasks supported by the available tools and extensions.
+You are Biny, a local-first AI agent operating on the user's machine. You help inspect, reason about, change, and verify files, commands, research, and other tasks supported by the available tools and extensions. Your runtime, tools, permissions, and instruction hierarchy define what you may do; the current Soul only shapes how you collaborate.
 
 ## Response format
 
@@ -17,8 +17,6 @@ Follow a more specific format requested by the user or task.
 ## Simple conversation
 
 Keep simple greetings and casual conversation natural and brief. For a simple greeting or casual exchange, do not invoke tools, inspect files, list directories, mention project context, create a plan, or start a coding workflow. Use workspace context when the user asks about the workspace or the task needs it.
-
-${BUILTIN_SOUL_PROMPT}
 
 `;
 
@@ -52,9 +50,11 @@ export interface BuildSystemPromptOptions {
   mode: PromptMode;
   tools?: readonly PromptTool[];
   extensionPrompt?: string;
+  /** 当前可变 Soul；正文只进入模型 prompt，不进入 telemetry。 */
+  soulPrompt?: string;
   /** 记忆运行策略。 */
   personalization?: ResolvedChatPersonalization;
-  /** 已读取的用户资料；正文只进入模型 prompt，不进入 telemetry。内置 Soul 不从这里读取。 */
+  /** 已读取的用户资料；正文只进入模型 prompt，不进入 telemetry。 */
   identityPrompt?: string;
   /** 当前 blended 情绪；只放在动态 prompt 区，不进入稳定缓存前缀。 */
   emotionPrompt?: string;
@@ -76,6 +76,8 @@ const activeRunSummaryStart = "<!-- biny-active-run-summary:start -->";
 const activeRunSummaryEnd = "<!-- biny-active-run-summary:end -->";
 const personalizationPromptStart = "<!-- biny-personalization:start -->";
 const personalizationPromptEnd = "<!-- biny-personalization:end -->";
+const soulPromptStart = "<!-- biny-soul:start -->";
+const soulPromptEnd = "<!-- biny-soul:end -->";
 const identityPromptStart = "<!-- biny-identity:start -->";
 const identityPromptEnd = "<!-- biny-identity:end -->";
 const emotionPromptStart = "<!-- biny-emotion:start -->";
@@ -90,6 +92,7 @@ const crystalPromptEnd = "<!-- biny-crystal:end -->";
 export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   return [
     GLOBAL_SYSTEM_PROMPT.trim(),
+    soulPromptBlock(options.soulPrompt ?? BUILTIN_SOUL_PROMPT),
     (options.mode === "plan"
       ? renderPlanModePrompt(options.permissionMode ?? "read-only")
       : MODE_PROMPTS[options.mode]).trim(),
@@ -118,7 +121,8 @@ export function stableSystemPromptForCache(systemPrompt: string | undefined): st
 
 export function systemPromptForTelemetry(systemPrompt: string | undefined): string | undefined {
   if (!systemPrompt) return systemPrompt;
-  const withoutIdentity = replacePromptBlock(systemPrompt, identityPromptStart, identityPromptEnd, `${identityPromptStart}\n<biny_identity omitted="true" />\n${identityPromptEnd}`);
+  const withoutSoul = replacePromptBlock(systemPrompt, soulPromptStart, soulPromptEnd, `${soulPromptStart}\n<biny_soul omitted="true" />\n${soulPromptEnd}`);
+  const withoutIdentity = replacePromptBlock(withoutSoul, identityPromptStart, identityPromptEnd, `${identityPromptStart}\n<biny_identity omitted="true" />\n${identityPromptEnd}`);
   return replacePromptBlock(
     replacePromptBlock(
       replacePromptBlock(
@@ -166,6 +170,11 @@ function stableRuntimePrompt(tools: readonly PromptTool[]): string {
     "Never invent or claim file contents, command results, edits, or other actions that tool results do not confirm"
   ]).sort(stableCompare);
   return [stableRuntimePromptStart, `Available tools:\n${toolList}`, "In addition to the tools above, custom tools may be available depending on the project and installed extensions.", `Guidelines:\n${guidelines.map((guideline) => `- ${guideline}`).join("\n")}`, stableRuntimePromptEnd].join("\n\n");
+}
+
+function soulPromptBlock(soulPrompt: string): string {
+  const trimmed = soulPrompt.trim();
+  return trimmed ? [soulPromptStart, trimmed, soulPromptEnd].join("\n") : "";
 }
 
 function dynamicRuntimePrompt(extensionPrompt: string | undefined, emotionPrompt?: string): string {

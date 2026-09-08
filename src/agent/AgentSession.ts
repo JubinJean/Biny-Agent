@@ -70,11 +70,23 @@ import {
   refreshChatDailyDiary,
   type ChatDiaryRefreshResult
 } from "./context/chatDiary.js";
-import { refreshSelfReflection } from "./context/selfReflection.js";
+import {
+  refreshSelfReflection,
+  type SelfReflectionActionCandidate,
+  type SelfReflectionMemoryCandidate
+} from "./context/selfReflection.js";
 import { LocalMemory, redactSecrets } from "./context/LocalMemory.js";
 import { IdentityStorage } from "./context/identityStorage.js";
+import { runSoulCommand as executeSoulCommand } from "./context/soulCommands.js";
+import { SoulStorage } from "./context/soulStorage.js";
 import { EmotionStorage } from "./context/emotionStorage.js";
 import { renderEmotionPrompt } from "./context/emotionPrompt.js";
+import {
+  analyzeContextEmotion,
+  EmotionAnalysisScheduler,
+  type EmotionAnalysisMessage
+} from "./context/emotionAnalysis.js";
+import { FatigueService } from "./context/fatigue.js";
 import { runMemoryCommand } from "./context/memoryCommands.js";
 import { readFileMemoryPrompt } from "./context/fileMemory.js";
 import { MemoryVectorIndex } from "./context/MemoryVectorIndex.js";
@@ -162,6 +174,8 @@ export interface AgentSessionOptions {
   activityContext?: (input: string, model: AgentModel | undefined, signal?: AbortSignal) => Promise<string | undefined>;
   /** 自动技能提取产出待审核草稿后回调（仅 pending 成功路径）；宿主用它向界面推送审核入口。 */
   onSkillDraftCreated?: (notice: { draft: { id: string; name: string; description: string; toolCalls: number }; runId?: string }) => void;
+  /** 自省识别出明确未完成行动后的持久化入口；只创建记录，不启动任务。 */
+  createSelfReflectionTask?: (candidate: SelfReflectionActionCandidate) => Promise<boolean>;
 }
 
 export interface AgentRunOptions {
@@ -210,11 +224,13 @@ export interface AgentRunOptions {
   promptContext?: string;
   /** 当前回合临时选择的工具与 Skill；未提供时读取 chat 默认值。 */
   capabilitySelection?: AgentCapabilitySelection;
+  /** 是否允许普通根回合完成后触发低频 context 情绪分析；内部自动任务显式关闭。 */
+  emotionAnalysis?: boolean;
 }
 
 export type AgentPromptOptions = Pick<
   AgentRunOptions,
-  "abortSignal" | "confirmPermission" | "mode" | "attachments" | "runId" | "messageId" | "turnId" | "promptContext" | "capabilitySelection"
+  "abortSignal" | "confirmPermission" | "mode" | "attachments" | "runId" | "messageId" | "turnId" | "promptContext" | "capabilitySelection" | "emotionAnalysis"
 >;
 
 export type { AgentAttachment } from "../attachments/store.js";
@@ -284,9 +300,6 @@ interface ActiveRunMessageQueues {
 }
 
 const maxQueuedRunMessages = 100;
-const fatigueResetAfterMs = 4 * 60 * 60 * 1_000;
-const fatiguePerCompletedModelStep = 2;
-const maxFatigue = 100;
 type MemoryModelField = "memoryModel" | "rewriteModel" | "extractModel";
 
 /**
@@ -297,7 +310,10 @@ export class AgentSession {
   private readonly contextMemory: ContextMemory;
   private readonly localMemory: LocalMemory;
   private readonly identityStorage: IdentityStorage;
+  private readonly soulStorage: SoulStorage;
   private readonly emotionStorage: EmotionStorage;
+  private readonly fatigueService: FatigueService;
+  private readonly emotionAnalysisScheduler: EmotionAnalysisScheduler;
   private readonly memoryModelFor: (field: MemoryModelField) => AgentModel;
   private readonly localEmbeddingManager: LocalEmbeddingManager;
   private readonly memoryRetriever: HybridMemoryRetriever;
@@ -321,9 +337,6 @@ export class AgentSession {
   /** 新 root turn 开始时替换；同一 turn 的所有 model step 固定使用这份快照。 */
   private activeConfig: AgentConfig;
   private activePersonalization: ResolvedChatPersonalization;
-  private fatigue = 0;
-  private lastEmotionActivityAt = Date.now();
-
   constructor(private readonly options: AgentSessionOptions) {
     setPerfTimingRoot(options.workspaceRoot);
     this.activeConfig = options.config;
@@ -392,7 +405,12 @@ export class AgentSession {
       () => this.memoryModelFor("memoryModel")
     );
     this.identityStorage = new IdentityStorage();
+    this.soulStorage = new SoulStorage();
     this.emotionStorage = new EmotionStorage();
+    this.fatigueService = new FatigueService();
+    this.emotionAnalysisScheduler = new EmotionAnalysisScheduler({
+      analyze: async (sessionId, signal, messageId) => await this.analyzeContextEmotion(sessionId, signal, messageId)
+    });
     this.localEmbeddingManager = new LocalEmbeddingManager(path.join(globalAgentDir(), "models", "embeddings"));
     const memoryIndexRoot = path.join(globalAgentDir(), "memory");
     const openReadOnlyMemoryIndex = (): MemoryVectorIndex | undefined => MemoryVectorIndex.openReadOnly(memoryIndexRoot);
@@ -510,6 +528,8 @@ export class AgentSession {
   async initialize(): Promise<void> {
     await this.contextMemory.initialize();
     await this.identityStorage.initialize();
+    await this.soulStorage.initialize();
+    await this.fatigueService.initialize();
     await this.crystalService.initialize();
   }
 
@@ -565,6 +585,7 @@ export class AgentSession {
     const identityPrompt = this.activeConfig.context.identity.enabled
       ? await this.identityStorage.promptText(this.activeConfig.context.identity.userEnabled)
       : undefined;
+    const soulPrompt = await this.soulStorage.promptText();
     const emotionPrompt = await this.currentEmotionPrompt();
     const dailyNotesPrompt = await this.dailyNotesPrompt();
     let crystalPrompt: string | undefined;
@@ -601,6 +622,7 @@ export class AgentSession {
       permissionMode,
       extensionPrompt: this.extensionPrompt(capabilitySelection),
       tools: initialTools,
+      soulPrompt,
       personalization,
       identityPrompt,
       emotionPrompt,
@@ -621,26 +643,72 @@ export class AgentSession {
 
   /** 每次 provider 请求前重新读取情绪，但只替换动态 prompt，不触发上下文重建。 */
   private async currentEmotionPrompt(): Promise<string | undefined> {
-    this.touchEmotionActivity();
     if (!this.activeConfig.context.emotion.enabled) return undefined;
-    const blended = await this.emotionStorage.readBlended(this.recorder.sessionId, this.fatigue);
+    const blended = await this.emotionStorage.readBlended(this.recorder.sessionId, this.fatigueService.getFatigue());
     return renderEmotionPrompt(blended);
   }
 
-  private touchEmotionActivity(): void {
-    const now = Date.now();
-    if (now - this.lastEmotionActivityAt > fatigueResetAfterMs) this.fatigue = 0;
-    this.lastEmotionActivityAt = now;
+  private async analyzeContextEmotion(sessionId: string, signal: AbortSignal, messageId?: string): Promise<void> {
+    const policy = this.activeConfig.context.emotion;
+    if (this.closed || sessionId !== this.recorder.sessionId || !policy.enabled || !policy.allowModelUpdate || !policy.autoAnalyze) return;
+    const recorder = this.recorder;
+    await recorder.flush();
+    const runtime = recorder.runtimeContextSnapshot();
+    try {
+      await analyzeContextEmotion({
+        sessionId,
+        storage: this.emotionStorage,
+        getModel: () => {
+          try {
+            return this.memoryModelFor("memoryModel");
+          } catch {
+            return undefined;
+          }
+        },
+        getMessages: async () => await this.recentEmotionMessages(recorder.filePath),
+        signal,
+        onUsage: async (usage) => { this.recordModelUsage(usage, "memory"); },
+        onRequestMetrics: async (metrics) => await this.recordModelRequest(metrics),
+        requestContext: {
+          sessionId,
+          runId: runtime?.runId,
+          turnId: runtime?.turnId,
+          operation: "memory"
+        },
+        onUpdated: async () => {
+          if (!messageId) return;
+          recorder.recordWithRuntimeContext({
+            type: "message_metadata",
+            messageId,
+            metadata: {
+              emotionAnalyzed: true,
+              emotionUpdated: true,
+              emotionUpdatedAt: new Date().toISOString()
+            }
+          }, runtime);
+          await recorder.flush();
+        }
+      });
+    } catch {
+      // 自动分析是旁路能力；模型、解析和文件异常都不能改变已完成回合。
+      return;
+    }
   }
 
-  private resetFatigue(): void {
-    this.fatigue = 0;
-    this.lastEmotionActivityAt = Date.now();
-  }
-
-  private recordCompletedModelStep(): void {
-    this.touchEmotionActivity();
-    this.fatigue = Math.min(maxFatigue, this.fatigue + fatiguePerCompletedModelStep);
+  private async recentEmotionMessages(filePath: string): Promise<EmotionAnalysisMessage[]> {
+    const events = await readSessionEvents(filePath);
+    const activeIds = activeSessionMessageIds(events);
+    return sessionMessageTree(events)
+      .filter((node) => activeIds.has(node.id) && (node.message.role === "user" || node.message.role === "assistant"))
+      .map((node): EmotionAnalysisMessage | undefined => {
+        const text = redactSecrets(messageText(node.message));
+        if (!text.trim()) return undefined;
+        return node.message.role === "user"
+          ? { role: "user", text }
+          : { role: "assistant", text };
+      })
+      .filter((message): message is EmotionAnalysisMessage => message !== undefined)
+      .slice(-10);
   }
 
   /** 上次被打断、尚未收尾的回合；没有则为 undefined。 */
@@ -804,7 +872,7 @@ export class AgentSession {
     return this.activeConfig.heartbeat;
   }
 
-  /** 刷新文件型每日工作日志；只读聊天/Activity 日志，不读取或改写 durable memory。 */
+  /** 刷新文件型每日工作日志，并按记忆开关自动晋升高置信度自省结果。 */
   async refreshDailyDiary(
     dateKey: string,
     options: { signal?: AbortSignal; force?: boolean } = {}
@@ -825,12 +893,49 @@ export class AgentSession {
     });
     if (model) {
       const memories = await this.localMemory.listMemoryEntries({ origins: ["user", "current_workspace"], limit: 40 }).catch(() => undefined);
+      const allowReflectionPromotion = this.activePersonalization.contributeMemories;
       await refreshSelfReflection(dateKey, {
         model,
         memoryContext: memories?.entries.map((entry) => `- ${entry.summary}`).join("\n"),
+        force: options.force,
         onUsage: async (usage, operation) => { this.recordModelUsage(usage, operation); },
         onModelRequest: async (metrics) => await this.recordModelRequest(metrics),
-        requestContext: { operation: "memory" }
+        requestContext: { operation: "memory" },
+        promoteMemory: allowReflectionPromotion
+          ? async (candidate: SelfReflectionMemoryCandidate) => {
+            const result = await this.localMemory.writeAutoEntryWithRetry({
+              audience: "workspace",
+              kind: candidate.kind,
+              topic: candidate.topic,
+              title: candidate.title,
+              summary: candidate.summary,
+              source: "auto",
+              tags: ["self-reflection"],
+              rationale: candidate.evidence,
+              metadata: {
+                source: "self_reflection",
+                dateKey: candidate.dateKey,
+                sourceHash: candidate.sourceHash,
+                evidence: candidate.evidence
+              },
+              threadId: this.recorder.sessionId,
+              lineage: {
+                source: "self_reflection",
+                externalContext: false,
+                sessionId: this.recorder.sessionId,
+                userEvidence: undefined
+              }
+            }, {
+              signal: options.signal,
+              now: new Date(),
+              requireSemantic: true
+            });
+            return result.written;
+          }
+          : undefined,
+        createTask: allowReflectionPromotion && this.options.createSelfReflectionTask
+          ? async (candidate: SelfReflectionActionCandidate) => await this.options.createSelfReflectionTask!(candidate)
+          : undefined
       }).catch(() => undefined);
     }
     return result;
@@ -885,8 +990,14 @@ export class AgentSession {
 
   /** 模型更新情绪时读取当前 session 内存中的疲劳值。 */
   getFatigue(): number {
-    this.touchEmotionActivity();
-    return this.fatigue;
+    return this.fatigueService.getFatigue();
+  }
+
+  private async recordFatigueForMessages(count: number, enabled: boolean): Promise<void> {
+    if (count < 1 || !enabled) return;
+    for (let index = 0; index < count; index += 1) {
+      await this.fatigueService.recordMessage().catch(() => undefined);
+    }
   }
 
   /** 手动浏览与自动召回共用混合检索；跨项目内容仅在显式选择对应 origin 时可见。 */
@@ -1074,6 +1185,10 @@ export class AgentSession {
   async runMemoryCommand(args: string[]): Promise<string> {
     const searchMemory = this.searchMemory.bind(this);
     return await runMemoryCommand(this.localMemory, args, searchMemory);
+  }
+
+  async runSoulCommand(args: string[]): Promise<string> {
+    return await executeSoulCommand(this.soulStorage, args);
   }
 
   /** Desktop/TUI 的公开交互入口，只接受 chat / plan 策略。 */
@@ -1286,7 +1401,6 @@ export class AgentSession {
     } = {}
   ): AsyncGenerator<AgentSessionEvent> {
     const release = this.beginOperation("agent turn");
-    this.touchEmotionActivity();
     const messageQueues: ActiveRunMessageQueues = {
       steering: [],
       followUps: [],
@@ -1302,6 +1416,7 @@ export class AgentSession {
     const retrying = runOptions.retryOfMessageId !== undefined;
     const hasProvidedContext = Boolean(runOptions.continueFrom?.length);
     const continuing = hasProvidedContext && !retrying;
+    const ordinaryRootMessage = !continuing && !retrying && runOptions.recordSessionUserMessage !== false;
     let turnPersonalization: ResolvedChatPersonalization = this.activePersonalization;
     this.contextMemory.setPersonalization(
       {},
@@ -1337,9 +1452,21 @@ export class AgentSession {
       });
       return userMessageReference;
     };
+    let fatigueRecorded = false;
+    const recordRootFatigue = async (): Promise<void> => {
+      if (fatigueRecorded || runOptions.recordSessionUserMessage === false) return;
+      const isNewUserMessage = (!continuing && !retrying) || runOptions.replacementUserMessage !== undefined;
+      if (!isNewUserMessage) return;
+      // retry 的编辑版本仍然是用户新消息；heartbeat/automation 由 runtime 显式关闭 emotionAnalysis。
+      if (runOptions.emotionAnalysis === false && runOptions.replacementUserMessage === undefined) return;
+      fatigueRecorded = true;
+      await this.fatigueService.recordMessage().catch(() => undefined);
+    };
     try {
     // 新根输入明确放弃旧断点；否则它在首个新 step 落盘前崩溃时，恢复逻辑会错误复活上一回合。
     if (!continuing) await this.turnStore.clear().catch(() => undefined);
+    if (ordinaryRootMessage) this.emotionAnalysisScheduler.cancel();
+    await recordRootFatigue();
     if (abortSignal.aborted) {
       recordUserMessage();
       const outcome = cancelledTurn("Current turn cancelled before execution.", completedStepsBeforeRun);
@@ -1785,9 +1912,14 @@ export class AgentSession {
           }
           return prunedMessages;
         },
-        getSteeringMessages: async () => this.takeQueuedRunMessages(messageQueues, "steer", lastAssistant, referenceByMessage),
+        getSteeringMessages: async () => {
+          const next = this.takeQueuedRunMessages(messageQueues, "steer", lastAssistant, referenceByMessage);
+          await this.recordFatigueForMessages(next.length, runOptions.emotionAnalysis !== false);
+          return next;
+        },
         getFollowUpMessages: async () => {
           const next = this.takeQueuedRunMessages(messageQueues, "followUp", lastAssistant, referenceByMessage);
+          await this.recordFatigueForMessages(next.length, runOptions.emotionAnalysis !== false);
           if (!next.length) messageQueues.accepting = false;
           return next;
         }
@@ -1883,9 +2015,6 @@ export class AgentSession {
               );
             }
             observedSteps += 1;
-            if (event.message.stopReason !== "error" && event.message.stopReason !== "aborted") {
-              this.recordCompletedModelStep();
-            }
             lastStepReasoningOutput = stepReasoningOutput;
             lastAssistant = event.message;
             const usage = event.message.usage;
@@ -2056,6 +2185,10 @@ export class AgentSession {
       }
       await this.recordTurnOutcome(outcome);
       if (outcome.status === "completed") {
+        const emotionPolicy = this.activeConfig.context.emotion;
+        if (autoAnalyzeForTurn && emotionPolicy.enabled && emotionPolicy.allowModelUpdate && emotionPolicy.autoAnalyze) {
+          this.emotionAnalysisScheduler.schedule(this.recorder.sessionId, finalAssistantReference?.id);
+        }
         // 记忆整理是完成回合后的旁路；不等待模型请求，也不让它改变当前回合终态。
         void appendCompletedChatDiaryEntry({
           sessionId: this.recorder.sessionId,
@@ -2204,6 +2337,7 @@ export class AgentSession {
       );
 
       if (!resumingCurrent) {
+        this.emotionAnalysisScheduler.cancel();
         previousClosed = true;
         await previousRecorder.close();
       }
@@ -2234,7 +2368,6 @@ export class AgentSession {
       this.contextMessageReferences = replay.messageReferences.map((reference) => ({ ...reference }));
       this.nextSessionMessageIndex = Math.max(replay.totalMessageCount, replay.messageTree.length);
       await this.options.todoStore?.useSession(replacementRecorder.sessionId);
-      if (replacementRecorder.sessionId !== previousRecorder.sessionId) this.resetFatigue();
       this.recorder = replacementRecorder;
       this.turnStore = new TurnStore(this.persistenceRoot(), replacementRecorder.sessionId);
       return { ...replay, messages, filePath, sessionId: replacementRecorder.sessionId };
@@ -2266,6 +2399,7 @@ export class AgentSession {
     const previousRecorder = this.recorder;
     let nextRecorder: SessionRecorder | undefined;
     try {
+      this.emotionAnalysisScheduler.cancel();
       await ensureAgentDirs(this.persistenceRoot());
       // 先打开新会话的 recorder，再收尾旧会话；若这里失败，当前会话保持原样。
       nextRecorder = new SessionRecorder(this.persistenceRoot(), undefined, undefined, this.options.runtimeEventSink);
@@ -2287,7 +2421,6 @@ export class AgentSession {
       this.usageRecords = [];
       this.modelRequestRecords = [];
       this.unpersistedRelatedUsage = [];
-      this.resetFatigue();
       this.contextMemory.restore([], undefined);
       // 工作区快照缓存可能已陈旧（如切了分支）；标记脏，让下一回合重新扫描，而不在切换时扫描。
       this.contextMemory.invalidateWorkspace();
@@ -2809,6 +2942,7 @@ export class AgentSession {
   }
 
   async close(): Promise<void> {
+    this.emotionAnalysisScheduler.cancel();
     await Promise.allSettled([...this.pendingMemoryTasks]);
     this.closed = true;
     await Promise.allSettled([...this.pendingCrystalTasks]);

@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 import { Command, InvalidArgumentError } from "commander";
 import { initCommand } from "./commands/init.js";
 import { registerCrystalCommands } from "./commands/crystal.js";
+import { registerSoulCommands } from "./commands/soul.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { runCommand, type RunCommandOptions } from "./commands/run.js";
 import { chatCommand } from "./commands/chat.js";
@@ -21,7 +22,7 @@ import type { SessionTransferFormat } from "../session/transfer.js";
 import { planCommand } from "./commands/plan.js";
 import { tuiCommand } from "./commands/tui.js";
 import { runtimeHostCommand } from "./commands/runtimeHost.js";
-import { emotionGetCommand, emotionSetBaseCommand, emotionSetContextCommand, emotionStatusCommand } from "./commands/emotion.js";
+import { emotionAutoAnalyzeCommand, emotionGetCommand, emotionSetBaseCommand, emotionSetContextCommand, emotionStatusCommand } from "./commands/emotion.js";
 import {
   activityClearCommand,
   activityConfigCommand,
@@ -68,6 +69,7 @@ const { version: cliVersion } = createRequire(import.meta.url)("../../package.js
 
 program.name("biny").description("Biny local desktop assistant").version(cliVersion);
 registerCrystalCommands(program);
+registerSoulCommands(program);
 
 program.command("init").description("Initialize config and .biny directories").action(wrap(() => initCommand(workspaceRoot)));
 program.command("doctor").description("Check local environment").action(wrap(() => doctorCommand(workspaceRoot)));
@@ -248,6 +250,13 @@ emotion
   .command("get")
   .argument("[sessionId]", "session or chat id")
   .action((sessionId?: string) => wrap(() => emotionGetCommand(sessionId))());
+emotion
+  .command("auto-analyze")
+  .argument("<state>", "on or off")
+  .action((state: string) => wrap(async () => {
+    if (state !== "on" && state !== "off") throw new InvalidArgumentError("state must be on or off");
+    await emotionAutoAnalyzeCommand(state === "on");
+  })());
 program
   .command("plan")
   .description("Create a plan without executing write, edit, or command tools")

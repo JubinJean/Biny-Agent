@@ -48,9 +48,9 @@ async function main(): Promise<void> {
     // 空文档集合不产生 prompt。
     assert.equal(renderIdentityPrompt({ documents: {}, includeUser: true }), undefined);
 
-    // 内置 Soul 总是进入稳定系统提示，不依赖用户文件。
+    // 未注入用户覆盖时，系统提示使用内置 Soul 默认值。
     const systemPrompt = buildSystemPrompt({ mode: "qa", cwd: "/workspace" });
-    assert.match(systemPrompt, /<biny_builtin_soul>/u);
+    assert.match(systemPrompt, /<biny_soul source="builtin">/u);
     assert.match(systemPrompt, /用户长期工作的本地优先同事/u);
     assert.match(systemPrompt, /共同交付/u);
     assert.match(systemPrompt, /不要为了让用户舒服而自动赞同/u);

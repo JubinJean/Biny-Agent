@@ -41,7 +41,7 @@ export function createEmotionTool(options: EmotionToolOptions): Tool<UpdateEmoti
     promptSnippet: "Update the agent's bounded expression state when the conversation meaningfully changes",
     promptGuidelines: [
       "Use update_emotion when the conversation causes a meaningful change in tone or energy; do not update on every message.",
-      "Use context for a session-specific shift and keep its valence within three points of the base mood; use base only for a significant persistent change.",
+      "Use context for a session-specific shift; use base only for a significant persistent change. Blended valence already weights base/context, so do not add an artificial range limit.",
       "Keep mood and trigger in Chinese, use valence and energy on a 0-10 scale, and describe only the cause relevant to the expression state."
     ],
     parameters: {
