@@ -56,6 +56,10 @@ export interface VercelLoopState {
   toolResults: Map<string, AgentToolResult>;
   stepRecords: VercelStepRecord[];
   activeStepRecord: VercelStepRecord | undefined;
+  finishStepSeen: boolean;
+  finishStepEventsEmitted: boolean;
+  stepCompletion: Promise<void> | undefined;
+  resolveStepCompletion: (() => void) | undefined;
   lastStep: VercelStepRecord | undefined;
   completedSteps: number;
   terminateRequested: boolean;
@@ -106,6 +110,10 @@ export async function* vercelAgentLoopContinue(
     toolResults: new Map(),
     stepRecords: [],
     activeStepRecord: undefined,
+    finishStepSeen: false,
+    finishStepEventsEmitted: false,
+    stepCompletion: undefined,
+    resolveStepCompletion: undefined,
     lastStep: undefined,
     completedSteps: 0,
     terminateRequested: false,
@@ -148,6 +156,11 @@ export async function* vercelAgentLoopContinue(
     state.terminateRequested = false;
     state.streamFailure = undefined;
     state.outputProducedSinceStep = false;
+    state.finishStepSeen = false;
+    state.finishStepEventsEmitted = false;
+    state.stepCompletion = new Promise<void>((resolve) => {
+      state.resolveStepCompletion = resolve;
+    });
     const agent = createToolLoopAgent(state);
     try {
       const result = await agent.stream({
@@ -183,6 +196,9 @@ export async function* vercelAgentLoopContinue(
       }
     } finally {
       state.wakePendingEvents = undefined;
+    }
+    if (!state.streamFailure && state.finishStepSeen) {
+      await state.stepCompletion;
     }
 
     if (state.streamFailure && state.vercelModel !== undefined && !state.outputProducedSinceStep) {
@@ -310,7 +326,7 @@ async function completeStep(state: VercelLoopState, step: StepResult<ToolSet>): 
   state.newMessages.push(message, ...toolResults);
   state.completedSteps += 1;
   const record = { message, toolResults, messages, hadToolCalls: step.toolCalls.length > 0 };
-  state.stepRecords.push(record);
+  if (!state.finishStepSeen) state.stepRecords.push(record);
   state.activeStepRecord = record;
   state.lastStep = record;
   updateStepReasoningMetadata(state, record);
@@ -351,8 +367,13 @@ async function completeStep(state: VercelLoopState, step: StepResult<ToolSet>): 
     newMessages: state.newMessages
   })) {
     state.stopRequested = true;
-    return;
   }
+  if (state.finishStepSeen && !state.finishStepEventsEmitted) {
+    state.finishStepEventsEmitted = true;
+    state.pendingEvents.push(...completedStepEvents(record));
+    state.wakePendingEvents?.();
+  }
+  state.resolveStepCompletion?.();
 }
 
 async function appendQueuedMessages(state: VercelLoopState, messages: AgentMessage[]): Promise<void> {
@@ -463,19 +484,12 @@ function handleVercelStreamPart(state: VercelLoopState, part: {
     }];
   }
   if (part.type === "finish-step") {
+    state.finishStepSeen = true;
     const record = state.stepRecords.shift();
     if (!record) return [];
+    state.finishStepEventsEmitted = true;
     updateStepReasoningMetadata(state, record);
-    const message = record.message;
-    return [
-      { type: "message_end", message },
-      {
-        type: "turn_end",
-        message,
-        toolResults: record.toolResults,
-        messages: record.messages
-      }
-    ];
+    return completedStepEvents(record);
   }
   if (part.type === "error") {
     const error = errorMessage(part.error);
@@ -483,6 +497,18 @@ function handleVercelStreamPart(state: VercelLoopState, part: {
     return state.vercelModel === undefined ? [{ type: "error", error, fatal: true }] : [];
   }
   return [];
+}
+
+function completedStepEvents(record: VercelStepRecord): AgentEvent[] {
+  return [
+    { type: "message_end", message: record.message },
+    {
+      type: "turn_end",
+      message: record.message,
+      toolResults: record.toolResults,
+      messages: record.messages
+    }
+  ];
 }
 
 function updateStepReasoningMetadata(state: VercelLoopState, record: VercelStepRecord): void {
