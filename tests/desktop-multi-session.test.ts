@@ -60,7 +60,8 @@ try {
     models: { "local-test": { provider: "local", model: "local-test", contextWindow: 128000, capabilities: { tools: true, reasoning: false, streaming: true } } },
     thinking: { ...defaultConfig.thinking, enabled: false },
     crystal: { ...defaultConfig.crystal, passiveEnabled: false, semanticScanEnabled: false },
-    context: { ...defaultConfig.context, memory: { ...defaultConfig.context.memory, useMemories: false, generateMemories: false } }
+    context: { ...defaultConfig.context, memory: { ...defaultConfig.context.memory, useMemories: false, generateMemories: false } },
+    permission: { ...defaultConfig.permission, mode: "ask" }
   }));
   const storage = new DesktopUserDataStore(path.join(root, "desktop"));
   await storage.initialize();
