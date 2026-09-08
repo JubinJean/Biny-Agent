@@ -42,6 +42,7 @@ export type MemoryLineageSource =
   | "explicit"
   | "explicit_edit"
   | "completed_task"
+  | "self_reflection"
   | "sleep";
 
 /** 一条记忆可以来自多个被合并的条目，所以 StoredMemoryEntry 使用 lineage 数组。 */

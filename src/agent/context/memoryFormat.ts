@@ -322,6 +322,7 @@ function isLineageSource(value: string): value is MemoryLineage["source"] {
   return value === "explicit"
     || value === "explicit_edit"
     || value === "completed_task"
+    || value === "self_reflection"
     || value === "sleep";
 }
 

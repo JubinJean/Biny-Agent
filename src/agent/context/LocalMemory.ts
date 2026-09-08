@@ -178,6 +178,22 @@ export class LocalMemory {
     return await this.writeEntry(safe, options);
   }
 
+  /** 后台自动写入使用的 CAS 重试入口；调用方不需要自行读取 revision。 */
+  async writeAutoEntryWithRetry(
+    input: MemoryEntryInput,
+    options: { signal?: AbortSignal; now?: Date; requireSemantic?: boolean } = {}
+  ): Promise<MemoryWriteResult> {
+    const now = options.now ?? new Date();
+    return await this.retryMutation(options.signal, async (expectedRevision) => (
+      await this.writeAutoEntry(input, {
+        expectedRevision,
+        signal: options.signal,
+        now,
+        requireSemantic: options.requireSemantic
+      })
+    ));
+  }
+
   async updateEntry(id: string, patch: MemoryEntryPatch, options: MemoryMutationOptions): Promise<MemoryWriteResult> {
     const result = await this.storage.updateEntry(id, patch, options);
     if (result.written && result.entry) {
@@ -980,7 +996,7 @@ export class LocalMemory {
         // Generate an embedding before every automatic ADD. If the
         // semantic path is unavailable, skip this candidate instead of
         // silently weakening the write-time dedup guarantee.
-        const result = await this.writeAutoEntryWithRetry(input, options.signal, now, true);
+        const result = await this.writeAutoEntryWithRetry(input, { signal: options.signal, now, requireSemantic: true });
         if (result.written) {
           created.push({ id: result.entry!.id, content: result.entry!.summary });
           await options.onMemoryWritten?.(result.entry!);
@@ -1152,17 +1168,6 @@ export class LocalMemory {
   private async writeEntryWithRetry(input: MemoryEntryInput, signal: AbortSignal | undefined, now: Date): Promise<MemoryWriteResult> {
     return await this.retryMutation(signal, async (expectedRevision) => (
       await this.writeEntry(input, { expectedRevision, signal, now })
-    ));
-  }
-
-  private async writeAutoEntryWithRetry(
-    input: MemoryEntryInput,
-    signal: AbortSignal | undefined,
-    now: Date,
-    requireSemantic = false
-  ): Promise<MemoryWriteResult> {
-    return await this.retryMutation(signal, async (expectedRevision) => (
-      await this.writeAutoEntry(input, { expectedRevision, signal, now, requireSemantic })
     ));
   }
 
