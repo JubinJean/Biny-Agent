@@ -8,7 +8,8 @@
  *
  * 几处需要注意的状态：
  * - `runtimeInitializations` 缓存正在创建中的 promise，避免并发请求把同一个项目初始化两次；
- * - `liveEvents` 暂存本轮的实时事件，界面重新打开会话时要把它们接在历史事件后面；
+ * - `liveEvents` 暂存本轮的实时事件，界面重新打开会话时要把它们接在历史事件后面；终态事件
+ *   已经随 session 落盘后会清掉对应缓存，避免刷新时把同一轮再次拼到历史后面；
  * - `runtimeErrors` 记住初始化失败原因，让界面能显示「为什么这个项目起不来」而不是一直转圈。
  *
  * 模型配置的保存与连通性测试也在这里：写入前先用候选配置实际发一次请求，避免存下一份用不了的配置。
@@ -32,7 +33,7 @@ import type { ModelCatalogEntry } from "../../../ai/types.js";
 import { providerDefinition } from "../../../ai/provider.js";
 import { builtinProviderModels } from "../../../ai/builtinModels.js";
 import { loadProjectSettings } from "../../../config/projectSettings.js";
-import { globalConfigDir } from "../../../config/paths.js";
+import { globalAgentDir, globalConfigDir } from "../../../config/paths.js";
 import { createProjectSkillKey } from "../../../extensions/skillRef.js";
 import { synchronizeCredentialRevisions, type DeferredCredentialTransactionStatus } from "../../../config/credentials.js";
 import { configSchema, type AgentConfig, type ProviderConfig } from "../../../config/schema.js";
@@ -40,7 +41,7 @@ import { updateConfig, type AgentConfigStore } from "../../../config/store.js";
 import { ConfigRevisionConflictError, configDocumentRevision } from "../../../config/versioned.js";
 import { createNativeModelSettings, validateModelConfiguration } from "../../../llm/nativeFactory.js";
 import { ModelRuntime } from "../../../llm/ModelRuntime.js";
-import { listLocalEmbeddingModels } from "../../../llm/embedding/LocalEmbeddingRuntime.js";
+import { LocalEmbeddingManager, listLocalEmbeddingModels } from "../../../llm/embedding/LocalEmbeddingRuntime.js";
 import { listProviderEmbeddingModels } from "../../../llm/embedding/ProviderEmbeddingRuntime.js";
 import type { EmbeddingModelDescriptor, EmbeddingModelRuntime, LocalEmbeddingModelId } from "../../../llm/embedding/types.js";
 import type { MemoryEmbeddingRuntimeStatus } from "../../../agent/context/MemoryEmbeddingService.js";
@@ -412,11 +413,17 @@ export class DesktopAgentManager {
       const event = update.event;
       if (event) {
         const projectEvents = this.projectEvents(projectId);
-        const sessionEvents = projectEvents.get(event.sessionId) ?? [];
-        sessionEvents.push(event);
-        // 实时事件只为「重新打开会话时补上本轮内容」，按会话保留最近 4000 条，防止长跑占满内存。
-        if (sessionEvents.length > 4_000) sessionEvents.splice(0, sessionEvents.length - 4_000);
-        projectEvents.set(event.sessionId, sessionEvents);
+        if (isTerminalRunEvent(event)) {
+          // terminal 之前已经完成 session 落盘；继续保留 live events 会让 openSession 把已落盘
+          // 的新版本和旧 retry run 再拼一次，表现为同一用户消息出现两个 assistant turn。
+          projectEvents.delete(event.sessionId);
+        } else {
+          const sessionEvents = projectEvents.get(event.sessionId) ?? [];
+          sessionEvents.push(event);
+          // 实时事件只为「重新打开会话时补上本轮内容」，按会话保留最近 4000 条，防止长跑占满内存。
+          if (sessionEvents.length > 4_000) sessionEvents.splice(0, sessionEvents.length - 4_000);
+          projectEvents.set(event.sessionId, sessionEvents);
+        }
         if (isTerminalRunEvent(event) && this.state.selectedSessionId(projectId) !== event.sessionId) {
           void this.projects.updateSessionMetadata(this.projects.requireProject(projectId), event.sessionId, { unread: true }).catch(() => undefined);
         }
@@ -501,6 +508,10 @@ export class DesktopAgentManager {
       const remote = managed.runtime instanceof RuntimeHostClient ? managed.runtime : undefined;
       const targetSnapshot = remote?.getSnapshot() ?? managed.runtime.getSnapshot();
       if (targetSnapshot.info.sessionId === sessionId) runtimeSnapshot = targetSnapshot;
+      if (runtimeSnapshot) {
+        const primary = remote?.runtimeSnapshots().find((entry) => entry.sessionId === sessionId)?.primary ?? true;
+        this.emit(projectId, { snapshot: runtimeSnapshot }, { sessionId, primary });
+      }
       // 只读导航不申请长期 writer claim；发送、编辑和恢复操作会在各自的写入口按需申请。
     }
     if (runtimeError === undefined) this.runtimeErrors.delete(projectId);
@@ -613,9 +624,27 @@ export class DesktopAgentManager {
       };
     }
     const info = snapshot.info;
-    const submitted = runtime instanceof RuntimeHostClient
-      ? runtime.submitPromptForSession(targetSessionId, prompt, mode, nativeAttachments, undefined, promptContext, capabilitySelection)
-      : runtime.submitPrompt(prompt, mode, nativeAttachments, undefined, promptContext, capabilitySelection);
+    if (runtime instanceof RuntimeHostClient) {
+      const accepted = await runtime.submitRunForSession(
+        targetSessionId,
+        prompt,
+        mode,
+        nativeAttachments,
+        undefined,
+        promptContext,
+        capabilitySelection
+      );
+      if (!accepted.accepted || accepted.result === undefined) throw rejectedHostOperation(accepted.reason, accepted.errorCode);
+      if (this.draftSessionIds.get(projectId) === targetSessionId) this.draftSessionIds.delete(projectId);
+      if (this.state.selectedSessionId(projectId) === selectedBeforeSend) await this.state.setSelectedSession(projectId, info.sessionId);
+      recordPerfPhase("desktop.sendPrompt", sendPerfStartedAt, { projectId, queued: false }, project.path);
+      return {
+        sessionId: info.sessionId,
+        runId: accepted.result.runId,
+        messageId: accepted.result.messageId
+      };
+    }
+    const submitted = runtime.submitPrompt(prompt, mode, nativeAttachments, undefined, promptContext, capabilitySelection);
     if (this.draftSessionIds.get(projectId) === targetSessionId) this.draftSessionIds.delete(projectId);
     if (this.state.selectedSessionId(projectId) === selectedBeforeSend) await this.state.setSelectedSession(projectId, info.sessionId);
     this.observeRunCompletion(projectId, submitted.completion);
@@ -724,12 +753,7 @@ export class DesktopAgentManager {
       const { runtime } = managed;
       const snapshot = runtime instanceof RuntimeHostClient ? runtime.getSnapshot(sessionId) : runtime.getSnapshot();
       if (snapshot.state.kind === "runs") {
-        // 重试会先停掉当前回合，再把目标位置作为新版本重写；否则用户点早期消息时，
-        // 后面的运行会一直占住 Runtime，前端也只能把刷新按钮变成无效操作。
-        if (runtime instanceof RuntimeHostClient) await runtime.cancelRunRequest(snapshot.state.activeRun.runId, sessionId);
-        else runtime.cancelCurrentRun();
-        if (runtime instanceof RuntimeHostClient) await runtime.waitForIdle(sessionId);
-        else await runtime.waitForIdle();
+        throw new Error("当前会话正在生成，请等待本轮完成后再重新生成。");
       } else if (snapshot.state.kind === "maintenance") {
         throw new Error("Runtime 正在处理其他操作，请稍候再重新生成。");
       }
@@ -746,9 +770,13 @@ export class DesktopAgentManager {
       const prompt = attachments.length ? withAttachmentReferences(input, attachments) : input;
       const nativeAttachments = await loadNativeAttachments(this.projects.attachmentsRoot(project), retryAttachments);
       const requestIds = { retryOfMessageId: targetMessageId };
-      const submitted = runtime instanceof RuntimeHostClient
-        ? runtime.submitPromptForSession(sessionId, prompt, mode, nativeAttachments, requestIds)
-        : runtime.submitPrompt(prompt, mode, nativeAttachments, requestIds);
+      if (runtime instanceof RuntimeHostClient) {
+        const accepted = await runtime.submitRunForSession(sessionId, prompt, mode, nativeAttachments, requestIds);
+        if (!accepted.accepted || accepted.result === undefined) throw rejectedHostOperation(accepted.reason, accepted.errorCode);
+        await this.state.setSelectedSession(projectId, sessionId);
+        return { sessionId, runId: accepted.result.runId, messageId: accepted.result.messageId };
+      }
+      const submitted = runtime.submitPrompt(prompt, mode, nativeAttachments, requestIds);
       await this.state.setSelectedSession(projectId, sessionId);
       this.observeRunCompletion(projectId, submitted.completion);
       return { sessionId, runId: submitted.runId, messageId: submitted.messageId };
@@ -795,9 +823,17 @@ export class DesktopAgentManager {
       retryOfMessageId: targetMessageId,
       replaceUserMessageId: targetMessageId
     };
-    const submitted = runtime instanceof RuntimeHostClient
-      ? runtime.submitPromptForSession(sessionId, prompt, mode, nativeAttachments, requestIds)
-      : runtime.submitPrompt(prompt, mode, nativeAttachments, requestIds);
+    if (runtime instanceof RuntimeHostClient) {
+      const accepted = await runtime.submitRunForSession(sessionId, prompt, mode, nativeAttachments, requestIds);
+      if (!accepted.accepted || accepted.result === undefined) throw rejectedHostOperation(accepted.reason, accepted.errorCode);
+      await this.state.setSelectedSession(projectId, sessionId);
+      return {
+        sessionId,
+        runId: accepted.result.runId,
+        messageId: accepted.result.messageId
+      };
+    }
+    const submitted = runtime.submitPrompt(prompt, mode, nativeAttachments, requestIds);
     await this.state.setSelectedSession(projectId, sessionId);
     this.observeRunCompletion(projectId, submitted.completion);
     return {
@@ -2524,7 +2560,9 @@ export class DesktopAgentManager {
           persistenceRoot,
           configStore: this.configStore,
           attachmentRoot: this.projects.attachmentsRoot(project),
-          sessionId: fresh ? sessionId : undefined
+          sessionId: fresh ? sessionId : undefined,
+          resourceRegistry: factoryOptions?.resourceRegistry,
+          resourceBoot: factoryOptions?.resourceBoot ?? (factoryOptions?.resourceRegistry === undefined ? "blocking" : "background")
         });
         try {
           if (sessionId !== undefined && !fresh) await local.runtime.resumeSession(sessionId);
@@ -2536,7 +2574,10 @@ export class DesktopAgentManager {
       };
       // safeStorage 留在 Electron；仍通过统一 Host 注册表承载每个 Session。
       // 先取得 owner lock，再打开 Runtime 的 store，避免失败候选提前执行恢复。
-      host = await startRuntimeHost(persistenceRoot, createLocalRuntime, {
+      host = await startRuntimeHost(persistenceRoot, (resourceRegistry) => createLocalRuntime(undefined, {
+        resourceRegistry,
+        resourceBoot: "background"
+      }), {
         workspaceRoot: project.path,
         createRuntime: createLocalRuntime,
         resumeInterrupted: false,
@@ -2567,6 +2608,14 @@ export class DesktopAgentManager {
     const unsubscribe = this.wireRuntimeEvents(projectId, runtime, true);
     const managed: ManagedRuntime = { runtime, commands, host, spawnedHost, unsubscribe };
     this.runtimes.set(projectId, managed);
+    if (runtime instanceof RuntimeHostClient) {
+      for (const entry of runtime.runtimeSnapshots()) {
+        this.emit(projectId, { snapshot: entry.snapshot }, { sessionId: entry.sessionId, primary: entry.primary });
+      }
+    } else {
+      const snapshot = runtime.getSnapshot();
+      this.emit(projectId, { snapshot }, { sessionId: snapshot.info.sessionId, primary: true });
+    }
     this.runtimeErrors.delete(projectId);
     return managed;
   }
@@ -2767,22 +2816,30 @@ export class DesktopAgentManager {
     return { entries: result.entries, total: result.total, storeRevision: result.storeRevision };
   }
 
-  /** runtime 未驻留时的降级 embedding 状态：不加载 transformers、不打开向量索引（避免副作用），仅给出可渲染的最小信息。 */
+  /** runtime 未驻留时的降级 embedding 状态：只检查缓存元数据，不加载模型权重或打开向量索引。 */
   private async readEmbeddingStatusFromDisk(workspaceRoot: string): Promise<MemoryEmbeddingRuntimeStatus> {
     const config = (await this.requireVersionedConfig().loadVersioned!(workspaceRoot)).config;
     const activeModel = config.context.memory.embeddingModel;
-    const descriptors = describeEmbeddingModels(config);
+    // 只检查本地缓存元数据，不加载任何模型权重；这样未驻留 runtime 的设置页也能显示
+    // 「已下载/待下载」，而不是把所有状态都误报成未知。
+    const localManager = new LocalEmbeddingManager(path.join(globalAgentDir(), "models", "embeddings"));
+    const localModels = await localManager.list();
+    const descriptors = [
+      ...localModels.map(({ descriptor, installed }) => ({ ...descriptor, installed })),
+      ...describeEmbeddingModels(config).filter((descriptor) => descriptor.source === "provider")
+    ];
     const storage = new MemoryStorage(workspaceRoot);
     const totalEntries = (await storage.getOverview()).entryCount;
     // 不打开向量索引（会 mkdir+migrate），所以索引进度未知：active 视为无，全部待处理。
     return {
       activeModel,
       models: descriptors,
-      localModels: [],
+      localModels,
       index: {},
       totalEntries,
       indexedEntries: 0,
       pendingEntries: totalEntries,
+      needsRebuild: config.needsEmbeddingRebuild === true,
       degradedReason: "打开会话后显示索引进度与运行中操作"
     };
   }
@@ -2911,7 +2968,7 @@ function memoryStats(entries: MemoryEntriesResult): { total: number; autoGenerat
   for (const entry of entries.entries) {
     const manual = entry.lineage.some((item) => item.source === "explicit" || item.source === "explicit_edit");
     if (manual) manualAdded += 1;
-    else if (entry.lineage.some((item) => item.source === "completed_task" || item.source === "sleep")) autoGenerated += 1;
+    else if (entry.lineage.some((item) => item.source === "completed_task" || item.source === "self_reflection" || item.source === "sleep")) autoGenerated += 1;
   }
   return { total: entries.entries.length, autoGenerated, manualAdded };
 }
@@ -3179,6 +3236,12 @@ async function unwrapHostOperationResult<T>(operation: Promise<HostOperationResu
   const result = await operation;
   if (!result.accepted) throw new Error(result.reason ?? "Runtime operation was rejected.");
   return result.result;
+}
+
+function rejectedHostOperation(reason: string | undefined, code: string | undefined): Error {
+  const error = new Error(reason ?? "Runtime Host did not accept the request.");
+  if (code !== undefined) Object.assign(error, { code });
+  return error;
 }
 
 function requiredPayloadString(value: unknown, name: string): string {
