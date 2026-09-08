@@ -115,8 +115,8 @@
   /* 悬停用半透明深色，避免浅色模式堆叠多层近似白色的实底。 */
   --biny-light-surface-hover: rgba(0, 0, 0, 0.05);
   --biny-light-surface-selected: #ececec;
-  /* 单一主体色：侧栏、主区与窗口底板共用同一底色，分隔只靠 hairline。 */
-  --biny-light-sidebar-surface: #fbfbfc;
+  /* 左侧栏使用独立的浅色卡片底，主区与窗口底板共用主体色。 */
+  --biny-light-sidebar-surface: #f3f4f6;
   --biny-light-backplate: #fbfbfc;
   --biny-light-border: #e8e8e8;
   --biny-light-border-strong: #d5d5d5;
@@ -171,8 +171,8 @@
   --biny-dark-surface: #0e0e0e;
   --biny-dark-surface-elevated: #1f1f1f;
   --biny-dark-surface-hover: #242424;
-  /* 单一主体色：聊天主区、侧栏卡与窗口 backplate 共用同一底色，缝隙在视觉上不可见。 */
-  --biny-dark-sidebar-surface: #0e0e0e;
+  /* 左侧栏使用独立的深色卡片底，聊天主区与窗口 backplate 共用主体色。 */
+  --biny-dark-sidebar-surface: #161616;
   --biny-dark-backplate: #0e0e0e;
   --biny-dark-border: #2c2c2c;
   --biny-dark-text: #ececec;
@@ -462,8 +462,8 @@
 }
 
 /* 三栏由同一个 flex 容器管理：左侧栏、Chat 工作区和右侧 Inspector 只改变自身宽度。
-   主区 plate 与窗口 backplate、侧栏卡共用同一主体色，四周留缝在视觉上不可见；
-   顶部通高到窗口上缘（对照 ZCode），分隔只靠 hairline（侧栏卡描边、Inspector 左描边）。 */
+   主区 plate 与窗口 backplate 共用主体色，左侧栏由独立卡片承载；
+   顶部通高到窗口上缘，分隔只靠卡片边界和 Inspector 左描边。 */
 .biny-content-shell {
   order: 0;
   min-width: 0;
@@ -1004,13 +1004,19 @@
   height: 100%;
   flex: 0 0 auto;
   flex-direction: column;
-  /* 通栏列：aside 负责宽度动画，直通窗口上下缘（对照 ZCode），视觉壳只有 card 右缘 hairline。 */
+  /* aside 只负责宽度动画；视觉壳在内部卡片，四周留出参考项目同样的窗口缝隙。 */
   box-sizing: border-box;
+  padding: 10px;
   overflow: visible;
   color: var(--biny-text);
   will-change: width;
-  /* box-shadow 过渡让 peek 换位（fixed→流内）时抽屉阴影淡出，而不是换位帧瞬间消失。 */
-  transition: box-shadow var(--biny-sidebar-transition);
+  /* 收起态归零内边距，避免零宽侧栏仍被卡片缝隙占位。 */
+  transition: padding var(--biny-sidebar-transition), box-shadow var(--biny-sidebar-transition);
+}
+
+.biny-sidebar.is-hidden {
+  padding-inline: 0;
+  padding-block: 0;
 }
 
 .biny-sidebar-card {
@@ -1022,10 +1028,13 @@
   height: 100%;
   flex: 0 0 auto;
   flex-direction: column;
+  box-sizing: border-box;
   overflow: hidden;
-  /* 通栏视觉壳：与主区同体色，右缘一条 hairline 分隔；浮起感交给 peek 态 aside 的投影。 */
-  border-right: 1px solid var(--biny-border);
+  /* 参考项目使用带缝隙的独立侧栏卡片，靠边框与阴影建立层级。 */
+  border: 1px solid color-mix(in srgb, var(--biny-border) 40%, transparent);
+  border-radius: 16px;
   background: var(--biny-sidebar-surface);
+  box-shadow: 0 8px 32px -12px var(--biny-shadow-sidebar);
   transition: opacity var(--biny-sidebar-content-fade);
 }
 
@@ -1035,9 +1044,9 @@
 
 .biny-sidebar-body,
 .biny-sidebar-footer {
-  /* 内容盒宽 = 侧栏内容宽；收缩动画期间保持上一次盒宽由卡片裁剪。 */
+  /* 内容盒宽扣除卡片两侧缝隙；收缩动画期间仍由共享宽度变量驱动。 */
   box-sizing: border-box;
-  width: var(--biny-sidebar-content-width);
+  width: max(0px, calc(var(--biny-sidebar-content-width) - 20px));
   -webkit-app-region: no-drag;
   app-region: no-drag;
   transition: opacity var(--biny-sidebar-content-fade), visibility 0s linear 0s;
@@ -1112,10 +1121,7 @@
   app-region: drag;
 }
 
-/*
- * 顶部条（y < 38px）在 floor 模型下直接透出底色：侧栏列与主区 plate 上缘之间
- * 的整条带都是 floor，无需单独的视觉层。按钮命中层（topbar-floating）保留。
- */
+/* 顶部按钮命中层只负责拖拽和交互，底色分别由侧栏卡与聊天工具栏提供。 */
 .biny-sidebar-topbar-floating {
   position: fixed;
   z-index: 100;
@@ -4068,8 +4074,8 @@ div:has(> .astryx-trigger-menu) {
   gap: 14px;
   padding: 0 var(--biny-chat-toolbar-inline-padding);
   border-bottom: 1px solid transparent;
-  /* 工具条悬浮在 floor 上：透明背景让它与侧栏列连成同一条 floor 带。 */
-  background: transparent;
+  /* 工具栏属于主区，显式铺主体色，避免透明时露出窗口底板。 */
+  background: var(--biny-surface);
   transition: padding-left var(--biny-sidebar-transition), opacity var(--biny-sidebar-content-fade);
   /* 整条顶部默认用于拖动；右侧操作容器单独退出拖动区。 */
   -webkit-app-region: drag;
