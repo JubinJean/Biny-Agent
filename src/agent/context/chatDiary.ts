@@ -275,12 +275,23 @@ export class DailyDiaryScheduler {
     const batch = [...this.pendingDateKeys];
     this.pendingDateKeys.clear();
     this.running = true;
-    void Promise.resolve(this.run(batch, this.abort.signal))
-      .catch(() => undefined)
-      .finally(() => {
-        this.running = false;
-        if (this.pendingDateKeys.size) this.trigger([]);
-      });
+    try {
+      const result = this.run(batch, this.abort.signal);
+      if (result === undefined) {
+        this.finishRun();
+        return;
+      }
+      void Promise.resolve(result)
+        .catch(() => undefined)
+        .finally(() => this.finishRun());
+    } catch {
+      this.finishRun();
+    }
+  }
+
+  private finishRun(): void {
+    this.running = false;
+    if (this.pendingDateKeys.size) this.trigger([]);
   }
 
   private catchUpDateKeys(): string[] {
