@@ -60,6 +60,7 @@ export interface VercelLoopState {
   finishStepEventsEmitted: boolean;
   stepCompletion: Promise<void> | undefined;
   resolveStepCompletion: (() => void) | undefined;
+  pendingStepPreparation: (() => Promise<void>) | undefined;
   lastStep: VercelStepRecord | undefined;
   completedSteps: number;
   terminateRequested: boolean;
@@ -114,6 +115,7 @@ export async function* vercelAgentLoopContinue(
     finishStepEventsEmitted: false,
     stepCompletion: undefined,
     resolveStepCompletion: undefined,
+    pendingStepPreparation: undefined,
     lastStep: undefined,
     completedSteps: 0,
     terminateRequested: false,
@@ -161,6 +163,7 @@ export async function* vercelAgentLoopContinue(
     state.stepCompletion = new Promise<void>((resolve) => {
       state.resolveStepCompletion = resolve;
     });
+    state.pendingStepPreparation = undefined;
     const agent = createToolLoopAgent(state);
     try {
       const result = await agent.stream({
@@ -215,6 +218,19 @@ export async function* vercelAgentLoopContinue(
     while (state.pendingEvents.length) {
       const event = state.pendingEvents.shift();
       if (event) yield event;
+    }
+    // SDK 可能先把 finish-step 推给 fullStream，再执行 onStepEnd；先让宿主消费 turn_end，
+    // prepareNextTurn 才能读取已更新的 provider step 计数和下一轮上下文。
+    const stepPreparation = state.pendingStepPreparation as (() => Promise<void>) | undefined;
+    state.pendingStepPreparation = undefined;
+    if (stepPreparation !== undefined) {
+      try {
+        await stepPreparation();
+      } catch (error) {
+        if (signal?.aborted) throw error;
+        state.streamFailure = errorMessage(error);
+        yield { type: "error", error: state.streamFailure, fatal: true };
+      }
     }
     if (state.streamFailure) break;
     if (state.stopRequested) break;
@@ -307,13 +323,11 @@ function createToolLoopAgent(state: VercelLoopState): ToolLoopAgent {
     onLanguageModelCallEnd: state.vercelModel === undefined
       ? undefined
       : async (event) => { await recordDirectModelRequest(state, event); },
-    onStepEnd: async (step) => {
-      await completeStep(state, step);
-    }
+    onStepEnd: (step) => { completeStep(state, step); }
   });
 }
 
-async function completeStep(state: VercelLoopState, step: StepResult<ToolSet>): Promise<void> {
+function completeStep(state: VercelLoopState, step: StepResult<ToolSet>): void {
   const message = assistantFromStep(step);
   const toolResults = step.toolCalls.map((call) => toolResultMessage(
     call.toolCallId,
@@ -341,38 +355,40 @@ async function completeStep(state: VercelLoopState, step: StepResult<ToolSet>): 
     state.stopRequested = true;
   }
 
-  const nextTurn = await state.config.prepareNextTurn?.({
-    message,
-    toolResults,
-    context: state.context,
-    newMessages: state.newMessages
-  });
-  if (nextTurn) {
-    if (nextTurn.context) state.context = nextTurn.context;
-    state.tools = [...(nextTurn.tools ?? state.context.tools)];
-    state.context.tools = [...state.tools];
-    if (nextTurn.model) {
-      state.model = nextTurn.model;
-      state.vercelModel = nextTurn.vercelModel;
-    } else if (nextTurn.vercelModel) {
-      state.vercelModel = nextTurn.vercelModel;
-    }
-    state.modelOptions = nextTurn.modelOptions ?? state.modelOptions;
-    if ("maxRetries" in nextTurn) state.maxRetries = nextTurn.maxRetries;
-  }
-  if (await state.config.shouldStopAfterTurn?.({
-    message,
-    toolResults,
-    context: state.context,
-    newMessages: state.newMessages
-  })) {
-    state.stopRequested = true;
-  }
   if (state.finishStepSeen && !state.finishStepEventsEmitted) {
     state.finishStepEventsEmitted = true;
     state.pendingEvents.push(...completedStepEvents(record));
     state.wakePendingEvents?.();
   }
+  state.pendingStepPreparation = async () => {
+    const nextTurn = await state.config.prepareNextTurn?.({
+      message,
+      toolResults,
+      context: state.context,
+      newMessages: state.newMessages
+    });
+    if (nextTurn) {
+      if (nextTurn.context) state.context = nextTurn.context;
+      state.tools = [...(nextTurn.tools ?? state.context.tools)];
+      state.context.tools = [...state.tools];
+      if (nextTurn.model) {
+        state.model = nextTurn.model;
+        state.vercelModel = nextTurn.vercelModel;
+      } else if (nextTurn.vercelModel) {
+        state.vercelModel = nextTurn.vercelModel;
+      }
+      state.modelOptions = nextTurn.modelOptions ?? state.modelOptions;
+      if ("maxRetries" in nextTurn) state.maxRetries = nextTurn.maxRetries;
+    }
+    if (await state.config.shouldStopAfterTurn?.({
+      message,
+      toolResults,
+      context: state.context,
+      newMessages: state.newMessages
+    })) {
+      state.stopRequested = true;
+    }
+  };
   state.resolveStepCompletion?.();
 }
 
