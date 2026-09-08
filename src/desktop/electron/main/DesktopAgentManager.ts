@@ -501,25 +501,7 @@ export class DesktopAgentManager {
       const remote = managed.runtime instanceof RuntimeHostClient ? managed.runtime : undefined;
       const targetSnapshot = remote?.getSnapshot() ?? managed.runtime.getSnapshot();
       if (targetSnapshot.info.sessionId === sessionId) runtimeSnapshot = targetSnapshot;
-      if (writerConflict === undefined && targetSnapshot.info.sessionId === sessionId && !runtimeIsBusy(targetSnapshot)) {
-        try {
-          await managed.runtime.claimSession(sessionId);
-        } catch (error) {
-          if (isSessionWriterConflictError(error)) {
-            writerConflict = {
-              sessionId,
-              ownerSurface: error.ownerSurface === "desktop" || error.ownerSurface === "tui" || error.ownerSurface === "cli"
-                ? error.ownerSurface
-                : undefined
-            };
-          } else {
-            runtimeError = formatRuntimeInitializationError(error);
-            this.runtimeErrors.set(projectId, runtimeError);
-            document = historicalDocument;
-            runtimeSnapshot = undefined;
-          }
-        }
-      }
+      // 只读导航不申请长期 writer claim；发送、编辑和恢复操作会在各自的写入口按需申请。
     }
     if (runtimeError === undefined) this.runtimeErrors.delete(projectId);
     // 已读标记只影响侧栏状态，不应阻塞会话正文首屏。后续元数据写入会先等待这次

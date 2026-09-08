@@ -473,6 +473,21 @@ function DesktopApp(): React.JSX.Element {
     // 从项目选择到会话读取共用同一个请求号，较早的跨项目请求不能在较新的点击后重新取得提交权。
     const request = loadRequestRef.current + 1;
     loadRequestRef.current = request;
+    const previousView = {
+      blankDraft,
+      contextBudget,
+      document: documentRef.current,
+      draftMemoryOverride,
+      draftProjectId,
+      page,
+      runtimePanelOpen,
+      selectedSessionId: selectedRef.current,
+      writerConflict
+    };
+    const targetSummary = target.sessionId === undefined || target.projectId !== projectRef.current
+      ? undefined
+      : workspace?.sessions.find((session) => session.id === target.sessionId)
+        ?? sidebarSessions.find((session) => session.projectId === target.projectId && session.id === target.sessionId);
     const startingCurrentDraft = target.sessionId === undefined && target.projectId === projectRef.current;
     // 只有无会话草稿需要在 await 前切换呈现变体；打开已有会话时保留旧变体，
     // 跨项目时则等目标快照就绪后再切，避免旧项目先闪成另一种草稿布局。
@@ -494,6 +509,23 @@ function DesktopApp(): React.JSX.Element {
         ? { ...current, selectedSessionId: undefined }
         : current);
       setLoading(false);
+    } else if (targetSummary !== undefined) {
+      // 先切换可见会话，再等待 Runtime Host 聚焦和正文回读；慢请求只能回填自己的目标。
+      // 空正文只是过渡态，真实历史和 live events 由下面的 openSession 完成后替换。
+      setPage("chat");
+      setRuntimePanelOpen(false);
+      selectedRef.current = target.sessionId;
+      setSelectedSessionId(target.sessionId);
+      setBlankDraft(false);
+      setDraftProjectId(undefined);
+      setDraftMemoryOverride(undefined);
+      setContextBudget(undefined);
+      setDocument({ session: targetSummary, events: [], liveEvents: [] });
+      setWriterConflict(undefined);
+      setWorkspace((current) => current?.project.id === target.projectId
+        ? { ...current, selectedSessionId: target.sessionId }
+        : current);
+      setLoading(true);
     } else if (!projectRef.current) {
       // 已有工作区时保留旧项目/会话，等目标数据就绪后再一次性替换；否则 loading 会把聊天正文闪成空白。
       setLoading(true);
@@ -517,11 +549,26 @@ function DesktopApp(): React.JSX.Element {
       return await openSession(target.projectId, target.sessionId, false, request, snapshot);
     } catch (error) {
       if (loadRequestRef.current !== request) return false;
+      if (targetSummary !== undefined) {
+        selectedRef.current = previousView.selectedSessionId;
+        setSelectedSessionId(previousView.selectedSessionId);
+        setPage(previousView.page);
+        setRuntimePanelOpen(previousView.runtimePanelOpen);
+        setBlankDraft(previousView.blankDraft);
+        setDraftProjectId(previousView.draftProjectId);
+        setDraftMemoryOverride(previousView.draftMemoryOverride);
+        setContextBudget(previousView.contextBudget);
+        setDocument(previousView.document);
+        setWriterConflict(previousView.writerConflict);
+        setWorkspace((current) => current?.project.id === target.projectId
+          ? { ...current, selectedSessionId: previousView.selectedSessionId }
+          : current);
+      }
       throw error;
     } finally {
       if (loadRequestRef.current === request) setLoading(false);
     }
-  }, [adoptWorkspace, openSession]);
+  }, [adoptWorkspace, blankDraft, contextBudget, draftMemoryOverride, draftProjectId, openSession, page, runtimePanelOpen, sidebarSessions, workspace, writerConflict]);
 
   useEffect(() => {
     let active = true;
