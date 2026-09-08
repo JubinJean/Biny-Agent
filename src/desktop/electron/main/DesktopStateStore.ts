@@ -7,6 +7,7 @@
  */
 import { promises as fs } from "node:fs";
 import path from "node:path";
+import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH } from "../../sidebarSizing.js";
 import { clampStoredFilePanelWidth, DEFAULT_FILE_PANEL_WIDTH } from "../../filePanelSizing.js";
 import { DEFAULT_FONT_PREFERENCE, normalizeFontPreference } from "../../fontPreference.js";
 import type { DesktopActiveView, DesktopFontPreference, DesktopProject, DesktopQuickChatSettings, DesktopThemePreference } from "../../protocol.js";
@@ -24,6 +25,7 @@ interface PersistedDesktopState {
   activeProjectId?: string;
   selectedSessionIds: Record<string, string>;
   activeView: DesktopActiveView;
+  sidebarWidth: number;
   filePanelWidth: number;
   themePreference: DesktopThemePreference;
   fontPreference: DesktopFontPreference;
@@ -47,6 +49,7 @@ const defaultState: PersistedDesktopState = {
   activeProjectId: undefined,
   selectedSessionIds: {},
   activeView: "chat",
+  sidebarWidth: DEFAULT_SIDEBAR_WIDTH,
   filePanelWidth: DEFAULT_FILE_PANEL_WIDTH,
   themePreference: "system",
   fontPreference: { ...DEFAULT_FONT_PREFERENCE },
@@ -71,6 +74,7 @@ export class DesktopStateStore {
         activeProjectId: typeof raw.activeProjectId === "string" ? raw.activeProjectId : undefined,
         selectedSessionIds: isRecord(raw.selectedSessionIds) ? stringRecord(raw.selectedSessionIds) : {},
         activeView: validActiveView(raw.activeView) ? raw.activeView : "chat",
+        sidebarWidth: typeof raw.sidebarWidth === "number" ? clampSidebarWidth(raw.sidebarWidth) : DEFAULT_SIDEBAR_WIDTH,
         filePanelWidth: typeof raw.filePanelWidth === "number" ? clampStoredFilePanelWidth(raw.filePanelWidth) : DEFAULT_FILE_PANEL_WIDTH,
         themePreference: validThemePreference(raw.themePreference) ? raw.themePreference : "system",
         fontPreference: normalizeFontPreference(raw.fontPreference),
@@ -180,6 +184,15 @@ export class DesktopStateStore {
   async setSelectedSession(projectId: string, sessionId: string | undefined): Promise<void> {
     if (sessionId === undefined) delete this.state.selectedSessionIds[projectId];
     else this.state.selectedSessionIds[projectId] = sessionId;
+    await this.save();
+  }
+
+  sidebarWidth(): number {
+    return this.state.sidebarWidth;
+  }
+
+  async setSidebarWidth(width: number): Promise<void> {
+    this.state.sidebarWidth = clampSidebarWidth(width);
     await this.save();
   }
 

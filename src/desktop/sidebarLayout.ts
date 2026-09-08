@@ -1,8 +1,9 @@
 /**
  * 桌面端侧栏的状态和几何快照。
  *
- * 展开宽度固定（见 sidebarSizing），这里只描述 expanded / rail / collapsed 三种
- * 基础模式以及 collapsed 下的 peek 临时覆盖层，供 Sidebar 和 DesktopShell 共用。
+ * 展开宽度可由用户拖拽调整（范围见 sidebarSizing），这里只描述 expanded / rail /
+ * collapsed 三种基础模式以及 collapsed 下的 peek 临时覆盖层，供 Sidebar 和
+ * DesktopShell 共用；resizing 标记给外壳用于拖拽期间禁用宽度过渡。
  */
 import { DEFAULT_SIDEBAR_WIDTH, SIDEBAR_RAIL_WIDTH } from "./sidebarSizing.js";
 
@@ -17,11 +18,16 @@ export interface SidebarLayoutSnapshot {
   flowWidth: number;
   contentWidth: number;
   transition: SidebarTransition;
+  resizing: boolean;
 }
 
 export interface SidebarLayoutState {
   baseMode: SidebarBaseMode;
   peekPhase: SidebarPeekPhase;
+  /** expanded 模式下的目标宽度；缺省回退到默认宽度。 */
+  expandedWidth?: number;
+  /** 拖拽进行中为 true，外壳据此跳过宽度过渡让侧栏跟手。 */
+  resizing?: boolean;
 }
 
 export const DEFAULT_SIDEBAR_LAYOUT: SidebarLayoutState = {
@@ -40,7 +46,7 @@ export function resolveSidebarLayout(input: SidebarLayoutState): SidebarLayoutSn
     && input.peekPhase !== "peekExited"
     ? "peek"
     : input.baseMode;
-  const expandedWidth = DEFAULT_SIDEBAR_WIDTH;
+  const expandedWidth = input.expandedWidth ?? DEFAULT_SIDEBAR_WIDTH;
   const visualWidth = mode === "collapsed" ? 0 : mode === "rail" ? SIDEBAR_RAIL_WIDTH : expandedWidth;
   const isPeek = mode === "peek";
   const flowWidth = isPeek
@@ -55,5 +61,5 @@ export function resolveSidebarLayout(input: SidebarLayoutState): SidebarLayoutSn
       : input.peekPhase === "peekExited"
         ? "peek-exited"
       : "idle";
-  return { mode, visualWidth, flowWidth, contentWidth, transition };
+  return { mode, visualWidth, flowWidth, contentWidth, transition, resizing: input.resizing === true };
 }

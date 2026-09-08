@@ -61,6 +61,7 @@
   --biny-shadow-soft: var(--shadow);
   --biny-shadow-heavy: var(--shadow);
   --biny-shadow-sidebar: var(--shadow);
+  --biny-sidebar-border: color-mix(in srgb, var(--border) 40%, transparent);
   --biny-overlay: rgb(0 0 0 / 20%);
   --biny-overlay-hover: rgb(0 0 0 / 8%);
   --biny-overlay-pressed: rgb(0 0 0 / 14%);
@@ -145,7 +146,7 @@
   --biny-light-shadow-color: rgb(26 28 31 / 8%);
   --biny-light-shadow-soft: rgb(26 28 31 / 11%);
   --biny-light-shadow-heavy: rgb(26 28 31 / 18%);
-  --biny-light-shadow-sidebar: rgb(26 28 31 / 12%);
+  --biny-light-shadow-sidebar: rgb(15 23 42 / 35%);
   --biny-dark-surface-soft: #1b1b1b;
   --biny-dark-surface-selected: rgba(255, 255, 255, 0.10);
   --biny-dark-border-strong: #454545;
@@ -167,7 +168,7 @@
   --biny-dark-shadow-color: rgb(0 0 0 / 34%);
   --biny-dark-shadow-soft: rgb(0 0 0 / 24%);
   --biny-dark-shadow-heavy: rgb(0 0 0 / 42%);
-  --biny-dark-shadow-sidebar: rgb(0 0 0 / 30%);
+  --biny-dark-shadow-sidebar: rgb(0 0 0 / 60%);
   --biny-dark-surface: #0e0e0e;
   --biny-dark-surface-elevated: #1f1f1f;
   --biny-dark-surface-hover: #242424;
@@ -211,6 +212,7 @@
   --biny-shadow-soft: var(--biny-light-shadow-soft);
   --biny-shadow-heavy: var(--biny-light-shadow-heavy);
   --biny-shadow-sidebar: var(--biny-light-shadow-sidebar);
+  --biny-sidebar-border: color-mix(in srgb, var(--biny-light-border) 40%, transparent);
   --biny-overlay: rgb(0 0 0 / 20%);
   --biny-overlay-hover: rgb(0 0 0 / 8%);
   --biny-overlay-pressed: rgb(0 0 0 / 14%);
@@ -357,6 +359,8 @@
   --biny-shadow-soft: var(--biny-dark-shadow-soft);
   --biny-shadow-heavy: var(--biny-dark-shadow-heavy);
   --biny-shadow-sidebar: var(--biny-dark-shadow-sidebar);
+  /* Alma 深色侧栏描边：白色亮边压在暗底上，包边清晰可见。 */
+  --biny-sidebar-border: rgb(255 255 255 / 8%);
   --biny-overlay: rgb(0 0 0 / 42%);
   --biny-overlay-hover: rgb(0 0 0 / 16%);
   --biny-overlay-pressed: rgb(0 0 0 / 24%);
@@ -398,6 +402,7 @@
     --biny-shadow-soft: var(--biny-dark-shadow-soft);
     --biny-shadow-heavy: var(--biny-dark-shadow-heavy);
     --biny-shadow-sidebar: var(--biny-dark-shadow-sidebar);
+    --biny-sidebar-border: rgb(255 255 255 / 8%);
     --biny-overlay: rgb(0 0 0 / 42%);
     --biny-overlay-hover: rgb(0 0 0 / 16%);
     --biny-overlay-pressed: rgb(0 0 0 / 24%);
@@ -436,9 +441,11 @@
   background: var(--biny-backplate);
 }
 
-/* 右侧分隔条拖拽时直接跟手，松开后再恢复统一的流宽度动画。 */
-.desktop-root.biny-root[data-inspector-resizing="true"] {
+/* 左右分隔条拖拽时直接跟手，松开后再恢复统一的流宽度动画；拖拽过程中也不能选中正文。 */
+.desktop-root.biny-root[data-inspector-resizing="true"],
+.desktop-root.biny-root[data-sidebar-resizing="true"] {
   transition: none;
+  user-select: none;
 }
 
 /* peek 抽屉已经离屏，交换回普通 collapsed 流布局时必须跳过第二段宽度动画。 */
@@ -1019,6 +1026,38 @@
   padding-block: 0;
 }
 
+/* 拖拽把手落在 aside 右侧 10px 缝隙内，不遮住卡片内容；顶部让开窗口拖动区。 */
+.biny-sidebar-resizer {
+  position: absolute;
+  z-index: 3;
+  top: 38px;
+  right: 0;
+  bottom: 0;
+  box-sizing: border-box;
+  width: 10px;
+  cursor: col-resize;
+  touch-action: none;
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.biny-sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 4px;
+  bottom: 10px;
+  width: 1px;
+  background: transparent;
+  transition: background-color 140ms ease;
+}
+
+.biny-sidebar-resizer:hover::after,
+.biny-sidebar-resizer:focus-visible::after,
+.biny-sidebar.is-resizing .biny-sidebar-resizer::after {
+  background: var(--biny-focus);
+}
+
 .biny-sidebar-card {
   position: relative;
   display: flex;
@@ -1030,8 +1069,8 @@
   flex-direction: column;
   box-sizing: border-box;
   overflow: hidden;
-  /* 参考项目使用带缝隙的独立侧栏卡片，靠边框与阴影建立层级。 */
-  border: 1px solid color-mix(in srgb, var(--biny-border) 40%, transparent);
+  /* 参考项目使用带缝隙的独立侧栏卡片，靠边框与阴影建立层级；描边分主题取 token。 */
+  border: 1px solid var(--biny-sidebar-border);
   border-radius: 16px;
   background: var(--biny-sidebar-surface);
   box-shadow: 0 8px 32px -12px var(--biny-shadow-sidebar);
@@ -1065,50 +1104,11 @@
   height: 38px;
   min-height: 38px;
   flex: 0 0 38px;
+  /* Alma 式发丝分割线：顶栏按钮与下方内容在此分界。 */
+  border-bottom: 1px solid color-mix(in srgb, var(--biny-border) 70%, transparent);
 }
 
-/* 内联会话过滤：常驻在列表上方，只过滤当前侧栏树。 */
-.biny-sidebar-search {
-  display: flex;
-  min-width: 0;
-  height: 28px;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 7px;
-  margin: 2px 12px 6px;
-  padding: 0 10px;
-  border-radius: 9px;
-  background: var(--biny-surface-soft);
-  color: var(--biny-text-secondary);
-  transition: background var(--biny-sidebar-hover-duration) var(--biny-sidebar-hover-ease);
-}
-
-.biny-sidebar-search:focus-within {
-  background: var(--biny-surface-hover);
-}
-
-.biny-sidebar-search input {
-  min-width: 0;
-  flex: 1 1 auto;
-  border: 0;
-  outline: none;
-  background: transparent;
-  color: var(--biny-text);
-  font: inherit;
-  font-size: 12.5px;
-}
-
-.biny-sidebar-search input::placeholder {
-  color: var(--biny-text-tertiary);
-}
-
-.biny-sidebar-search input::-webkit-search-cancel-button {
-  cursor: pointer;
-}
-
-.biny-sidebar.is-compact .biny-sidebar-search {
-  display: none;
-}
+/* 内联会话搜索已移除：搜索统一走顶栏按钮的全局搜索浮层。 */
 
 .biny-sidebar-topbar {
   display: flex;
@@ -1116,7 +1116,8 @@
   min-height: 38px;
   align-items: center;
   gap: 9px;
-  padding: 0 12px 0 80px;
+  /* 顶部留 10px：按钮（28px）贴着侧栏卡片顶线（y=10）内侧，悬停/选中气泡不再越线。 */
+  padding: 10px 12px 0 80px;
   -webkit-app-region: drag;
   app-region: drag;
 }
@@ -1156,7 +1157,8 @@
   align-items: center;
   justify-content: flex-end;
   gap: 9px;
-  padding: 0 12px 0 80px;
+  /* 与 .biny-sidebar-topbar 同理：按钮压在卡片顶线内侧，气泡不越出卡片。 */
+  padding: 10px 12px 0 80px;
   pointer-events: auto;
   -webkit-app-region: drag;
   app-region: drag;
@@ -1268,12 +1270,14 @@
   flex: 1 1 auto;
   overflow: auto;
   scrollbar-width: thin;
+  /* 顶栏分割线下留一点呼吸空间，列表不顶着线排。 */
+  padding-top: 6px;
 }
 
 .biny-sidebar-scroll {
   min-height: 100%;
   /* 一级导航和底部设置项共用 16px 内容起点；会话列表的额外缩进保留树形层级。 */
-  padding: 4px 0 12px;
+  padding: 0 0 12px;
 }
 
 .biny-session-item,
@@ -1508,6 +1512,11 @@
 /* 左侧项目树：段标题、项目文件夹和其下会话共用同一条文字对齐线。 */
 .biny-sidebar-section {
   margin-top: 16px;
+}
+
+/* 首个分区贴近顶栏分割线，只留少量呼吸空间；其余分区之间仍保持 16px。 */
+.biny-sidebar-section:first-child {
+  margin-top: 8px;
 }
 
 .biny-sidebar-section-header {
@@ -1985,7 +1994,8 @@
 .biny-sidebar-session-expand {
   display: block;
   min-height: 27px;
-  margin: 1px 8px 2px 32px;
+  /* 列表外的“显示更多”文字与一级会话标题对齐（28 列表缩进 + 16 展开箭头 + 8 行内边距）。 */
+  margin: 1px 8px 2px 44px;
   padding: 3px 8px;
   border: 0;
   border-radius: 13px;
@@ -1995,6 +2005,11 @@
   font-size: 12px;
   text-align: left;
   cursor: pointer;
+}
+
+/* 列表内的“显示更多”（加载子会话）跟随子级会话标题的缩进。 */
+.biny-sidebar-session-list .biny-sidebar-session-expand {
+  margin-left: 32px;
 }
 
 .biny-sidebar-session-expand:hover {
@@ -4072,7 +4087,9 @@ div:has(> .astryx-trigger-menu) {
   min-height: 38px;
   align-items: center;
   gap: 14px;
-  padding: 0 var(--biny-chat-toolbar-inline-padding);
+  /* 顶部留 10px：内容与红绿灯（中心 y=24）和侧栏 chrome 按钮（28px 高贴卡片顶线）共线，
+     侧栏收起后按钮和标题/胶囊仍在同一行。 */
+  padding: 10px var(--biny-chat-toolbar-inline-padding) 0;
   border-bottom: 1px solid transparent;
   /* 工具栏属于主区，显式铺主体色，避免透明时露出窗口底板。 */
   background: var(--biny-surface);
@@ -4103,9 +4120,10 @@ div:has(> .astryx-trigger-menu) {
   display: flex;
   min-width: 0;
   height: 100%;
-  min-height: 38px;
   flex: 1 1 auto;
   align-items: center;
+  /* 标题与项目/分支胶囊之间保留明确间距，避免长标题紧贴胶囊。 */
+  gap: 10px;
   -webkit-app-region: drag;
   app-region: drag;
 }
@@ -4113,7 +4131,7 @@ div:has(> .astryx-trigger-menu) {
 .biny-chat-title {
   display: flex;
   min-width: 0;
-  /* 只收缩不撑满：让项目/分支胶囊紧跟标题（ZCode 格局），剩余空间留给拖动区。 */
+  /* 只收缩不撑满：项目/分支胶囊跟在标题后，剩余空间留给拖动区。 */
   flex: 0 1 auto;
   align-items: baseline;
   gap: 9px;
@@ -4606,8 +4624,9 @@ div:has(> .astryx-trigger-menu) {
   min-height: 0;
   flex: 1 1 auto;
   overflow: hidden;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
+  /* 这里不能显式声明 app-region: no-drag：Electron 的原生拖动区按 DOM 顺序做并/差集，
+     本元素通高到顶且排在 .biny-chat-toolbar 之后，显式 no-drag 会把工具栏的拖动区整块挖掉，
+     窗口顶部就再也拖不动了。默认值本身就是不可拖，无需声明。 */
 }
 
 /* 首页/欢迎态：body 整体居中，内容超高时仍可滚。 */

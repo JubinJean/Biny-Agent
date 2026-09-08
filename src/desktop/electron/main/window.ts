@@ -42,8 +42,12 @@ export function createDesktopWindow(
     titleBarStyle: "hidden",
     // macOS 不使用系统 vibrancy，窗口底色固定跟随主题；局部浮层仍由渲染层 CSS 自己处理。
     visualEffectState: process.platform === "darwin" ? "active" : undefined,
+    // overlay 必须保持开启：Electron 只在 titleBarOverlay 启用时才应用 trafficLightPosition，
+    // 关掉或省略后红绿灯会落回系统默认高位，与侧栏按钮行错开。
     titleBarOverlay: process.platform === "darwin" ? true : undefined,
-    trafficLightPosition: process.platform === "darwin" ? { x: 14, y: 13 } : undefined,
+    // 红绿灯与侧栏顶栏按钮行（卡片线内 10~38px，中心 y=24）同轴。实测 y 到灯心偏移约 +8，
+    // y=16 → 灯心 ~23.75，与 28px 按钮行共线；y=18 会低到 ~25.75。
+    trafficLightPosition: process.platform === "darwin" ? { x: 14, y: 16 } : undefined,
     webPreferences: {
       preload: path.join(fileURLToPath(new URL(".", import.meta.url)), "../preload/index.cjs"),
       contextIsolation: true,

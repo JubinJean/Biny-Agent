@@ -38,6 +38,7 @@ import type {
   DesktopWorkspaceSnapshot
 } from "../../protocol.js";
 import { DEFAULT_FILE_PANEL_WIDTH } from "../../filePanelSizing.js";
+import { DEFAULT_SIDEBAR_WIDTH } from "../../sidebarSizing.js";
 import { DEFAULT_FONT_PREFERENCE, SYSTEM_FONT_FAMILY } from "../../fontPreference.js";
 import {
   createNavigationState,
@@ -158,7 +159,9 @@ function DesktopApp(): React.JSX.Element {
     layout: sidebarLayout,
     drawerHandlers: sidebarPeekDrawerHandlers,
     drawerRef: sidebarPeekDrawerRef,
+    resizeHandlers: sidebarResizeHandlers,
     triggerHandlers: sidebarPeekTriggerHandlers,
+    setExpandedWidth: setSidebarExpandedWidth,
     toggle: toggleSidebar
   } = useSidebarLayout();
 
@@ -223,6 +226,8 @@ function DesktopApp(): React.JSX.Element {
   const composerProject = selectedSessionId === undefined && draftProjectId
     ? projects.find((project) => project.id === draftProjectId) ?? workspace?.project
     : workspace?.project;
+  const composerResourceRevision = workspace?.sessionRuntimes?.[selectedSessionId ?? ""]?.resourceReadiness?.revision
+    ?? workspace?.runtime?.resourceReadiness?.revision;
 
   useEffect(() => {
     let active = true;
@@ -248,7 +253,13 @@ function DesktopApp(): React.JSX.Element {
       setWarning(`无法加载 Skill 补全：${errorMessage(error)}`);
     });
     return () => { active = false; };
-  }, [composerCatalogNonce, page, settingsOpen, workspace?.project.id]);
+  }, [
+    composerCatalogNonce,
+    page,
+    settingsOpen,
+    workspace?.project.id,
+    composerResourceRevision
+  ]);
 
   /** 能力菜单的刷新按钮：强制重拉工具/技能目录（MCP 重连后目录可能变化）。 */
   const refreshComposerCatalog = useCallback((): void => {
@@ -577,6 +588,7 @@ function DesktopApp(): React.JSX.Element {
       setVersion(bootstrap.version);
       setProjects(bootstrap.projects);
       setSidebarSessions(bootstrap.sidebarSessions);
+      setSidebarExpandedWidth(bootstrap.sidebarWidth ?? DEFAULT_SIDEBAR_WIDTH);
       setFilePanelWidth(bootstrap.filePanelWidth ?? DEFAULT_FILE_PANEL_WIDTH);
       setThemePreference(bootstrap.themePreference ?? "system");
       setFontPreference(bootstrap.fontPreference ?? DEFAULT_FONT_PREFERENCE);
@@ -608,7 +620,7 @@ function DesktopApp(): React.JSX.Element {
       setWarning(`Biny 启动失败：${errorMessage(error)}`);
     });
     return () => { active = false; };
-  }, [commitNavigation, mergeWorkspaceProject, openSession]);
+  }, [commitNavigation, mergeWorkspaceProject, openSession, setSidebarExpandedWidth]);
 
   useDesktopEventBridge({
     activeProjectIdRef: projectRef,
@@ -1219,10 +1231,6 @@ function DesktopApp(): React.JSX.Element {
 
   // 增量时间线：历史段按 events 引用记忆、实时段只折叠新增事件，未变化轮次保持引用稳定。
   const turns = useSessionTimeline(document);
-  const turnsRef = useRef<TimelineTurn[]>([]);
-  useEffect(() => {
-    turnsRef.current = turns;
-  }, [turns]);
   useEffect(() => {
     const pending = pendingHomePrompt;
     if (!pending) return;
@@ -1247,19 +1255,10 @@ function DesktopApp(): React.JSX.Element {
     }
     const retry = window.biny.retryPrompt;
     if (typeof retry !== "function") throw new Error(desktopApiVersionMismatchMessage);
-    const previousDocument = documentRef.current;
-    const targetTurn = turnsRef.current.find((turn) => turn.assistantMessageId === targetMessageId || turn.userMessageId === targetMessageId);
-    if (previousDocument?.session.id === sessionId && targetTurn?.userMessageIndex !== undefined) {
-      const prefixEvents = eventsThroughUserMessage(previousDocument.events, targetTurn.userMessageIndex);
-      setDocument((current) => current?.session.id === sessionId
-        ? { ...current, events: prefixEvents, liveEvents: [] }
-        : current);
-    }
     try {
       const receipt = await retry(projectId, sessionId, targetMessageId, input, "chat", [], idempotencyKey);
       setSelectedSessionId(receipt.sessionId);
     } catch (error) {
-      if (projectRef.current === projectId && selectedRef.current === sessionId && previousDocument) setDocument(previousDocument);
       setWarning(errorMessage(error));
       throw error;
     }
@@ -1482,6 +1481,7 @@ function DesktopApp(): React.JSX.Element {
       project={workspace?.project}
       running={selectedRunning}
       runtimeBusy={runtimeBusy}
+      resourceState={selectedRuntimeSnapshot?.resourceReadiness?.state}
       runtimeInfo={workspace?.runtime?.info}
     />
   );
@@ -1606,6 +1606,7 @@ function DesktopApp(): React.JSX.Element {
           peekDrawerHandlers={sidebarPeekDrawerHandlers}
           peekDrawerRef={sidebarPeekDrawerRef}
           peekTriggerHandlers={sidebarPeekTriggerHandlers}
+          resizeHandlers={sidebarResizeHandlers}
         />
       )}
       theme={themePreference}

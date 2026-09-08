@@ -8,8 +8,9 @@
 import { createPortal } from "react-dom";
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SidebarLayoutSnapshot } from "../../../sidebarLayout.js";
+import { clampSidebarWidth, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH } from "../../../sidebarSizing.js";
 import type { DesktopProject, DesktopSessionSummary, DesktopSessionTreePage } from "../../../protocol.js";
-import type { SidebarPeekHandlers } from "../app/useSidebarLayout.js";
+import type { SidebarPeekHandlers, SidebarResizeHandlers } from "../app/useSidebarLayout.js";
 import { useClosingPresence } from "../useClosingPresence.js";
 import { Icon, type IconName } from "./Icon.js";
 
@@ -32,6 +33,7 @@ interface SidebarProps {
   peekDrawerHandlers: SidebarPeekHandlers;
   peekDrawerRef: React.RefObject<HTMLElement | null>;
   peekTriggerHandlers: SidebarPeekHandlers;
+  resizeHandlers: SidebarResizeHandlers;
   projects: DesktopProject[];
   sessions: DesktopSessionSummary[];
   activeProjectId?: string;
@@ -61,6 +63,7 @@ export const Sidebar = memo(function Sidebar({
   peekDrawerHandlers,
   peekDrawerRef,
   peekTriggerHandlers,
+  resizeHandlers,
   projects,
   sessions,
   activeProjectId,
@@ -94,10 +97,6 @@ export const Sidebar = memo(function Sidebar({
   const [loadedSessionParents, setLoadedSessionParents] = useState<Set<string>>(() => new Set());
   const [loadingSessionIds, setLoadingSessionIds] = useState<Set<string>>(() => new Set());
   const [sessionNextCursors, setSessionNextCursors] = useState<Map<string, string>>(() => new Map());
-  // 侧栏内联过滤：只影响展示，命中项目名时保留整个项目的会话。
-  const [query, setQuery] = useState("");
-  const normalizedQuery = query.trim().toLocaleLowerCase();
-  const searching = normalizedQuery.length > 0;
   const [projectMenuOpen, setProjectMenuOpen] = useState<string>();
   const [projectOrganizationMenuOpen, setProjectOrganizationMenuOpen] = useState(false);
   const [projectCreateMenuOpen, setProjectCreateMenuOpen] = useState(false);
@@ -157,34 +156,16 @@ export const Sidebar = memo(function Sidebar({
   // 置顶区只是快捷入口；会话仍留在原项目树中，避免跨置顶状态的父子关系被拆开。
   const pinnedSessions = useMemo(() => sessions.filter((session) => session.pinned), [sessions]);
 
-  const matchSession = (session: DesktopSessionSummary): boolean =>
-    `${session.title} ${session.firstUserMessage}`.toLocaleLowerCase().includes(normalizedQuery);
-  const matchProject = (project: DesktopProject): boolean =>
-    `${project.name} ${project.path}`.toLocaleLowerCase().includes(normalizedQuery);
-  // 搜索期间把会话树打平为匹配结果；项目名命中时展示项目下全部会话。
-  const visibleSessionsFor = (projectId: string): DesktopSessionSummary[] => {
-    const projectSessions = sessionsByProject.get(projectId) ?? [];
-    if (!searching) return projectSessions;
-    const project = projects.find((candidate) => candidate.id === projectId);
-    if (project && matchProject(project)) return projectSessions;
-    return projectSessions.filter(matchSession);
-  };
-  const projectVisible = (project: DesktopProject): boolean =>
-    !searching || matchProject(project) || visibleSessionsFor(project.id).length > 0;
-
-  const visiblePinnedSessions = searching ? pinnedSessions.filter(matchSession) : pinnedSessions;
-  const visibleDialogueSessions = searching ? dialogueSessions.filter(matchSession) : dialogueSessions;
+  const sessionsFor = (projectId: string): DesktopSessionSummary[] => sessionsByProject.get(projectId) ?? [];
 
   const orderedProjects = useMemo(() => sortProjects(projects, projectSort), [projects, projectSort]);
   const pinnedProjects = orderedProjects.filter((project) => project.pinned);
   const unpinnedProjects = orderedProjects.filter((project) => !project.pinned);
-  const searchEmpty = searching
-    && visiblePinnedSessions.length === 0
-    && visibleDialogueSessions.length === 0
-    && !orderedProjects.some(projectVisible);
   const peekOpen = layout.mode === "peek";
   const contentVisible = layout.mode !== "collapsed";
   const compact = layout.mode === "rail";
+  // 只有稳定展开态才能拖宽：rail 固定 78px，peek 是临时浮层，松手即收起。
+  const resizable = layout.mode === "expanded";
 
   const toggleSection = (section: SidebarSectionName): void => {
     setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
@@ -259,10 +240,8 @@ export const Sidebar = memo(function Sidebar({
     else onOpenProject();
   };
 
-  // 搜索时空的区块整段隐藏，避免出现「标题在、内容空」的孤段。
-  const showPinnedSection = searching
-    ? Boolean(visiblePinnedSessions.length) || pinnedProjects.some(projectVisible)
-    : Boolean(pinnedProjects.length || pinnedSessions.length);
+  // 置顶区有置顶会话或置顶项目时才展示。
+  const showPinnedSection = Boolean(pinnedProjects.length || pinnedSessions.length);
 
   const loadSessionChildren = async (session: DesktopSessionSummary, cursor?: string): Promise<void> => {
     if (!session.hasChildren || loadingSessionIds.has(session.id)) return;
@@ -305,11 +284,10 @@ export const Sidebar = memo(function Sidebar({
   };
 
   const renderProject = (project: DesktopProject, section: "pinned" | "projects"): React.JSX.Element => {
-    const projectSessions = visibleSessionsFor(project.id);
-    const expanded = searching ? true
-      : project.id === activeProjectId
-        ? !collapsedProjectIds.has(project.id)
-        : expandedProjectIds.has(project.id);
+    const projectSessions = sessionsFor(project.id);
+    const expanded = project.id === activeProjectId
+      ? !collapsedProjectIds.has(project.id)
+      : expandedProjectIds.has(project.id);
     return (
       <div
         className={`biny-project-group${dragState?.sourceId === project.id ? " is-dragging" : ""}${projectDropClass(project.id, section)}`}
@@ -352,8 +330,7 @@ export const Sidebar = memo(function Sidebar({
         />
         {expanded ? (
           <ProjectSessions
-            flat={searching}
-            limit={searching ? Number.MAX_SAFE_INTEGER : PROJECT_SESSION_COLLAPSE_LIMIT}
+            limit={PROJECT_SESSION_COLLAPSE_LIMIT}
             onSelectSession={onSelectSession}
             onSessionMenu={onSessionMenu}
             projectId={project.id}
@@ -376,7 +353,7 @@ export const Sidebar = memo(function Sidebar({
       <aside
         aria-label="主导航"
         aria-hidden={contentVisible ? undefined : true}
-        className={`biny-sidebar${contentVisible ? "" : " is-hidden"}${compact ? " is-compact" : ""}${peekOpen ? ` is-peek-overlay is-peek-${layout.transition === "peek-closing" ? "closing" : layout.transition === "pinning" ? "pinning" : "peeking"}` : ""}`}
+        className={`biny-sidebar${contentVisible ? "" : " is-hidden"}${compact ? " is-compact" : ""}${layout.resizing ? " is-resizing" : ""}${peekOpen ? ` is-peek-overlay is-peek-${layout.transition === "peek-closing" ? "closing" : layout.transition === "pinning" ? "pinning" : "peeking"}` : ""}`}
         ref={peekOpen ? peekDrawerRef : undefined}
         style={{
           width: "var(--biny-sidebar-animated-visual-width)"
@@ -389,36 +366,19 @@ export const Sidebar = memo(function Sidebar({
       >
         {/* 浮动卡片：aside 只负责宽度动画与裁剪，视觉壳在 card 上。 */}
         <div className="biny-sidebar-card">
-          {/* 顶部行是侧栏内容的固定锚点；收起时也保留它，避免导航内容向上跳 46px。 */}
+          {/* 顶部行是侧栏内容的固定锚点（顶栏按钮 + 底部分割线）；收起时也保留它，避免导航内容上跳。 */}
           <div aria-hidden="true" className="biny-sidebar-topbar-spacer" />
 
       <div className="biny-sidebar-body">
-        <label className="biny-sidebar-search">
-          <Icon name="search" size={13} />
-          <input
-            aria-label="搜索会话"
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={(event) => {
-              // Escape 清空并退出搜索；输入法组词中的 Escape 交给 IME 自己处理。
-              if (event.key !== "Escape" || event.nativeEvent.isComposing || !query) return;
-              event.preventDefault();
-              setQuery("");
-              event.currentTarget.blur();
-            }}
-            placeholder="搜索会话…"
-            type="search"
-            value={query}
-          />
-        </label>
         <div className="biny-sidebar-scroll">
           {showPinnedSection ? (
-            <SidebarSection expanded={searching || expandedSections.pinned} label="置顶" onToggle={() => toggleSection("pinned")}>
+            <SidebarSection expanded={expandedSections.pinned} label="置顶" onToggle={() => toggleSection("pinned")}>
               {/* 置顶会话排在置顶文件夹之前，避免文件夹把会话顶到下面。 */}
               <SessionList
                 onSelectSession={onSelectSession}
                 onSessionMenu={onSessionMenu}
                     selectedSessionId={selectedSessionId}
-                sessions={visiblePinnedSessions}
+                sessions={pinnedSessions}
                 flat
                 expandedSessionIds={expandedSessionIds}
                 loadingSessionIds={loadingSessionIds}
@@ -426,7 +386,7 @@ export const Sidebar = memo(function Sidebar({
                 onToggleSession={toggleSession}
                 onLoadMoreSessionChildren={loadMoreSessionChildren}
               />
-              {pinnedProjects.filter(projectVisible).map((project) => renderProject(project, "pinned"))}
+              {pinnedProjects.map((project) => renderProject(project, "pinned"))}
             </SidebarSection>
           ) : null}
 
@@ -479,32 +439,30 @@ export const Sidebar = memo(function Sidebar({
                 />
               </div>
             )}
-            expanded={searching || expandedSections.projects}
+            expanded={expandedSections.projects}
             icon="folder"
             label="项目"
             onToggle={() => toggleSection("projects")}
           >
-            {unpinnedProjects.filter(projectVisible).map((project) => renderProject(project, "projects"))}
+            {unpinnedProjects.map((project) => renderProject(project, "projects"))}
             {!unpinnedProjects.length ? <div className="biny-sidebar-empty-row">暂无项目，点击 + 添加</div> : null}
           </SidebarSection>
 
-          <SidebarSection expanded={searching || expandedSections.dialogue} icon="message" label="对话" onToggle={() => toggleSection("dialogue")}>
+          <SidebarSection expanded={expandedSections.dialogue} icon="message" label="对话" onToggle={() => toggleSection("dialogue")}>
             <CollapsibleSessionList
-              limit={searching ? Number.MAX_SAFE_INTEGER : DIALOGUE_SESSION_COLLAPSE_LIMIT}
-              flat={searching}
+              limit={DIALOGUE_SESSION_COLLAPSE_LIMIT}
               onSelectSession={onSelectSession}
               onSessionMenu={onSessionMenu}
                 selectedSessionId={selectedSessionId}
-              sessions={visibleDialogueSessions}
+              sessions={dialogueSessions}
               expandedSessionIds={expandedSessionIds}
               loadingSessionIds={loadingSessionIds}
               sessionNextCursors={sessionNextCursors}
               onToggleSession={toggleSession}
               onLoadMoreSessionChildren={loadMoreSessionChildren}
             />
-            {!visibleDialogueSessions.length && !searching ? <p className="biny-sidebar-empty-row">暂无未归类对话</p> : null}
+            {!dialogueSessions.length ? <p className="biny-sidebar-empty-row">暂无未归类对话</p> : null}
           </SidebarSection>
-          {searchEmpty ? <div className="biny-sidebar-empty-row">没有匹配的会话</div> : null}
         </div>
       </div>
 
@@ -515,6 +473,7 @@ export const Sidebar = memo(function Sidebar({
         </button>
       </div>
       </div>
+      {resizable ? <SidebarResizer width={layout.contentWidth} {...resizeHandlers} /> : null}
       </aside>
       <SidebarChrome
         collapsed={!contentVisible}
@@ -563,6 +522,60 @@ function SidebarChrome({ collapsed, floating = false, onNewTask, onSearch, onTog
         </div>
       </div>
     </>
+  );
+}
+
+/**
+ * 侧栏右缘拖拽把手。拖拽中把宽度实时夹在上下限内交给上层；到达边界后指针继续
+ * 移动也不再改变宽度，松手时再提交最终宽度。
+ */
+function SidebarResizer({ width, onResizeStart, onWidthChange, onResizeEnd }: { width: number } & SidebarResizeHandlers): React.JSX.Element {
+  const resizeWithKeyboard = (direction: -1 | 1): void => {
+    const next = clampSidebarWidth(width + direction * 16);
+    onWidthChange(next);
+    onResizeEnd(next);
+  };
+  const startResize = (event: React.PointerEvent<HTMLDivElement>): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    onResizeStart();
+    const startX = event.clientX;
+    const startWidth = width;
+    let currentWidth = startWidth;
+    let active = true;
+    const move = (moveEvent: PointerEvent): void => {
+      currentWidth = clampSidebarWidth(startWidth + moveEvent.clientX - startX);
+      onWidthChange(currentWidth);
+    };
+    const stop = (): void => {
+      if (!active) return;
+      active = false;
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      onResizeEnd(currentWidth);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    window.addEventListener("pointercancel", stop, { once: true });
+  };
+  return (
+    <div
+      aria-label="调整侧栏宽度"
+      aria-orientation="vertical"
+      aria-valuemax={MAX_SIDEBAR_WIDTH}
+      aria-valuemin={MIN_SIDEBAR_WIDTH}
+      aria-valuenow={Math.round(width)}
+      className="biny-sidebar-resizer"
+      onKeyDown={(event) => {
+        if (event.key === "ArrowLeft") { event.preventDefault(); resizeWithKeyboard(-1); }
+        if (event.key === "ArrowRight") { event.preventDefault(); resizeWithKeyboard(1); }
+      }}
+      onPointerDown={startResize}
+      role="separator"
+      tabIndex={0}
+    />
   );
 }
 
@@ -628,7 +641,7 @@ function CollapsibleSessionList({ limit, ...props }: SessionListProps & { limit:
       <SessionList {...props} sessions={visibleSessions} />
       {shouldCollapse ? (
         <button className="biny-sidebar-session-expand" onClick={() => setExpanded((current) => !current)} type="button">
-          {expanded ? "收起" : `显示全部 ${props.sessions.length} 项`}
+          {expanded ? "收起" : "显示更多"}
         </button>
       ) : null}
     </>
@@ -699,7 +712,7 @@ function SessionList({ flat = false, projectId, sessions, selectedSessionId, onS
       ...children,
       ...(expanded && nextCursor ? [
         <button className="biny-sidebar-session-expand" key={`${session.projectId}:${session.id}:more`} onClick={() => onLoadMoreSessionChildren(session)} type="button">
-          加载更多子会话
+          显示更多
         </button>
       ] : [])
     ];

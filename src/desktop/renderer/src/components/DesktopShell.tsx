@@ -52,6 +52,7 @@ export function DesktopShell({ children, overlays, rightPanel, rightSidebar, sid
       <div
         className="desktop-root biny-root"
         data-sidebar-mode={sidebarLayout.mode}
+        data-sidebar-resizing={sidebarLayout.resizing ? "true" : undefined}
         data-inspector-resizing={rightSidebar?.resizing ? "true" : undefined}
         data-sidebar-transition={sidebarLayout.transition === "idle" ? undefined : sidebarLayout.transition}
         style={rootStyle}

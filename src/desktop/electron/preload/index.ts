@@ -199,6 +199,7 @@ const api: DesktopApi = {
   mcpDetails: async (projectId, name) => await ipcRenderer.invoke(desktopIpc.mcpDetails, projectId, name),
   openExternal: async (url) => await ipcRenderer.invoke(desktopIpc.openExternal, url),
   openSystemSettings: async (pane) => await ipcRenderer.invoke(desktopIpc.openSystemSettings, pane),
+  setSidebarWidth: async (width) => await ipcRenderer.invoke(desktopIpc.setSidebarWidth, width),
   setFilePanelWidth: async (width) => await ipcRenderer.invoke(desktopIpc.setFilePanelWidth, width),
   setThemePreference: async (theme) => await ipcRenderer.invoke(desktopIpc.setThemePreference, theme),
   setFontPreference: async (font) => await ipcRenderer.invoke(desktopIpc.setFontPreference, font),

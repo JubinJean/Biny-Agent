@@ -1,12 +1,13 @@
 /**
  * 桌面端侧栏状态控制器。
  *
- * Sidebar 只负责展示，rail 提交、收起/peek 定时器和原生 pointer 生命周期都在这里
- * 协调。collapsed/peek 是临时表面状态；展开宽度固定，不做自由拉伸。
+ * Sidebar 只负责展示，rail 提交、收起/peek 定时器、原生 pointer 生命周期和展开宽度的
+ * 拖拽都在这里协调。collapsed/peek 是临时表面状态；展开宽度可拖拽，拖拽中只更新本地
+ * 状态，松手后才通过主进程落盘。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEFAULT_SIDEBAR_LAYOUT, resolveSidebarLayout, type SidebarBaseMode, type SidebarLayoutSnapshot, type SidebarPeekPhase } from "../../../sidebarLayout.js";
-import { DEFAULT_SIDEBAR_WIDTH, SIDEBAR_PEEK_CLOSE_MS, SIDEBAR_PEEK_LEAVE_GRACE_MS, SIDEBAR_PEEK_OPEN_DELAY_MS, SIDEBAR_PEEK_PINNING_MS } from "../../../sidebarSizing.js";
+import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH, SIDEBAR_PEEK_CLOSE_MS, SIDEBAR_PEEK_LEAVE_GRACE_MS, SIDEBAR_PEEK_OPEN_DELAY_MS, SIDEBAR_PEEK_PINNING_MS } from "../../../sidebarSizing.js";
 
 const SIDEBAR_RAIL_STORAGE_KEY = "biny.desktop.sidebar-rail";
 const PEEK_TRIGGER_WIDTH = 12;
@@ -19,11 +20,20 @@ export interface SidebarPeekHandlers {
   onPointerUp?: React.PointerEventHandler<HTMLElement>;
 }
 
+export interface SidebarResizeHandlers {
+  onResizeStart(): void;
+  onWidthChange(width: number): void;
+  onResizeEnd(width: number): void;
+}
+
 interface UseSidebarLayoutResult {
   layout: SidebarLayoutSnapshot;
   drawerHandlers: SidebarPeekHandlers;
   drawerRef: React.RefObject<HTMLElement | null>;
+  resizeHandlers: SidebarResizeHandlers;
   triggerHandlers: SidebarPeekHandlers;
+  /** bootstrap 回填持久化的展开宽度；只更新本地状态，不触发落盘。 */
+  setExpandedWidth(width: number): void;
   toggle(): void;
 }
 
@@ -46,8 +56,11 @@ function writeRailPreference(enabled: boolean): void {
 export function useSidebarLayout(): UseSidebarLayoutResult {
   const [baseMode, setBaseMode] = useState<SidebarBaseMode>(() => readRailPreference() ? "rail" : DEFAULT_SIDEBAR_LAYOUT.baseMode);
   const [peekPhase, setPeekPhase] = useState<SidebarPeekPhase>("idle");
+  const [expandedWidth, setExpandedWidthState] = useState(DEFAULT_SIDEBAR_WIDTH);
+  const [resizing, setResizing] = useState(false);
   const baseModeRef = useRef(baseMode);
   const peekPhaseRef = useRef<SidebarPeekPhase>("idle");
+  const expandedWidthRef = useRef(expandedWidth);
   const drawerRef = useRef<HTMLElement | null>(null);
   const openTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const closeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -66,6 +79,22 @@ export function useSidebarLayout(): UseSidebarLayoutResult {
     peekPhaseRef.current = next;
     setPeekPhase(next);
   }, []);
+
+  const setExpandedWidth = useCallback((width: number): void => {
+    const next = clampSidebarWidth(width);
+    expandedWidthRef.current = next;
+    setExpandedWidthState(next);
+  }, []);
+
+  const resizeHandlers = useMemo<SidebarResizeHandlers>(() => ({
+    onResizeStart: () => setResizing(true),
+    onWidthChange: setExpandedWidth,
+    onResizeEnd: (width) => {
+      setExpandedWidth(width);
+      setResizing(false);
+      void window.biny.setSidebarWidth(expandedWidthRef.current);
+    }
+  }), [setExpandedWidth]);
 
   const clearTimer = useCallback((timerRef: { current: ReturnType<typeof setTimeout> | undefined }): void => {
     if (timerRef.current === undefined) return;
@@ -167,7 +196,7 @@ export function useSidebarLayout(): UseSidebarLayoutResult {
     // 指针坐标）；指针仍落在抽屉终态宽度内就不算真正离开，否则会开↔关乒乓。
     // 真正的离开（右移出抽屉、或移入上方 chrome 后再移出）由坐标与 window
     // pointermove 处理器共同兜底。
-    if (event.clientX <= DEFAULT_SIDEBAR_WIDTH) return;
+    if (event.clientX <= expandedWidthRef.current) return;
     hoverLockedRef.current = false;
     scheduleClose();
   }, [scheduleClose]);
@@ -225,13 +254,15 @@ export function useSidebarLayout(): UseSidebarLayoutResult {
     clearTimers();
   }, [clearTimers]);
 
-  const layout = useMemo(() => resolveSidebarLayout({ baseMode, peekPhase }), [baseMode, peekPhase]);
+  const layout = useMemo(() => resolveSidebarLayout({ baseMode, peekPhase, expandedWidth, resizing }), [baseMode, expandedWidth, peekPhase, resizing]);
 
   return {
     layout,
     drawerHandlers: { onPointerEnter, onPointerLeave, onPointerMove, onPointerDown, onPointerUp },
     drawerRef,
+    resizeHandlers,
     triggerHandlers: { onPointerEnter, onPointerLeave, onPointerMove },
+    setExpandedWidth,
     toggle
   };
 }

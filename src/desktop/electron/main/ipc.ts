@@ -145,7 +145,7 @@ const memoryKeywordListSchema = z.array(z.string().trim().min(1).max(120)).max(1
 const memoryUserEvidenceSchema = z.string().trim().min(1).max(1_000).optional();
 const memoryQuerySchema = z.string().trim().min(1).max(2_000);
 const memoryEntryIdSchema = z.string().min(1).max(512);
-const localEmbeddingModelSchema = z.enum(["all-MiniLM-L6-v2", "bge-small-en-v1.5", "multilingual-e5-small", "paraphrase-multilingual-MiniLM-L12-v2"]);
+const localEmbeddingModelSchema = z.literal("multilingual-e5-small");
 const memoryRevisionSchema = z.number().int().nonnegative();
 const memorySettingsInputSchema = z.object({
   expectedRevision: configRevisionSchema,
@@ -1136,6 +1136,10 @@ export function registerDesktopIpc(context: IpcContext): void {
       accessibility: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
     };
     await shell.openExternal(urls[selected]);
+  });
+
+  handle(desktopIpc.setSidebarWidth, async (_event, width: unknown) => {
+    await context.state.setSidebarWidth(z.number().finite().parse(width));
   });
 
   handle(desktopIpc.setFilePanelWidth, async (_event, width: unknown) => {

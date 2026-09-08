@@ -172,6 +172,7 @@ export const desktopIpc = {
   openWorkspaceFile: "desktop:file:open",
   openExternal: "desktop:external:open",
   openSystemSettings: "desktop:system-settings:open",
+  setSidebarWidth: "desktop:ui:sidebar-width",
   setFilePanelWidth: "desktop:ui:file-panel-width",
   setThemePreference: "desktop:ui:theme",
   setFontPreference: "desktop:ui:font",
@@ -471,6 +472,7 @@ export interface DesktopBootstrap {
   selectedSessionId?: string;
   activeView: DesktopActiveView;
   workspace?: DesktopWorkspaceSnapshot;
+  sidebarWidth: number;
   filePanelWidth: number;
   themePreference: DesktopThemePreference;
   fontPreference: DesktopFontPreference;
@@ -1028,7 +1030,7 @@ export type DesktopMemoryOrigin =
   | { kind: "user" }
   | { kind: "workspace"; workspaceId: string; workspaceName: string };
 export type DesktopMemoryKind = "preference" | "working_style" | "fact" | "decision" | "workflow" | "gotcha";
-export type DesktopMemorySource = "explicit" | "explicit_edit" | "completed_task" | "sleep";
+export type DesktopMemorySource = "explicit" | "explicit_edit" | "completed_task" | "self_reflection" | "sleep";
 
 export interface DesktopMemoryLineage {
   source: DesktopMemorySource;
@@ -1579,6 +1581,7 @@ export interface DesktopApi {
   openWorkspaceFile(projectId: string, relativePath: string): Promise<void>;
   openExternal(url: string): Promise<void>;
   openSystemSettings(pane: DesktopSystemSettingsPane): Promise<void>;
+  setSidebarWidth(width: number): Promise<void>;
   setFilePanelWidth(width: number): Promise<void>;
   setThemePreference(theme: DesktopThemePreference): Promise<DesktopThemePreference>;
   setFontPreference(font: DesktopFontPreference): Promise<DesktopFontPreference>;

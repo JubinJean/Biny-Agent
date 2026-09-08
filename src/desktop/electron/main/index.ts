@@ -202,6 +202,7 @@ async function startDesktopApplication(): Promise<void> {
       selectedSessionId,
       activeView,
       workspace: visibleWorkspace,
+      sidebarWidth: state.sidebarWidth(),
       filePanelWidth: state.filePanelWidth(),
       themePreference: state.themePreference(),
       fontPreference: state.fontPreference()
