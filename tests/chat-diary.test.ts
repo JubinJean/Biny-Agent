@@ -57,7 +57,7 @@ async function testBackfillAndFallbackSummary(): Promise<void> {
 async function testSchedulerRunsCatchUpAndFixedTime(): Promise<void> {
   const timers = new FakeTimers();
   const runs: string[][] = [];
-  let current = new Date("2026-09-04T22:00:00.000+08:00");
+  let current = new Date("2026-09-04T22:00:00.000");
   const scheduler = new DailyDiaryScheduler({
     run: (dateKeys) => { runs.push([...dateKeys]); },
     now: () => new Date(current),
@@ -73,7 +73,7 @@ async function testSchedulerRunsCatchUpAndFixedTime(): Promise<void> {
   timers.advance(1);
   await Promise.resolve();
   assert.deepEqual(runs, [["2026-09-03", "2026-09-02"]]);
-  current = new Date("2026-09-04T23:00:00.000+08:00");
+  current = new Date("2026-09-04T23:00:00.000");
   timers.advance(60 * 60 * 1_000);
   await Promise.resolve();
   assert.deepEqual(runs.at(-1), ["2026-09-04", "2026-09-03", "2026-09-02"]);
