@@ -26,7 +26,7 @@ import { MessageClock } from "./chat/MessageClock.js";
 import { ThinkingBlock } from "./chat/ThinkingBlock.js";
 import { ExecutionGroup, type ExecutionGroupStep } from "./chat/ExecutionGroup.js";
 import { ChangesSummary } from "./chat/ChangesSummary.js";
-import { RunErrorCard } from "./chat/RunErrorCard.js";
+import { RunErrorCard, RunErrorRow } from "./chat/RunErrorCard.js";
 import { pickThinkingMessage } from "../thinkingMessages.js";
 
 interface MessageTimelineProps {
@@ -205,6 +205,15 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
     }, pending.user)];
   }, [optimisticRewrite, turns]);
 
+  // 只有最近的失败/未完成轮次展开完整错误卡；更早的错误折叠成一行，避免历史错误长期占据时间线。
+  const latestFailedTurnId = useMemo(() => {
+    for (let index = displayedTurns.length - 1; index >= 0; index -= 1) {
+      const turn = displayedTurns[index];
+      if (turn && turn.error && isRunErrorStatus(turn.status)) return turn.id;
+    }
+    return undefined;
+  }, [displayedTurns]);
+
   return (
     <div className="message-timeline">
       {pendingUserMessage && !hasRealPendingMessage ? (
@@ -219,6 +228,7 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
       {displayedTurns.map((turn) => (
         <Turn
           key={turn.id}
+          errorExpanded={turn.id === latestFailedTurnId}
           onCreateBranch={onCreateBranch}
           onDeleteUserMessage={onDeleteUserMessage}
           editing={editing?.turnId === turn.id ? editing : undefined}
@@ -296,6 +306,7 @@ const Turn = memo(function Turn({
   projectId,
   turn,
   editing,
+  errorExpanded,
   onPreviewFile,
   onOpenExternal,
   onResolvePermission,
@@ -314,6 +325,8 @@ const Turn = memo(function Turn({
   projectId: string;
   turn: TimelineTurn;
   editing?: { value: string };
+  /** 是否为最近的失败轮次：驱动错误展示默认展开还是折叠。 */
+  errorExpanded: boolean;
   onPreviewFile(path: string): void;
   onOpenExternal(url: string): void;
   onResolvePermission(requestId: string, result: PermissionResult): Promise<void>;
@@ -332,8 +345,16 @@ const Turn = memo(function Turn({
   const running = turn.status === "running" || turn.status === "waiting_permission";
   // 失败/未完成的轮次和正常结束一样渲染完整收尾：错误卡落在模型消息位置，footer 照常出现。
   const runFailed = !running && isRunErrorStatus(turn.status);
+  // 完整错误卡只给「当场发生的失败」：挂载期间经历过运行态再落败才算当场；
+  // 重新打开会话时看到的旧失败（哪怕是最新的那条）一律默认折叠成一行，避免旧错误长期占着时间线。
+  const [sawRunning, setSawRunning] = useState(running);
+  useEffect(() => {
+    if (running && !sawRunning) setSawRunning(true);
+  }, [running, sawRunning]);
+  const liveFailure = runFailed && sawRunning;
   const retryPromiseRef = useRef<Promise<void> | undefined>(undefined);
   const retry = useCallback((): Promise<void> => {
+    if (running) return Promise.resolve();
     const targetMessageId = turn.assistantMessageId ?? turn.userMessageId;
     if (!turn.user || !targetMessageId) return Promise.resolve();
     const existing = retryPromiseRef.current;
@@ -352,12 +373,12 @@ const Turn = memo(function Turn({
       }
     );
     return pending;
-  }, [onRetry, onRetrySettled, onRetryStart, turn]);
+  }, [onRetry, onRetrySettled, onRetryStart, running, turn]);
   const switchVersion = useCallback((direction: "prev" | "next"): Promise<void> => {
     if (!turn.assistantMessageId) return Promise.resolve();
     return onSwitchVersion(turn.assistantMessageId, direction);
   }, [onSwitchVersion, turn.assistantMessageId]);
-  const canRetry = Boolean(turn.user && (turn.assistantMessageId ?? turn.userMessageId));
+  const canRetry = !running && Boolean(turn.user && (turn.assistantMessageId ?? turn.userMessageId));
   const executionSteps = turn.steps.length ? turn.steps : fallbackExecutionSteps(turn);
   // 收尾的「修改文件」卡：只在本轮真正落定（非运行态）且存在完成写入/编辑时出现。
   const completedChangedFiles = useMemo(
@@ -402,6 +423,7 @@ const Turn = memo(function Turn({
 
         {runFailed && turn.error ? (
           <TurnRunError
+            expandedByDefault={errorExpanded && liveFailure}
             message={turn.error}
             onRetry={retry}
             retryable={canRetry && !turn.resumable && isRunErrorRetryable(turn.error)}
@@ -447,28 +469,36 @@ function fallbackExecutionSteps(turn: TimelineTurn): TimelineStep[] {
   }];
 }
 
-/** 轮次内联的失败/未完成卡片：是轮次记录的一部分，持久显示；点关闭只收起当次视图。 */
+/**
+ * 轮次内联的错误展示：默认展开与否由「是否为当场发生且仍是最近的失败」决定，
+ * 重开历史会话时一律折叠成一行。用户点行可展开、点 × 收起，之后以用户操作为准。
+ */
 const TurnRunError = memo(function TurnRunError({
+  expandedByDefault,
   message,
   onRetry,
   retryable,
   status
 }: {
+  expandedByDefault: boolean;
   message: string;
   onRetry(): Promise<void>;
   retryable: boolean;
   status: TimelineTurn["status"];
 }): React.JSX.Element | null {
-  const [dismissed, setDismissed] = useState(false);
-  if (dismissed) return null;
-  return (
-    <RunErrorCard
-      message={message}
-      onDismiss={() => setDismissed(true)}
-      onRetry={retryable ? onRetry : undefined}
-      status={status}
-    />
-  );
+  // undefined = 跟随默认值；用户点过行/×后以用户操作为准。重试期间组件会卸载，重挂载即恢复默认。
+  const [override, setOverride] = useState<boolean>();
+  if (override ?? expandedByDefault) {
+    return (
+      <RunErrorCard
+        message={message}
+        onDismiss={() => setOverride(false)}
+        onRetry={retryable ? onRetry : undefined}
+        status={status}
+      />
+    );
+  }
+  return <RunErrorRow message={message} onExpand={() => setOverride(true)} status={status} />;
 });
 
 /** 流式打字机版 Markdown：仅 reveal 新增量，历史/完结内容直出 */

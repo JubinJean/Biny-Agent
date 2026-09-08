@@ -1009,6 +1009,8 @@ function mergeLiveRetryTurns(history: TimelineTurn[], live: TimelineTurn[]): Tim
       versionIndex: target.versionCount ?? 1,
       versionCount: (target.versionCount ?? 1) + 1
     };
+    // 重试会切换当前活动分支；目标之后的历史轮次属于旧分支，不能继续留在实时视图中。
+    result.splice(targetIndex + 1);
   }
   return result;
 }

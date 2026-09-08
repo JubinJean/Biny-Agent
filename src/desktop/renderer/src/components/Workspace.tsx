@@ -175,7 +175,7 @@ export function Workspace({
         {runtimePanelOpen ? null : inspectorRail}
         <header className="biny-chat-toolbar">
           <div className="biny-chat-drag-region">
-            {/* 顶栏复刻 ZCode 格局：会话名截断展示，项目/分支以胶囊选择器跟在标题后；
+            {/* 顶栏：会话名截断展示，项目/分支以胶囊选择器跟在标题后；
               未进入会话时标题只有选择器本身，连项目都没有时才显示引导文案。 */}
             {sessionTitle || !project ? (
               <div className="biny-chat-title">

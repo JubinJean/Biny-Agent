@@ -1598,6 +1598,10 @@
   background: color-mix(in srgb, var(--biny-warning) 4%, transparent);
 }
 
+/* 历史错误折叠行：行内布局/悬停沿用 chat-notice，这里只给图标和标题补语义色。 */
+.chat-notice[data-variant="error"] .run-error-row-icon { color: var(--biny-danger); }
+.chat-notice[data-variant="warning"] .run-error-row-icon { color: var(--biny-warning); }
+
 .run-error-card-icon {
   display: inline-flex;
   align-items: center;

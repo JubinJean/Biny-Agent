@@ -32,7 +32,7 @@ import { DesktopStateStore } from "../src/desktop/electron/main/DesktopStateStor
 import { DesktopSettingsTransaction } from "../src/desktop/electron/main/DesktopSettingsTransaction.js";
 import { DesktopUserDataStore } from "../src/desktop/electron/main/DesktopUserDataStore.js";
 import { clampFilePanelWidth, DEFAULT_FILE_PANEL_WIDTH, MAX_FILE_PANEL_WIDTH, MIN_FILE_PANEL_WIDTH } from "../src/desktop/filePanelSizing.js";
-import { DEFAULT_SIDEBAR_WIDTH, SIDEBAR_RAIL_WIDTH } from "../src/desktop/sidebarSizing.js";
+import { clampSidebarWidth, DEFAULT_SIDEBAR_WIDTH, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH, SIDEBAR_RAIL_WIDTH } from "../src/desktop/sidebarSizing.js";
 import { resolveSidebarLayout } from "../src/desktop/sidebarLayout.js";
 import type {
   DesktopAgentEventEnvelope,
@@ -105,6 +105,7 @@ await testDesktopOpenSessionReturnsConsistentMetadataSnapshot();
 await testDesktopRuntimeInitializationIsShared();
 await testDesktopMessageEditFork();
 await testDesktopPromptIdempotency();
+await testDesktopClearsTerminalLiveEvents();
 await testWorkspaceFilePreview();
 await testWorkspaceDirectoryListing();
 await testDesktopGitInspectionDisablesHelpers();
@@ -117,7 +118,7 @@ testCommandHighlighting();
 testDesktopComposerSlashItems();
 testWorkspaceFileMarkers();
 await testFilePanelSizing();
-testSidebarSizing();
+await testSidebarSizing();
 testSidebarLayoutState();
 await testDesktopThemePreference();
 await testDesktopActiveViewPersistence();
@@ -154,6 +155,7 @@ testModelChoicesDeduplicateEquivalentAliases();
 testHistoricalAbortProjection();
 testHistoricalUsageProjection();
 testMessageVersionTimelineProjection();
+testLiveRetryReplacesTargetTurn();
 testDesktopUsagePresentation();
 testHistoricalToolProjection();
 testWebSearchProjection();
@@ -848,6 +850,30 @@ async function testDesktopPromptIdempotency(): Promise<void> {
   }
 }
 
+async function testDesktopClearsTerminalLiveEvents(): Promise<void> {
+  const desktopRoot = await mkdtemp(path.join(os.tmpdir(), "biny-terminal-live-events-data-"));
+  let runtime: InteractiveAgentRuntime | undefined;
+  let unsubscribe: (() => void) | undefined;
+  try {
+    const { configStore, projects, state } = await createDesktopTestServices(desktopRoot);
+    const agents = new DesktopAgentManager(state, projects, configStore, () => undefined);
+    runtime = new InteractiveAgentRuntime(fakeCommandRuntime());
+    const internals = agents as unknown as {
+      wireRuntimeEvents(projectId: string, runtime: InteractiveAgentRuntime, primary: boolean): () => void;
+      projectEvents(projectId: string): Map<string, AgentHostEvent[]>;
+    };
+    unsubscribe = internals.wireRuntimeEvents("project-1", runtime, true);
+    const submitted = runtime.submitPrompt("status-snapshot");
+    await submitted.completion;
+    assert.equal(internals.projectEvents("project-1").has("session-1"), false, "终态后不能继续保留已落盘的 live events");
+    await agents.closeAll();
+  } finally {
+    unsubscribe?.();
+    await runtime?.close();
+    await rm(desktopRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
+}
+
 async function testDesktopPinAfterOpeningSessionUsesFreshRevision(): Promise<void> {
   const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "biny-pin-revision-workspace-"));
   const desktopRoot = await mkdtemp(path.join(os.tmpdir(), "biny-pin-revision-data-"));
@@ -1316,9 +1342,32 @@ async function testFilePanelSizing(): Promise<void> {
   }
 }
 
-function testSidebarSizing(): void {
+async function testSidebarSizing(): Promise<void> {
   assert.equal(DEFAULT_SIDEBAR_WIDTH, 260);
   assert.equal(SIDEBAR_RAIL_WIDTH, 78);
+  assert.equal(clampSidebarWidth(300), 300);
+  assert.equal(clampSidebarWidth(300.4), 300);
+  assert.equal(clampSidebarWidth(10), MIN_SIDEBAR_WIDTH);
+  assert.equal(clampSidebarWidth(10_000), MAX_SIDEBAR_WIDTH);
+  assert.equal(clampSidebarWidth(Number.NaN), DEFAULT_SIDEBAR_WIDTH);
+
+  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "biny-sidebar-"));
+  try {
+    const statePath = path.join(workspaceRoot, "desktop-state.json");
+    const state = new DesktopStateStore(statePath);
+    await state.load();
+    assert.equal(state.sidebarWidth(), DEFAULT_SIDEBAR_WIDTH);
+    await state.setSidebarWidth(320);
+    const restored = new DesktopStateStore(statePath);
+    await restored.load();
+    assert.equal(restored.sidebarWidth(), 320);
+    await restored.setSidebarWidth(10_000);
+    assert.equal(restored.sidebarWidth(), MAX_SIDEBAR_WIDTH);
+    await restored.setSidebarWidth(1);
+    assert.equal(restored.sidebarWidth(), MIN_SIDEBAR_WIDTH);
+  } finally {
+    await rm(workspaceRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  }
 }
 
 function testSidebarLayoutState(): void {
@@ -1327,42 +1376,56 @@ function testSidebarLayoutState(): void {
     visualWidth: 260,
     flowWidth: 260,
     contentWidth: 260,
-    transition: "idle"
+    transition: "idle",
+    resizing: false
   });
-  assert.deepEqual(resolveSidebarLayout({ baseMode: "rail", peekPhase: "idle" }), {
+  assert.deepEqual(resolveSidebarLayout({ baseMode: "expanded", peekPhase: "idle", expandedWidth: 320, resizing: true }), {
+    mode: "expanded",
+    visualWidth: 320,
+    flowWidth: 320,
+    contentWidth: 320,
+    transition: "idle",
+    resizing: true
+  });
+  assert.deepEqual(resolveSidebarLayout({ baseMode: "rail", peekPhase: "idle", expandedWidth: 320 }), {
     mode: "rail",
     visualWidth: SIDEBAR_RAIL_WIDTH,
     flowWidth: SIDEBAR_RAIL_WIDTH,
     contentWidth: SIDEBAR_RAIL_WIDTH,
-    transition: "idle"
+    transition: "idle",
+    resizing: false
   });
   assert.deepEqual(resolveSidebarLayout({ baseMode: "collapsed", peekPhase: "idle" }), {
     mode: "collapsed",
     visualWidth: 0,
     flowWidth: 0,
     contentWidth: 260,
-    transition: "idle"
+    transition: "idle",
+    resizing: false
   });
-  assert.deepEqual(resolveSidebarLayout({ baseMode: "collapsed", peekPhase: "peeking" }), {
+  assert.deepEqual(resolveSidebarLayout({ baseMode: "collapsed", peekPhase: "peeking", expandedWidth: 320 }), {
     mode: "peek",
-    visualWidth: 260,
+    visualWidth: 320,
     flowWidth: 0,
-    contentWidth: 260,
-    transition: "idle"
+    contentWidth: 320,
+    transition: "idle",
+    resizing: false
   });
   assert.deepEqual(resolveSidebarLayout({ baseMode: "collapsed", peekPhase: "peekExited" }), {
     mode: "collapsed",
     visualWidth: 0,
     flowWidth: 0,
     contentWidth: 260,
-    transition: "peek-exited"
+    transition: "peek-exited",
+    resizing: false
   });
-  assert.deepEqual(resolveSidebarLayout({ baseMode: "collapsed", peekPhase: "pinning" }), {
+  assert.deepEqual(resolveSidebarLayout({ baseMode: "collapsed", peekPhase: "pinning", expandedWidth: 320 }), {
     mode: "peek",
-    visualWidth: 260,
-    flowWidth: 260,
-    contentWidth: 260,
-    transition: "pinning"
+    visualWidth: 320,
+    flowWidth: 320,
+    contentWidth: 320,
+    transition: "pinning",
+    resizing: false
   });
 }
 
@@ -3455,6 +3518,78 @@ function testMessageVersionTimelineProjection(): void {
   assert.equal(edited?.assistantMessageId, "assistant-3");
   assert.equal(edited?.versionIndex, 2);
   assert.equal(edited?.versionCount, 3);
+}
+
+/** 实时重试必须替换原 turn，并隐藏目标之后仍属于旧分支的历史轮次。 */
+function testLiveRetryReplacesTargetTurn(): void {
+  const events: SessionEvent[] = [
+    { type: "user_message", content: "first prompt", messageId: "user-1", slotId: "user-1" },
+    {
+      type: "agent_message",
+      message: { role: "assistant", content: [{ type: "text", text: "old answer" }] },
+      messageId: "assistant-1",
+      parentMessageId: "user-1",
+      slotId: "slot-1"
+    },
+    {
+      type: "assistant_message",
+      content: "old answer",
+      messageId: "assistant-1",
+      parentMessageId: "user-1",
+      slotId: "slot-1",
+      replyToMessageId: "user-1"
+    },
+    { type: "user_message", content: "later prompt", messageId: "user-2", parentMessageId: "assistant-1" },
+    {
+      type: "agent_message",
+      message: { role: "assistant", content: [{ type: "text", text: "later answer" }] },
+      messageId: "assistant-2",
+      parentMessageId: "user-2"
+    },
+    {
+      type: "assistant_message",
+      content: "later answer",
+      messageId: "assistant-2",
+      parentMessageId: "user-2",
+      replyToMessageId: "user-2"
+    }
+  ];
+  const liveEvents: AgentHostEvent[] = [
+    {
+      type: "run.started",
+      runId: "retry-run",
+      sessionId: "session-1",
+      messageId: "assistant-3",
+      retryOfMessageId: "assistant-1",
+      timestamp: "2026-09-08T10:00:00.000Z"
+    },
+    {
+      type: "assistant.delta",
+      runId: "retry-run",
+      content: "new answer",
+      timestamp: "2026-09-08T10:00:01.000Z"
+    },
+    {
+      type: "assistant.completed",
+      runId: "retry-run",
+      content: "new answer",
+      timestamp: "2026-09-08T10:00:02.000Z"
+    },
+    {
+      type: "run.completed",
+      runId: "retry-run",
+      sessionId: "session-1",
+      timestamp: "2026-09-08T10:00:02.000Z"
+    }
+  ];
+  const turns = buildSessionTimeline(events, liveEvents);
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0]?.user, "first prompt");
+  assert.equal(turns[0]?.assistant, "new answer");
+  assert.equal(turns[0]?.assistantMessageId, "assistant-3");
+  assert.equal(turns[0]?.retryOfMessageId, "assistant-1");
+  assert.equal(turns[0]?.versionIndex, 1);
+  assert.equal(turns[0]?.versionCount, 2);
 }
 
 function testDesktopUsagePresentation(): void {

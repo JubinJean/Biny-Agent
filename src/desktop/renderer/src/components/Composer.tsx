@@ -46,6 +46,7 @@ interface ComposerProps {
   memoryToggleDisabledReason?: string;
   running: boolean;
   runtimeBusy: boolean;
+  resourceState?: "loading" | "ready" | "degraded";
   sessionWriterConflict: boolean;
   modelSetupRequired: boolean;
   focusToken: number;
@@ -95,6 +96,7 @@ export const Composer = memo(function Composer({
   memoryToggleDisabledReason,
   running,
   runtimeBusy,
+  resourceState,
   sessionWriterConflict,
   modelSetupRequired,
   focusToken,
@@ -376,11 +378,14 @@ export const Composer = memo(function Composer({
   const attachmentCount = attachments.length + pendingAttachments.length;
   const sendDisabled = memoryToggleBusy || (running
     ? false
-    : (!input.trim() && !attachments.length) || !project || sessionWriterConflict || modelSetupRequired || busy || pendingAttachments.length > 0);
+    : resourceState === "loading"
+      || (!input.trim() && !attachments.length) || !project || sessionWriterConflict || modelSetupRequired || busy || pendingAttachments.length > 0);
   const sendDisabledReason = !project
     ? "请先打开一个项目。"
       : modelSetupRequired
         ? "还没有可用的模型连接，请先配置模型。"
+        : resourceState === "loading"
+          ? "正在准备 MCP / Skill 能力，请稍候再发送。"
         : memoryToggleBusy
           ? "正在确认当前聊天的记忆状态，请稍候。"
         : sessionWriterConflict
@@ -598,7 +603,11 @@ export const Composer = memo(function Composer({
         placeholder={typedPlaceholder}
         status={running && input.trim()
           ? { message: "按 Enter 将补充要求排入当前会话；⌘ Enter 立即转向", type: "warning" }
-          : undefined}
+          : resourceState === "loading"
+            ? { message: "正在准备 MCP / Skill 能力，输入会保留在编辑框中。", type: "warning" }
+            : resourceState === "degraded"
+              ? { message: "部分 MCP / Skill 能力不可用，普通对话仍可发送。", type: "warning" }
+              : undefined}
         statusPosition="bottom"
         sendActions={(
           <div className="biny-composer-footer-end">

@@ -1,8 +1,10 @@
 /**
- * 轮次级失败/未完成卡片：blocked / incomplete / cancelled / aborted / failed 的统一出口。
+ * 轮次级失败/未完成展示：blocked / incomplete / cancelled / aborted / failed 的统一出口。
  *
- * 卡片结构：图标 + 语义标题 + 人话错误信息 + 下一步提示 + 可展开的技术详情 + 可重试操作。
- * 原始错误码不再直接作为主文案，避免用户只能看到实现层错误而不知道如何处理。
+ * 两种形态：`RunErrorCard` 完整卡片（图标 + 语义标题 + 人话错误信息 + 下一步提示 +
+ * 可展开的技术详情 + 可重试操作），`RunErrorRow` 折叠成一行的一行式提示。
+ * 完整卡片只给当场发生的最近一次失败；重新打开会话看到的旧错误一律折叠成一行，
+ * 避免时间线里长期挂着大错误卡。原始错误码不直接作为主文案，避免用户只能看到实现层错误。
  */
 import { memo, useCallback, useRef, useState } from "react";
 import { humanizeRunError, isRunErrorRetryable, runErrorPresentation, runErrorRecovery } from "../../chatModel.js";
@@ -21,7 +23,7 @@ export const RunErrorCard = memo(function RunErrorCard({
   message: string;
   /** 可重试时展示「重试」；不可重试或任务需要外部处理时缺省。 */
   onRetry?(): Promise<void>;
-  /** 关闭卡片（仅隐藏展示，不改变轮次状态）。 */
+  /** 收起为一行式提示（不删除轮次记录，点折叠行可重新展开）。 */
   onDismiss?(): void;
 }): React.JSX.Element {
   const { title, variant } = runErrorPresentation(status, message);
@@ -63,15 +65,44 @@ export const RunErrorCard = memo(function RunErrorCard({
       ) : null}
       {onDismiss ? (
         <button
-          aria-label="关闭提示"
+          aria-label="收起错误提示"
           className="run-error-card-dismiss"
           onClick={onDismiss}
-          title="关闭提示"
+          title="收起错误提示"
           type="button"
         >
           <Icon name="close" size={14} />
         </button>
       ) : null}
     </section>
+  );
+});
+
+/** 历史错误的一行式提示：图标 + 语义标题 + 折叠摘要，完整卡片点行展开；原始错误放 tooltip。 */
+export const RunErrorRow = memo(function RunErrorRow({
+  message,
+  onExpand,
+  status,
+}: {
+  message: string;
+  onExpand(): void;
+  status: TimelineRunStatus;
+}): React.JSX.Element {
+  const { title, variant } = runErrorPresentation(status, message);
+  return (
+    <div className="chat-notice is-compaction" data-variant={variant}>
+      <button
+        aria-expanded={false}
+        className="chat-row-header chat-notice-header run-error-row"
+        onClick={onExpand}
+        title={message}
+        type="button"
+      >
+        <span aria-hidden="true" className="chat-row-leading run-error-row-icon"><Icon name="warning" size={13} /></span>
+        <span className="chat-notice-title">{title}</span>
+        <span className="chat-notice-summary">{humanizeRunError(message)}</span>
+        <span aria-hidden="true" className="chat-row-chevron"><Icon name="chevron" size={12} /></span>
+      </button>
+    </div>
   );
 });

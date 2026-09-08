@@ -2,8 +2,9 @@
  * 聊天顶栏的项目与 Git 分支选择器胶囊（复刻 ZCode：会话名后跟「📁 项目」「⎇ 分支」）。
  *
  * 会话内外常驻；未进入会话时切换项目只决定下一条消息的草稿归属，由 App 通过回调完成。
- * 浮层使用和 Composer 模型菜单相同的 Portal 定位；选项在 pointerdown 阶段提交，避免
- * 外部点击监听先把菜单卸载。
+ * 两个胶囊按需展示：目录不存在（missing）时不展示项目，非 Git 目录或 detached HEAD
+ * 没有 branch 时不展示分支。浮层使用和 Composer 模型菜单相同的 Portal 定位；选项在
+ * pointerdown 阶段提交，避免外部点击监听先把菜单卸载。
  */
 import { useClosingPresence } from "../../useClosingPresence.js";
 import type { DesktopGitBranch, DesktopProject } from "../../../../protocol.js";
@@ -65,59 +66,61 @@ export function WorkspaceContextBar({
   return (
     <div className="biny-workspace-context-bar">
       <div className="biny-workspace-context-selectors">
-        <div className="biny-workspace-context-anchor" ref={projectAnchorRef}>
-          <button
-            aria-expanded={openMenu === "project"}
-            aria-haspopup="menu"
-            className="biny-workspace-context-trigger"
-            onClick={() => setOpenMenu((current) => current === "project" ? null : "project")}
-            title="选择项目"
-            type="button"
-          >
-            <Icon name="folder" size={14} />
-            <span>{project.name}</span>
-          </button>
-          <ProjectMenu
-            anchorRef={projectAnchorRef}
-            currentProjectId={project.id}
-            missing={project.missing}
-            onCreate={onCreateProject}
-            onClose={() => setOpenMenu(null)}
-            onSelect={onSelectProject}
-            open={openMenu === "project"}
-            projects={projects}
-          />
-        </div>
-        <div className="biny-workspace-context-anchor" ref={branchAnchorRef}>
-          <button
-            aria-expanded={openMenu === "branch"}
-            aria-haspopup="menu"
-            className="biny-workspace-context-trigger"
-            disabled={project.missing}
-            onClick={() => {
-              setOpenMenu((current) => current === "branch" ? null : "branch");
-              onOpenBranches(project.id);
-            }}
-            title="选择分支"
-            type="button"
-          >
-            <Icon name="branch" size={14} />
-            <span>{project.branch ?? "未检出分支"}</span>
-            {project.dirty ? <span aria-label="有未提交更改" className="biny-workspace-context-dirty" title="有未提交更改" /> : null}
-            <Icon name="chevron" size={11} />
-          </button>
-          <BranchMenu
-            anchorRef={branchAnchorRef}
-            branches={branches}
-            branchesLoading={branchesLoading}
-            currentBranch={project.branch}
-            onClose={() => setOpenMenu(null)}
-            onCreate={onCreateBranch}
-            onSelect={onSelectBranch}
-            open={openMenu === "branch"}
-            projectId={project.id}
-          />
-        </div>
+        {!project.missing ? (
+          <div className="biny-workspace-context-anchor" ref={projectAnchorRef}>
+            <button
+              aria-expanded={openMenu === "project"}
+              aria-haspopup="menu"
+              className="biny-workspace-context-trigger"
+              onClick={() => setOpenMenu((current) => current === "project" ? null : "project")}
+              title="选择项目"
+              type="button"
+            >
+              <Icon name="folder" size={14} />
+              <span>{project.name}</span>
+            </button>
+            <ProjectMenu
+              anchorRef={projectAnchorRef}
+              currentProjectId={project.id}
+              onCreate={onCreateProject}
+              onClose={() => setOpenMenu(null)}
+              onSelect={onSelectProject}
+              open={openMenu === "project"}
+              projects={projects}
+            />
+          </div>
+        ) : null}
+        {project.branch ? (
+          <div className="biny-workspace-context-anchor" ref={branchAnchorRef}>
+            <button
+              aria-expanded={openMenu === "branch"}
+              aria-haspopup="menu"
+              className="biny-workspace-context-trigger"
+              onClick={() => {
+                setOpenMenu((current) => current === "branch" ? null : "branch");
+                onOpenBranches(project.id);
+              }}
+              title="选择分支"
+              type="button"
+            >
+              <Icon name="branch" size={14} />
+              <span>{project.branch}</span>
+              {project.dirty ? <span aria-label="有未提交更改" className="biny-workspace-context-dirty" title="有未提交更改" /> : null}
+              <Icon name="chevron" size={11} />
+            </button>
+            <BranchMenu
+              anchorRef={branchAnchorRef}
+              branches={branches}
+              branchesLoading={branchesLoading}
+              currentBranch={project.branch}
+              onClose={() => setOpenMenu(null)}
+              onCreate={onCreateBranch}
+              onSelect={onSelectBranch}
+              open={openMenu === "branch"}
+              projectId={project.id}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -134,7 +137,6 @@ function ProjectMenu({
 }: {
   anchorRef: RefObject<HTMLElement | null>;
   currentProjectId: string;
-  missing?: boolean;
   onCreate(): void;
   onClose(): void;
   onSelect(projectId: string): void;
