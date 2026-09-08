@@ -94,7 +94,7 @@ try {
   assert.equal((await plan).code, 0);
   const result = await run;
   assert.equal(result.code, 0, result.output);
-  assert.equal((JSON.parse(result.output) as { sessionId: string }).sessionId, e);
+  assert.equal((JSON.parse(result.stdout) as { sessionId: string }).sessionId, e);
   const dEvents = await readSessionEvents(sessionFilePath(root, d));
   const eEvents = await readSessionEvents(sessionFilePath(root, e));
   assert.ok(!JSON.stringify(dEvents).includes("terminal-probe-E"));
@@ -141,14 +141,15 @@ function sendText(response: ServerResponse, text: string): void {
   response.writeHead(200, { "content-type": "text/event-stream" });
   response.end(`data: ${JSON.stringify({ choices: [{ index: 0, delta: { content: text }, finish_reason: null }] })}\n\ndata: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: "stop" }] })}\n\ndata: [DONE]\n\n`);
 }
-function command(args: string[]): Promise<{ code: number | null; output: string }> {
+function command(args: string[]): Promise<{ code: number | null; output: string; stdout: string }> {
   const child = spawn(cli.executable, [...cli.args, ...args], { cwd: root, env: process.env });
-  let output = "";
-  child.stdout.on("data", (data) => { output += String(data); });
-  child.stderr.on("data", (data) => { output += String(data); });
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (data) => { stdout += String(data); });
+  child.stderr.on("data", (data) => { stderr += String(data); });
   return new Promise((resolve, reject) => {
     child.once("error", reject);
-    child.once("exit", (code) => resolve({ code, output }));
+    child.once("exit", (code) => resolve({ code, output: stdout + stderr, stdout }));
   });
 }
 async function waitFor(predicate: () => boolean): Promise<void> {
