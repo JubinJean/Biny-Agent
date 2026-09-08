@@ -50,6 +50,8 @@ export interface SkillBundle {
   paths: string[];
   prompt: string;
   warnings: string[];
+  /** 阻止部分 Skill 能力可用的加载问题；重复项等诊断不应放入这里。 */
+  errors: string[];
 }
 
 export interface LoadSkillsOptions {
@@ -83,6 +85,7 @@ export async function loadSkills(options: LoadSkillsOptions): Promise<SkillBundl
   const canonicalWorkspace = await fs.realpath(path.resolve(options.workspaceRoot));
   const skills: SkillDefinition[] = [];
   const warnings: string[] = [];
+  const errors: string[] = [];
   const seen = new Set<string>();
   const seenNames = new Set<string>();
   // 按根目录优先级扫描；同一 scope 内的同名 Skill 只保留先发现的版本。
@@ -98,7 +101,7 @@ export async function loadSkills(options: LoadSkillsOptions): Promise<SkillBundl
         await collectSkillFiles(repositoryRoot, absolutePath, files, seen);
         // 目标目录按构造就是各级 .agents/skills，source 固定为 agents；当候选落在
         // canonicalWorkspace 之外（工作区是仓库子目录）时不能靠相对路径推断。
-        await appendSkillDefinitions(skills, warnings, canonicalWorkspace, files, "project", seenNames, options, "agents");
+        await appendSkillDefinitions(skills, warnings, errors, canonicalWorkspace, files, "project", seenNames, options, "agents");
       }
       continue;
     }
@@ -106,7 +109,7 @@ export async function loadSkills(options: LoadSkillsOptions): Promise<SkillBundl
     if (!absolutePath) continue;
     const files: SkillFileCandidate[] = [];
     await collectSkillFiles(canonicalWorkspace, absolutePath, files, seen);
-    await appendSkillDefinitions(skills, warnings, canonicalWorkspace, files, "project", seenNames, options, sourceForProjectSkill(files[0]?.path, canonicalWorkspace));
+    await appendSkillDefinitions(skills, warnings, errors, canonicalWorkspace, files, "project", seenNames, options, sourceForProjectSkill(files[0]?.path, canonicalWorkspace));
   }
 
   // 显式传 globalRoot 时只扫描该目录（测试和嵌入方可隔离）；默认与 SkillHub 使用相同根目录。
@@ -119,7 +122,9 @@ export async function loadSkills(options: LoadSkillsOptions): Promise<SkillBundl
       const canonicalPath = await resolveGlobalSkillRoot(configuredPath);
       if (canonicalPath) resolvedGlobalRoots.push({ configuredPath, canonicalPath });
     } catch (error) {
-      warnings.push(`Skipped skill root ${configuredPath}: ${errorMessage(error)}`);
+      const message = `Skipped skill root ${configuredPath}: ${errorMessage(error)}`;
+      warnings.push(message);
+      errors.push(message);
     }
   }
   const allowedGlobalDirectories = [...new Set(resolvedGlobalRoots.map(({ canonicalPath }) => canonicalPath))];
@@ -129,20 +134,25 @@ export async function loadSkills(options: LoadSkillsOptions): Promise<SkillBundl
     try {
       const globalFiles: SkillFileCandidate[] = [];
       await collectSkillFiles(canonicalPath, canonicalPath, globalFiles, globalSeen, true, allowedGlobalDirectories);
-      await appendSkillDefinitions(skills, warnings, canonicalWorkspace, globalFiles, "global", seenNames, options, sourceForGlobalRoot(configuredPath));
+      await appendSkillDefinitions(skills, warnings, errors, canonicalWorkspace, globalFiles, "global", seenNames, options, sourceForGlobalRoot(configuredPath));
     } catch (error) {
-      warnings.push(`Skipped skill root ${canonicalPath}: ${errorMessage(error)}`);
+      const message = `Skipped skill root ${canonicalPath}: ${errorMessage(error)}`;
+      warnings.push(message);
+      errors.push(message);
     }
   }
 
   if (skills.length >= maxDiscoveredSkillCount) {
-    warnings.push(`Only the first ${String(maxDiscoveredSkillCount)} skills were discovered.`);
+    const message = `Only the first ${String(maxDiscoveredSkillCount)} skills were discovered.`;
+    warnings.push(message);
+    errors.push(message);
   }
   return {
     skills,
     paths: skills.map((skill) => skill.path),
     prompt: buildSkillPrompt(skills),
-    warnings
+    warnings,
+    errors
   };
 }
 
@@ -181,6 +191,7 @@ function officialProjectSkillTargets(workspaceRoot: string, repositoryRoot: stri
 async function appendSkillDefinitions(
   skills: SkillDefinition[],
   warnings: string[],
+  errors: string[],
   projectRoot: string,
   files: SkillFileCandidate[],
   scope: SkillScope,
@@ -205,7 +216,9 @@ async function appendSkillDefinitions(
       seenNames.add(nameKey);
       skills.push(skill);
     } catch (error) {
-      warnings.push(`Skipped ${candidate.path}: ${errorMessage(error)}`);
+      const message = `Skipped ${candidate.path}: ${errorMessage(error)}`;
+      warnings.push(message);
+      errors.push(message);
     }
   }
 }

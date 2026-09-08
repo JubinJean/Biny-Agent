@@ -113,7 +113,7 @@ function testShellPermissionBoundary(): void {
   });
   assert.equal(request.actionType, "shell");
   assert.equal(request.riskLevel, "medium");
-  assert.equal(new PermissionManager().evaluate(request).decision, "ask");
+  assert.equal(new PermissionManager({ mode: "ask" }).evaluate(request).decision, "ask");
 
   const builtinInspection = analyzePermissionRequest({
     toolName: "git_status",

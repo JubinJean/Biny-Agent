@@ -65,6 +65,7 @@ interface ManagedMcpServer {
   config: McpServerConfig;
   transport: McpTransportKind;
   status: McpServerStatus;
+  tools: ListedMcpTool[];
   client?: Client;
   connecting?: Promise<void>;
   refreshing?: Promise<void>;
@@ -77,10 +78,12 @@ export class McpToolHost {
   private registry?: ToolRegistry;
   private workspaceRoot = "";
   private closing = false;
+  private readonly listeners = new Set<() => void>();
 
-  async connectConfiguredServers(workspaceRoot: string, config: AgentConfig, registry: ToolRegistry): Promise<void> {
+  async connectConfiguredServers(workspaceRoot: string, config: AgentConfig, registry?: ToolRegistry): Promise<void> {
     this.registry = registry;
     this.workspaceRoot = workspaceRoot;
+    const pending: Promise<void>[] = [];
     for (const [serverName, rawConfig] of Object.entries(config.extensions.mcp)) {
       const transport = transportKind(rawConfig);
       const status: McpServerStatus = {
@@ -93,16 +96,29 @@ export class McpToolHost {
         promptNames: [],
         hasResources: false
       };
-      const managed: ManagedMcpServer = { name: serverName, rawConfig, config: rawConfig, transport, status };
+      const managed: ManagedMcpServer = { name: serverName, rawConfig, config: rawConfig, transport, status, tools: [] };
       this.servers.set(serverName, managed);
       if (!rawConfig.enabled) continue;
-      try {
-        await this.startServer(managed);
-      } catch (error) {
+      pending.push(this.startServer(managed).catch((error: unknown) => {
         // 单个服务器失败只影响自己：记录原因，其他服务器与 runtime 照常启动。
         status.lastError = errorText(error);
-      }
+        this.emitChange();
+      }));
     }
+    await Promise.all(pending);
+    this.emitChange();
+  }
+
+  /** 为不同 session 创建指向同一 MCP 连接的工具代理。 */
+  createTools(): Tool[] {
+    return [...this.servers.values()]
+      .filter((server) => server.status.connected)
+      .flatMap((server) => server.tools.map((tool) => createMcpTool(this, server.name, tool)));
+  }
+
+  subscribe(listener: () => void): () => void {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
   listServers(): McpServerStatus[] {
@@ -142,6 +158,7 @@ export class McpToolHost {
     } catch (error) {
       managed.status.lastError = errorText(error);
     }
+    this.emitChange();
     return { ...managed.status, toolNames: [...managed.status.toolNames], promptNames: [...managed.status.promptNames] };
   }
 
@@ -243,6 +260,7 @@ export class McpToolHost {
       server.client = undefined;
       server.status.connected = false;
     }
+    this.emitChange();
   }
 
   private requireServer(serverName: string): ManagedMcpServer {
@@ -350,13 +368,13 @@ export class McpToolHost {
 
   private registerServerTools(managed: ManagedMcpServer, client: Client, tools: ListedMcpTool[]): void {
     const registry = this.registry;
-    if (!registry) throw new Error("MCP host is not attached to a tool registry.");
-    for (const toolName of managed.status.toolNames) registry.unregister(toolName);
+    managed.tools = [...tools];
+    for (const toolName of managed.status.toolNames) registry?.unregister(toolName);
     const toolNames: string[] = [];
     const warnings: string[] = [];
     for (const mcpTool of tools) {
       try {
-        registry.registerMcpTool(createMcpTool(this, managed.name, mcpTool));
+        if (registry) registry.registerMcpTool(createMcpTool(this, managed.name, mcpTool));
         toolNames.push(`mcp_${normalizeName(managed.name)}_${normalizeName(mcpTool.name)}`);
       } catch (error) {
         // 归一化后重名（同名工具或跨服务器冲突）的工具跳过注册并记录警告，
@@ -366,6 +384,11 @@ export class McpToolHost {
     }
     managed.status.toolNames = toolNames;
     managed.status.lastError = warnings.length ? warnings.join("; ") : undefined;
+    this.emitChange();
+  }
+
+  private emitChange(): void {
+    for (const listener of this.listeners) listener();
   }
 
   private async listPromptNames(managed: ManagedMcpServer, client: Client): Promise<string[]> {
