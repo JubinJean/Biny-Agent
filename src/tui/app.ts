@@ -263,7 +263,9 @@ export class BinyTui {
           const fresh = factoryOptions?.fresh === true;
           const local = await createInteractiveAgentHost(factoryOptions?.workspaceRoot ?? this.workspaceRoot, {
             persistenceRoot: this.workspaceRoot,
-            sessionId: fresh ? sessionId : undefined
+            sessionId: fresh ? sessionId : undefined,
+            resourceRegistry: factoryOptions?.resourceRegistry,
+            resourceBoot: factoryOptions?.resourceBoot ?? (factoryOptions?.resourceRegistry === undefined ? "blocking" : "background")
           });
           if (sessionId !== undefined && !fresh) await local.runtime.resumeSession(sessionId);
           return local;
@@ -271,7 +273,10 @@ export class BinyTui {
         // 显式 session 在 Host/界面完成 attach 后再恢复；这样 writer conflict 可以
         // 转成只读历史，而不会在本地 fallback 创建阶段直接终止 TUI。
         try {
-          this.runtimeHost = await startRuntimeHost(this.workspaceRoot, createLocalRuntime, {
+          this.runtimeHost = await startRuntimeHost(this.workspaceRoot, (resourceRegistry) => createLocalRuntime(undefined, {
+            resourceRegistry,
+            resourceBoot: "background"
+          }), {
             createRuntime: createLocalRuntime,
             resumeInterrupted: false,
             configDir: globalConfigDir()

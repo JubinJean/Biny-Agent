@@ -294,13 +294,14 @@ function testSlashCommandParity(): void {
   const tuiCommands = slashCommandsForSurface("tui");
   const desktopCommands = slashCommandsForSurface("desktop");
   const desktopNames = new Set(desktopCommands.map((command) => command.name));
-  assert.equal(tuiCommands.length, 26);
+  assert.equal(tuiCommands.length, 27);
   for (const removed of ["/help", "/approvals", "/quit"]) {
     assert.equal(tuiCommands.some((command) => command.name === removed), false);
   }
   assert.equal(tuiCommands.some((command) => command.name === "/plan"), false);
   assert.equal(tuiCommands.some((command) => command.name === "/mode"), false);
   assert.ok(tuiCommands.some((command) => command.name === "/memory"));
+  assert.ok(tuiCommands.some((command) => command.name === "/soul"));
   assert.ok(tuiCommands.some((command) => command.name === "/memories"));
   assert.ok(tuiCommands.some((command) => command.name === "/undo"));
   assert.equal(tuiCommands.some((command) => command.name === "/continue"), false);
