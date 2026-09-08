@@ -23,7 +23,6 @@ import {
   isRunErrorStatus,
   runErrorPresentation,
   runErrorRecovery,
-  runErrorSeenKey,
   toolRowState,
   turnMetrics,
   VARIANT_TITLES,
@@ -282,25 +281,6 @@ test("isRunErrorStatus 五种错误终态为真，运行/完成态为假", () =>
   for (const status of ["idle", "running", "waiting_permission", "completed"] as const) {
     assert.equal(isRunErrorStatus(status), false, status);
   }
-});
-
-test("runErrorSeenKey 同一轮在实时（runId）与历史（history-N）投影下身份一致", () => {
-  const live = runErrorSeenKey("p1", "s1", { id: "0198abcd-runid", timestamp: "2026-08-27T01:02:03.000Z" });
-  const rebuilt = runErrorSeenKey("p1", "s1", { id: "history-7", timestamp: "2026-08-27T01:02:03.000Z" });
-  assert.equal(live, rebuilt);
-  // 会话与项目维度都在身份里：跨会话、跨项目不串扰。
-  assert.notEqual(live, runErrorSeenKey("p1", "s2", { id: "0198abcd-runid", timestamp: "2026-08-27T01:02:03.000Z" }));
-  assert.notEqual(live, runErrorSeenKey("p2", "s1", { id: "0198abcd-runid", timestamp: "2026-08-27T01:02:03.000Z" }));
-});
-
-test("runErrorSeenKey 缺会话退 draft 兜底，缺时间戳退轮次 id", () => {
-  const timestamped = runErrorSeenKey("p1", undefined, { id: "0198-run", timestamp: "2026-08-27T09:00:00.000Z" });
-  assert.match(timestamped, /^p1:draft:/u);
-  assert.equal(
-    runErrorSeenKey("p1", "s1", { id: "0198-run" }),
-    runErrorSeenKey("p1", "s1", { id: "0198-run" })
-  );
-  assert.match(timestamped, /2026-08-27T09/u);
 });
 
 test("humanizeRunError 把网络/运行时错误码映射成人话", () => {

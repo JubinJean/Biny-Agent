@@ -122,22 +122,6 @@ export function isRunErrorStatus(status: TimelineRunStatus): boolean {
 }
 
 /**
- * 错误卡片「已看过」标记的稳定身份：project + session + 轮次终态时间戳。
- *
- * 实时轮次的 id 是 runId，同一轮切走再切回、从 session 文件重建后变成位置序号
- * history-N——用 id 当身份会让「已看过」在重载后对不上号、错误卡复活。终态事件的
- * 时间戳在两条构建路径里同源（同一个事件只发生一次），跨投影稳定；缺时间戳的轮次
- * 退回轮次 id 兜底。
- */
-export function runErrorSeenKey(
-  projectId: string,
-  sessionId: string | undefined,
-  turn: Pick<TimelineTurn, "id" | "timestamp">
-): string {
-  return `${projectId}:${sessionId ?? "draft"}:${turn.timestamp ?? turn.id}`;
-}
-
-/**
  * 把轮次级原始错误（多为网络/运行时错误码，如 UND_ERR_*、ECONNRESET、HTTP 5xx）映射成人话。
  * 已是可读文案的保留首行；命中已知模式时给出可操作的提示。完整原文由调用方放 tooltip。
  */

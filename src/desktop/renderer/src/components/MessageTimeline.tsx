@@ -14,7 +14,7 @@ import { copyToClipboard } from "../copyToClipboard.js";
 import { useInlineImage } from "../inlineImage.js";
 import { listChangedFiles, type TimelineReasoningStep, type TimelineStep, type TimelineTurn } from "../sessionTimeline.js";
 import { reasoningDetailText } from "../reasoningPresentation.js";
-import { buildUsageDetailRows, finishReasonTone, formatDuration, formatMessageClock, formatRunDuration, isRunErrorRetryable, isRunErrorStatus, runErrorSeenKey, turnMetrics, type TurnMetrics } from "../chatModel.js";
+import { buildUsageDetailRows, finishReasonTone, formatDuration, formatMessageClock, formatRunDuration, isRunErrorRetryable, isRunErrorStatus, turnMetrics, type TurnMetrics } from "../chatModel.js";
 import { speak, speechSupported } from "../speech.js";
 import { CopyButton } from "./CopyButton.js";
 import { Icon } from "./Icon.js";
@@ -27,7 +27,6 @@ import { ThinkingBlock } from "./chat/ThinkingBlock.js";
 import { ExecutionGroup, type ExecutionGroupStep } from "./chat/ExecutionGroup.js";
 import { ChangesSummary } from "./chat/ChangesSummary.js";
 import { RunErrorCard } from "./chat/RunErrorCard.js";
-import { isRunErrorSeen, markRunErrorsSeen, pruneRunErrorsSeen } from "./chat/runErrorDismissal.js";
 import { pickThinkingMessage } from "../thinkingMessages.js";
 
 interface MessageTimelineProps {
@@ -153,23 +152,6 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
     }
   }, [optimisticRewrite, turns]);
 
-  // 新一轮开跑（本会话出现新的进行中轮次）时回收一次失效标记：编辑/重试会让轮次身份
-  // 变化或消失，死标记不该一直占着 localStorage，也不该顶着别的轮次的坑位。
-  const roundFingerprintsRef = useRef<{ sessionKey: string; fingerprints: Set<string> }>({ sessionKey: "", fingerprints: new Set() });
-  useEffect(() => {
-    const sessionKey = sessionId ?? "";
-    const fingerprints = new Set(turns.map((turn) => turn.timestamp ?? turn.id));
-    const previous = roundFingerprintsRef.current;
-    // 首帧（fingerprints 为空）与刚切进来的会话不触发：只有同一会话里长出新轮次才算「新一轮」。
-    const becameActive = turns.some((turn) =>
-      (turn.status === "running" || turn.status === "waiting_permission")
-      && !previous.fingerprints.has(turn.timestamp ?? turn.id));
-    if (previous.sessionKey === sessionKey && previous.fingerprints.size > 0 && becameActive) {
-      pruneRunErrorsSeen(projectId, sessionId, fingerprints);
-    }
-    roundFingerprintsRef.current = { sessionKey, fingerprints };
-  }, [projectId, sessionId, turns]);
-
   const hasRealPendingMessage = pendingUserMessage !== undefined && turns.some((turn) => (
     pendingUserMessage.messageId !== undefined
       ? turn.userMessageId === pendingUserMessage.messageId
@@ -253,7 +235,6 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
           onRetrySettled={settleOptimisticRewrite}
           onSwitchVersion={onSwitchVersion}
           projectId={projectId}
-          sessionId={sessionId}
           turn={turn}
         />
       ))}
@@ -313,7 +294,6 @@ function optimisticRewriteTurn(turn: TimelineTurn, user: string): TimelineTurn {
 
 const Turn = memo(function Turn({
   projectId,
-  sessionId,
   turn,
   editing,
   onPreviewFile,
@@ -332,7 +312,6 @@ const Turn = memo(function Turn({
   onDeleteUserMessage
 }: {
   projectId: string;
-  sessionId?: string;
   turn: TimelineTurn;
   editing?: { value: string };
   onPreviewFile(path: string): void;
@@ -425,12 +404,8 @@ const Turn = memo(function Turn({
           <TurnRunError
             message={turn.error}
             onRetry={retry}
-            projectId={projectId}
             retryable={canRetry && !turn.resumable && isRunErrorRetryable(turn.error)}
-            sessionId={sessionId}
             status={turn.status}
-            timestamp={turn.timestamp}
-            turnId={turn.id}
           />
         ) : null}
 
@@ -472,39 +447,24 @@ function fallbackExecutionSteps(turn: TimelineTurn): TimelineStep[] {
   }];
 }
 
-/** 轮次内联的失败/未完成卡片：跟随轮次持久展示，点关闭只隐藏这一张。 */
+/** 轮次内联的失败/未完成卡片：是轮次记录的一部分，持久显示；点关闭只收起当次视图。 */
 const TurnRunError = memo(function TurnRunError({
   message,
   onRetry,
-  projectId,
   retryable,
-  sessionId,
-  status,
-  timestamp,
-  turnId
+  status
 }: {
   message: string;
   onRetry(): Promise<void>;
-  projectId: string;
   retryable: boolean;
-  sessionId?: string;
   status: TimelineTurn["status"];
-  timestamp?: string;
-  turnId: string;
 }): React.JSX.Element | null {
-  const seenKey = runErrorSeenKey(projectId, sessionId, { id: turnId, timestamp });
-  const [dismissed, setDismissed] = useState(() => isRunErrorSeen(seenKey));
-  useEffect(() => {
-    setDismissed(isRunErrorSeen(seenKey));
-  }, [seenKey]);
+  const [dismissed, setDismissed] = useState(false);
   if (dismissed) return null;
   return (
     <RunErrorCard
       message={message}
-      onDismiss={() => {
-        markRunErrorsSeen([seenKey]);
-        setDismissed(true);
-      }}
+      onDismiss={() => setDismissed(true)}
       onRetry={retryable ? onRetry : undefined}
       status={status}
     />
