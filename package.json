@@ -60,6 +60,11 @@
     }
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "4.0.49",
+    "@ai-sdk/google": "4.0.17",
+    "@ai-sdk/openai": "4.0.60",
+    "@ai-sdk/openai-compatible": "3.0.11",
+    "@ai-sdk/provider": "^4.0.10",
     "@astryxdesign/core": "0.2.0",
     "@astryxdesign/theme-neutral": "0.2.0",
     "@earendil-works/pi-tui": "0.82.1",
@@ -68,6 +73,7 @@
     "@stylexjs/stylex": "0.19.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",
+    "ai": "^7.0.93",
     "best-effort-json-parser": "1.2.1",
     "commander": "^13.1.0",
     "highlight.js": "^11.11.1",
