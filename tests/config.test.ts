@@ -155,7 +155,7 @@ async function testProjectOverridesAndGlobalPersistence(): Promise<void> {
     assert.equal(effective.defaultModel, "deepseek-v4-flash");
     assert.equal(effective.thinking.enabled, false);
     assert.equal(effective.agent.softStepLimit, 2);
-    assert.equal(effective.permission.mode, "ask");
+    assert.equal(effective.permission.mode, "full-access");
     assert.equal(effective.context.compaction.reserveTokens, 2_048);
     assert.equal(effective.context.compaction.keepRecentTokens, 8_192);
     assert.equal(effective.context.compaction.maxSummaryTokens, 1_024);

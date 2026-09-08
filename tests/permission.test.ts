@@ -30,6 +30,7 @@ async function main(): Promise<void> {
   testMoveFileEvaluatesBothPaths();
   testPathRulesMatchAnyDepth();
   testSubagentAccessInheritsMode();
+  testDefaultPermissionMode();
   testDesktopPermissionOptions();
   await testPermissionModeWriteKeepsOtherSettings();
   await testModelSwitchKeepsPermissionMode();
@@ -154,6 +155,15 @@ function testSubagentAccessInheritsMode(): void {
   assert.equal(subagentAccessMode(manager), "read-only");
   manager.setMode("full-access");
   assert.equal(subagentAccessMode(manager), "workspace");
+}
+
+function testDefaultPermissionMode(): void {
+  assert.equal(defaultConfig.permission.mode, "full-access");
+  assert.equal(new PermissionManager().getStatus().mode, "full-access");
+
+  const legacy = structuredClone(defaultConfig) as Record<string, unknown>;
+  delete legacy.permission;
+  assert.equal(configSchema.parse(legacy).permission.mode, "full-access");
 }
 
 function testDesktopPermissionOptions(): void {

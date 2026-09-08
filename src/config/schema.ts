@@ -38,13 +38,13 @@ const agentSchema = z.object({
 });
 
 const permissionSchema = z.object({
-  mode: z.enum(["ask", "read-only", "auto", "full-access"]).default("ask"),
+  mode: z.enum(["ask", "read-only", "auto", "full-access"]).default("full-access"),
   allowTools: z.array(z.string()).default(["read_file", "list_files", "search_files", "git_status", "git_diff", "web_search", "save_memory", "update_emotion"]),
   allowPaths: z.array(z.string()).default([]),
   denyPaths: z.array(z.string()).default([".env", ".env.local", ".ssh/", "node_modules/"]),
   criticalAlwaysAsk: z.boolean().default(true)
 }).default({
-  mode: "ask",
+  mode: "full-access",
   allowTools: ["read_file", "list_files", "search_files", "git_status", "git_diff", "web_search", "save_memory", "update_emotion"],
   allowPaths: [],
   denyPaths: [".env", ".env.local", ".ssh/", "node_modules/"],
@@ -854,7 +854,7 @@ export const defaultConfig: AgentConfig = {
     maxQueuedToolCalls: 64
   },
   permission: {
-    mode: "ask",
+    mode: "full-access",
     allowTools: ["read_file", "list_files", "search_files", "git_status", "git_diff", "web_search", "save_memory", "update_emotion"],
     allowPaths: [],
     denyPaths: [".env", ".env.local", ".ssh/", "node_modules/"],
