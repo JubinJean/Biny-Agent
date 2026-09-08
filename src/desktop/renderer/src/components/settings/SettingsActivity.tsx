@@ -6,6 +6,7 @@ import type { DesktopActivityReport, DesktopActivitySessionDetail, DesktopActivi
 import { Icon, type IconName } from "../Icon.js";
 import { SettingsDetailLayer } from "./SettingsDetailLayer.js";
 import { useSettingsDraft } from "./SettingsDraftContext.js";
+import { useActivityRuntime } from "./ActivityRuntimeContext.js";
 
 const analysisPolicyOptions: Array<{ value: ActivityAnalysisPolicy; label: string }> = [
   { value: "local_only", label: "仅本地" },
@@ -15,15 +16,15 @@ const analysisPolicyOptions: Array<{ value: ActivityAnalysisPolicy; label: strin
 
 export function SettingsActivity(): React.JSX.Element {
   const { draft, updateActivityImmediately } = useSettingsDraft();
+  const { runtime, refresh, updateRuntime } = useActivityRuntime();
   if (!draft) return <div aria-busy="true" className="settings-sections"><section><p role="status">正在加载活动记录设置…</p></section></div>;
-  return <SettingsActivityForm activity={draft.activity} onChange={updateActivityImmediately} />;
+  return <SettingsActivityForm activity={draft.activity} onChange={updateActivityImmediately} onRefreshRuntime={refresh} onRuntimeChange={updateRuntime} runtime={runtime} />;
 }
 
-function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivitySettingsInput; onChange(patch: Partial<DesktopActivitySettingsInput>): Promise<void> }): React.JSX.Element {
+function SettingsActivityForm({ activity, onChange, onRefreshRuntime, onRuntimeChange, runtime }: { activity: DesktopActivitySettingsInput; onChange(patch: Partial<DesktopActivitySettingsInput>): Promise<void>; onRefreshRuntime(): Promise<ActivityRuntimeSnapshot>; onRuntimeChange(next: ActivityRuntimeSnapshot): void; runtime: ActivityRuntimeSnapshot | undefined }): React.JSX.Element {
   const [languagesText, setLanguagesText] = useState(activity.ocrLanguages.join(", "));
   const [sensitiveApplicationsText, setSensitiveApplicationsText] = useState(activity.sensitiveApplications.join("\n"));
   const [analysisModelText, setAnalysisModelText] = useState(activity.analysisModel ?? "");
-  const [runtime, setRuntime] = useState<ActivityRuntimeSnapshot>();
   const [clearing, setClearing] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
   const [feedback, setFeedback] = useState<string>();
@@ -41,6 +42,7 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
   const [reportDate, setReportDate] = useState("today");
   const [report, setReport] = useState<DesktopActivityReport>();
   const [reporting, setReporting] = useState(false);
+  const [requestingPermission, setRequestingPermission] = useState<"screen-recording" | "accessibility">();
   const [activityUpdateCount, setActivityUpdateCount] = useState(0);
   const sessionDetailRequestId = useRef(0);
   const previewRequestId = useRef(0);
@@ -89,29 +91,8 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
     if (document.activeElement !== analysisModelInputRef.current) setAnalysisModelText(activity.analysisModel ?? "");
   }, [activity.ocrLanguages, activity.sensitiveApplications, activity.analysisModel]);
 
-  useEffect(() => {
-    let cancelled = false;
-    const refresh = (): void => {
-      void window.biny.activitySnapshot().then((next) => {
-        if (!cancelled) setRuntime(next);
-      }).catch((error: unknown) => {
-        if (!cancelled) setFeedback(activityErrorMessage(error));
-      });
-    };
-    refresh();
-    const unsubscribe = window.biny.onActivityEvent((next) => {
-      if (!cancelled) setRuntime(next);
-    });
-    const interval = window.setInterval(refresh, 5_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-      unsubscribe();
-    };
-  }, []);
-
   const refreshRuntime = (): void => {
-    void window.biny.activitySnapshot().then(setRuntime).catch((error: unknown) => setFeedback(activityErrorMessage(error)));
+    void onRefreshRuntime().catch((error: unknown) => setFeedback(activityErrorMessage(error)));
   };
 
   const commitLanguages = (): void => {
@@ -139,14 +120,26 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
     updateActivity({ analysisModel: trimmed || undefined });
     setAnalysisModelText(trimmed);
   };
-  const openPermissionSettings = (pane: "screen-recording" | "accessibility"): void => {
-    void window.biny.requestActivityPermission(pane)
-      .catch(() => undefined)
-      .then(() => window.biny.openSystemSettings(pane))
-      .catch(() => undefined);
+  const openPermissionSettings = async (pane: "screen-recording" | "accessibility"): Promise<void> => {
+    if (requestingPermission !== undefined) return;
+    setRequestingPermission(pane);
+    setFeedback(undefined);
+    let failureMessage: string | undefined;
+    try {
+      await window.biny.requestActivityPermission(pane);
+    } catch (error) {
+      failureMessage = activityErrorMessage(error);
+    }
+    try {
+      await window.biny.openSystemSettings(pane);
+    } catch (error) {
+      failureMessage = activityErrorMessage(error);
+    }
+    if (failureMessage) setFeedback(failureMessage);
+    setRequestingPermission(undefined);
   };
-  const openAccessibilitySettings = (): void => openPermissionSettings("accessibility");
-  const openScreenRecordingSettings = (): void => openPermissionSettings("screen-recording");
+  const openAccessibilitySettings = (): void => { void openPermissionSettings("accessibility"); };
+  const openScreenRecordingSettings = (): void => { void openPermissionSettings("screen-recording"); };
   const clearActivity = (): void => {
     if (clearing) return;
     setClearOpen(true);
@@ -155,7 +148,7 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
     if (clearing) return;
     setClearing(true);
     void window.biny.clearActivity().then((next) => {
-      setRuntime(next);
+      onRuntimeChange(next);
       setClearOpen(false);
       setSelectedSessionId(undefined);
       setSessionDetail(undefined);
@@ -268,11 +261,12 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
               </span>
               {isRuntimeRunning && runtime?.screenLocked ? <span className="activity-status-badge is-locked"><Icon name="lock" size={11} />已锁屏</span> : null}
             </div>
-            <p>以周期性整屏截图和本地 Vision OCR 为主，输入与 AX 事件作为时间线补充。原始截图始终留在本机，脱敏文本是否送模型由分析策略控制。</p>
+            <p>以周期截屏和本地 OCR 生成时间线，原始截图始终留在本机。</p>
           </div>
           <ActivitySwitch busy={activityUpdating} checked={activity.enabled} disabled={activityUpdating} label="启用活动记录器" onChange={(enabled) => updateActivity({ enabled })} />
         </div>
-        {activity.enabled ? <>
+        {/* 总开关关闭时状态区不隐藏，整体变暗保留上下文。 */}
+        <div className={`activity-overview-stats${activity.enabled ? "" : " is-disabled"}`}>
           <div className="activity-stat-grid">
             <ActivityStat icon="timer" label="会话数" value={runtime === undefined ? "—" : String(runtime.sessions)} />
             <ActivityStat icon="database" label="截图存储" value={runtime === undefined ? "—" : formatActivityBytes(runtime.storageBytes)} />
@@ -284,7 +278,7 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
             <span className="activity-storage-hint">{runtime === undefined ? "超过上限时旧截图 JPEG 会自动删除" : `${runtime.fallbackCaptures} 张截图 · 超过上限时旧 JPEG 会自动删除`}</span>
           </div>
           <div aria-hidden="true" className="activity-progress"><span style={{ width: `${storagePercent}%` }} /></div>
-        </> : null}
+        </div>
         {runtime?.error ? <p className="activity-section-description" role="alert">{runtime.error}</p> : null}
         {feedback ? <p aria-live="polite" className="activity-feedback" role="status">{feedback}</p> : null}
       </section>
@@ -299,18 +293,18 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
           <div className="activity-permission-row">
             <ActivityPermission detail="隐私与安全性 → 屏幕录制" label="屏幕录制（截图与 OCR 主链路）" status={screenPermission} />
             {screenPermission === "需授权" ? (
-              <button aria-label="在 macOS 系统设置中管理屏幕录制权限" className="activity-secondary-button" onClick={openScreenRecordingSettings} type="button">
+              <button aria-busy={requestingPermission === "screen-recording"} aria-label="申请并在 macOS 系统设置中管理屏幕录制权限" className="activity-secondary-button" disabled={requestingPermission !== undefined} onClick={openScreenRecordingSettings} type="button">
                 <Icon name="external" size={13} />
-                打开系统设置
+                {requestingPermission === "screen-recording" ? "申请中…" : "申请并打开设置"}
               </button>
             ) : null}
           </div>
           <div className="activity-permission-row">
             <ActivityPermission detail="隐私与安全性 → 辅助功能" label="辅助功能（AX 事件流与全局输入监听）" status={accessibilityPermission} />
             {accessibilityPermission === "需授权" ? (
-              <button aria-label="在 macOS 系统设置中管理辅助功能权限" className="activity-secondary-button" onClick={openAccessibilitySettings} type="button">
+              <button aria-busy={requestingPermission === "accessibility"} aria-label="申请并在 macOS 系统设置中管理辅助功能权限" className="activity-secondary-button" disabled={requestingPermission !== undefined} onClick={openAccessibilitySettings} type="button">
                 <Icon name="external" size={13} />
-                打开系统设置
+                {requestingPermission === "accessibility" ? "申请中…" : "申请并打开设置"}
               </button>
             ) : null}
           </div>
@@ -334,16 +328,16 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
 
       <ActivitySection id="activity-ocr" icon="file" title="OCR 与输入">
         <div className="activity-toggle-list">
-          <ActivitySwitch checked={activity.ocrEnabled} detail="仅 macOS；对活动截图运行本地 Vision 识别。" disabled={!activity.enabled} label="对活动截图运行 Vision OCR" onChange={(ocrEnabled) => updateActivity({ ocrEnabled })} />
-          <ActivitySwitch checked={activity.inputMonitoringEnabled} detail="需要 macOS‘辅助功能’授权；记录点击和键盘活动类型，不记录具体键值。" disabled={!activity.enabled} label="全局键盘与鼠标监听" onChange={(inputMonitoringEnabled) => updateActivity({ inputMonitoringEnabled })} />
+          <ActivitySwitch checked={activity.ocrEnabled} detail="对活动截图运行本地 Vision 识别。" disabled={!activity.enabled} label="对活动截图运行 Vision OCR" onChange={(ocrEnabled) => updateActivity({ ocrEnabled })} />
+          <ActivitySwitch checked={activity.inputMonitoringEnabled} detail="记录点击和键盘活动类型，不记录键值。" disabled={!activity.enabled} label="全局键盘与鼠标监听" onChange={(inputMonitoringEnabled) => updateActivity({ inputMonitoringEnabled })} />
         </div>
         <div className="activity-field-grid activity-ocr-fields">
           <label className="activity-field activity-field-wide" htmlFor="activity-ocr-languages">
             <span>OCR 语言（Vision 代码，逗号分隔）</span>
             <input aria-describedby="activity-ocr-languages-hint" autoComplete="off" disabled={!activity.enabled} id="activity-ocr-languages" name="activity-ocr-languages" onBlur={commitLanguages} onChange={(event) => updateLanguages(event.target.value)} ref={languagesInputRef} spellCheck={false} value={languagesText} />
-            <small id="activity-ocr-languages-hint">例如 en-US, zh-Hans；修改后立即对新快照生效。</small>
+            <small id="activity-ocr-languages-hint">例如 en-US, zh-Hans。</small>
           </label>
-          <ActivityNumberField disabled={!activity.enabled} id="activity-ocr-every" label="每 N 张快照 OCR 一次" hint="1 = 每张都识别，5 = 每 5 张识别 1 张。" unit="" max={20} min={1} step={1} value={activity.ocrEveryNFrames} onCommit={(value) => updateActivity({ ocrEveryNFrames: value })} />
+          <ActivityNumberField disabled={!activity.enabled} id="activity-ocr-every" label="每 N 张快照 OCR 一次" unit="" max={20} min={1} step={1} value={activity.ocrEveryNFrames} onCommit={(value) => updateActivity({ ocrEveryNFrames: value })} />
         </div>
       </ActivitySection>
 
@@ -365,7 +359,7 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
                 </button>
               ))}
             </div>
-            <small>控制脱敏摘要和脱敏 OCR 是否允许送外部模型分析；原始截图永不出设备。confirm_external 表示首次分析前需确认。</small>
+            <small>脱敏摘要和 OCR 是否允许送外部模型；原始截图永不出设备。</small>
           </div>
           <label className="activity-field" htmlFor="activity-analysis-model">
             <span>分析模型</span>
@@ -381,13 +375,12 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
               ref={analysisModelInputRef}
               value={analysisModelText}
             />
-            <small>留空表示跟随当前聊天模型；也可用 config 模型别名或 provider:model-id 单配一个更便宜的模型。</small>
           </label>
         </div>
       </ActivitySection>
 
       <ActivitySection id="activity-sensitive-apps" icon="shield" title="敏感应用（不保存文本/截图）">
-        <p className="activity-section-description">每行一个 bundle ID，修改后按前台应用精确匹配。这些应用仍可保留必要的事件类型，但不会保存文本、OCR 或截图。</p>
+        <p className="activity-section-description">每行一个 bundle ID；命中的应用不保存文本、OCR 和截图。</p>
         <textarea aria-label="敏感应用 bundle ID" autoComplete="off" className="activity-sensitive-apps" disabled={!activity.enabled} name="activity-sensitive-applications" onChange={(event) => updateSensitiveApplications(event.target.value)} ref={sensitiveApplicationsInputRef} rows={4} spellCheck={false} value={sensitiveApplicationsText} />
       </ActivitySection>
 
@@ -397,10 +390,10 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
           <label className="activity-field" htmlFor="activity-output-directory">
             <span>输出目录</span>
             <input aria-describedby="activity-output-directory-hint" autoComplete="off" id="activity-output-directory" name="activity-output-directory" readOnly spellCheck={false} value={activity.outputDirectory} />
-            <small id="activity-output-directory-hint">全局目录，不写入当前项目；原图目录应保持 0700 权限。</small>
+            <small id="activity-output-directory-hint">全局目录，不写入当前项目。</small>
           </label>
         </div>
-        <p className="activity-storage-note">事件和脱敏摘要不受 JPEG 容量上限影响；清除操作会删除事件、OCR 和所有截图 JPEG。</p>
+        <p className="activity-storage-note">事件和脱敏摘要不受容量上限影响。</p>
       </ActivitySection>
 
       {activity.enabled && runtime?.recentSessions.length ? <ActivitySection
@@ -417,7 +410,7 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
           <label className="activity-field" htmlFor="activity-search-query">
             <span>搜索已记录活动</span>
             <input aria-describedby="activity-search-hint" autoComplete="off" id="activity-search-query" name="activity-search-query" onChange={(event) => setActivityQuery(event.target.value)} placeholder="搜索应用、窗口、OCR 或事件…" type="search" value={activityQuery} />
-            <small id="activity-search-hint">关键词搜索已脱敏的事件与 OCR；点击结果可以打开对应会话。</small>
+            <small id="activity-search-hint">搜索脱敏后的事件与 OCR。</small>
           </label>
           <button aria-busy={searching} className="activity-secondary-button" disabled={searching || !activityQuery.trim()} type="submit"><Icon name="search" size={14} />{searching ? "搜索中…" : "搜索"}</button>
         </form>
@@ -439,7 +432,7 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
           <label className="activity-field" htmlFor="activity-report-date">
             <span>生成工作日报</span>
             <input aria-describedby="activity-report-hint" autoComplete="off" id="activity-report-date" name="activity-report-date" onChange={(event) => setReportDate(event.target.value)} placeholder="today、yesterday 或 2026-08-31…" spellCheck={false} value={reportDate} />
-            <small id="activity-report-hint">按本地日期聚合已分析会话；没有模型时仍会显示已完成的分析。</small>
+            <small id="activity-report-hint">按本地日期聚合已分析会话。</small>
           </label>
           <div className="activity-report-actions">
             <button className="activity-icon-button" onClick={() => setReportDate("today")} title="使用今天" type="button">今天</button>
@@ -454,10 +447,10 @@ function SettingsActivityForm({ activity, onChange }: { activity: DesktopActivit
         <div className="activity-section-title is-danger"><Icon name="trash" size={15} /><h3>危险区</h3></div>
         <p className="activity-section-description">删除全部已记录的活动（会话、事件、OCR 文本和所有截图 JPEG）。不可撤销。</p>
         <button className="activity-danger-button" disabled={clearing || runtime?.sessions === 0 || runtime === undefined} onClick={clearActivity} type="button"><Icon name="trash" size={14} />{clearing ? "清除中…" : "清除全部活动数据"}</button>
-        <small className="activity-disabled-hint">{runtime?.sessions ? "会删除会话、事件、截图、OCR 和脱敏后的 Activity 文本，且不可撤销。" : runtime?.collectorAvailable === false ? "采集服务尚未接入，清除操作暂不可用。" : "暂无可清除的活动数据。"}</small>
+        <small className="activity-disabled-hint">{runtime?.sessions ? undefined : runtime?.collectorAvailable === false ? "采集服务尚未接入，清除操作暂不可用。" : "暂无可清除的活动数据。"}</small>
       </section>
 
-      {isRuntimeRunning ? <p className="activity-running-footer">运行中 · 多数参数即时生效；会话/空闲计时相关改动在下个会话生效。</p> : null}
+      {isRuntimeRunning ? <p className="activity-running-footer">运行中 · 部分参数在下一个会话生效。</p> : null}
 
       {selectedSessionId ? (
         <SettingsDetailLayer onClose={closeSession}>
@@ -632,7 +625,7 @@ function ActivitySwitch({ busy = false, checked, detail, disabled = false, label
   );
 }
 
-function ActivityNumberField({ disabled = false, hint, id, label, max, min, onCommit, step = 1, unit, value }: { disabled?: boolean; hint: string; id: string; label: string; max: number; min: number; onCommit(value: number): void; step?: number; unit: string; value: number }): React.JSX.Element {
+function ActivityNumberField({ disabled = false, hint, id, label, max, min, onCommit, step = 1, unit, value }: { disabled?: boolean; hint?: string; id: string; label: string; max: number; min: number; onCommit(value: number): void; step?: number; unit: string; value: number }): React.JSX.Element {
   const [text, setText] = useState(String(value));
   const inputRef = useRef<HTMLInputElement>(null);
   const lastSentValueRef = useRef<number | undefined>(undefined);
@@ -668,8 +661,8 @@ function ActivityNumberField({ disabled = false, hint, id, label, max, min, onCo
   return (
     <label className="activity-field" htmlFor={id}>
       <span>{label}</span>
-      <div className="activity-number-input"><input aria-describedby={`${id}-hint`} autoComplete="off" disabled={disabled} id={id} inputMode="numeric" max={max} min={min} name={id} onBlur={commit} onChange={(event) => handleChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") commit(); }} ref={inputRef} step={step} type="number" value={text} />{unit ? <em>{unit}</em> : null}</div>
-      <small id={`${id}-hint`}>{hint}</small>
+      <div className="activity-number-input"><input aria-describedby={hint ? `${id}-hint` : undefined} autoComplete="off" disabled={disabled} id={id} inputMode="numeric" max={max} min={min} name={id} onBlur={commit} onChange={(event) => handleChange(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") commit(); }} ref={inputRef} step={step} type="number" value={text} />{unit ? <em>{unit}</em> : null}</div>
+      {hint ? <small id={`${id}-hint`}>{hint}</small> : null}
     </label>
   );
 }

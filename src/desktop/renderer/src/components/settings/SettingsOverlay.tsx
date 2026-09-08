@@ -32,6 +32,7 @@ import { TopToast } from "../overlays/TopToast.js";
 import { ProviderBrandGlyph } from "../ProviderBrandGlyph.js";
 import { SettingsAbout } from "./SettingsAbout.js";
 import { SettingsAppearance } from "./SettingsAppearance.js";
+import { ActivityRuntimeProvider } from "./ActivityRuntimeContext.js";
 import { SettingsChatParams } from "./SettingsChatParams.js";
 import { SettingsCapabilityDefaults } from "./SettingsCapabilityDefaults.js";
 import { SettingsCompaction } from "./SettingsCompaction.js";
@@ -47,7 +48,6 @@ import { SettingsQuickChat } from "./SettingsQuickChat.js";
 import { SettingsPageFooter } from "./SettingsPageFooter.js";
 import { SettingsPermissions } from "./SettingsPermissions.js";
 import { SettingsExtensionsView } from "./SettingsExtensionsView.js";
-import { matchesSettingsSearch, settingsTabKeywords } from "./settingsSearch.js";
 
 interface SettingsOverlayProps {
   open: boolean;
@@ -199,12 +199,12 @@ function SettingsOverlayContent({
   onCancelMemorySleep,
   onClearMemory: _onClearMemory,
   onOpenChatDraft: _onOpenChatDraft,
-  onLoadMemoryEmbeddingStatus: _onLoadMemoryEmbeddingStatus,
-  onDownloadMemoryEmbeddingModel: _onDownloadMemoryEmbeddingModel,
-  onCancelMemoryEmbeddingDownload: _onCancelMemoryEmbeddingDownload,
+  onLoadMemoryEmbeddingStatus,
+  onDownloadMemoryEmbeddingModel,
+  onCancelMemoryEmbeddingDownload,
   onDeleteMemoryEmbeddingModel: _onDeleteMemoryEmbeddingModel,
-  onRebuildMemoryEmbeddingIndex: _onRebuildMemoryEmbeddingIndex,
-  onCancelMemoryEmbeddingRebuild: _onCancelMemoryEmbeddingRebuild,
+  onRebuildMemoryEmbeddingIndex,
+  onCancelMemoryEmbeddingRebuild,
   onOpenExternal,
   onLoadCookieJarStatus,
   onOpenBrowser,
@@ -220,7 +220,6 @@ function SettingsOverlayContent({
   const runtimeBusy = sessionRunning || settingsDraft.snapshot?.hasRunningTasks === true;
   const [tab, setTab] = useState<SettingsTab>("通用");
   const [memoryVisited, setMemoryVisited] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [message, setMessage] = useState<string>();
   const [dismissedLoadError, setDismissedLoadError] = useState<string>();
   const [closeGuardOpen, setCloseGuardOpen] = useState(false);
@@ -263,8 +262,6 @@ function SettingsOverlayContent({
   );
   const defaultModelAlias = settingsDraft.draft?.models.defaultModel?.alias
     ?? settingsDraft.snapshot?.models.defaultModel;
-  // 侧栏搜索就地过滤分页：命中分页名或关键词的项保留，其余隐藏。
-  const visibleTabs = settingsNav.filter((item) => matchesSettingsSearch(item.label, settingsTabKeywords[item.tab], searchQuery));
   const selectTab = (nextTab: SettingsTab): void => {
     if (nextTab === activeTab) return;
     activeTabRef.current = nextTab;
@@ -291,15 +288,16 @@ function SettingsOverlayContent({
   const visibleLoadError = settingsDraft.loadError && settingsDraft.loadError !== dismissedLoadError ? settingsDraft.loadError : undefined;
   const settingsToast = visibleLoadError ?? message;
   return (
-    <Dialog
-      aria-label="Biny 设置"
-      className="desktop-settings-dialog"
-      isOpen={open}
-      onOpenChange={(isOpen) => { if (!isOpen) requestCancel(); }}
-      padding={0}
-      purpose="info"
-      variant="fullscreen"
-    >
+    <ActivityRuntimeProvider active={activeTab === "活动记录" || activeTab === "权限"}>
+      <Dialog
+        aria-label="Biny 设置"
+        className="desktop-settings-dialog"
+        isOpen={open}
+        onOpenChange={(isOpen) => { if (!isOpen) requestCancel(); }}
+        padding={0}
+        purpose="info"
+        variant="fullscreen"
+      >
       <section className={`settings-modal is-full-page${extensionSettings ? " is-extension-settings" : ""}`}>
         <aside className="settings-tabs">
           <div className="settings-sidebar-strip">
@@ -308,24 +306,14 @@ function SettingsOverlayContent({
               <strong>设置</strong>
             </button>
           </div>
-          <div className="settings-search-box">
-            <Icon name="search" size={13} />
-            <input aria-label="搜索设置" onChange={(event) => setSearchQuery(event.target.value)} placeholder="搜索设置" type="text" value={searchQuery} />
-            {searchQuery ? (
-              <button aria-label="清除搜索" className="settings-search-clear" onClick={() => setSearchQuery("")} type="button">
-                <Icon name="close" size={12} />
-              </button>
-            ) : null}
-          </div>
           <nav aria-label="设置分类" className="settings-nav-list">
-            {visibleTabs.map((item) => (
+            {settingsNav.map((item) => (
               <button aria-current={activeTab === item.tab ? "page" : undefined} className={activeTab === item.tab ? "is-selected" : ""} key={item.tab} onClick={() => selectTab(item.tab)} type="button">
                 <span aria-hidden="true" className="settings-nav-icon"><Icon name={item.icon} size={18} /></span>
                 <span className="settings-nav-label">{item.label}</span>
                 {item.badge ? <em className="settings-nav-badge">{item.badge}</em> : null}
               </button>
             ))}
-            {!visibleTabs.length ? <p className="settings-nav-empty">—</p> : null}
           </nav>
         </aside>
         <main className={`settings-content${extensionSettings ? " is-extension-settings" : ""}`}>
@@ -459,6 +447,7 @@ function SettingsOverlayContent({
           {activeTab === "快速对话" ? <SettingsQuickChat /> : null}
           {memoryVisited ? <SettingsMemory
             models={settingsModels}
+            embeddingModels={settingsDraft.snapshot?.models.embeddingModels ?? []}
             hidden={activeTab !== "记忆"}
             workspaceAvailable={workspace !== undefined}
             onLoadDailyNote={onLoadDailyNote}
@@ -475,6 +464,11 @@ function SettingsOverlayContent({
             onSleepRuns={onSleepRuns}
             onPreviewSleep={onPreviewMemorySleep}
             onCancelSleep={onCancelMemorySleep}
+            onLoadEmbeddingStatus={onLoadMemoryEmbeddingStatus}
+            onDownloadEmbeddingModel={onDownloadMemoryEmbeddingModel}
+            onCancelEmbeddingDownload={onCancelMemoryEmbeddingDownload}
+            onRebuildEmbeddingIndex={onRebuildMemoryEmbeddingIndex}
+            onCancelEmbeddingRebuild={onCancelMemoryEmbeddingRebuild}
             onNotify={(nextMessage) => notifyForTab("记忆", nextMessage)}
             sessionRunning={runtimeBusy}
           /> : null}
@@ -517,7 +511,8 @@ function SettingsOverlayContent({
           onDiscard={() => { void discardAndClose(); }}
         />
       ) : null}
-    </Dialog>
+      </Dialog>
+    </ActivityRuntimeProvider>
   );
 }
 
@@ -2557,11 +2552,11 @@ function ConnectionTestResult({ result }: { result: DesktopModelConnectionTestRe
 }
 
 const webSearchProviderOptions: Array<{ value: DesktopWebSearchProvider; title: string; detail: string; envKeyName?: string; keyUrl?: string }> = [
-  { value: "anysearch", title: "AnySearch", detail: "支持匿名额度的聚合搜索，可选配置密钥提升额度", envKeyName: "ANYSEARCH_API_KEY" },
-  { value: "google", title: "Google", detail: "解析 Google 网页搜索结果；用下方浏览器登录后成功率更高" },
-  { value: "duckduckgo", title: "DuckDuckGo", detail: "免密钥，直接解析网页版搜索结果；偶尔会被反爬限制" },
-  { value: "tavily", title: "Tavily", detail: "面向 AI 应用的搜索 API，免费额度约每月 1000 次", envKeyName: "TAVILY_API_KEY", keyUrl: "https://app.tavily.com/" },
-  { value: "brave", title: "Brave Search", detail: "官方 Web Search API，需在控制台创建订阅密钥", envKeyName: "BRAVE_SEARCH_API_KEY", keyUrl: "https://api-dashboard.search.brave.com/" }
+  { value: "anysearch", title: "AnySearch", detail: "聚合搜索，配密钥可提升额度", envKeyName: "ANYSEARCH_API_KEY" },
+  { value: "google", title: "Google", detail: "用下方浏览器登录后使用" },
+  { value: "duckduckgo", title: "DuckDuckGo", detail: "偶尔被反爬限制" },
+  { value: "tavily", title: "Tavily", detail: "搜索 API，每月免费 1000 次", envKeyName: "TAVILY_API_KEY", keyUrl: "https://app.tavily.com/" },
+  { value: "brave", title: "Brave Search", detail: "官方搜索 API", envKeyName: "BRAVE_SEARCH_API_KEY", keyUrl: "https://api-dashboard.search.brave.com/" }
 ];
 
 /**
@@ -2668,7 +2663,7 @@ function SettingsWebSearch({ onNotify, onOpenExternal, onLoadCookieJarStatus, on
     <div className="settings-sections">
       <section id="web-search-provider" tabIndex={-1}>
         <h3>联网搜索</h3>
-        <SettingsSwitch checked={webSearch.enabled} detail="关闭后 Agent 将无法搜索公网信息" label="启用 web_search 工具" onChange={(enabled) => setWebSearch({ ...webSearch, enabled })} />
+        <SettingsSwitch checked={webSearch.enabled} label="启用 web_search 工具" onChange={(enabled) => setWebSearch({ ...webSearch, enabled })} />
       </section>
       <section>
         <h3>搜索服务</h3>
@@ -2709,13 +2704,13 @@ function SettingsWebSearch({ onNotify, onOpenExternal, onLoadCookieJarStatus, on
       <section>
         <h3>结果偏好</h3>
         <div className="setting-row">
-          <span><strong>返回结果数</strong><small>单次搜索最多返回的链接条数</small></span>
+          <span><strong>返回结果数</strong></span>
           <select className="web-search-select" onChange={(event) => setWebSearch({ ...webSearch, maxResults: Number(event.target.value) })} value={webSearch.maxResults}>
             {[...new Set([3, 5, 8, 10, webSearch.maxResults])].sort((a, b) => a - b).map((count) => <option key={count} value={count}>{count} 条</option>)}
           </select>
         </div>
         <div className="setting-row">
-          <span><strong>请求超时</strong><small>超过该时间未响应则终止本次搜索</small></span>
+          <span><strong>请求超时</strong></span>
           <select className="web-search-select" onChange={(event) => setWebSearch({ ...webSearch, timeoutMs: Number(event.target.value) })} value={webSearch.timeoutMs}>
             {[...new Set([5_000, 10_000, 20_000, 30_000, webSearch.timeoutMs])].sort((a, b) => a - b).map((duration) => <option key={duration} value={duration}>{duration / 1_000} 秒</option>)}
           </select>
@@ -2724,7 +2719,7 @@ function SettingsWebSearch({ onNotify, onOpenExternal, onLoadCookieJarStatus, on
       <section id="web-search-cookies" tabIndex={-1}>
         <h3>浏览器与 Cookie</h3>
         <div className="setting-row">
-          <span><strong>Google 设置</strong><small>在内嵌浏览器里完成同意、验证或登录，Google 搜索会自动带上对应 Cookie</small></span>
+          <span><strong>Google 设置</strong><small>登录后搜索自动带上 Cookie</small></span>
           <button className="ghost-button" disabled={cookieBusy || sessionRunning} onClick={() => void openEmbeddedBrowser("https://www.google.com/")} type="button">打开 Google</button>
         </div>
         <div className="setting-row">
@@ -2742,11 +2737,11 @@ function SettingsWebSearch({ onNotify, onOpenExternal, onLoadCookieJarStatus, on
           <button disabled={cookieBusy || sessionRunning} onClick={() => void runCookieOperation(onExportCookies, "Cookie 已导出")} type="button">导出 Cookie</button>
           <button className="ghost-button is-danger" disabled={cookieBusy || sessionRunning || !cookieJar?.total} onClick={() => void runCookieOperation(onClearCookies, "全部 Cookie 已清除")} type="button">清除全部</button>
         </div>
-        <p className="web-search-key-status">支持 Cookie-Editor JSON。Cookie 只会按域名、路径和 HTTPS 规则发送给匹配的网站。</p>
+        <p className="web-search-key-status">支持 Cookie-Editor JSON。</p>
       </section>
       <section>
         <h3>WebFetch 浏览器</h3>
-        <p className="web-search-key-status">打开任意网页后登录；该登录态会同步给 <code>web_fetch</code> 和 Google 搜索。</p>
+        <p className="web-search-key-status">登录状态会同步给 <code>web_fetch</code> 和 Google 搜索。</p>
         <div className="web-browser-url-row">
           <input
             autoCapitalize="none"

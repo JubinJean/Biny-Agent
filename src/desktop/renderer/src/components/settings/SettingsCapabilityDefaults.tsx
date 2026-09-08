@@ -3,10 +3,11 @@ import type { CapabilitySelectionMode } from "../../../../../agent/capabilitySel
 import type { DesktopChatParamsSettings } from "../../../../protocol.js";
 import { useSettingsDraft } from "./SettingsDraftContext.js";
 
-const selectionOptions: Array<{ value: CapabilitySelectionMode; label: string; detail: string }> = [
-  { value: "auto", label: "自动", detail: "沿用当前运行时的默认能力面，由模型按需使用。" },
-  { value: "all", label: "全部", detail: "向模型暴露当前已注册的全部能力。" },
-  { value: "none", label: "不调用", detail: "本回合不向模型提供这一类能力。" }
+// 三个选项含义自明（自动 / 全部 / 不调用），不再逐项解释。
+const selectionOptions: Array<{ value: CapabilitySelectionMode; label: string }> = [
+  { value: "auto", label: "自动" },
+  { value: "all", label: "全部" },
+  { value: "none", label: "不调用" }
 ];
 
 export function SettingsCapabilityDefaults(): React.JSX.Element {
@@ -19,7 +20,7 @@ export function SettingsCapabilityDefaults(): React.JSX.Element {
     <div className="settings-sections capability-default-settings">
       <section id="chat-capability-defaults" tabIndex={-1}>
         <div className="section-heading-row">
-          <div><h3>工具与 Skill</h3><p>设置每条新消息的默认能力范围；发送前可在输入框的“能力”菜单里临时自定义。</p></div>
+          <div><h3>工具与 Skill</h3><p>新消息默认暴露的能力范围，发送前可在输入框临时调整。</p></div>
           <span className="settings-scope-badge">全局</span>
         </div>
         <CapabilitySelectionField
@@ -55,8 +56,8 @@ function CapabilitySelectionField({ label, onChange, value }: {
             role="radio"
             type="button"
           >
-            <span className="capability-default-option-title"><span className={`radio${option.value === value ? " is-selected" : ""}`} />{option.label}</span>
-            <small>{option.detail}</small>
+            <span className={`radio${option.value === value ? " is-selected" : ""}`} />
+            <span className="capability-default-option-title">{option.label}</span>
           </button>
         ))}
       </div>

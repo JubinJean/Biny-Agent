@@ -65,19 +65,18 @@ export function SettingsQuickChat(): React.JSX.Element {
         <div className="quickchat-toggle-list">
           <SettingsSwitch
             checked={settings.autoHideOnBlur}
-            detail="开启后，Quick Chat 窗口在失去焦点时会自动隐藏"
             label="失焦时自动隐藏"
             onChange={(value) => update({ autoHideOnBlur: value })}
           />
           <SettingsSwitch
             checked={settings.injectScreenContext}
-            detail="发送时附带 QuickChat 唤起后读取的前台应用、窗口标题、浏览器地址和可访问文本，不读取活动记录缓存。"
+            detail="发送时附带前台应用、窗口标题和浏览器地址。"
             label="注入前台应用上下文"
             onChange={(value) => update({ injectScreenContext: value })}
           />
           <SettingsSwitch
             checked={settings.clickThrough}
-            detail="QuickChat 可见但忽略鼠标事件，悬浮在工作上方而不抢焦点。按 QuickChat 快捷键唤醒。"
+            detail="悬浮显示但不响应鼠标，用快捷键唤起。"
             label="以环境（点击穿透）模式启动"
             onChange={(value) => update({ clickThrough: value })}
           />

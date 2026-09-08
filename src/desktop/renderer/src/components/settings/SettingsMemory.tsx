@@ -1,10 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import type { ModelChoice } from "../../../../../llm/ModelManager.js";
+import { defaultEmbeddingModelRef, embeddingModelRefKey, type LocalEmbeddingModelId } from "../../../../../llm/embedding/types.js";
 import type {
+  DesktopEmbeddingModelDescriptor,
   DesktopMemoryEntriesPage,
   DesktopMemoryEntry,
   DesktopMemoryEntryInput,
   DesktopMemoryEntryPatch,
+  DesktopMemoryEmbeddingCancellationResult,
+  DesktopMemoryEmbeddingStatus,
   DesktopMemoryOriginFilter,
   DesktopMemorySearchMatch,
   DesktopMemoryStats,
@@ -12,12 +16,16 @@ import type {
   DesktopDailyMemoryNote
 } from "../../../../protocol.js";
 import type { MemorySleepRun } from "../../../../../agent/context/memoryTypes.js";
+import { catalogForConnection } from "../../providerCatalog.js";
 import { Icon } from "../Icon.js";
 import { SettingsSwitch } from "./SettingsSwitch.js";
 import { useSettingsDraft } from "./SettingsDraftContext.js";
+import { SettingsModelPicker } from "./SettingsModelPicker.js";
+import { modelPickerGroups, type SettingsModelPickerGroup } from "./settingsModelPickerData.js";
 
 interface SettingsMemoryProps {
   models: ModelChoice[];
+  embeddingModels: DesktopEmbeddingModelDescriptor[];
   hidden?: boolean;
   workspaceAvailable: boolean;
   sessionRunning: boolean;
@@ -35,14 +43,52 @@ interface SettingsMemoryProps {
   onPreviewSleep(): Promise<DesktopMemorySleepPreview>;
   onCancelSleep(): Promise<{ cancelled: boolean }>;
   onLoadDailyNote(date?: string): Promise<DesktopDailyMemoryNote>;
+  onLoadEmbeddingStatus(): Promise<DesktopMemoryEmbeddingStatus>;
+  onDownloadEmbeddingModel(model: LocalEmbeddingModelId): Promise<DesktopMemoryEmbeddingStatus>;
+  onCancelEmbeddingDownload(model: LocalEmbeddingModelId): Promise<DesktopMemoryEmbeddingCancellationResult>;
+  onRebuildEmbeddingIndex(): Promise<DesktopMemoryEmbeddingStatus>;
+  onCancelEmbeddingRebuild(): Promise<DesktopMemoryEmbeddingCancellationResult>;
   onNotify(message: string): void;
 }
 
 const PAGE_SIZE = 100;
 type MemoryFilter = "all";
 
+function rangeProgress(value: number, min: number, max: number): React.CSSProperties {
+  const percent = max === min ? 0 : ((value - min) / (max - min)) * 100;
+  return { "--range-progress": `${Math.min(100, Math.max(0, percent))}%` } as React.CSSProperties;
+}
+
+function embeddingPickerGroups(models: readonly DesktopEmbeddingModelDescriptor[]): SettingsModelPickerGroup[] {
+  const groups = new Map<string, SettingsModelPickerGroup>();
+  for (const model of models) {
+    const local = model.source === "local";
+    const providerAlias = model.ref.kind === "provider" ? model.ref.provider : "local";
+    const providerType = local ? "local" : model.providerType ?? providerAlias;
+    const catalog = !local && model.ref.kind === "provider"
+      ? catalogForConnection({ provider: model.ref.provider, providerType }, model.endpoint)
+      : undefined;
+    const groupKey = `${providerType}:${providerAlias}:${model.endpoint ?? ""}`;
+    const group = groups.get(groupKey) ?? {
+      key: groupKey,
+      label: local ? "本地模型" : catalog?.label ?? providerAlias,
+      iconTone: local ? "local" : catalog?.iconTone ?? providerType,
+      options: []
+    };
+    group.options.push({
+      value: embeddingModelRefKey(model.ref),
+      label: model.displayName,
+      secondary: `${model.ref.model}${model.available === false ? " · 未配置" : ""}`,
+      disabled: model.available === false
+    });
+    groups.set(groupKey, group);
+  }
+  return [...groups.values()];
+}
+
 export function SettingsMemory({
   models,
+  embeddingModels,
   hidden,
   workspaceAvailable,
   sessionRunning,
@@ -60,9 +106,14 @@ export function SettingsMemory({
   onPreviewSleep,
   onCancelSleep,
   onLoadDailyNote,
+  onLoadEmbeddingStatus,
+  onDownloadEmbeddingModel,
+  onCancelEmbeddingDownload,
+  onRebuildEmbeddingIndex,
+  onCancelEmbeddingRebuild,
   onNotify
 }: SettingsMemoryProps): React.JSX.Element {
-  const { draft, setMemory } = useSettingsDraft();
+  const { draft, setMemory, snapshot, dirtyCount } = useSettingsDraft();
   const filter: MemoryFilter = "all";
   const [includeArchived, setIncludeArchived] = useState(false);
   const [stats, setStats] = useState<DesktopMemoryStats>();
@@ -79,6 +130,19 @@ export function SettingsMemory({
   const [dailyNoteDate, setDailyNoteDate] = useState("today");
   const [dailyNote, setDailyNote] = useState<DesktopDailyMemoryNote>();
   const [dailyNoteLoading, setDailyNoteLoading] = useState(false);
+  const [embeddingStatus, setEmbeddingStatus] = useState<DesktopMemoryEmbeddingStatus>();
+  const [embeddingWorking, setEmbeddingWorking] = useState<"download" | "rebuild">();
+  const [embeddingError, setEmbeddingError] = useState<string>();
+
+  const refreshEmbeddingStatus = useCallback(async (): Promise<void> => {
+    if (!workspaceAvailable) return;
+    try {
+      setEmbeddingStatus(await onLoadEmbeddingStatus());
+      setEmbeddingError(undefined);
+    } catch (cause) {
+      setEmbeddingError(errorMessage(cause));
+    }
+  }, [onLoadEmbeddingStatus, workspaceAvailable]);
 
   const reload = useCallback(async (nextFilter: MemoryFilter = filter, nextIncludeArchived = includeArchived): Promise<void> => {
     if (!workspaceAvailable) return;
@@ -106,6 +170,66 @@ export function SettingsMemory({
   }, [filter, includeArchived, onLoadArchived, onLoadEntries, onLoadStats, onSleepRuns, onSleepStatus, workspaceAvailable]);
 
   useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => { void refreshEmbeddingStatus(); }, [refreshEmbeddingStatus]);
+  useEffect(() => {
+    if (!embeddingWorking || !workspaceAvailable) return;
+    const timer = window.setInterval(() => {
+      void onLoadEmbeddingStatus().then(setEmbeddingStatus).catch(() => undefined);
+    }, 750);
+    return () => window.clearInterval(timer);
+  }, [embeddingWorking, onLoadEmbeddingStatus, workspaceAvailable]);
+
+  const downloadEmbedding = async (model: LocalEmbeddingModelId): Promise<void> => {
+    if (embeddingWorking) return;
+    setEmbeddingWorking("download");
+    try {
+      setEmbeddingStatus(await onDownloadEmbeddingModel(model));
+      setEmbeddingError(undefined);
+      onNotify("Embedding 模型已下载");
+    } catch (cause) {
+      setEmbeddingError(errorMessage(cause));
+    } finally {
+      setEmbeddingWorking(undefined);
+    }
+  };
+
+  const cancelEmbeddingDownload = async (model: LocalEmbeddingModelId): Promise<void> => {
+    try {
+      const result = await onCancelEmbeddingDownload(model);
+      setEmbeddingStatus(result.status);
+      onNotify(result.cancelled ? "已取消 Embedding 模型下载" : "当前没有正在进行的下载");
+    } catch (cause) {
+      setEmbeddingError(errorMessage(cause));
+    } finally {
+      setEmbeddingWorking(undefined);
+    }
+  };
+
+  const rebuildEmbedding = async (): Promise<void> => {
+    if (embeddingWorking || dirtyCount > 0) return;
+    setEmbeddingWorking("rebuild");
+    try {
+      setEmbeddingStatus(await onRebuildEmbeddingIndex());
+      setEmbeddingError(undefined);
+      onNotify("记忆 Embedding 索引已重建");
+    } catch (cause) {
+      setEmbeddingError(errorMessage(cause));
+    } finally {
+      setEmbeddingWorking(undefined);
+    }
+  };
+
+  const cancelEmbeddingRebuild = async (): Promise<void> => {
+    try {
+      const result = await onCancelEmbeddingRebuild();
+      setEmbeddingStatus(result.status);
+      onNotify(result.cancelled ? "已取消 Embedding 索引重建" : "当前没有正在进行的重建");
+    } catch (cause) {
+      setEmbeddingError(errorMessage(cause));
+    } finally {
+      setEmbeddingWorking(undefined);
+    }
+  };
 
   const search = async (): Promise<void> => {
     const value = query.trim();
@@ -262,6 +386,69 @@ export function SettingsMemory({
   if (!workspaceAvailable) return <MemoryState title="请先选择项目" detail="打开项目后即可查看和管理记忆。" />;
   if (!draft) return <MemoryState title="正在加载记忆…" />;
   const policy = draft.memory;
+  // 总开关关闭时配置区不隐藏，仅整体变暗并禁用内部控件，让用户看到可恢复的完整配置。
+  const memoryDisabled = !policy.enabled;
+  const selectedEmbeddingModel = policy.embeddingModel ?? defaultEmbeddingModelRef;
+  const selectedEmbeddingKey = embeddingModelRefKey(selectedEmbeddingModel);
+  // 主进程热重载前可能仍返回历史本地模型；renderer 也按当前协议过滤一次，避免旧进程把
+  // 已移除的模型重新暴露给用户。云端 provider 模型不在这里裁剪。
+  const availableEmbeddingModels = (embeddingStatus?.models.length ? embeddingStatus.models : embeddingModels)
+    .filter((model) => model.source !== "local" || (model.ref.kind === "local" && model.ref.model === defaultEmbeddingModelRef.model));
+  const selectedEmbeddingDescriptor = availableEmbeddingModels.find((model) => embeddingModelRefKey(model.ref) === selectedEmbeddingKey);
+  const selectedLocalStatus = selectedEmbeddingModel.kind === "local"
+    ? embeddingStatus?.localModels.find((model) => model.descriptor.ref.kind === "local" && model.descriptor.ref.model === selectedEmbeddingModel.model)
+    : undefined;
+  const selectedInstalled = selectedEmbeddingModel.kind === "provider"
+    ? selectedEmbeddingDescriptor?.available === true
+    : selectedLocalStatus?.installed ?? selectedEmbeddingDescriptor?.installed === true;
+  const embeddingOperation = embeddingStatus?.operation;
+  const downloadingSelected = embeddingWorking === "download"
+    || (embeddingOperation?.kind === "download" && embeddingOperation.state === "running" && embeddingOperation.model === selectedEmbeddingModel.model);
+  const rebuilding = embeddingWorking === "rebuild"
+    || (embeddingOperation?.kind === "rebuild" && embeddingOperation.state === "running");
+  const modelDraftChanged = snapshot?.memory.embeddingModel !== undefined
+    && embeddingModelRefKey(snapshot.memory.embeddingModel) !== selectedEmbeddingKey;
+  const canRebuild = !modelDraftChanged && dirtyCount === 0 && (embeddingStatus?.needsRebuild === true || (embeddingStatus?.pendingEntries ?? 0) > 0);
+  const embeddingGroups = embeddingPickerGroups(availableEmbeddingModels);
+  if (!availableEmbeddingModels.some((model) => embeddingModelRefKey(model.ref) === selectedEmbeddingKey)) {
+    embeddingGroups.unshift({
+      key: "current-embedding-model",
+      label: "当前配置",
+      iconTone: selectedEmbeddingModel.kind === "local" ? "local" : selectedEmbeddingModel.provider,
+      options: [{
+        value: selectedEmbeddingKey,
+        label: selectedEmbeddingModel.kind === "local" ? "Multilingual E5 Small" : selectedEmbeddingModel.model,
+        secondary: selectedEmbeddingModel.kind === "local" ? selectedEmbeddingModel.model : `${selectedEmbeddingModel.provider} · 当前配置`
+      }]
+    });
+  }
+  const selectEmbeddingModel = (model: DesktopEmbeddingModelDescriptor): void => {
+    if (model.available === false) {
+      onNotify("这个云端 Embedding 模型当前不可用，请先配置对应服务商凭据。");
+      return;
+    }
+    if (model.ref.kind === "provider") {
+      const endpointHash = model.privacyEndpointHash;
+      if (!endpointHash) {
+        onNotify("这个云端 Embedding 端点缺少隐私身份，无法启用。");
+        return;
+      }
+      const hasConsent = Object.values(policy.cloudEmbeddingConsents).some((consent) => consent.endpointHash === endpointHash);
+      if (!hasConsent && !window.confirm(`记忆内容将发送到 ${model.endpoint ?? model.ref.provider} 进行语义检索。是否继续？`)) return;
+      setMemory({
+        ...policy,
+        embeddingModel: model.ref,
+        cloudEmbeddingConsents: hasConsent
+          ? policy.cloudEmbeddingConsents
+          : {
+              ...policy.cloudEmbeddingConsents,
+              [`${model.ref.provider}@${endpointHash}`]: { endpointHash, confirmedAt: new Date().toISOString() }
+            }
+      });
+      return;
+    }
+    setMemory({ ...policy, embeddingModel: model.ref });
+  };
 
   return (
     <div className="settings-sections activity-memory-settings" hidden={hidden}>
@@ -278,55 +465,117 @@ export function SettingsMemory({
         />
       </section>
 
-      {policy.enabled ? (
-        <section className="activity-memory-config" id="memory-config" tabIndex={-1}>
+      <section aria-disabled={memoryDisabled} className={`activity-memory-config${memoryDisabled ? " is-disabled" : ""}`} id="memory-config" tabIndex={-1}>
           <SettingsSwitch
             checked={policy.useMemories}
             detail="在对话上下文中自动检索相关记忆"
+            disabled={memoryDisabled}
             label="使用记忆"
             onChange={(useMemories) => setMemory({ ...policy, useMemories })}
           />
           <SettingsSwitch
             checked={policy.generateMemories}
             detail="从对话中自动提取重要信息并保存为新的记忆"
+            disabled={memoryDisabled}
             label="自动创建记忆"
             onChange={(generateMemories) => setMemory({ ...policy, generateMemories })}
           />
           <SettingsSwitch
             checked={policy.queryRewrite}
-            detail="在搜索记忆前，用记忆工具模型优化对话式查询；失败时使用原问题。"
+            detail="搜索前先用工具模型改写查询。"
+            disabled={memoryDisabled}
             label="查询改写"
             onChange={(queryRewrite) => setMemory({ ...policy, queryRewrite })}
           />
+          <section className="activity-memory-embedding" aria-labelledby="memory-embedding-heading">
+            <div className="activity-memory-embedding-heading">
+              <div>
+                <h4 id="memory-embedding-heading">语义记忆模型</h4>
+                <p>切换模型后需保存设置并重建索引。</p>
+              </div>
+              <span className={selectedInstalled ? "activity-memory-status is-ready" : "activity-memory-status"}>
+                {selectedInstalled ? "可用" : "未下载"}
+              </span>
+            </div>
+            <div className="activity-memory-model">
+              <span><strong>Embedding 模型</strong><small>本地模型不上传记忆内容。</small></span>
+              <SettingsModelPicker
+                ariaLabel="Embedding 模型"
+                disabled={memoryDisabled}
+                groups={embeddingGroups}
+                onChange={(value) => {
+                  if (!value) return;
+                  const selected = availableEmbeddingModels.find((model) => embeddingModelRefKey(model.ref) === value);
+                  if (selected) selectEmbeddingModel(selected);
+                }}
+                placeholder="选择 Embedding 模型"
+                value={selectedEmbeddingKey}
+              />
+            </div>
+            <div className="activity-memory-embedding-meta">
+              <span>{selectedEmbeddingDescriptor?.dimensions ?? "?"} 维</span>
+              <span>{selectedEmbeddingModel.kind === "provider" ? "云端" : "本地"}</span>
+              {embeddingStatus ? <span>索引 {embeddingStatus.indexedEntries}/{embeddingStatus.totalEntries}</span> : <span>状态读取中…</span>}
+            </div>
+            {embeddingOperation?.kind === "download" && embeddingOperation.progress?.progress !== undefined ? (
+              <div className="activity-memory-embedding-progress" role="status">
+                下载进度 {Math.round(embeddingOperation.progress.progress * 100)}%
+              </div>
+            ) : null}
+            {embeddingStatus?.degradedReason ? <small className="activity-memory-embedding-hint">{embeddingStatus.degradedReason}</small> : null}
+            {embeddingError ? <small className="settings-effective-hint is-blocked">{embeddingError}</small> : null}
+            <div className="activity-memory-embedding-actions">
+              {selectedEmbeddingModel.kind === "local" && !selectedInstalled ? (
+                downloadingSelected ? (
+                  <button className="ghost-button is-danger" onClick={() => { void cancelEmbeddingDownload(selectedEmbeddingModel.model); }} type="button">取消下载</button>
+                ) : (
+                  <button className="ghost-button" disabled={memoryDisabled || embeddingWorking !== undefined || sessionRunning} onClick={() => { void downloadEmbedding(selectedEmbeddingModel.model); }} type="button">下载模型</button>
+                )
+              ) : null}
+              {rebuilding ? (
+                <button className="ghost-button is-danger" onClick={() => { void cancelEmbeddingRebuild(); }} type="button">取消重建</button>
+              ) : (
+                <button className="ghost-button" disabled={memoryDisabled || !canRebuild || embeddingWorking !== undefined || sessionRunning} onClick={() => { void rebuildEmbedding(); }} type="button">重建索引</button>
+              )}
+              <button aria-label="刷新 Embedding 状态" className="icon-button" disabled={memoryDisabled || embeddingWorking !== undefined} onClick={() => { void refreshEmbeddingStatus(); }} type="button"><Icon name="refresh" size={13} /></button>
+            </div>
+            {dirtyCount > 0 && modelDraftChanged ? <small className="activity-memory-embedding-hint">模型选择还在草稿中，请先点击设置页底部的保存。</small> : null}
+          </section>
           <label className="activity-memory-limit">
-            <span><strong>最大检索记忆数：{policy.maxRecalled}</strong><small>注入当前对话上下文的相关记忆数量（1–20）</small></span>
-            <input aria-label="最大检索记忆数" type="range" min={1} max={20} value={policy.maxRecalled} onChange={(event) => setMemory({ ...policy, maxRecalled: Number(event.target.value) })} />
+            <span className="activity-memory-limit-heading"><strong>最大检索记忆数</strong><output>{policy.maxRecalled} 条</output></span>
+            <small>注入当前对话上下文的相关记忆数量（1–20）</small>
+            <input aria-label="最大检索记忆数" disabled={memoryDisabled} style={rangeProgress(policy.maxRecalled, 1, 20)} type="range" min={1} max={20} value={policy.maxRecalled} onChange={(event) => setMemory({ ...policy, maxRecalled: Number(event.target.value) })} />
           </label>
           <label className="activity-memory-limit">
-            <span><strong>相似度阈值</strong><small>越高越严格；只有足够相似的记忆才会被检索。</small></span>
-            <input aria-label="相似度阈值" type="range" min={0} max={100} value={Math.round(policy.similarityThreshold * 100)} onChange={(event) => setMemory({ ...policy, similarityThreshold: Number(event.target.value) / 100 })} />
+            <span className="activity-memory-limit-heading"><strong>相似度阈值</strong><output>{Math.round(policy.similarityThreshold * 100)}%</output></span>
+            <small>越高越严格。</small>
+            <input aria-label="相似度阈值" disabled={memoryDisabled} style={rangeProgress(policy.similarityThreshold * 100, 0, 100)} type="range" min={0} max={100} value={Math.round(policy.similarityThreshold * 100)} onChange={(event) => setMemory({ ...policy, similarityThreshold: Number(event.target.value) / 100 })} />
           </label>
-          <label className="activity-memory-model">
+          <div className="activity-memory-model">
             <span><strong>记忆工具模型</strong><small>为空时使用通用工具模型。</small></span>
-            <select aria-label="记忆工具模型" value={policy.memoryModel ?? ""} onChange={(event) => setMemory({ ...policy, memoryModel: event.target.value || undefined })}>
-              <option value="">跟随通用工具模型</option>
-              {models.map((model) => <option key={model.alias} value={model.alias}>{model.displayName}</option>)}
-            </select>
-          </label>
-          <label className="activity-memory-model"><span><strong>记忆睡眠</strong><small>每天在设定时间整理重复和相似的记忆。</small></span><input type="time" value={policy.sleepTime} onChange={(event) => setMemory({ ...policy, sleepTime: event.target.value })} /></label>
-          <label className="activity-memory-limit"><span><strong>归档保留天数：{policy.archiveRetentionDays}</strong><small>归档记忆保留时间，之后仍可手动清理。</small></span><input aria-label="归档保留天数" type="range" min={1} max={3650} value={policy.archiveRetentionDays} onChange={(event) => setMemory({ ...policy, archiveRetentionDays: Number(event.target.value) })} /></label>
-          <label className="activity-memory-limit"><span><strong>临时记忆 TTL：{policy.temporaryTtl} 天</strong><small>超过这段时间没有访问的临时记忆会进入归档。</small></span><input aria-label="临时记忆 TTL" type="range" min={1} max={3650} value={policy.temporaryTtl} onChange={(event) => setMemory({ ...policy, temporaryTtl: Number(event.target.value) })} /></label>
-          <SettingsSwitch checked={policy.useLlm} detail="让记忆工具模型判断模糊的相似记忆是否合并。" label="使用 LLM 合并相似记忆" onChange={(useLlm) => setMemory({ ...policy, useLlm })} />
-          <label className="activity-memory-limit"><span><strong>LLM 批量大小：{policy.llmBatchSize}</strong><small>每次整理最多发送给模型的记忆数量。</small></span><input aria-label="LLM 批量大小" type="range" min={1} max={100} value={policy.llmBatchSize} onChange={(event) => setMemory({ ...policy, llmBatchSize: Number(event.target.value) })} /></label>
-          <SettingsSwitch checked={policy.sleepEnabled} detail="机器离线时，下一次启动后会安静地补做整理。" label="启用每日记忆整理" onChange={(sleepEnabled) => setMemory({ ...policy, sleepEnabled })} />
-        </section>
-      ) : null}
+            <SettingsModelPicker
+              ariaLabel="记忆工具模型"
+              disabled={memoryDisabled}
+              groups={modelPickerGroups(models)}
+              inheritLabel="跟随通用工具模型"
+              onChange={(memoryModel) => setMemory({ ...policy, memoryModel })}
+              placeholder="跟随通用工具模型"
+              value={policy.memoryModel}
+            />
+          </div>
+          <label className="activity-memory-model"><span><strong>记忆睡眠</strong><small>每天在设定时间整理重复和相似的记忆。</small></span><input disabled={memoryDisabled} type="time" value={policy.sleepTime} onChange={(event) => setMemory({ ...policy, sleepTime: event.target.value })} /></label>
+          <label className="activity-memory-limit"><span className="activity-memory-limit-heading"><strong>归档保留天数</strong><output>{policy.archiveRetentionDays} 天</output></span><small>归档记忆保留时间。</small><input aria-label="归档保留天数" disabled={memoryDisabled} style={rangeProgress(policy.archiveRetentionDays, 1, 3650)} type="range" min={1} max={3650} value={policy.archiveRetentionDays} onChange={(event) => setMemory({ ...policy, archiveRetentionDays: Number(event.target.value) })} /></label>
+          <label className="activity-memory-limit"><span className="activity-memory-limit-heading"><strong>临时记忆 TTL</strong><output>{policy.temporaryTtl} 天</output></span><small>超过这段时间没有访问的临时记忆会进入归档。</small><input aria-label="临时记忆 TTL" disabled={memoryDisabled} style={rangeProgress(policy.temporaryTtl, 1, 3650)} type="range" min={1} max={3650} value={policy.temporaryTtl} onChange={(event) => setMemory({ ...policy, temporaryTtl: Number(event.target.value) })} /></label>
+          <SettingsSwitch checked={policy.useLlm} detail="让记忆工具模型判断模糊的相似记忆是否合并。" disabled={memoryDisabled} label="使用 LLM 合并相似记忆" onChange={(useLlm) => setMemory({ ...policy, useLlm })} />
+          <label className="activity-memory-limit"><span className="activity-memory-limit-heading"><strong>LLM 批量大小</strong><output>{policy.llmBatchSize} 条</output></span><small>每次整理最多发送给模型的记忆数量。</small><input aria-label="LLM 批量大小" disabled={memoryDisabled} style={rangeProgress(policy.llmBatchSize, 1, 100)} type="range" min={1} max={100} value={policy.llmBatchSize} onChange={(event) => setMemory({ ...policy, llmBatchSize: Number(event.target.value) })} /></label>
+          <SettingsSwitch checked={policy.sleepEnabled} detail="机器离线时，下一次启动后会安静地补做整理。" disabled={memoryDisabled} label="启用每日记忆整理" onChange={(sleepEnabled) => setMemory({ ...policy, sleepEnabled })} />
+      </section>
 
       <section className="activity-memory-diary" id="memory-daily-diary" tabIndex={-1}>
         <div className="activity-memory-diary-heading">
           <div>
             <h3>每日工作日志</h3>
-            <p>查看聊天摘要与活动记录；它与 durable memory 独立保存。</p>
+            <p>按天查看聊天与活动摘要。</p>
           </div>
           <div className="activity-memory-diary-actions">
             <input aria-label="每日工作日志日期" onChange={(event) => setDailyNoteDate(event.target.value)} placeholder="today、yesterday 或 2026-09-04" value={dailyNoteDate} />

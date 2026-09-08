@@ -385,13 +385,13 @@ const SkillsSettingsContent = memo(function SkillsSettingsContent({
       <section className="settings-skill-auto-card" aria-labelledby="settings-skill-auto-title">
         <div>
           <h3 id="settings-skill-auto-title">自动技能提取</h3>
-          <p>仅在成功根回合、达到工具调用阈值且不含外部上下文时后台生成草稿。</p>
+          <p>自动从对话中提取技能草稿，审核后安装。</p>
         </div>
         <button aria-checked={extraction.enabled} aria-label="切换自动技能提取" className={`settings-extension-switch${extraction.enabled ? " is-on" : ""}`} onClick={() => onExtractionChange(!extraction.enabled, extraction.minToolCalls)} role="switch" type="button"><span /></button>
         <label className="settings-skill-threshold">
           <div className="settings-skill-threshold-label"><strong>最少工具调用次数</strong><output>{extraction.minToolCalls}</output></div>
-          <input aria-label="最少工具调用次数" max={64} min={1} onChange={(event) => onExtractionChange(extraction.enabled, Number(event.target.value))} type="range" value={extraction.minToolCalls} />
-          <p>工具调用次数低于此值的对话将被跳过。</p>
+          <input aria-label="最少工具调用次数" max={64} min={1} onChange={(event) => onExtractionChange(extraction.enabled, Number(event.target.value))} style={{ "--range-progress": `${((extraction.minToolCalls - 1) / 63) * 100}%` } as React.CSSProperties} type="range" value={extraction.minToolCalls} />
+          <p>达到该次数的对话才会被提取。</p>
         </label>
       </section>
 
@@ -550,7 +550,7 @@ const PluginsSettingsContent = memo(function PluginsSettingsContent({ busyPlugin
     </div>
     <label className="settings-extension-search settings-plugin-search"><Icon name="search" size={18} /><input aria-label="搜索插件" onChange={(event) => onQuery(event.target.value)} placeholder="搜索插件…" value={query} />{query ? <button aria-label="清空搜索" onClick={() => onQuery("")} type="button"><Icon name="close" size={14} /></button> : null}</label>
     {registry.loadingError ? <div className="settings-extension-notice is-warning">应用市场刷新失败：{registry.loadingError}{registry.stale ? "，当前显示上次缓存。" : "，当前没有可用缓存。"}</div> : null}
-    <div className="settings-extension-notice">Plugin 会在主进程加载 JavaScript，当前没有沙箱隔离；只安装你信任的官方包。</div>
+    <div className="settings-extension-notice">Plugin 无沙箱隔离，只安装你信任的来源。</div>
     {pluginTab === "market" ? <section className="settings-extension-scroll" aria-label="Plugin 应用市场">{loading && !market.length ? <ExtensionSettingsLoading /> : !market.length ? <ExtensionSettingsEmpty icon="puzzle" title="没有匹配的 Plugin" detail="刷新市场或换一个搜索词。" /> : market.map((plugin) => <PluginMarketCard busy={busyPluginId === plugin.id} key={plugin.id} onInstall={onInstall} plugin={plugin} />)}</section> : <section className="settings-plugin-list" aria-label="已安装 Plugin">{loading && !plugins.length ? <ExtensionSettingsLoading /> : !plugins.length ? <ExtensionSettingsEmpty icon="puzzle" title="还没有安装 Plugin" detail="从官方应用市场安装后，默认保持关闭。" /> : plugins.map((plugin) => <PluginSettingsCard busy={busyPluginId === plugin.path.split("/").at(-1)} key={plugin.id} onSetEnabled={onSetEnabled} onUninstall={onUninstall} plugin={plugin} />)}</section>}
   </>;
 });

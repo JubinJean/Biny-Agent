@@ -6,7 +6,8 @@
  */
 interface SettingsSwitchProps {
   checked: boolean;
-  detail: string;
+  /** 说明文案可省略：开关含义已由 label 自明时不再重复解释。 */
+  detail?: string;
   disabled?: boolean;
   label: string;
   onChange(value: boolean): void;
@@ -22,7 +23,7 @@ export function SettingsSwitch({ checked, detail, disabled = false, label, onCha
       role="switch"
       type="button"
     >
-      <span className="settings-switch-copy"><strong>{label}</strong><small>{detail}</small></span>
+      <span className="settings-switch-copy"><strong>{label}</strong>{detail ? <small>{detail}</small> : null}</span>
       <span aria-hidden="true" className="settings-switch"><span className="settings-switch-thumb" /></span>
     </button>
   );

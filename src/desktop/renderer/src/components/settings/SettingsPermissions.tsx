@@ -1,17 +1,17 @@
 /** Agent 权限策略设置：控制工具执行前的批准边界，不改变工具/Skill 的可见性选择。 */
-import { useEffect, useState } from "react";
-import type { ActivityRuntimeSnapshot } from "../../../../../activity/types.js";
+import { useState } from "react";
 import type { PermissionMode } from "../../../../../permission/PermissionManager.js";
 import type { DesktopPermissionSettings } from "../../../../protocol.js";
 import { Icon, type IconName } from "../Icon.js";
 import { SettingsSwitch } from "./SettingsSwitch.js";
 import { useSettingsDraft } from "./SettingsDraftContext.js";
+import { useActivityRuntime } from "./ActivityRuntimeContext.js";
 
 const permissionOptions: Array<{ mode: PermissionMode; label: string; detail: string }> = [
-  { mode: "ask", label: "每次询问", detail: "工具需要执行时逐次请求批准。" },
-  { mode: "read-only", label: "只读", detail: "允许读取，写入和执行类操作仍会被拦截。" },
-  { mode: "auto", label: "自动批准", detail: "按工具白名单自动批准，其余操作询问。" },
-  { mode: "full-access", label: "完全访问", detail: "允许 Agent 自主执行工具；高风险操作仍可强制询问。" }
+  { mode: "ask", label: "每次询问", detail: "每次执行工具前询问。" },
+  { mode: "read-only", label: "只读", detail: "允许读取，写入和执行会拦截。" },
+  { mode: "auto", label: "自动批准", detail: "白名单内自动批准，其余询问。" },
+  { mode: "full-access", label: "完全访问", detail: "工具直接执行，不再询问。" }
 ];
 
 export function SettingsPermissions(): React.JSX.Element {
@@ -25,7 +25,7 @@ export function SettingsPermissions(): React.JSX.Element {
     <div className="settings-sections agent-permission-settings">
       <section id="agent-permission-mode" tabIndex={-1}>
         <div className="section-heading-row">
-          <div><h3>Agent 权限模式</h3><p>这是工具执行的批准策略，对当前安装里的所有会话生效。</p></div>
+          <div><h3>Agent 权限模式</h3><p>工具执行前的批准策略。</p></div>
           <span className="settings-scope-badge">全局</span>
         </div>
         <div aria-label="Agent 权限模式" className="agent-permission-options" role="radiogroup">
@@ -47,10 +47,9 @@ export function SettingsPermissions(): React.JSX.Element {
 
       <section id="agent-permission-safety" tabIndex={-1}>
         <h3>安全边界</h3>
-        <p>关键操作会跳过自动批准白名单，始终回到确认流程。</p>
         <SettingsSwitch
           checked={permission.criticalAlwaysAsk}
-          detail="例如删除、覆盖或高影响外部操作；开启后即使处于自动或完全访问模式也会询问。"
+          detail="删除、覆盖等高影响操作始终询问。"
           label="关键操作始终询问"
           onChange={(criticalAlwaysAsk) => update({ criticalAlwaysAsk })}
         />
@@ -58,7 +57,6 @@ export function SettingsPermissions(): React.JSX.Element {
 
       <section id="agent-permission-scope" tabIndex={-1}>
         <h3>当前范围</h3>
-        <p>工具白名单、允许路径和拒绝路径仍由运行时配置管理；本页不会把它们改写成能力选择。</p>
         <div className="permission-scope-summary">
           <span><strong>自动批准工具</strong><small>{permission.allowTools.length ? `${String(permission.allowTools.length)} 个` : "未指定"}</small></span>
           <span><strong>允许路径</strong><small>{permission.allowPaths.length ? `${String(permission.allowPaths.length)} 条` : "未指定"}</small></span>
@@ -72,30 +70,30 @@ export function SettingsPermissions(): React.JSX.Element {
 }
 
 function SystemPermissions(): React.JSX.Element {
-  const [runtime, setRuntime] = useState<ActivityRuntimeSnapshot>();
-
-  useEffect(() => {
-    let active = true;
-    void window.biny.activitySnapshot().then((next) => {
-      if (active) setRuntime(next);
-    }).catch(() => undefined);
-    const unsubscribe = window.biny.onActivityEvent((next) => {
-      if (active) setRuntime(next);
-    });
-    return () => {
-      active = false;
-      unsubscribe();
-    };
-  }, []);
+  const { runtime, refresh: refreshRuntime } = useActivityRuntime();
+  const [requestingPane, setRequestingPane] = useState<"screen-recording" | "accessibility">();
+  const [requestError, setRequestError] = useState<string>();
 
   const refresh = (): void => {
-    void window.biny.activitySnapshot().then(setRuntime).catch(() => undefined);
+    void refreshRuntime().catch(() => undefined);
   };
-  const open = (pane: "screen-recording" | "accessibility"): void => {
-    void window.biny.requestActivityPermission(pane)
-      .catch(() => undefined)
-      .then(() => window.biny.openSystemSettings(pane))
-      .catch(() => undefined);
+  const open = async (pane: "screen-recording" | "accessibility"): Promise<void> => {
+    if (requestingPane !== undefined) return;
+    setRequestingPane(pane);
+    setRequestError(undefined);
+    let failureMessage: string | undefined;
+    try {
+      await window.biny.requestActivityPermission(pane);
+    } catch (error) {
+      failureMessage = error instanceof Error ? error.message : "无法发起系统权限申请，请稍后重试。";
+    }
+    try {
+      await window.biny.openSystemSettings(pane);
+    } catch (error) {
+      failureMessage = error instanceof Error ? error.message : "无法打开 macOS 系统设置，请手动打开“隐私与安全性”。";
+    }
+    if (failureMessage) setRequestError(failureMessage);
+    setRequestingPane(undefined);
   };
   const permissions = [
     { detail: "隐私与安全性 → 屏幕录制", granted: runtime?.screenRecordingGranted, label: "屏幕录制", pane: "screen-recording" as const },
@@ -108,15 +106,16 @@ function SystemPermissions(): React.JSX.Element {
         <div className="activity-section-title"><Icon name="shield" size={15} /><h3>macOS 系统权限</h3></div>
         <button aria-label="刷新 macOS 系统权限状态" className="activity-icon-button" onClick={refresh} title="刷新权限状态" type="button"><Icon name="refresh" size={14} /></button>
       </div>
-      <p className="activity-section-description">活动记录和屏幕上下文功能依赖这些系统授权；点击后会打开 macOS“隐私与安全性”。</p>
+      <p className="activity-section-description">活动记录等功能依赖这些系统授权。</p>
+      {requestError ? <p className="activity-feedback" role="alert">{requestError}</p> : null}
       <div className="activity-permission-list">
-        {permissions.map((permission) => <SystemPermissionRow key={permission.pane} {...permission} onOpen={() => open(permission.pane)} />)}
+        {permissions.map((permission) => <SystemPermissionRow key={permission.pane} {...permission} onOpen={() => void open(permission.pane)} requesting={requestingPane === permission.pane} />)}
       </div>
     </section>
   );
 }
 
-function SystemPermissionRow({ detail, granted, label, onOpen }: { detail: string; granted?: boolean; label: string; onOpen(): void }): React.JSX.Element {
+function SystemPermissionRow({ detail, granted, label, onOpen, requesting }: { detail: string; granted?: boolean; label: string; onOpen(): void; requesting?: boolean }): React.JSX.Element {
   const status = granted === undefined ? "检查中" : granted ? "已授权" : "需授权";
   const stateClass = status === "已授权" ? "is-granted" : status === "需授权" ? "is-needed" : "";
   const stateIcon: IconName = status === "已授权" ? "check" : status === "需授权" ? "warning" : "shield";
@@ -126,7 +125,7 @@ function SystemPermissionRow({ detail, granted, label, onOpen }: { detail: strin
         <span className="activity-permission-state"><Icon name={stateIcon} size={11} /></span>
         <span className="activity-permission-text"><strong>{label}<em>{status}</em></strong><small>{detail}</small></span>
       </div>
-      {granted === false ? <button aria-label={`在 macOS 系统设置中管理${label}权限`} className="activity-secondary-button" onClick={onOpen} type="button"><Icon name="external" size={13} />打开系统设置</button> : null}
+      {granted === false ? <button aria-busy={requesting} aria-label={`申请并在 macOS 系统设置中管理${label}权限`} className="activity-secondary-button" disabled={requesting} onClick={onOpen} type="button"><Icon name="external" size={13} />{requesting ? "申请中…" : "申请并打开设置"}</button> : null}
     </div>
   );
 }

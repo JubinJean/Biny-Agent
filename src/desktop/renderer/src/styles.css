@@ -776,13 +776,14 @@ button:disabled { opacity: 0.42; }
 .capability-default-field { padding: 13px 0; border-top: 1px solid var(--border); }
 .capability-default-field > strong { display: block; color: var(--text); font-size: calc(12px * var(--font-scale)); font-weight: 560; }
 .capability-default-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 9px; margin-top: 9px; }
+/* 选项含义自明（自动/全部/不调用），卡片只保留单选圆点 + 标题的紧凑形态。 */
 .capability-default-option {
   display: flex;
-  min-height: 82px;
-  flex-direction: column;
-  align-items: flex-start;
+  min-height: 38px;
+  flex-direction: row;
+  align-items: center;
   gap: 7px;
-  padding: 11px;
+  padding: 8px 11px;
   border: 1px solid var(--border);
   border-radius: 10px;
   color: var(--text-secondary);
@@ -793,7 +794,6 @@ button:disabled { opacity: 0.42; }
 .capability-default-option:hover:not(:disabled):not(.is-selected) { border-color: var(--border-strong); background: var(--surface-hover); }
 .capability-default-option.is-selected { border-color: color-mix(in srgb, var(--accent) 48%, var(--border)); background: color-mix(in srgb, var(--accent) 8%, var(--surface-soft)); box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 10%, transparent); }
 .capability-default-option-title { display: inline-flex; align-items: center; gap: 7px; color: var(--text); font-size: calc(12px * var(--font-scale)); font-weight: 600; }
-.capability-default-option small { color: var(--text-tertiary); font-size: calc(10.5px * var(--font-scale)); line-height: 1.45; }
 .agent-permission-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 12px; }
 .agent-permission-option { display: flex; min-width: 0; align-items: flex-start; gap: 9px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text-secondary); background: var(--surface-soft); text-align: left; transition: border-color 150ms ease, background 150ms ease, box-shadow 150ms ease; }
 .agent-permission-option:hover:not(:disabled):not(.is-selected) { border-color: var(--border-strong); background: var(--surface-hover); }
