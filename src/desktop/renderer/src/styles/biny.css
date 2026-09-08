@@ -115,8 +115,9 @@
   /* 悬停用半透明深色，避免浅色模式堆叠多层近似白色的实底。 */
   --biny-light-surface-hover: rgba(0, 0, 0, 0.05);
   --biny-light-surface-selected: #ececec;
-  --biny-light-sidebar-surface: #ffffff;
-  --biny-light-backplate: #f6f6f6;
+  /* 单一主体色：侧栏、主区与窗口底板共用同一底色，分隔只靠 hairline。 */
+  --biny-light-sidebar-surface: #fbfbfc;
+  --biny-light-backplate: #fbfbfc;
   --biny-light-border: #e8e8e8;
   --biny-light-border-strong: #d5d5d5;
   --biny-light-text: #0d0d0d;
@@ -170,9 +171,9 @@
   --biny-dark-surface: #0e0e0e;
   --biny-dark-surface-elevated: #1f1f1f;
   --biny-dark-surface-hover: #242424;
-  /* 聊天主区（--biny-dark-surface）比侧栏卡与窗口边缘 backplate 更深一层。 */
-  --biny-dark-sidebar-surface: #161616;
-  --biny-dark-backplate: #161616;
+  /* 单一主体色：聊天主区、侧栏卡与窗口 backplate 共用同一底色，缝隙在视觉上不可见。 */
+  --biny-dark-sidebar-surface: #0e0e0e;
+  --biny-dark-backplate: #0e0e0e;
   --biny-dark-border: #2c2c2c;
   --biny-dark-text: #ececec;
   --biny-dark-text-secondary: #a1a1a1;
@@ -324,7 +325,6 @@
 :root[data-theme="dark"] .desktop-root.biny-root {
   --biny-surface: var(--biny-dark-surface);
   --biny-backplate: var(--biny-dark-backplate);
-  --biny-content: #0e0e0e;
   --biny-surface-elevated: var(--biny-dark-surface-elevated);
   --biny-surface-soft: var(--biny-dark-surface-soft);
   --biny-surface-hover: var(--biny-dark-surface-hover);
@@ -462,17 +462,17 @@
 }
 
 /* 三栏由同一个 flex 容器管理：左侧栏、Chat 工作区和右侧 Inspector 只改变自身宽度。
-   主区是浮在 floor 上的 plate：四周留缝露出底色，缝隙就是唯一的分隔手段
-   （对照 maka shell-layout："a gap, not a tone step and not a rule"）。 */
+   主区 plate 与窗口 backplate、侧栏卡共用同一主体色，四周留缝在视觉上不可见；
+   顶部通高到窗口上缘（对照 ZCode），分隔只靠 hairline（侧栏卡描边、Inspector 左描边）。 */
 .biny-content-shell {
   order: 0;
   min-width: 0;
   min-height: 0;
   flex: 1 1 0;
-  margin: 54px 8px 8px;
+  margin: 0 8px 8px;
   border-radius: 18px;
   overflow: hidden;
-  background: var(--biny-content, var(--biny-surface));
+  background: var(--biny-surface);
 }
 
 .biny-app-shell > .desktop-inspector-wrap {
@@ -551,7 +551,7 @@
 
 .biny-root .desktop-inspector-header {
   display: flex;
-  min-height: 46px;
+  min-height: 38px;
   box-sizing: border-box;
   align-items: center;
   justify-content: space-between;
@@ -608,7 +608,7 @@
 .biny-inspector-rail {
   position: fixed;
   z-index: 103;
-  top: 56px;
+  top: 48px;
   right: calc(var(--biny-inspector-animated-flow-width, 0px) + 10px);
   display: flex;
   flex-direction: column;
@@ -617,7 +617,7 @@
   padding: 5px 4px;
   border: 1px solid color-mix(in srgb, var(--biny-border) 60%, transparent);
   border-radius: 12px;
-  /* 底色跟随左侧栏（--biny-sidebar-surface），保证左右两缘与聊天区形成深浅分层。 */
+  /* 底色跟随主体色（半透明 + 模糊），浮在主区右缘，靠描边和投影与正文分层。 */
   background: color-mix(in srgb, var(--biny-sidebar-surface) 94%, transparent);
   box-shadow: 0 10px 30px -10px var(--biny-shadow-color);
   -webkit-app-region: no-drag;
@@ -932,7 +932,7 @@
 .biny-sidebar-peek-trigger {
   position: fixed;
   z-index: 90;
-  top: 46px;
+  top: 38px;
   bottom: 0;
   left: 0;
   width: 12px;
@@ -950,12 +950,12 @@
   box-sizing: border-box;
   box-shadow: 8px 0 28px var(--biny-shadow-sidebar);
   transform: translateX(0);
-  /* padding/box-shadow 必须留在这个过渡列表里：本类比基础 .biny-sidebar 优先级高，
-     展开首帧 aside 切入本类时如果缺了这两项，padding 会瞬跳、阴影会瞬现。
+  /* box-shadow 必须留在这个过渡列表里：本类比基础 .biny-sidebar 优先级高，
+     展开首帧 aside 切入本类时如果缺了它，阴影会瞬现。
      注意时长不能再用 --biny-sidebar-content-fade：它自带 ease，后面再拼 bezier
      会出现双缓动函数，整条 transition 声明会因语法非法被整体丢弃。 */
   transition: transform var(--biny-sidebar-content-fade-duration) cubic-bezier(0.4, 0, 0.2, 1), opacity var(--biny-sidebar-content-fade-duration) cubic-bezier(0.4, 0, 0.2, 1),
-    padding var(--biny-sidebar-transition), box-shadow var(--biny-sidebar-transition);
+    box-shadow var(--biny-sidebar-transition);
   will-change: width, transform, opacity;
 }
 
@@ -1004,22 +1004,13 @@
   height: 100%;
   flex: 0 0 auto;
   flex-direction: column;
-  /* 包裹卡布局：aside 是负责宽度动画的内边距壳，视觉壳（圆角/投影）在 card 上。 */
+  /* 通栏列：aside 负责宽度动画，直通窗口上下缘（对照 ZCode），视觉壳只有 card 右缘 hairline。 */
   box-sizing: border-box;
-  padding: 8px;
   overflow: visible;
   color: var(--biny-text);
   will-change: width;
-  /* padding 跟随共享时钟过渡：收起态归零内边距、展开时恢复，都不产生几何突变；
-     box-shadow 过渡让 peek 换位（fixed→流内）时抽屉阴影淡出，而不是换位帧瞬间消失。 */
-  transition: padding var(--biny-sidebar-transition), box-shadow var(--biny-sidebar-transition);
-}
-
-/* 收起的 aside 仍留在流内承载宽度动画，但内边距必须归零：否则宽度归零后盒子仍占
-   16px（border-box 的 padding 下限），展开切 fixed 的首帧会一次性释放这段占位，
-   聊天主区肉眼可见地左跳一帧。 */
-.biny-sidebar.is-hidden {
-  padding-inline: 0;
+  /* box-shadow 过渡让 peek 换位（fixed→流内）时抽屉阴影淡出，而不是换位帧瞬间消失。 */
+  transition: box-shadow var(--biny-sidebar-transition);
 }
 
 .biny-sidebar-card {
@@ -1032,11 +1023,9 @@
   flex: 0 0 auto;
   flex-direction: column;
   overflow: hidden;
-  /* 包裹卡：底色差 + 投影之外，再补一圈与设置中心侧栏一致的包裹线条。 */
-  border: 1px solid var(--biny-border-strong);
-  border-radius: 18px;
+  /* 通栏视觉壳：与主区同体色，右缘一条 hairline 分隔；浮起感交给 peek 态 aside 的投影。 */
+  border-right: 1px solid var(--biny-border);
   background: var(--biny-sidebar-surface);
-  box-shadow: 0 8px 32px -12px var(--biny-shadow-sidebar);
   transition: opacity var(--biny-sidebar-content-fade);
 }
 
@@ -1046,9 +1035,9 @@
 
 .biny-sidebar-body,
 .biny-sidebar-footer {
-  /* 卡片内宽 = aside 宽 - 左右各 8px 内边距；收缩动画期间保持上一次盒宽由卡片裁剪。 */
+  /* 内容盒宽 = 侧栏内容宽；收缩动画期间保持上一次盒宽由卡片裁剪。 */
   box-sizing: border-box;
-  width: calc(var(--biny-sidebar-content-width) - 16px);
+  width: var(--biny-sidebar-content-width);
   -webkit-app-region: no-drag;
   app-region: no-drag;
   transition: opacity var(--biny-sidebar-content-fade), visibility 0s linear 0s;
@@ -1064,9 +1053,9 @@
 }
 
 .biny-sidebar-topbar-spacer {
-  height: 46px;
-  min-height: 46px;
-  flex: 0 0 46px;
+  height: 38px;
+  min-height: 38px;
+  flex: 0 0 38px;
 }
 
 /* 内联会话过滤：常驻在列表上方，只过滤当前侧栏树。 */
@@ -1114,8 +1103,8 @@
 
 .biny-sidebar-topbar {
   display: flex;
-  height: 46px;
-  min-height: 46px;
+  height: 38px;
+  min-height: 38px;
   align-items: center;
   gap: 9px;
   padding: 0 12px 0 80px;
@@ -1124,7 +1113,7 @@
 }
 
 /*
- * 顶部条（y < 46px）在 floor 模型下直接透出底色：侧栏列与主区 plate 上缘之间
+ * 顶部条（y < 38px）在 floor 模型下直接透出底色：侧栏列与主区 plate 上缘之间
  * 的整条带都是 floor，无需单独的视觉层。按钮命中层（topbar-floating）保留。
  */
 .biny-sidebar-topbar-floating {
@@ -1139,8 +1128,8 @@
    * 这样顶部控制既能跟侧栏同帧进出，又不会把 Electron 命中依赖在零宽外层上。
    */
   width: var(--biny-sidebar-animated-visual-width);
-  height: 46px;
-  min-height: 46px;
+  height: 38px;
+  min-height: 38px;
   padding: 0;
   overflow: visible;
   background: transparent;
@@ -1156,8 +1145,8 @@
   box-sizing: border-box;
   /* 按钮簇右对齐贴侧栏右缘；侧栏收起（壳宽 0）时用 chrome 宽度兜底，按钮贴在红绿灯右侧。 */
   width: max(var(--biny-sidebar-chrome-width), 100%);
-  height: 46px;
-  min-height: 46px;
+  height: 38px;
+  min-height: 38px;
   align-items: center;
   justify-content: flex-end;
   gap: 9px;
@@ -4061,8 +4050,8 @@ div:has(> .astryx-trigger-menu) {
   --biny-chat-content-width: calc(100% - 48px - 60px);
 }
 
-/* 主区 plate 自带顶部留缝（margin-top 54px = 工具条 46 + 缝 8），
-   内容天然从工具条下方开始，不再需要按模式切换的 46px padding。 */
+/* 主区 plate 通高到顶：工具条悬浮在正文上方（对照 ZCode），消息滚动时从工具条下穿过；
+   滚动区自带顶部 padding，保证滚到顶时首条消息不被标题栏盖住。 */
 
 .biny-chat-toolbar {
   position: fixed;
@@ -4073,8 +4062,8 @@ div:has(> .astryx-trigger-menu) {
   left: var(--biny-sidebar-animated-toolbar-left);
   box-sizing: border-box;
   display: flex;
-  height: 46px;
-  min-height: 46px;
+  height: 38px;
+  min-height: 38px;
   align-items: center;
   gap: 14px;
   padding: 0 var(--biny-chat-toolbar-inline-padding);
@@ -4108,7 +4097,7 @@ div:has(> .astryx-trigger-menu) {
   display: flex;
   min-width: 0;
   height: 100%;
-  min-height: 46px;
+  min-height: 38px;
   flex: 1 1 auto;
   align-items: center;
   -webkit-app-region: drag;
@@ -4688,7 +4677,8 @@ div:has(> .astryx-trigger-menu) {
   margin: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 28px 0 36px;
+  /* 顶部 padding = 工具条 38px + 8px 呼吸距离：滚到顶时首条消息停在工具条下方。 */
+  padding: 46px 0 36px;
   scrollbar-color: transparent transparent;
   scrollbar-width: thin;
   -webkit-app-region: no-drag;

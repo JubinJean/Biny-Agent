@@ -15,10 +15,10 @@ import { DesktopStateStore } from "./DesktopStateStore.js";
 
 export type WindowCloseDecision = "close" | "cancel";
 
-/** 窗口底色要和渲染层主题一致，否则加载过程中会闪一下白底。 */
+/** 窗口底色要和渲染层主体色一致，否则加载过程中会闪一下异色底。 */
 function themeBackgroundColor(preference: DesktopThemePreference = "system"): string {
   const dark = preference === "dark" || (preference === "system" && nativeTheme.shouldUseDarkColors);
-  return dark ? "#181818" : "#ffffff";
+  return dark ? "#0e0e0e" : "#fbfbfc";
 }
 
 export function createDesktopWindow(
@@ -43,7 +43,7 @@ export function createDesktopWindow(
     // macOS 不使用系统 vibrancy，窗口底色固定跟随主题；局部浮层仍由渲染层 CSS 自己处理。
     visualEffectState: process.platform === "darwin" ? "active" : undefined,
     titleBarOverlay: process.platform === "darwin" ? true : undefined,
-    trafficLightPosition: process.platform === "darwin" ? { x: 14, y: 16 } : undefined,
+    trafficLightPosition: process.platform === "darwin" ? { x: 14, y: 13 } : undefined,
     webPreferences: {
       preload: path.join(fileURLToPath(new URL(".", import.meta.url)), "../preload/index.cjs"),
       contextIsolation: true,
