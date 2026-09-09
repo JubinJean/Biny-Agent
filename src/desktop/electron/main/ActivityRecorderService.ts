@@ -439,6 +439,11 @@ export class ActivityRecorderService {
       const message = chunk.toString("utf8").trim();
       if (message) this.error = message.slice(0, 500);
     });
+    // sidecar 可能在系统权限变化或自身异常时先关闭 stdin；Writable 的错误事件若无人接收
+    // 会升级成主进程的 uncaught exception，进而弹出 Electron 的 JavaScript 警告。
+    child.stdin.on("error", (error) => {
+      if (this.child === child) this.setState("error", safeError(error));
+    });
     child.once("error", (error) => {
       this.setState("error", safeError(error));
     });

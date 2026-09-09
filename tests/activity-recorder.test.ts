@@ -15,6 +15,7 @@ import { ActivityRecorderService, defaultActivitySidecarPath } from "../src/desk
 testDefaultActivitySidecarPath();
 await testCanonicalActivitySchema();
 await testActivityServiceLifecycleQueue();
+await testSidecarInputFailureDoesNotCrashService();
 await testPermissionRequestStartsStandaloneSidecar();
 await testActivitySettingsRestartSidecar();
 await testSidecarPersistsCaptureBeforeOcr();
@@ -114,6 +115,37 @@ async function testActivityServiceLifecycleQueue(): Promise<void> {
     assert.equal(service.snapshot().state, "unavailable");
     await service.stop();
     assert.equal(service.snapshot().state, "stopped");
+  } finally {
+    await service.stop();
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+async function testSidecarInputFailureDoesNotCrashService(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-sidecar-input-"));
+  const sidecarPath = path.join(root, "fake-sidecar");
+  await writeFile(sidecarPath, `#!/bin/sh
+while IFS= read -r line; do
+  case "$line" in
+    *'"type":"start"'*)
+      exec 0<&-
+      printf '%s\\n' '{"type":"event","occurredAt":"2026-08-31T00:00:00.000Z","eventType":"app_focus","application":"Fake App"}'
+      sleep 2
+      ;;
+  esac
+done
+`, { mode: 0o700 });
+  await chmod(sidecarPath, 0o700);
+  const config = {
+    ...defaultConfig,
+    activity: { ...defaultActivitySettings, outputDirectory: root }
+  };
+  const configStore = { load: async () => config } as AgentConfigStore;
+  const service = new ActivityRecorderService({ configStore, sidecarPath });
+  try {
+    await service.initialize();
+    await waitForActivitySnapshot(service, (snapshot) => snapshot.state === "error");
+    assert.match(service.snapshot().error ?? "", /EPIPE/u);
   } finally {
     await service.stop();
     await rm(root, { recursive: true, force: true });
