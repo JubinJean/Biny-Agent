@@ -25,7 +25,7 @@ export class DesktopUserDataStore {
     return path.join(agentDir(project.path), "attachments");
   }
 
-  /** 初始化项目本地运行目录及其对应的全局 session 目录。 */
+  /** 初始化项目对应的全局运行目录及其全局 session 目录。 */
   async ensureProjectData(project: DesktopProject): Promise<string> {
     const targetRoot = path.resolve(project.path);
     await ensureAgentDirs(targetRoot);

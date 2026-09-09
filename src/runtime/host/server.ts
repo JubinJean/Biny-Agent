@@ -29,6 +29,7 @@ import type {
 } from "../CapabilityStore.js";
 import { cancelRuntimeGraph, executeRuntimeCommand } from "../commands.js";
 import { SessionWriterConflictError } from "../SessionLease.js";
+import { agentDir } from "../../session/store.js";
 import {
   authenticateRuntimeHostHello
 } from "./credentials.js";
@@ -154,7 +155,7 @@ export class RuntimeHostServer {
   ) {
     this.createRuntime = createRuntime;
     this.resourceRegistry = options.resourceRegistry ?? new RuntimeHostResourceRegistry();
-    this.journalPath = path.join(registration.persistenceRoot, ".biny", "runs", hostJournalFile);
+    this.journalPath = path.join(agentDir(registration.persistenceRoot), "runs", hostJournalFile);
     this.worktrees = new WorktreeManager(
       options.workspaceRoot ?? registration.persistenceRoot,
       registration.persistenceRoot

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { DatabaseSync } from "node:sqlite";
-import { appendFile, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { appendFile, mkdtemp, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { agentDir, ensureAgentDirs, sessionFilePath } from "../src/session/store.js";
@@ -16,6 +16,8 @@ import { readSessionEvents } from "../src/session/events.js";
 
 const root = await mkdtemp(path.join(os.tmpdir(), "biny-authority-test-"));
 const authority = await RuntimeEventAuthority.open(root);
+await assert.rejects(stat(path.join(root, ".biny")), { code: "ENOENT" });
+await stat(agentDir(root));
 const tasks = await DurableTaskRunStore.open(root, authority);
 const automations = await AutomationStore.open(root, authority);
 const graphs = await GoalGraphStore.open(root, authority);

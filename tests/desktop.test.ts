@@ -79,7 +79,7 @@ import type { SessionEvent } from "../src/session/recorder.js";
 import type { SessionUsage } from "../src/session/metadata.js";
 import { SessionRecorder } from "../src/session/recorder.js";
 import { listSessionSummaries, readStoredSessionEvents } from "../src/session/events.js";
-import { ensureAgentDirs, resolveSessionFile, sessionFilePath } from "../src/session/store.js";
+import { agentDir, ensureAgentDirs, resolveSessionFile, sessionFilePath } from "../src/session/store.js";
 import type { AgentMessage } from "../src/agent/core/types.js";
 import { TurnStore } from "../src/session/turnStore.js";
 
@@ -1131,7 +1131,6 @@ async function testWorkspaceDirectoryListing(): Promise<void> {
     const root = await projects.listWorkspaceDirectory(project, ".");
     assert.equal(root.path, ".");
     assert.deepEqual(root.entries.map((entry) => ({ name: entry.name, path: entry.path, kind: entry.kind })), [
-      { name: ".biny", path: ".biny", kind: "directory" },
       { name: "src", path: "src", kind: "directory" },
       { name: "README.md", path: "README.md", kind: "file" }
     ]);
@@ -2108,10 +2107,11 @@ async function testDesktopModelConfiguration(): Promise<void> {
     await projects.listSessions(project, undefined, new Map());
     const attachment = await projects.saveAttachment(project, "notes.txt", "text/plain", new TextEncoder().encode("desktop only"));
     assert.match(attachment.path, /^@attachments\//);
-    // Project sessions are global and project-scoped; attachments remain with the project.
+    // Project sessions and attachments are global but remain project-scoped.
     await access(path.dirname(sessionFilePath(workspaceRoot, "path-probe")));
     await assert.rejects(access(path.join(workspaceRoot, ".biny", "sessions")));
-    await access(path.join(workspaceRoot, ".biny", "attachments"));
+    await access(path.join(agentDir(workspaceRoot), "attachments"));
+    await assert.rejects(access(path.join(workspaceRoot, ".biny", "attachments")));
     await assert.rejects(access(path.join(desktopRoot, "projects", project.id, ".biny", "attachments")));
     await assert.rejects(access(path.join(workspaceRoot, "config.json")));
     await agents.closeAll();

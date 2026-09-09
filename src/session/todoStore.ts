@@ -5,7 +5,7 @@
  * 压缩会让这种遗忘更早发生 —— 被摘要掉的正是那些"待会儿要做"的细节。
  *
  * 这份清单是模型自己维护的锚：每回合注入 system prompt，所以它永远看得见；落盘到
- * `.biny/todos`，所以恢复会话后还在。Agent Loop 会把它作为模型上下文使用，
+ * 全局按项目隔离的 `todos` 目录，所以恢复会话后还在。Agent Loop 会把它作为模型上下文使用，
  * 陈旧 Todo 不会独自驱动自动验收或无限 continuation。
  */
 import { randomUUID } from "node:crypto";

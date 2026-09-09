@@ -122,7 +122,7 @@ export interface CommandRuntimeOptions {
 }
 
 export async function createCommandRuntime(workspaceRoot: string, options: CommandRuntimeOptions = {}): Promise<CommandRuntime> {
-  // Session store 根据 workspace 定位全局项目分区；persistenceRoot 继续承载其余项目运行状态。
+  // Session store 和其余运行组件都根据 workspace 定位全局按项目隔离的持久化分区。
   const persistenceRoot = options.persistenceRoot ?? workspaceRoot;
   const projectAttachmentRoot = options.attachmentRoot ?? attachmentRoot(persistenceRoot);
   const configStore = options.configStore ?? createFileConfigStore(persistenceRoot);

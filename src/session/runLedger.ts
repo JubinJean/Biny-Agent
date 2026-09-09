@@ -290,7 +290,7 @@ export class SessionRunLedger {
     const runsDirectory = path.join(agentDir(canonicalRoot), "runs");
     const canonicalRuns = await fs.realpath(runsDirectory);
     if (canonicalRuns !== path.resolve(runsDirectory)) {
-      throw new Error("Run ledger directory resolves outside .biny/runs.");
+      throw new Error("Run ledger directory resolves outside the global workspace runtime directory.");
     }
     const directory = path.join(canonicalRuns, "ledger");
     await fs.mkdir(directory, { recursive: true, mode: 0o700 });

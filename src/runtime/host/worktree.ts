@@ -3,6 +3,7 @@
  *
  * worktree 是代码隔离层，session JSONL 和运行账本仍归 persistenceRoot。所有自动清理都
  * 只允许处理“干净且已合并”的树；只要无法证明安全，就登记为 orphaned/kept，绝不删除用户工作。
+ * worktree 检出目录仍是项目本地显式产物，生命周期登记则放在全局运行目录。
  */
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
@@ -10,7 +11,7 @@ import { execFile } from "node:child_process";
 import path from "node:path";
 import { promisify } from "node:util";
 import { listSessionCatalog, readSessionCatalogRecord } from "../../session/catalog.js";
-import { listSessionFiles } from "../../session/store.js";
+import { agentDir, listSessionFiles } from "../../session/store.js";
 import type { RuntimeHostFactoryOptions } from "./types.js";
 
 const execFileAsync = promisify(execFile);
@@ -92,7 +93,7 @@ export class WorktreeManager {
     this.repoRoot = path.resolve(repoRoot);
     this.persistenceRoot = path.resolve(persistenceRoot);
     this.worktreeDirectory = path.join(this.repoRoot, ".biny", worktreeDirectoryName);
-    this.registryPath = path.join(this.persistenceRoot, ".biny", "runs", "worktrees.json");
+    this.registryPath = path.join(agentDir(this.persistenceRoot), "runs", "worktrees.json");
   }
 
   async ensure(sessionId: string): Promise<WorktreeRecord> {

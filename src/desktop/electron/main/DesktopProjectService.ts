@@ -640,7 +640,7 @@ export class DesktopProjectService {
    * 读取消息里引用的图片，转成 data URL 交给界面内联显示。
    *
    * 渲染进程的 CSP 只放行 self / data: / https:，本地图片没法直接用 file:// 加载，只能由主进程
-   * 读出来转码。附件在项目 `.biny/attachments` 而非工作区可见文件，所以要按 `@attachments/` 前缀分流。
+   * 读出来转码。附件在全局按项目隔离的运行目录而非工作区可见文件，所以要按 `@attachments/` 前缀分流。
    * 这是展示用的旁路加载，任何失败都返回 undefined 让界面退回文件名，不往上抛错。
    */
   async readInlineImage(project: DesktopProject, relativePath: string): Promise<string | undefined> {

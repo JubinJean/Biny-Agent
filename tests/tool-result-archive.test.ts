@@ -7,7 +7,7 @@ import { ToolExecutionCoordinator } from "../src/agent/toolExecutionCoordinator.
 import { defaultConfig, type AgentConfig } from "../src/config/schema.js";
 import { PermissionManager } from "../src/permission/PermissionManager.js";
 import { SessionRecorder } from "../src/session/recorder.js";
-import { ensureAgentDirs } from "../src/session/store.js";
+import { agentDir, ensureAgentDirs } from "../src/session/store.js";
 import { createReadToolResultTool } from "../src/tools/file/readToolResult.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import type { AgentSessionEvent } from "../src/agent/types.js";
@@ -83,7 +83,7 @@ async function main(): Promise<void> {
     assert.equal(typeof second.preview, "string");
     assert.equal(typeof second.archivePath, "string");
 
-    const archivePath = path.join(workspaceRoot, String(second.archivePath));
+    const archivePath = path.join(agentDir(workspaceRoot), "tool-results", path.basename(String(second.archivePath)));
     const archive = JSON.parse(await readFile(archivePath, "utf8")) as { output?: string };
     const originalResult = JSON.parse(archive.output ?? "{}") as { result?: string };
     assert.equal(originalResult.result, "x".repeat(768));
@@ -156,7 +156,7 @@ async function testPersistLevelOutlining(): Promise<void> {
     assert.equal(fileBytes < 32 * 1024, true, `session file must stay lean, got ${String(fileBytes)} bytes`);
 
     // 归档文件保留全文，read_tool_result 可取回。
-    const archive = JSON.parse(await readFile(path.join(workspaceRoot, String(persisted.result!.archivePath)), "utf8")) as { output?: string };
+    const archive = JSON.parse(await readFile(path.join(agentDir(workspaceRoot), "tool-results", path.basename(String(persisted.result!.archivePath))), "utf8")) as { output?: string };
     assert.equal(JSON.parse(archive.output ?? "{}").result, "y".repeat(64 * 1024));
     await recorder.close();
   } finally {
@@ -200,7 +200,7 @@ async function testProjectionBeforeTurnBudget(): Promise<void> {
       .map((line) => JSON.parse(line) as { type: string; result?: Record<string, unknown> })
       .find((event) => event.type === "tool_result");
     assert.equal(typeof persisted?.result?.archivePath, "string");
-    const archive = JSON.parse(await readFile(path.join(workspaceRoot, String(persisted?.result?.archivePath)), "utf8")) as { output?: string };
+    const archive = JSON.parse(await readFile(path.join(agentDir(workspaceRoot), "tool-results", path.basename(String(persisted?.result?.archivePath))), "utf8")) as { output?: string };
     assert.equal(JSON.parse(archive.output ?? "{}").diffPreview, `@@\n-${"old\n".repeat(12_000)}\n+new`);
     await recorder.close();
   } finally {

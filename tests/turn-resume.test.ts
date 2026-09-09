@@ -17,7 +17,7 @@ import { RuntimeEventAuthority } from "../src/runtime/RuntimeAuthority.js";
 import { SessionRecorder } from "../src/session/recorder.js";
 import { readSessionEvents } from "../src/session/events.js";
 import { validateRuntimeEventStream } from "../src/session/runtimeEvent.js";
-import { ensureAgentDirs, sessionFilePath } from "../src/session/store.js";
+import { agentDir, ensureAgentDirs, sessionFilePath } from "../src/session/store.js";
 import { TurnStore } from "../src/session/turnStore.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import type { Tool, ToolExecutionContext } from "../src/tools/types.js";
@@ -105,7 +105,7 @@ async function testClearedTurnIsNotResumable(root: string): Promise<void> {
 
 async function testCorruptStateIsIgnored(root: string): Promise<void> {
   const store = new TurnStore(root, "session-c");
-  const target = path.join(root, ".biny", "turns", "session-c.json");
+  const target = path.join(agentDir(root), "turns", "session-c.json");
   await (await import("node:fs/promises")).writeFile(target, "{ not json");
   assert.equal(await store.load(), undefined);
   // 空 messages 不构成可续跑的状态。
@@ -142,6 +142,8 @@ async function testAgentSessionCrashRecovery(
   const executionLog = path.join(workspaceRoot, "tool-executions.log");
   const sessionId = `resume-${crash}`;
   const provider = await startRecoveryProvider(crash);
+  const previousAgentDir = process.env.BINY_AGENT_DIR;
+  process.env.BINY_AGENT_DIR = path.join(workspaceRoot, "global-agent");
   try {
     const sessionFile = await ensureIsolatedSessionFilePath(workspaceRoot, sessionId);
     const initial = spawnWorker({
@@ -237,24 +239,19 @@ async function testAgentSessionCrashRecovery(
       );
     }
 
-    const previousAgentDir = process.env.BINY_AGENT_DIR;
-    process.env.BINY_AGENT_DIR = path.join(workspaceRoot, "global-agent");
-    try {
-      const authority = await RuntimeEventAuthority.open(workspaceRoot);
-      const projected = authority.readEvents({ sessionId }).events;
-      assert.equal(projected.length, runtimeEvents.length, "authority projection must contain every JSONL fact after restart");
-      assert.deepEqual(
-        projected.map((event) => event.eventSeq),
-        runtimeEvents.map((event) => event.runtime?.eventSeq),
-        "authority must preserve the session high-water sequence"
-      );
-      authority.close();
-    } finally {
-      if (previousAgentDir === undefined) delete process.env.BINY_AGENT_DIR;
-      else process.env.BINY_AGENT_DIR = previousAgentDir;
-    }
+    const authority = await RuntimeEventAuthority.open(workspaceRoot);
+    const projected = authority.readEvents({ sessionId }).events;
+    assert.equal(projected.length, runtimeEvents.length, "authority projection must contain every JSONL fact after restart");
+    assert.deepEqual(
+      projected.map((event) => event.eventSeq),
+      runtimeEvents.map((event) => event.runtime?.eventSeq),
+      "authority must preserve the session high-water sequence"
+    );
+    authority.close();
   } finally {
     await provider.close();
+    if (previousAgentDir === undefined) delete process.env.BINY_AGENT_DIR;
+    else process.env.BINY_AGENT_DIR = previousAgentDir;
     await rm(workspaceRoot, { recursive: true, force: true });
   }
 }

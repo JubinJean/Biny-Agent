@@ -3,8 +3,9 @@
  *
  * 模型配置、项目会话和项目记忆都脱离工作区存放。默认配置文件在 `~/.biny/config.json`，
  * session/memory 等 Agent 运行数据在 `~/.biny/agent/`；BINY_AGENT_DIR 会把两者统一
- * 重定向到指定目录，便于测试隔离和便携部署。
- * 项目 `.biny` 只承载设置、扩展覆盖与尚未迁出的运行产物。
+ * 重定向到指定目录，便于测试隔离和便携部署。每个工作区的运行状态也放在该全局根目录
+ * 下的独立分区中，不因启动项目而创建项目目录下的 `.biny`。
+ * 项目 `.biny` 只承载设置、扩展覆盖以及明确要求项目本地保存的内容。
  *
  * 项目 session 目录名是 `<basename>-<hash8>`（如 `biny-a1b2c3d4`）：basename 取自工作区
  * 文件夹名（sanitize 后允许中文、≤48 字符），hash8 是工作区路径 sha256 的前 8 位，用来在
@@ -52,6 +53,13 @@ export function projectSessionsDir(workspaceRoot: string, options: PathEnvironme
   return projectStateDir("sessions", workspaceRoot, options);
 }
 
+/** 项目运行状态的全局分区；名称规则与项目 session 一致，避免同名工作区互相覆盖。 */
+export function workspaceAgentDir(workspaceRoot: string, options: PathEnvironment = {}): string {
+  const resolvedWorkspace = path.resolve(workspaceRoot);
+  const canonicalWorkspace = existsSync(resolvedWorkspace) ? realpathSync(resolvedWorkspace) : resolvedWorkspace;
+  return projectStateDir("workspaces", canonicalWorkspace, options);
+}
+
 /**
  * 项目 session 目录名：`<basename>-<hash8>`。
  *
@@ -61,11 +69,11 @@ export function projectSessionsDir(workspaceRoot: string, options: PathEnvironme
  *
  * 这里是纯函数：不做任何 fs 访问，保证 recorder 的同步路径构造和 store 的断言拿到同一个答案。
  */
-function projectStateDir(kind: "sessions", workspaceRoot: string, options: PathEnvironment): string {
+function projectStateDir(kind: "sessions" | "workspaces", workspaceRoot: string, options: PathEnvironment): string {
   return path.join(projectStateParentDir(kind, options), projectStateDirName(workspaceRoot));
 }
 
-function projectStateParentDir(kind: "sessions", options: PathEnvironment): string {
+function projectStateParentDir(kind: "sessions" | "workspaces", options: PathEnvironment): string {
   const configuredRoot = globalAgentDir(options);
   const canonicalRoot = existsSync(configuredRoot) ? realpathSync(configuredRoot) : configuredRoot;
   return path.join(canonicalRoot, kind);

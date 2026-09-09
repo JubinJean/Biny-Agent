@@ -1,7 +1,7 @@
 /**
  * Session 存储定位模块。
  *
- * 全局项目 session 目录以及 `.biny` 内其余运行目录的创建、按年/月/日组织的 session
+ * 全局项目 session 目录以及全局按项目隔离的运行目录的创建、按年/月/日组织的 session
  * 文件路径、latest 解析和 session id 前缀匹配都在这里处理。命令层只需要给出 workspace
  * 和可选 session 参数，不必关心文件布局。
  */
@@ -9,7 +9,7 @@ import { randomBytes } from "node:crypto";
 import { chmodSync, constants, lstatSync, mkdirSync, promises as fs, readdirSync, realpathSync, type Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
-import { globalAgentDir, legacyProjectStateDirName, projectSessionsDir, projectStateDirName } from "../config/paths.js";
+import { globalAgentDir, legacyProjectStateDirName, projectSessionsDir, projectStateDirName, workspaceAgentDir } from "../config/paths.js";
 import { readSessionTail } from "./limits.js";
 
 const sessionMetadataConcurrency = 8;
@@ -50,8 +50,8 @@ export interface SessionDeleteHooks {
 }
 
 export function agentDir(workspaceRoot: string): string {
-  // `.biny` 承载项目配置和除 session JSONL 之外的运行状态。
-  return path.join(workspaceRoot, ".biny");
+  // 运行时状态按工作区隔离，但统一放在全局根目录，避免普通启动污染项目目录。
+  return workspaceAgentDir(workspaceRoot);
 }
 
 export async function ensureAgentDirs(workspaceRoot: string): Promise<void> {
@@ -59,17 +59,23 @@ export async function ensureAgentDirs(workspaceRoot: string): Promise<void> {
   // the persistence root even when the final file itself uses O_NOFOLLOW.
   const workspacePath = path.resolve(workspaceRoot);
   const canonicalWorkspace = await fs.realpath(workspacePath);
-  const agentPath = path.join(canonicalWorkspace, ".biny");
-  await ensureRealDirectory(agentPath, ".biny");
+  const configuredGlobal = path.resolve(globalAgentDir());
+  await fs.mkdir(configuredGlobal, { recursive: true, mode: 0o700 });
+  const canonicalGlobal = await fs.realpath(configuredGlobal);
+  await ensureRealDirectory(canonicalGlobal, "global agent");
+  const workspacesPath = path.join(canonicalGlobal, "workspaces");
+  await ensureRealDirectory(workspacesPath, "global workspace state");
+  const agentPath = workspaceAgentDir(canonicalWorkspace);
+  await ensureRealDirectory(agentPath, "global workspace agent");
   const canonicalAgent = await fs.realpath(agentPath);
-  if (canonicalAgent !== path.join(canonicalWorkspace, ".biny")) {
-    throw new Error("Session storage .biny resolves outside the canonical persistence root.");
+  if (canonicalAgent !== agentPath) {
+    throw new Error("Workspace runtime storage resolves outside the global workspace state directory.");
   }
   for (const name of managedStateDirectories) {
     const directory = path.join(agentPath, name);
-    await ensureRealDirectory(directory, `.biny/${name}`);
+    await ensureRealDirectory(directory, `workspace runtime/${name}`);
     if (await fs.realpath(directory) !== path.join(canonicalAgent, name)) {
-      throw new Error(`Session storage .biny/${name} resolves outside the canonical .biny directory.`);
+      throw new Error(`Workspace runtime/${name} resolves outside the canonical workspace runtime directory.`);
     }
   }
   await ensureProjectSessionStorage(canonicalWorkspace);
@@ -352,7 +358,6 @@ async function resolveSessionStorage(workspaceRoot: string): Promise<SessionStor
 
 async function ensureProjectSessionStorage(canonicalWorkspace: string): Promise<void> {
   const configuredGlobal = path.resolve(globalAgentDir());
-  await fs.mkdir(configuredGlobal, { recursive: true, mode: 0o700 });
   const canonicalGlobal = await fs.realpath(configuredGlobal);
   const globalSessionsPath = path.join(canonicalGlobal, "sessions");
   await ensureRealDirectory(globalSessionsPath, "global sessions");

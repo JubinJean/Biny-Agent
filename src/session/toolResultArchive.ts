@@ -1,14 +1,15 @@
 /**
  * 超出回合预算的工具结果归档模块。
  *
- * 归档文件只落在 `.biny/tool-results` 下，文件名完全由运行期标识派生。模型拿到的是
- * 归档引用而不是原文，需要完整内容时通过 `read_tool_result` 工具按需取回。
+ * 归档引用保持 `.biny/tool-results` 这一稳定格式，但物理文件落在全局按项目隔离的运行目录。
+ * 文件名完全由运行期标识派生。模型拿到的是归档引用而不是原文，需要完整内容时通过
+ * `read_tool_result` 工具按需取回。
  */
 import { constants as fsConstants } from "node:fs";
 import { createHash } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
-import { ensureAgentDirs } from "./store.js";
+import { agentDir, ensureAgentDirs } from "./store.js";
 import { redactSecrets, redactSensitiveValue } from "../utils/secrets.js";
 
 const archiveVersion = 1;
@@ -64,7 +65,7 @@ export async function archiveToolResult(options: ArchiveToolResultOptions): Prom
   const archiveName = `tool-result-${archiveId(options)}.json`;
   const archivePath = path.posix.join(archiveDirectory, archiveName);
   await ensureAgentDirs(options.workspaceRoot);
-  const targetPath = path.join(options.workspaceRoot, ...archivePath.split("/"));
+  const targetPath = path.join(agentDir(options.workspaceRoot), "tool-results", archiveName);
   const payload = JSON.stringify({
     version: archiveVersion,
     archivedAt: new Date().toISOString(),
@@ -112,7 +113,7 @@ export function resolveToolResultArchivePath(workspaceRoot: string, archivePath:
   if (relative !== path.posix.join(archiveDirectory, archiveName) || !archiveNamePattern.test(archiveName)) {
     throw new Error(`Not an archived tool result reference: ${archivePath}`);
   }
-  return path.join(path.resolve(workspaceRoot), ...relative.split("/"));
+  return path.join(agentDir(workspaceRoot), "tool-results", archiveName);
 }
 
 export async function readToolResultArchive(
@@ -143,7 +144,7 @@ export async function readToolResultArchive(
 
 /** Keeps the archive directory bounded; the oldest references expire first. */
 export async function pruneToolResultArchives(workspaceRoot: string, retain = maxRetainedArchives): Promise<void> {
-  const directory = path.join(path.resolve(workspaceRoot), ...archiveDirectory.split("/"));
+  const directory = path.join(agentDir(workspaceRoot), "tool-results");
   let entries: string[];
   try {
     entries = (await fs.readdir(directory, { withFileTypes: true }))

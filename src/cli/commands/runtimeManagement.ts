@@ -11,6 +11,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { connectOrSpawnRuntimeHost, connectRuntimeHost, runtimeHostPaths, type RuntimeHostClient } from "../../runtime/RuntimeHost.js";
 import { runRuntimeHostProcess } from "../../runtime/hostProcess.js";
+import { agentDir, ensureAgentDirs } from "../../session/store.js";
 import type { AutomationCreateInput } from "../../runtime/AutomationScheduler.js";
 import type { GraphNodeInput } from "../../runtime/GoalGraphStore.js";
 
@@ -26,6 +27,7 @@ interface HostActionOptions extends JsonOption {
 
 export async function daemonInstallCommand(workspaceRoot: string): Promise<void> {
   ensureMac("LaunchAgent");
+  await ensureAgentDirs(workspaceRoot);
   const paths = runtimeHostPaths(workspaceRoot);
   const launchAgents = path.join(os.homedir(), "Library", "LaunchAgents");
   const label = `com.biny.runtime.${paths.rootHash}`;
@@ -214,7 +216,7 @@ function runtimeHostProgramArguments(workspaceRoot: string): string[] {
 
 function launchAgentPlist(label: string, programArguments: string[], workspaceRoot: string): string {
   const xml = programArguments.map((argument) => `<string>${escapeXml(argument)}</string>`).join("");
-  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>Label</key><string>${escapeXml(label)}</string><key>ProgramArguments</key><array>${xml}</array><key>WorkingDirectory</key><string>${escapeXml(workspaceRoot)}</string><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ProcessType</key><string>Interactive</string><key>StandardOutPath</key><string>${escapeXml(path.join(workspaceRoot, ".biny", "daemon.stdout.log"))}</string><key>StandardErrorPath</key><string>${escapeXml(path.join(workspaceRoot, ".biny", "daemon.stderr.log"))}</string></dict></plist>\n`;
+  return `<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0"><dict><key>Label</key><string>${escapeXml(label)}</string><key>ProgramArguments</key><array>${xml}</array><key>WorkingDirectory</key><string>${escapeXml(workspaceRoot)}</string><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>ProcessType</key><string>Interactive</string><key>StandardOutPath</key><string>${escapeXml(path.join(agentDir(workspaceRoot), "daemon.stdout.log"))}</string><key>StandardErrorPath</key><string>${escapeXml(path.join(agentDir(workspaceRoot), "daemon.stderr.log"))}</string></dict></plist>\n`;
 }
 
 function escapeXml(value: string): string {

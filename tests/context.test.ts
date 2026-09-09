@@ -29,6 +29,7 @@ import { replaySession, sessionEventsToConversation } from "../src/session/repla
 import {
   deleteSessionFile,
   duplicateSessionFile,
+  agentDir,
   ensureAgentDirs,
   listSessionFiles,
   readSessionSnapshot,
@@ -1335,8 +1336,9 @@ async function testSessionPathBoundaries(): Promise<void> {
       await assert.rejects(fs.access(path.join(outsideRoot, "must-not-escape.jsonl")));
 
       await fs.rm(outsideSessionsDir, { force: true });
-      await fs.rm(path.join(workspaceRoot, ".biny"), { recursive: true, force: true });
-      await fs.symlink(outsideRoot, path.join(workspaceRoot, ".biny"));
+      const runtimeRoot = agentDir(workspaceRoot);
+      await fs.rm(runtimeRoot, { recursive: true, force: true });
+      await fs.symlink(outsideRoot, runtimeRoot);
       await assert.rejects(ensureAgentDirs(workspaceRoot), /real directory, not a symbolic link/);
       await assert.rejects(fs.access(path.join(outsideRoot, "sessions")));
       assert.equal(await fs.readFile(outsideFile, "utf8"), outsideContent);
@@ -1506,7 +1508,7 @@ async function testCredentialAndSymlinkBoundaries(): Promise<void> {
       assert.throws(() => resolveWorkspacePath(workspaceRoot, "dangling-secret.txt", []), /dangling symbolic link/);
 
       await ensureAgentDirs(workspaceRoot);
-      const telemetryPath = path.join(workspaceRoot, ".biny", "telemetry.jsonl");
+      const telemetryPath = path.join(agentDir(workspaceRoot), "telemetry.jsonl");
       const telemetryConfig = {
         ...defaultConfig,
         telemetry: { enabled: true, recordInputs: false, recordOutputs: true }
@@ -1585,7 +1587,7 @@ async function testCredentialAndSymlinkBoundaries(): Promise<void> {
       await recordNativeTelemetry(telemetryConfig, workspaceRoot, { type: "end", provider: "test", modelId: "test", steps: 1 });
       assert.equal(await fs.readFile(telemetryVictim, "utf8"), "telemetry-victim-unchanged");
 
-      const historyPath = path.join(workspaceRoot, ".biny", "input-history.jsonl");
+      const historyPath = path.join(agentDir(workspaceRoot), "input-history.jsonl");
       const historyVictim = path.join(outsideRoot, "history-victim.txt");
       await fs.writeFile(historyVictim, "history-victim-unchanged", "utf8");
       await fs.symlink(historyVictim, historyPath);
@@ -1597,8 +1599,8 @@ async function testCredentialAndSymlinkBoundaries(): Promise<void> {
       await assert.rejects(appendInputHistory(workspaceRoot, "must not escape"), /single-link regular file/);
       assert.equal(await fs.readFile(historyVictim, "utf8"), "history-victim-unchanged");
       await fs.rm(historyPath);
-      const agentPath = path.join(workspaceRoot, ".biny");
-      const originalAgentPath = path.join(workspaceRoot, ".biny-original");
+      const agentPath = agentDir(workspaceRoot);
+      const originalAgentPath = `${agentPath}-original`;
       await fs.rename(agentPath, originalAgentPath);
       await fs.symlink(outsideRoot, agentPath);
       await assert.rejects(appendInputHistory(workspaceRoot, "must not escape through parent"), /real directory/);

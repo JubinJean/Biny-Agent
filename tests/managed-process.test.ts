@@ -4,6 +4,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { ManagedProcessService } from "../src/runtime/ManagedProcessService.js";
+import { agentDir } from "../src/session/store.js";
 import {
   createProcessStatusTool,
   createReadProcessOutputTool,
@@ -43,8 +44,8 @@ async function main(): Promise<void> {
 async function testProcessStorageRejectsSymlink(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "biny-managed-process-storage-"));
   const outside = await mkdtemp(path.join(os.tmpdir(), "biny-managed-process-storage-outside-"));
-  await mkdir(path.join(root, ".biny"));
-  await symlink(outside, path.join(root, ".biny", "processes"), "dir");
+  await mkdir(agentDir(root), { recursive: true });
+  await symlink(outside, path.join(agentDir(root), "processes"), "dir");
   const service = new ManagedProcessService({ workspaceRoot: root, persistenceRoot: root });
   try {
     await assert.rejects(service.initialize(), /real directory, not a symbolic link/i);
@@ -161,7 +162,7 @@ async function testManagedHttpProcessOutlivesFiniteCommandTimeout(workspaceRoot:
     assert.equal(stopped.cleanup.status, "stopped");
     assert.equal(await waitFor(() => !isManagedProcessAlive(started.pid), 1_000), true);
 
-    const lifecycle = await readFile(path.join(workspaceRoot, ".biny", "processes", "lifecycle.jsonl"), "utf8");
+    const lifecycle = await readFile(path.join(agentDir(workspaceRoot), "processes", "lifecycle.jsonl"), "utf8");
     assert.match(lifecycle, /"event":"started"/);
     assert.match(lifecycle, /"event":"stopped"/);
   } finally {

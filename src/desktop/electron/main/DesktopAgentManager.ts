@@ -2524,7 +2524,7 @@ export class DesktopAgentManager {
   private async initializeRuntime(projectId: string): Promise<ManagedRuntime> {
     const project = this.projects.requireProject(projectId);
     if (project.missing) throw new Error(`Project path is unavailable: ${project.path}`);
-    // session 走全局项目目录，附件仍在项目 `.biny`；三端通过同一个 workspace 定位同一份历史。
+    // session 和附件都走全局按项目隔离的目录；三端通过同一个 workspace 定位同一份历史。
     const persistenceRoot = await this.projects.dataRoot(project);
     let runtime: InteractiveRuntimeHandle;
     const commands = undefined;
