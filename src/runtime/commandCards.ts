@@ -232,7 +232,7 @@ export function buildSubagentAgentsCard(definitions: readonly SubagentDefinition
   if (!definitions.length) {
     return {
       title: "Subagent agents",
-      sections: [{ rows: [row("Subagent agents", "no named agents (add markdown definitions under .biny/agents or ~/.biny/agents)", "dim")] }]
+      sections: [{ rows: [row("Subagent agents", "no named agents (add markdown definitions under .biny/agents or ~/.config/biny/agents)", "dim")] }]
     };
   }
   const rows: CommandCardRow[] = [];

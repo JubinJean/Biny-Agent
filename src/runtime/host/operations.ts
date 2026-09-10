@@ -61,6 +61,8 @@ export function operationLane(operation: string): OperationLane {
     || operation === "queue"
     || operation === "run.queue"
   ) return "run";
+  if (operation === "task.start" || operation === "task.run" || operation === "task.retry") return "admission";
+  if (operation === "diary.refresh" || operation === "reflection.run" || operation === "heartbeat.run") return "admission";
   if (
     operation === "snapshot"
     || operation === "session.list"
@@ -83,6 +85,7 @@ export function operationLane(operation: string): OperationLane {
     || operation === "task.get"
     || operation === "task.list"
     || operation === "task.events"
+    || operation === "heartbeat.status"
     || operation === "automation.list"
     || operation === "automation.pending"
     || operation === "goal.get"

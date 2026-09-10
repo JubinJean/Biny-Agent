@@ -97,6 +97,10 @@ export async function automationRunCommand(workspaceRoot: string, automationId: 
   await hostAction(workspaceRoot, options, async (client) => await client.automationRun(automationId));
 }
 
+export async function automationPendingCommand(workspaceRoot: string, automationId: string | undefined, options: JsonOption = {}): Promise<void> {
+  await hostAction(workspaceRoot, options, async (client) => await client.automationPending(automationId));
+}
+
 export async function automationDeleteCommand(workspaceRoot: string, automationId: string, options: JsonOption = {}): Promise<void> {
   await hostAction(workspaceRoot, options, async (client) => await client.automationDelete(automationId));
 }
@@ -105,9 +109,10 @@ export async function taskCreateCommand(workspaceRoot: string, task: string, opt
   await hostAction(workspaceRoot, options, async (client) => await client.taskCreate({ task, sessionId: options.sessionId, parentRunId: options.parentRunId }));
 }
 
-export async function taskActionCommand(workspaceRoot: string, action: "start" | "cancel" | "approve" | "resume" | "retry", taskRunId: string, options: JsonOption & { reason?: string } = {}): Promise<void> {
+export async function taskActionCommand(workspaceRoot: string, action: "start" | "run" | "cancel" | "approve" | "resume" | "retry", taskRunId: string, options: JsonOption & { reason?: string; retrySafety?: string } = {}): Promise<void> {
   await hostAction(workspaceRoot, options, async (client) => {
-    if (action === "start") return await client.taskStart(taskRunId);
+    if (action === "start") return await client.taskStart(taskRunId, { retrySafety: options.retrySafety });
+    if (action === "run") return await client.taskRun(taskRunId, { retrySafety: options.retrySafety });
     if (action === "cancel") return await client.taskCancel(taskRunId, options.reason);
     if (action === "approve") return await client.taskApprove(taskRunId);
     if (action === "resume") return await client.taskResume(taskRunId);
@@ -131,6 +136,10 @@ export async function goalCreateCommand(workspaceRoot: string, title: string, op
   await hostAction(workspaceRoot, options, async (client) => await client.goalCreate(title, parseJsonOption(options.payload), options.goalId));
 }
 
+export async function goalListCommand(workspaceRoot: string, options: JsonOption = {}): Promise<void> {
+  await hostAction(workspaceRoot, options, async (client) => await client.goalList());
+}
+
 export async function goalActionCommand(workspaceRoot: string, action: "get" | "pause" | "resume" | "cancel", goalId: string, options: JsonOption = {}): Promise<void> {
   await hostAction(workspaceRoot, options, async (client) => {
     if (action === "get") return await client.goalGet(goalId);
@@ -144,6 +153,10 @@ export async function graphCreateCommand(workspaceRoot: string, options: JsonOpt
   const parsedNodes = JSON.parse(options.nodes) as unknown;
   if (!Array.isArray(parsedNodes)) throw new Error("--nodes must be a JSON array.");
   await hostAction(workspaceRoot, options, async (client) => await client.graphCreate({ goalId: options.goalId, graphId: options.graphId, nodes: parsedNodes as GraphNodeInput[], payload: parseJsonOption(options.payload) }));
+}
+
+export async function graphListCommand(workspaceRoot: string, options: JsonOption = {}): Promise<void> {
+  await hostAction(workspaceRoot, options, async (client) => await client.graphList());
 }
 
 export async function graphActionCommand(workspaceRoot: string, action: "start" | "pause" | "resume" | "cancel" | "inspect" | "events", graphId: string, options: JsonOption = {}): Promise<void> {

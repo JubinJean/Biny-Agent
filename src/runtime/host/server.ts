@@ -21,7 +21,7 @@ import type {
   SubmittedAgentRun
 } from "../InteractiveAgentRuntime.js";
 import { runtimeIsBusy, type AgentRuntimeUpdate, type InteractiveRuntimeSnapshot } from "../agentEvents.js";
-import { isTaskRunTerminal } from "../TaskRunStore.js";
+import { isTaskRunTerminal, type TaskRetrySafety, type TaskRunWithAttempts } from "../TaskRunStore.js";
 import { evaluateTaskRetry } from "../TaskRetryPolicy.js";
 import type {
   CapabilityRegistrationInput,
@@ -74,6 +74,7 @@ import {
   readLocalEmbeddingModel,
   readOptionalRunStatus,
   readOptionalTaskStatus,
+  readTaskRetrySafety,
   readPermissionMode,
   readPermissionResult,
   readPromptContext,
@@ -114,6 +115,18 @@ function readSessionFilter(value: unknown): ReadonlySet<string> | undefined {
   return new Set(value);
 }
 
+function taskPrompt(task: unknown): string {
+  if (typeof task === "string" && task.trim()) return task.trim();
+  if (typeof task === "object" && task !== null) {
+    const value = task as Record<string, unknown>;
+    const title = typeof value.title === "string" ? value.title.trim() : "";
+    const description = typeof value.description === "string" ? value.description.trim() : "";
+    if (title || description) return [title, description].filter(Boolean).join("\n\n");
+  }
+  const serialized = JSON.stringify(task);
+  return serialized === undefined ? String(task) : serialized;
+}
+
 export class RuntimeHostServer {
   private readonly server = net.createServer((socket) => this.accept(socket));
   private readonly connections = new Set<HostConnection>();
@@ -134,6 +147,7 @@ export class RuntimeHostServer {
   private closePromise: Promise<void> | undefined;
   /** 重建只锁定目标 session，不能让一个 session 的配置刷新挡住其它 session。 */
   private readonly runtimeRestartPromises = new Map<string, Promise<{ snapshot: InteractiveRuntimeSnapshot; sequence: number }>>();
+  private readonly taskPromises = new Map<string, Promise<unknown>>();
   private listening = false;
   private initialized = false;
 
@@ -258,7 +272,27 @@ export class RuntimeHostServer {
       if (!isNotFound(error)) throw error;
     }
     await this.worktrees.reconcile();
+    this.recoverTaskRuns();
     this.initialized = true;
+  }
+
+  /** Host 重启后旧进程里的 bounded subagent 已不存在，只把未终态投影退回队列。 */
+  private recoverTaskRuns(): void {
+    // 允许旧的嵌入式测试/轻量 fallback 只提供部分 CommandRuntime；真实 Runtime 永远带有 TaskRunStore。
+    if (!this.commands.taskRuns) return;
+    let cursor: number | undefined;
+    do {
+      const page = this.commands.taskRuns.list({ limit: 1_000, cursor });
+      for (const task of page.tasks) {
+        if (task.status !== "running" && task.status !== "verifying") continue;
+        try {
+          this.commands.taskRuns.requeue(task.taskRunId);
+        } catch {
+          // 并发恢复或已完成的任务以数据库当前终态为准，不能阻止 Host 启动。
+        }
+      }
+      cursor = page.hasMore ? page.nextCursor : undefined;
+    } while (cursor !== undefined);
   }
 
   /** 由显式恢复入口触发续跑；普通 Host 启动不会调用此方法。 */
@@ -749,9 +783,31 @@ export class RuntimeHostServer {
           });
           return record;
         }, runtime);
+      case "diary.refresh":
+      case "reflection.run":
+        return await this.executeAdmission(async () => await commands.refreshDailyDiary(
+          requiredString(payload.dateKey, "dateKey"),
+          { force: payload.force === true }
+        ), runtime);
+      case "heartbeat.status":
+        return commands.heartbeat.status();
+      case "heartbeat.run":
+        return await this.executeAdmission(async () => ({ triggered: await commands.heartbeat.triggerNow(), status: commands.heartbeat.status() }), runtime);
       case "task.start":
         return await this.executeAdmission(async () => {
-          throw new Error("TaskRun start is unavailable until a TaskRun execution adapter is attached; use an explicit AgentRun, Automation, or Graph entrypoint.");
+          const started = await this.startTaskRun(requiredString(payload.taskRunId, "taskRunId"), commands, {
+            retrySafety: readTaskRetrySafety(payload.retrySafety)
+          });
+          return commands.taskRuns.get(started.task.taskRunId);
+        }, runtime);
+      case "task.run":
+        return await this.executeAdmission(async () => {
+          const taskRunId = requiredString(payload.taskRunId, "taskRunId");
+          const started = await this.startTaskRun(taskRunId, commands, {
+            retrySafety: readTaskRetrySafety(payload.retrySafety)
+          });
+          await started.completion;
+          return commands.taskRuns.get(taskRunId);
         }, runtime);
       case "task.cancel":
         return await this.executeControl(async () => {
@@ -785,7 +841,9 @@ export class RuntimeHostServer {
           const taskRunId = requiredString(payload.taskRunId, "taskRunId");
           const decision = evaluateTaskRetry(commands.taskRuns.get(taskRunId));
           if (!decision.allowed) throw new Error(`Task retry rejected (${decision.code}): ${decision.reason}`);
-          throw new Error(`Task retry admitted for ${decision.failureClass}, but no TaskRun execution adapter is attached; refusing to mark the task running without starting a new AgentRun.`);
+          commands.taskRuns.retry(taskRunId);
+          const started = await this.startTaskRun(taskRunId, commands, { retrySafety: decision.attempt.retrySafety });
+          return commands.taskRuns.get(started.task.taskRunId);
         }, runtime);
       case "task.get":
         return commands.taskRuns.get(requiredString(payload.taskRunId, "taskRunId"));
@@ -1146,6 +1204,83 @@ export class RuntimeHostServer {
         reason: publicError(error),
         errorCode: publicErrorCode(error)
       };
+    }
+  }
+
+  private async startTaskRun(
+    taskRunId: string,
+    commands: CommandRuntime,
+    options: { retrySafety?: TaskRetrySafety } = {}
+  ): Promise<{ task: TaskRunWithAttempts; completion: Promise<unknown> }> {
+    const task = commands.taskRuns.get(taskRunId);
+    if (!task) throw new Error(`TaskRun ${taskRunId} does not exist.`);
+    const existingPromise = this.taskPromises.get(taskRunId);
+    if (existingPromise) return { task, completion: existingPromise };
+    if (isTaskRunTerminal(task.status)) return { task, completion: Promise.resolve(task) };
+
+    let current = task;
+    if (current.status === "running" || current.status === "verifying") {
+      current = commands.taskRuns.requeue(taskRunId);
+    }
+    if (current.status === "created") commands.taskRuns.transition(taskRunId, "queued");
+    const attempt = commands.taskRuns.createAttempt(taskRunId, {
+      parentRunId: current.parentRunId,
+      retrySafety: options.retrySafety ?? "unknown"
+    });
+    const latest = commands.taskRuns.get(taskRunId);
+    if (!latest) throw new Error(`TaskRun ${taskRunId} disappeared before execution.`);
+
+    let submitted;
+    try {
+      submitted = commands.startSubagentTask(taskPrompt(latest.task), {
+        taskId: taskRunId,
+        parentRunId: latest.parentRunId,
+        accessMode: "workspace"
+      });
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      this.finishTaskAttempt(commands, taskRunId, attempt.attemptId, "failed", { failure: { message: failure.message, failureClass: "dispatch_failed" } });
+      throw failure;
+    }
+
+    const completion = submitted.completion.then(
+      (output) => {
+        this.finishTaskAttempt(commands, taskRunId, attempt.attemptId, "completed", { artifacts: { output } });
+        return output;
+      },
+      (error: unknown) => {
+        const failure = error instanceof Error ? error : new Error(String(error));
+        const status = failure.name === "SubagentTaskAbortedError" || failure.name === "AbortError" ? "aborted" : "failed";
+        this.finishTaskAttempt(commands, taskRunId, attempt.attemptId, status, {
+          failure: { message: failure.message, failureClass: status === "failed" ? "execution_failed" : "cancelled" }
+        });
+        throw failure;
+      }
+    ).finally(() => {
+      if (this.taskPromises.get(taskRunId) === completion) this.taskPromises.delete(taskRunId);
+    });
+    this.taskPromises.set(taskRunId, completion);
+    // task.start 是异步派发；即使调用方不再请求 task.run，失败也不能变成未处理 Promise。
+    void completion.catch(() => undefined);
+    return { task: latest, completion };
+  }
+
+  private finishTaskAttempt(
+    commands: CommandRuntime,
+    taskRunId: string,
+    attemptId: string,
+    status: "completed" | "failed" | "aborted",
+    input: { artifacts?: unknown; failure?: unknown }
+  ): void {
+    try {
+      const current = commands.taskRuns.get(taskRunId);
+      if (current && !isTaskRunTerminal(current.status)) {
+        commands.taskRuns.transition(taskRunId, status, { attemptId, ...input });
+      } else if (current?.status === status) {
+        commands.taskRuns.transition(taskRunId, status, { attemptId, ...input });
+      }
+    } catch {
+      // Subagent 的最终结果已经由 session 事件记录；投影失败不能制造第二个终态。
     }
   }
 

@@ -5,6 +5,7 @@
  * root，只装配配置、provider、工具和权限，不向宿主泄露可变 conversation 或 recorder。
  */
 import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { createFileConfigStore, type AgentConfigStore } from "../config/store.js";
 import type { AgentConfig } from "../config/schema.js";
 import { AgentSession } from "../agent/AgentSession.js";
@@ -22,10 +23,11 @@ import { TodoStore } from "../session/todoStore.js";
 import { CheckpointStore } from "../session/checkpointStore.js";
 import { PermissionManager } from "../permission/PermissionManager.js";
 import { createSkillResourceTool, createSkillTool, expandSkillCommand as expandSkillCommandText, type SkillBundle, type SkillDefinition } from "../extensions/skills.js";
+import { createSkillInstallTool, createSkillSearchTool } from "../tools/skillDiscovery.js";
 import { skillPathsForSelection, skillPromptForSelection } from "../extensions/skills.js";
 import type { ToolRisk, ToolSource } from "../tools/types.js";
 import { perfNow, recordPerfPhase } from "../observability/perfTiming.js";
-import { loadPlugins } from "../extensions/plugins.js";
+import { loadPlugins, loadPluginsFromRoot } from "../extensions/plugins.js";
 import type { McpToolHost } from "../extensions/mcp.js";
 import { createSubagentTool, runSubagentTask as executeSubagentTask, type SubagentOptions } from "../extensions/subagent.js";
 import { buildSubagentDefinitionsPrompt, loadSubagentDefinitions, type SubagentDefinition } from "../extensions/agents.js";
@@ -53,9 +55,11 @@ import { AutomationStore } from "./AutomationScheduler.js";
 import { GoalGraphStore } from "./GoalGraphStore.js";
 import { CapabilityStore } from "./CapabilityStore.js";
 import { RuntimeHostResourceScope, RuntimeResourceBaselinePendingError, type RuntimeHostResourceRegistry, type RuntimeResourceSnapshot } from "./host/resources.js";
-import { listEnabledProjectPluginPaths } from "../extensions/pluginRegistry.js";
+import { listEnabledGlobalPluginPaths, listEnabledProjectPluginPaths } from "../extensions/pluginRegistry.js";
+import { globalPluginRoot } from "../config/paths.js";
 import { DailyDiaryScheduler } from "../agent/context/chatDiary.js";
 import { HeartbeatScheduler } from "../agent/context/heartbeat.js";
+import { createBrowserTools, type BrowserAutomationEndpoint } from "../tools/browser.js";
 
 export interface CommandRuntime {
   workspaceRoot: string;
@@ -92,6 +96,7 @@ export interface CommandRuntime {
   /** 实时重新扫描具名子代理定义（会话期间可编辑生效）。 */
   listSubagentAgents(): Promise<SubagentDefinition[]>;
   startSubagentTask(task: string, options?: SubagentTaskRunOptions): SubmittedSubagentTask;
+  refreshDailyDiary(dateKey: string, options?: { force?: boolean }): Promise<unknown>;
   setSubagentParentRunId(parentRunId?: string): void;
   close(): Promise<void>;
 }
@@ -119,6 +124,8 @@ export interface CommandRuntimeOptions {
   resourceBoot?: "blocking" | "background";
   /** Runtime Host 内部传递的 scope 注册表。 */
   resourceRegistry?: RuntimeHostResourceRegistry;
+  /** Desktop 可见浏览器的控制端点；其它入口不设置则不注册 browser_* 工具。 */
+  browserAutomation?: BrowserAutomationEndpoint;
 }
 
 export async function createCommandRuntime(workspaceRoot: string, options: CommandRuntimeOptions = {}): Promise<CommandRuntime> {
@@ -156,6 +163,9 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     config.sandbox,
     config.web.cookies
   );
+  if (options.browserAutomation) {
+    for (const tool of createBrowserTools(options.browserAutomation)) toolRegistry.registerBuiltinTool(tool);
+  }
   // 快照挂在工作区的 git 仓库上；非 git 目录下这项能力直接不可用。
   const checkpoints = config.checkpoints.enabled ? await CheckpointStore.open(workspaceRoot) : undefined;
   const todos = new TodoStore(persistenceRoot, recorder.sessionId);
@@ -184,6 +194,10 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
         // session 内的 plugin/builtin 同名工具优先，单个 MCP 工具不影响其它能力。
       }
     }
+  };
+  const refreshSkills = async (): Promise<void> => {
+    await resourceScope.refreshSkills();
+    skills = resourceScope.skills;
   };
   const releaseResourceScope = async (): Promise<void> => {
     unsubscribeResources();
@@ -224,6 +238,19 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     skills = resourceScope.skills;
     toolRegistry.registerUserTool(createSkillTool(() => requireSkillBundle(skills)));
     toolRegistry.registerUserTool(createSkillResourceTool(() => requireSkillBundle(skills)));
+    toolRegistry.registerBuiltinTool(createSkillSearchTool({
+      getInstalledNames: () => {
+        const installed = new Set<string>();
+        for (const skill of requireSkillBundle(skills).skills) {
+          installed.add(skill.name.toLocaleLowerCase());
+          installed.add(path.basename(path.dirname(skill.filePath)).toLocaleLowerCase());
+        }
+        return installed;
+      }
+    }));
+    toolRegistry.registerBuiltinTool(createSkillInstallTool({
+      refreshSkills
+    }));
     refreshExtensionTools();
     const pluginsPerfStartedAt = perfNow();
     const managedPluginPaths = await listEnabledProjectPluginPaths(workspaceRoot).catch((error: unknown) => {
@@ -236,6 +263,18 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
       } catch (error) {
         // 单个 Plugin 失败只影响它自己；主 Runtime、其它 Plugin 和内置工具仍可用。
         loadedPlugins.push(`${pluginPath} (failed: ${error instanceof Error ? error.message : String(error)})`);
+      }
+    }
+    const managedGlobalPluginPaths = await listEnabledGlobalPluginPaths().catch((error: unknown) => {
+      loadedPlugins.push(`global managed plugins (failed: ${error instanceof Error ? error.message : String(error)})`);
+      return [];
+    });
+    const globalPluginPaths = [...config.extensions.globalPlugins, ...managedGlobalPluginPaths];
+    if (globalPluginPaths.length) {
+      try {
+        loadedPlugins.push(...await loadPluginsFromRoot(workspaceRoot, globalPluginRoot(), globalPluginPaths, config, toolRegistry, ai));
+      } catch (error) {
+        loadedPlugins.push(`global plugins (failed: ${error instanceof Error ? error.message : String(error)})`);
       }
     }
     recordPerfPhase("host.loadPlugins", pluginsPerfStartedAt, { count: loadedPlugins.length }, workspaceRoot);
@@ -259,12 +298,10 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     )) {
       toolRegistry.registerBuiltinTool(tool);
     }
-    if (config.context.emotion.enabled && config.context.emotion.allowModelUpdate) {
-      toolRegistry.registerBuiltinTool(createEmotionTool({
-        getStorage: () => agent?.getEmotionStorage(),
-        getFatigue: () => agent?.getFatigue() ?? 0
-      }));
-    }
+    toolRegistry.registerBuiltinTool(createEmotionTool({
+      getStorage: () => agent?.getEmotionStorage(),
+      getFatigue: () => agent?.getFatigue() ?? 0
+    }));
     // Activity 回忆改为主动工具集：模型按需生成打工日记、时间线或搜索，而不是把脱敏事件
     // 注入每个回合。模型、策略与嵌入运行时都在调用时现取，不沿用装配时的快照。
     const loadActivitySettings = async (): Promise<ActivitySettings> =>
@@ -379,8 +416,7 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     }
   });
   const heartbeat = new HeartbeatScheduler({
-    getConfig: () => dailyDiaryAgent.getHeartbeatConfig(),
-    agentDir: undefined,
+    configDir: undefined,
     run: async (prompt, signal) => {
       await dailyDiaryAgent.runTask(prompt, { abortSignal: signal, runId: randomUUID(), turnId: randomUUID(), emotionAnalysis: false });
     }
@@ -411,7 +447,7 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     if (!subagentTaskManager) throw new Error("Subagent runtime is unavailable.");
     const taskId = taskOptions?.taskId ?? randomUUID();
     agent.recordHostedUserMessage(task);
-    const sequence = agent.recordHostedToolCall("delegate_task", taskOptions?.agent ? { task, agent: taskOptions.agent } : { task }, taskId);
+    const sequence = agent.recordHostedToolCall("Task", taskOptions?.agent ? { task, agent: taskOptions.agent } : { task }, taskId);
     let submitted: SubmittedSubagentTask;
     try {
       taskOptions?.signal?.throwIfAborted();
@@ -425,19 +461,19 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
       });
     } catch (error) {
       const failure = error instanceof Error ? error : new Error(String(error));
-      agent.recordHostedToolResult("delegate_task", { error: failure.message }, taskId, sequence);
+      agent.recordHostedToolResult("Task", { error: failure.message }, taskId, sequence);
       throw failure;
     }
 
     const completion = submitted.completion.then(
       (result) => {
-        agent.recordHostedToolResult("delegate_task", result, taskId, sequence);
+        agent.recordHostedToolResult("Task", result, taskId, sequence);
         agent.recordHostedAssistantMessage(result);
         return result;
       },
       (error: unknown) => {
         const failure = error instanceof Error ? error : new Error(String(error));
-        agent.recordHostedToolResult("delegate_task", { error: failure.message }, taskId, sequence);
+        agent.recordHostedToolResult("Task", { error: failure.message }, taskId, sequence);
         throw failure;
       }
     );
@@ -483,10 +519,7 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
       ];
     },
     expandSkillCommand: async (input: string): Promise<string> => await expandSkillCommandText(requireSkillBundle(skills), input),
-    refreshSkills: async (): Promise<void> => {
-      await resourceScope.refreshSkills();
-      skills = resourceScope.skills;
-    },
+    refreshSkills,
     refreshExtensionTools,
     resourceSnapshot: (): RuntimeResourceSnapshot => resourceScope.snapshot(),
     assertResourceBaselineReady: (): void => {
@@ -498,6 +531,7 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
       return [...subagentDefinitions];
     },
     startSubagentTask,
+    refreshDailyDiary: async (dateKey: string, refreshOptions: { force?: boolean } = {}): Promise<unknown> => await agent.refreshDailyDiary(dateKey, refreshOptions),
     setSubagentParentRunId: (parentRunId?: string): void => {
       subagentParentRunId = parentRunId;
     },

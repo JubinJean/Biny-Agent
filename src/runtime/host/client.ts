@@ -308,6 +308,26 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     return await this.request("task.start", { taskRunId, ...input });
   }
 
+  async taskRun(taskRunId: string, input: { retrySafety?: string } = {}): Promise<HostOperationResult<unknown>> {
+    return await this.request("task.run", { taskRunId, ...input });
+  }
+
+  async refreshDailyDiary(dateKey: string, force = false): Promise<HostOperationResult<unknown>> {
+    return await this.request("diary.refresh", { dateKey, force });
+  }
+
+  async reflectionRun(dateKey: string, force = false): Promise<HostOperationResult<unknown>> {
+    return await this.request("reflection.run", { dateKey, force });
+  }
+
+  async heartbeatStatus(): Promise<unknown> {
+    return await this.request("heartbeat.status", {});
+  }
+
+  async heartbeatRun(): Promise<HostOperationResult<unknown>> {
+    return await this.request("heartbeat.run", {});
+  }
+
   async taskCancel(taskRunId: string, reason?: string): Promise<HostOperationResult<unknown>> {
     return await this.request("task.cancel", { taskRunId, reason });
   }

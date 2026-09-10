@@ -9,6 +9,8 @@ import type { MemorySleepPreview } from "../src/agent/context/memoryTypes.js";
 import { defaultConfig } from "../src/config/schema.js";
 import { saveConfig } from "../src/config/loader.js";
 import { runtimeHostPaths, startRuntimeHost, connectRuntimeHost, spawnRuntimeHost } from "../src/runtime/RuntimeHost.js";
+import { RuntimeEventAuthority } from "../src/runtime/RuntimeAuthority.js";
+import { DurableTaskRunStore } from "../src/runtime/TaskRunStore.js";
 import type { InteractiveRuntimeHandle } from "../src/runtime/InteractiveAgentRuntime.js";
 import { defaultChatPersonalizationOverride, resolveChatPersonalization } from "../src/personalization/index.js";
 
@@ -39,6 +41,19 @@ async function waitUntil(predicate: () => boolean, timeoutMs = 1_000): Promise<v
     await new Promise<void>((resolve) => setTimeout(resolve, 5));
   }
   assert.equal(predicate(), true, "Timed out waiting for Runtime Host cancellation.");
+}
+
+async function waitForTaskStatus(read: () => Promise<unknown>, status: string, timeoutMs = 2_000): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + timeoutMs;
+  let value: unknown;
+  while (Date.now() < deadline) {
+    value = await read();
+    if (typeof value === "object" && value !== null && (value as { status?: unknown }).status === status) {
+      return value as Record<string, unknown>;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail(`Timed out waiting for TaskRun status ${status}: ${JSON.stringify(value)}`);
 }
 
 async function main(): Promise<void> {
@@ -73,6 +88,8 @@ async function main(): Promise<void> {
   let downloadedEmbeddingModel: string | undefined;
   let removedEmbeddingModel: string | undefined;
   let embeddingRebuilds = 0;
+  const taskCompletions = new Map<string, { resolve: (output: string) => void; reject: (error: Error) => void }>();
+  let taskStarts = 0;
   const embeddingStatus = () => ({
     activeModel: { kind: "local" as const, model: "multilingual-e5-small" as const },
     models: [],
@@ -153,6 +170,28 @@ async function main(): Promise<void> {
     },
     close: async () => undefined
   };
+  const taskAuthority = await RuntimeEventAuthority.open(workspace, { backfillLegacySessions: false });
+  const taskRuns = await DurableTaskRunStore.open(workspace, taskAuthority);
+  const recoveredTask = taskRuns.create({ taskRunId: "task-host-recovered", task: { title: "recover me" }, sessionId: snapshot.info.sessionId });
+  const recoveredAttempt = taskRuns.createAttempt(recoveredTask.taskRunId, { runId: "task-host-recovery-run", turnId: "task-host-recovery-turn" });
+  taskRuns.transition(recoveredTask.taskRunId, "running", { attemptId: recoveredAttempt.attemptId });
+  const startSubagentTask = (task: string, options?: { taskId?: string; parentRunId?: string }) => {
+    const taskId = options?.taskId ?? `task-host-generated-${String(taskStarts + 1)}`;
+    taskStarts += 1;
+    let resolveCompletion!: (output: string) => void;
+    let rejectCompletion!: (error: Error) => void;
+    const completion = new Promise<string>((resolve, reject) => {
+      resolveCompletion = resolve;
+      rejectCompletion = reject;
+    });
+    taskCompletions.set(taskId, { resolve: resolveCompletion, reject: rejectCompletion });
+    return {
+      taskId,
+      parentRunId: options?.parentRunId ?? taskId,
+      deadline: new Date(Date.now() + 10_000).toISOString(),
+      completion
+    };
+  };
   const commands = {
     agent: {
       switchModel: async (_alias: string, thinking?: string) => {
@@ -229,7 +268,10 @@ async function main(): Promise<void> {
       },
       rebuildMemoryEmbeddingIndex: async () => { embeddingRebuilds += 1; },
       cancelMemoryEmbeddingRebuild: () => true
-    }
+    },
+    runtimeAuthority: taskAuthority,
+    taskRuns,
+    startSubagentTask
   } as unknown as CommandRuntime;
   const hostPaths = runtimeHostPaths(workspace);
   const attackerRegistration = path.join(workspace, "attacker-registration.json");
@@ -248,6 +290,52 @@ async function main(): Promise<void> {
   assert.equal((await readFile(hostPaths.lockPath, "utf8")).trim(), String(ownerRegistration.pid));
   const client = await connectRuntimeHost(workspace, { clientId: "test-client", surface: "tui" });
   assert.ok(client);
+  const recovered = await client.taskGet("task-host-recovered") as { status?: string };
+  assert.equal(recovered.status, "queued", "Host 启动时必须把遗留中的 TaskRun 重新排队");
+
+  const createdTask = await client.taskCreate({ taskRunId: "task-host-success", task: { title: "complete me", description: "a bounded task" } });
+  assert.equal(createdTask.accepted, true);
+  const [firstStart, duplicateStart] = await Promise.all([
+    client.taskStart("task-host-success", { retrySafety: "idempotent" }),
+    client.taskStart("task-host-success", { retrySafety: "idempotent" })
+  ]);
+  assert.equal(firstStart.accepted, true);
+  assert.equal(duplicateStart.accepted, true);
+  assert.equal(taskStarts, 1, "重复 start 请求必须复用同一执行 Promise");
+  taskCompletions.get("task-host-success")?.resolve("task output");
+  const completedTask = await waitForTaskStatus(async () => await client.taskGet("task-host-success"), "completed");
+  assert.deepEqual((completedTask.attempts as Array<{ artifacts?: unknown }>)[0]?.artifacts, { output: "task output" });
+  const taskEvents = await client.taskEvents("task-host-success") as Array<{ eventType?: string }>;
+  assert.equal(taskEvents.some((event) => event.eventType === "task.status"), true);
+
+  const failedTask = await client.taskCreate({ taskRunId: "task-host-failure", task: "fail me" });
+  assert.equal(failedTask.accepted, true);
+  const failingRun = client.taskRun("task-host-failure", { retrySafety: "safe" });
+  await waitUntil(() => taskCompletions.has("task-host-failure"));
+  taskCompletions.get("task-host-failure")?.reject(new Error("execution failed"));
+  const failureResult = await failingRun;
+  assert.equal(failureResult.accepted, false);
+  const failedRecord = await waitForTaskStatus(async () => await client.taskGet("task-host-failure"), "failed");
+  assert.match(JSON.stringify(failedRecord), /execution failed/u);
+
+  const retryableTask = taskRuns.create({ taskRunId: "task-host-retryable", task: "retry me", sessionId: snapshot.info.sessionId });
+  const retryableAttempt = taskRuns.createAttempt(retryableTask.taskRunId, { retrySafety: "idempotent" });
+  taskRuns.transition(retryableTask.taskRunId, "running", { attemptId: retryableAttempt.attemptId });
+  taskRuns.transition(retryableTask.taskRunId, "failed", { attemptId: retryableAttempt.attemptId, failure: { failureClass: "RateLimit" } });
+  const retryResult = await client.taskRetry(retryableTask.taskRunId);
+  assert.equal(retryResult.accepted, true);
+  taskCompletions.get("task-host-retryable")?.resolve("retried output");
+  const retriedRecord = await waitForTaskStatus(async () => await client.taskGet("task-host-retryable"), "completed");
+  assert.equal((retriedRecord.attempts as unknown[]).length, 2, "retry 必须创建新的 TaskAttempt");
+
+  const cancelledTask = await client.taskCreate({ taskRunId: "task-host-cancelled", task: "cancel me" });
+  assert.equal(cancelledTask.accepted, true);
+  await client.taskStart("task-host-cancelled");
+  const cancellationResult = await client.taskCancel("task-host-cancelled", "test cancellation");
+  assert.equal(cancellationResult.accepted, true);
+  const cancelledRecord = await waitForTaskStatus(async () => await client.taskGet("task-host-cancelled"), "cancelled");
+  assert.match(JSON.stringify(cancelledRecord), /cancelled/u);
+  taskCompletions.get("task-host-cancelled")?.resolve("late output");
   await waitUntil(() => maintenanceRuns >= 1, 6_000);
   assert.equal(await client.cancelMemorySleep(), false);
   const pendingMemoryPreview = client.previewMemorySleep();
@@ -624,6 +712,8 @@ async function main(): Promise<void> {
   await Promise.race([exited, new Promise<void>((resolve) => setTimeout(resolve, 2_000))]);
   if (spawned.process.exitCode === null && spawned.process.signalCode === null) spawned.process.kill("SIGKILL");
   await rm(spawnedWorkspace, { recursive: true, force: true });
+  taskRuns.close();
+  taskAuthority.close();
   await rm(workspace, { recursive: true, force: true });
 }
 

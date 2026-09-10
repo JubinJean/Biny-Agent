@@ -1,7 +1,7 @@
 /**
  * Runtime-owned long-lived process manager.
  *
- * Unlike `run_command`, managed processes have no command deadline. They write
+ * Unlike `Bash`, managed processes have no command deadline. They write
  * directly to a durable log file and stay addressable by an opaque process ID
  * until they exit or the owning runtime closes. Runtime close cleans processes
  * by default; callers must explicitly opt into retaining a process.

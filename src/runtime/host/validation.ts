@@ -12,6 +12,7 @@ import { thinkingLevelSchema } from "../../config/schema.js";
 import type { PermissionAction, PermissionMode, PermissionResult } from "../../permission/PermissionManager.js";
 import type { RuntimeRunStatus } from "../RuntimeAuthority.js";
 import type { TaskRunStatus } from "../TaskRunStore.js";
+import type { TaskRetrySafety } from "../TaskRunStore.js";
 import type { AutomationCreateInput } from "../AutomationScheduler.js";
 import type { GraphNodeInput } from "../GoalGraphStore.js";
 import type { HostResponseFrame } from "./protocol.js";
@@ -200,6 +201,12 @@ export function readOptionalTaskStatus(value: unknown): TaskRunStatus | undefine
   if (value === undefined) return undefined;
   if (value === "queued" || value === "created" || value === "running" || value === "verifying" || value === "completed" || value === "failed" || value === "incomplete" || value === "blocked" || value === "policy_denied" || value === "budget_exhausted" || value === "needs_approval" || value === "aborted" || value === "cancelled") return value;
   throw new Error("Runtime Host TaskRun status is invalid.");
+}
+
+export function readTaskRetrySafety(value: unknown): TaskRetrySafety | undefined {
+  if (value === undefined) return undefined;
+  if (value === "safe" || value === "idempotent" || value === "unsafe" || value === "unknown") return value;
+  throw new Error("Runtime Host TaskRun retrySafety is invalid.");
 }
 
 export function readCapabilityOwnerType(value: unknown): "host" | "client" {

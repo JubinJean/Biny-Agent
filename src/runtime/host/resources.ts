@@ -37,7 +37,7 @@ export interface RuntimeResourceSnapshot {
   };
 }
 
-const defaultSkillBundle: SkillBundle = { skills: [], paths: [], prompt: "", warnings: [], errors: [] };
+const defaultSkillBundle: SkillBundle = { skills: [], paths: [], prompt: "", warnings: [], conflicts: [], errors: [] };
 const mcpBaselineBudgetMs = 10_000;
 
 export class RuntimeHostResourceScope {

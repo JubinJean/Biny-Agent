@@ -8,6 +8,7 @@ import type { CommandSurface } from "../commandRegistry.js";
 import type { InteractiveAgentHost } from "../InteractiveAgentRuntime.js";
 import type { RuntimeHostClient } from "./client.js";
 import type { RuntimeHostResourceRegistry } from "./resources.js";
+import type { BrowserAutomationEndpoint } from "../../tools/browser.js";
 
 export type HostSurface = CommandSurface | "cli";
 
@@ -58,6 +59,8 @@ export interface RuntimeHostSpawnOptions {
   resumeInterrupted?: boolean;
   /** Electron 打包时由主进程显式提供；CLI/TUI 会自动推导 source/dist 路径。 */
   entryPath?: string;
+  /** Desktop 可见浏览器的控制端点；CLI/TUI 不注入浏览器能力。 */
+  browserAutomation?: BrowserAutomationEndpoint;
 }
 
 export type RuntimeIsolation = "shared" | "worktree";

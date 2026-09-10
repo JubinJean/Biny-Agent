@@ -156,6 +156,7 @@ function toSpawnOptions(options: SpawnRuntimeHostOptions): RuntimeHostSpawnOptio
     attachmentRoot: options.attachmentRoot,
     sessionId: options.sessionId,
     resumeInterrupted: options.resumeInterrupted,
-    entryPath: options.entryPath
+    entryPath: options.entryPath,
+    browserAutomation: options.browserAutomation
   };
 }

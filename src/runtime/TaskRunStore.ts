@@ -224,7 +224,23 @@ export class DurableTaskRunStore {
     if (input.attemptId !== undefined && (!attempt || attempt.taskRunId !== taskRunId)) {
       throw new Error(`TaskAttempt ${input.attemptId} does not belong to TaskRun ${taskRunId}.`);
     }
-    if (task.status === status) return this.requireWithAttempts(taskRunId);
+    if (task.status === status) {
+      if (attempt && (input.verification !== undefined || input.artifacts !== undefined || input.failure !== undefined || input.highWaterSequence !== undefined)) {
+        const now = new Date().toISOString();
+        this.database.prepare(`
+          UPDATE task_attempts SET high_water_sequence = COALESCE(?, high_water_sequence), verification_json = COALESCE(?, verification_json),
+            artifacts_json = COALESCE(?, artifacts_json), failure_json = COALESCE(?, failure_json), updated_at = ? WHERE attempt_id = ?
+        `).run(
+          input.highWaterSequence ?? null,
+          stringifyOptional(input.verification),
+          stringifyOptional(input.artifacts),
+          stringifyOptional(input.failure),
+          now,
+          attempt.attemptId
+        );
+      }
+      return this.requireWithAttempts(taskRunId);
+    }
     if (isTaskRunTerminal(task.status)) {
       throw new Error(`TaskRun ${taskRunId} is already terminal (${task.status}) and cannot transition to ${status}.`);
     }
@@ -272,6 +288,35 @@ export class DurableTaskRunStore {
           attempt.attemptId
         );
       }
+      return this.requireWithAttempts(taskRunId);
+    });
+  }
+
+  /** 进程重启后，旧的 queued/running 投影可以安全回到队列，再由新进程重新派发。 */
+  requeue(taskRunId: string, reason = "TaskRun execution was recovered after a process restart."): TaskRunWithAttempts {
+    const task = this.require(taskRunId);
+    if (task.status === "queued" || task.status === "created") return this.requireWithAttempts(taskRunId);
+    if (isTaskRunTerminal(task.status)) throw new Error(`TaskRun ${taskRunId} is already terminal (${task.status}).`);
+    return this.transition(taskRunId, "queued", { failure: { message: reason } });
+  }
+
+  /** 只有失败任务可以显式重试；新 attempt 会在执行入口创建。 */
+  retry(taskRunId: string): TaskRunWithAttempts {
+    const task = this.require(taskRunId);
+    if (task.status !== "failed") throw new Error(`TaskRun ${taskRunId} is not failed and cannot retry.`);
+    const now = new Date().toISOString();
+    return this.authority.runEventTransaction({
+      eventId: `task:${taskRunId}:retry:${String(task.revision + 1)}`,
+      sessionId: task.sessionId ?? `task:${taskRunId}`,
+      invocationId: task.parentRunId ?? `task:${taskRunId}`,
+      runId: task.parentRunId ?? `task:${taskRunId}`,
+      turnId: `task:${taskRunId}`,
+      eventType: "task.retry",
+      payload: { taskRunId },
+      createdAt: now
+    }, () => {
+      this.database.prepare("UPDATE task_runs SET status = 'queued', terminal_event_id = NULL, revision = revision + 1, updated_at = ? WHERE task_run_id = ? AND status = 'failed'").run(now, taskRunId);
+      this.database.prepare("INSERT OR IGNORE INTO task_events (event_id, task_run_id, event_type, payload_json, created_at) VALUES (?, ?, 'task.retry', ?, ?)").run(`task:${taskRunId}:retry:${String(task.revision + 1)}`, taskRunId, stringify({ taskRunId }), now);
       return this.requireWithAttempts(taskRunId);
     });
   }
@@ -458,8 +503,8 @@ function isAllowedTaskTransition(from: TaskRunStatus, to: TaskRunStatus): boolea
   const allowed: Record<TaskRunStatus, readonly TaskRunStatus[]> = {
     queued: ["running", "verifying", "completed", "failed", "incomplete", "blocked", "policy_denied", "budget_exhausted", "needs_approval", "aborted", "cancelled"],
     created: ["queued", "running", "verifying", "completed", "failed", "incomplete", "blocked", "policy_denied", "budget_exhausted", "needs_approval", "aborted", "cancelled"],
-    running: ["verifying", "completed", "failed", "incomplete", "blocked", "policy_denied", "budget_exhausted", "needs_approval", "aborted", "cancelled"],
-    verifying: ["completed", "failed", "incomplete", "blocked", "policy_denied", "budget_exhausted", "needs_approval", "aborted", "cancelled"],
+    running: ["queued", "verifying", "completed", "failed", "incomplete", "blocked", "policy_denied", "budget_exhausted", "needs_approval", "aborted", "cancelled"],
+    verifying: ["queued", "completed", "failed", "incomplete", "blocked", "policy_denied", "budget_exhausted", "needs_approval", "aborted", "cancelled"],
     completed: [],
     failed: [],
     incomplete: [],

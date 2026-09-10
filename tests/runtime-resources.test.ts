@@ -19,7 +19,11 @@ try {
     projectPaths: [],
     globalRoot: path.join(workspaceRoot, "no-global-skills")
   });
-  assert.equal(duplicateBundle.warnings.some((warning) => warning.includes("Skipped duplicate skill")), true);
+  assert.equal(duplicateBundle.skills.filter((skill) => skill.name === "duplicate-skill").length, 1);
+  assert.equal(duplicateBundle.conflicts.length, 1);
+  assert.match(duplicateBundle.conflicts[0]?.winner.path ?? "", /\.biny[\\/]skills/);
+  assert.match(duplicateBundle.conflicts[0]?.shadowed[0]?.path ?? "", /\.agents[\\/]skills/);
+  assert.equal(duplicateBundle.warnings.some((warning) => warning.includes("Skill conflict")), true);
   assert.deepEqual(duplicateBundle.errors, [], "重复 Skill 只是诊断，不应让资源进入 degraded");
 
   const registry = new RuntimeHostResourceRegistry();

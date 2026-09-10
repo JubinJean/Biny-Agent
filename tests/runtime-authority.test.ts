@@ -78,12 +78,21 @@ try {
   const attempt = tasks.createAttempt(task.taskRunId, { runId: "run-1", turnId: "turn-1", retrySafety: "unknown" });
   assert.equal(tasks.transition(task.taskRunId, "running", { attemptId: attempt.attemptId }).status, "running");
   assert.equal(tasks.transition(task.taskRunId, "completed", { attemptId: attempt.attemptId }).attempts.length, 1);
+  assert.deepEqual(tasks.transition(task.taskRunId, "completed", { attemptId: attempt.attemptId, artifacts: { output: "done" } }).attempts[0]?.artifacts, { output: "done" });
   assert.throws(
     () => tasks.transition(task.taskRunId, "cancelled", { attemptId: attempt.attemptId }),
     /already terminal/
   );
   assert.equal(tasks.get(task.taskRunId)?.status, "completed");
   assert.equal(tasks.events(task.taskRunId).length, 2);
+
+  const recoveringTask = tasks.create({ taskRunId: "task-recovering", task: { prompt: "recover" }, sessionId: "session-1" });
+  const recoveringAttempt = tasks.createAttempt(recoveringTask.taskRunId, { runId: "recover-run-1", turnId: "recover-turn-1" });
+  tasks.transition(recoveringTask.taskRunId, "running", { attemptId: recoveringAttempt.attemptId });
+  tasks.transition(recoveringTask.taskRunId, "verifying", { attemptId: recoveringAttempt.attemptId });
+  const requeued = tasks.requeue(recoveringTask.taskRunId);
+  assert.equal(requeued.status, "queued");
+  assert.match(String(requeued.attempts[0]?.failure && (requeued.attempts[0]?.failure as { message?: unknown }).message), /process restart/);
 
   const retryableTask = tasks.create({ taskRunId: "task-retryable", task: { prompt: "retry" }, sessionId: "session-1" });
   const retryableAttempt = tasks.createAttempt(retryableTask.taskRunId, {

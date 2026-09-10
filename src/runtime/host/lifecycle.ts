@@ -71,6 +71,10 @@ export function spawnRuntimeHostProcess(
     stdio: "ignore",
     env: {
       ...process.env,
+      ...(options.browserAutomation === undefined ? {} : {
+        BINY_BROWSER_CONTROL_ENDPOINT: options.browserAutomation.endpoint,
+        BINY_BROWSER_CONTROL_TOKEN: options.browserAutomation.token
+      }),
       ...(process.versions.electron === undefined ? {} : { ELECTRON_RUN_AS_NODE: "1" })
     }
   });

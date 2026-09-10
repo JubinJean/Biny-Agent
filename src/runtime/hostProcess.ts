@@ -15,6 +15,7 @@ import {
   type RuntimeHostFactory,
   type RuntimeHostFactoryOptions
 } from "./RuntimeHost.js";
+import type { BrowserAutomationEndpoint } from "../tools/browser.js";
 
 export interface RuntimeHostProcessOptions {
   workspaceRoot: string;
@@ -32,6 +33,7 @@ export async function runRuntimeHostProcess(argv: readonly string[] = process.ar
   const configStore = createFileConfigStore(options.workspaceRoot, {
     globalDir: options.configDir
   });
+  const browserAutomation = browserAutomationFromEnvironment();
   const createRuntime: RuntimeHostFactory = async (sessionId?: string, factoryOptions?: RuntimeHostFactoryOptions): Promise<InteractiveAgentHost> => {
     const fresh = factoryOptions?.fresh === true;
     const host = await createInteractiveAgentHost(factoryOptions?.workspaceRoot ?? options.workspaceRoot, {
@@ -39,6 +41,7 @@ export async function runRuntimeHostProcess(argv: readonly string[] = process.ar
       configStore,
       attachmentRoot: options.attachmentRoot,
       sessionId: fresh ? sessionId : undefined,
+      browserAutomation,
       resourceRegistry: factoryOptions?.resourceRegistry,
       resourceBoot: factoryOptions?.resourceBoot ?? (factoryOptions?.resourceRegistry === undefined ? "blocking" : "background")
     });
@@ -78,6 +81,12 @@ export async function runRuntimeHostProcess(argv: readonly string[] = process.ar
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
   await new Promise<void>(() => undefined);
+}
+
+function browserAutomationFromEnvironment(): BrowserAutomationEndpoint | undefined {
+  const endpoint = process.env.BINY_BROWSER_CONTROL_ENDPOINT;
+  const token = process.env.BINY_BROWSER_CONTROL_TOKEN;
+  return endpoint && token ? { endpoint, token } : undefined;
 }
 
 function parseOptions(argv: readonly string[]): RuntimeHostProcessOptions {

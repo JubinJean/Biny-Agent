@@ -21,8 +21,9 @@ import { sessionExportCommand, sessionImportCommand } from "./commands/sessionTr
 import type { SessionTransferFormat } from "../session/transfer.js";
 import { planCommand } from "./commands/plan.js";
 import { tuiCommand } from "./commands/tui.js";
+import { registerSkillCommands } from "./commands/skills.js";
 import { runtimeHostCommand } from "./commands/runtimeHost.js";
-import { emotionAutoAnalyzeCommand, emotionGetCommand, emotionSetBaseCommand, emotionSetContextCommand, emotionStatusCommand } from "./commands/emotion.js";
+import { emotionGetCommand, emotionSetBaseCommand, emotionSetContextCommand, emotionStatusCommand } from "./commands/emotion.js";
 import {
   activityClearCommand,
   activityConfigCommand,
@@ -39,6 +40,7 @@ import {
   automationCreateCommand,
   automationDeleteCommand,
   automationListCommand,
+  automationPendingCommand,
   automationPauseCommand,
   automationResumeCommand,
   automationRunCommand,
@@ -48,14 +50,34 @@ import {
   daemonUninstallCommand,
   goalActionCommand,
   goalCreateCommand,
+  goalListCommand,
   graphActionCommand,
   graphCreateCommand,
+  graphListCommand,
   taskActionCommand,
   taskCreateCommand,
   taskEventsCommand,
   taskGetCommand,
   taskListCommand
 } from "./commands/runtimeManagement.js";
+import {
+  diaryRefreshCommand,
+  diaryShowCommand,
+  heartbeatRunCommand,
+  heartbeatShowCommand,
+  heartbeatStatusCommand,
+  memoryAddCommand,
+  memoryArchiveCommand,
+  memoryClearCommand,
+  memoryListCommand,
+  memorySearchCommand,
+  memorySleepCommand,
+  reflectionRunCommand,
+  reflectionStatusCommand,
+  todoClearCommand,
+  todoReplaceCommand,
+  todoShowCommand
+} from "./commands/localCapabilities.js";
 
 const program = new Command();
 // CLI 的工作区以用户执行 biny 时的当前目录为准。
@@ -70,6 +92,7 @@ const { version: cliVersion } = createRequire(import.meta.url)("../../package.js
 program.name("biny").description("Biny local desktop assistant").version(cliVersion);
 registerCrystalCommands(program);
 registerSoulCommands(program);
+registerSkillCommands(program, workspaceRoot);
 
 program.command("init").description("Initialize config and .biny directories").action(wrap(() => initCommand(workspaceRoot)));
 program.command("doctor").description("Check local environment").action(wrap(() => doctorCommand(workspaceRoot)));
@@ -97,6 +120,7 @@ daemon.command("run").description("Run the Runtime Host in the foreground").acti
 
 const automation = program.command("automation").description("Manage durable local automations");
 automation.command("list").option("--json", "print JSON").action((options: { json?: boolean }) => wrap(() => automationListCommand(workspaceRoot, options))());
+automation.command("pending").argument("[automationId]", "filter by automation id").option("--json", "print JSON").action((automationId: string | undefined, options: { json?: boolean }) => wrap(() => automationPendingCommand(workspaceRoot, automationId, options))());
 automation
   .command("create")
   .argument("<name>", "automation name")
@@ -136,20 +160,50 @@ for (const [name, action] of [["start", "start"], ["cancel", "cancel"], ["approv
     .command(name)
     .argument("<taskRunId>", "TaskRun id")
     .option("--reason <text>", "cancellation reason")
+    .option("--retry-safety <safety>", "safe, idempotent, unsafe, or unknown")
     .option("--json", "print JSON")
-    .action((taskRunId: string, options: { reason?: string; json?: boolean }) => wrap(() => taskActionCommand(workspaceRoot, action, taskRunId, options))());
+    .action((taskRunId: string, options: { reason?: string; retrySafety?: string; json?: boolean }) => wrap(() => taskActionCommand(workspaceRoot, action, taskRunId, options))());
 }
+task.command("run").argument("<taskRunId>", "TaskRun id").option("--retry-safety <safety>", "safe, idempotent, unsafe, or unknown").option("--json", "print JSON").action((taskRunId: string, options: { retrySafety?: string; json?: boolean }) => wrap(() => taskActionCommand(workspaceRoot, "run", taskRunId, options))());
 task.command("get").argument("<taskRunId>", "TaskRun id").option("--json", "print JSON").action((taskRunId: string, options: { json?: boolean }) => wrap(() => taskGetCommand(workspaceRoot, taskRunId, options))());
 task.command("list").option("--status <status>", "TaskRun status").option("--limit <count>", "maximum rows", parsePositiveInteger).option("--json", "print JSON").action((options: { status?: string; limit?: number; json?: boolean }) => wrap(() => taskListCommand(workspaceRoot, options))());
 task.command("events").argument("<taskRunId>", "TaskRun id").option("--limit <count>", "maximum events", parsePositiveInteger).option("--json", "print JSON").action((taskRunId: string, options: { limit?: number; json?: boolean }) => wrap(() => taskEventsCommand(workspaceRoot, taskRunId, options))());
 
+const memory = program.command("memory").description("Manage local memory");
+memory.command("list").argument("[selector]", "all, current, user, or other", "all").option("--json", "print JSON").action((selector: string, options: { json?: boolean }) => wrap(() => memoryListCommand(workspaceRoot, selector, options))());
+memory.command("search").argument("<query...>", "search query").option("--selector <selector>", "all, current, user, or other", "all").option("--json", "print JSON").action((query: string[], options: { selector: string; json?: boolean }) => wrap(() => memorySearchCommand(workspaceRoot, query.join(" "), options.selector, options))());
+memory.command("add").requiredOption("--entry <json>", "structured memory JSON").option("--json", "print JSON").action((options: { entry: string; json?: boolean }) => wrap(() => memoryAddCommand(workspaceRoot, options.entry, options))());
+memory.command("archive").argument("<id>", "memory id").requiredOption("--yes", "confirm archive").option("--json", "print JSON").action((id: string, options: { yes?: boolean; json?: boolean }) => wrap(() => memoryArchiveCommand(workspaceRoot, id, options))());
+memory.command("clear").argument("[selector]", "all, current, user, or other", "all").requiredOption("--yes", "confirm clear").option("--json", "print JSON").action((selector: string, options: { yes?: boolean; json?: boolean }) => wrap(() => memoryClearCommand(workspaceRoot, selector, options))());
+memory.command("sleep").option("--run", "run maintenance now").option("--yes", "confirm maintenance").option("--json", "print JSON").action((options: { run?: boolean; yes?: boolean; json?: boolean }) => wrap(() => memorySleepCommand(workspaceRoot, options))());
+
+const diary = program.command("diary").description("Show or refresh daily notes");
+diary.command("show").argument("[date]", "today, yesterday, or YYYY-MM-DD", "today").option("--json", "print JSON").action((date: string, options: { json?: boolean }) => wrap(() => diaryShowCommand(workspaceRoot, date, options))());
+diary.command("refresh").argument("[date]", "today, yesterday, or YYYY-MM-DD", "today").option("--force", "refresh even when markers exist").option("--json", "print JSON").action((date: string, options: { force?: boolean; json?: boolean }) => wrap(() => diaryRefreshCommand(workspaceRoot, date, options))());
+
+const reflection = program.command("reflection").description("Run or inspect daily self-reflection");
+reflection.command("status").argument("[date]", "today, yesterday, or YYYY-MM-DD", "today").option("--json", "print JSON").action((date: string, options: { json?: boolean }) => wrap(() => reflectionStatusCommand(workspaceRoot, date, options))());
+reflection.command("run").argument("[date]", "today, yesterday, or YYYY-MM-DD", "today").option("--force", "refresh even when markers exist").option("--json", "print JSON").action((date: string, options: { force?: boolean; json?: boolean }) => wrap(() => reflectionRunCommand(workspaceRoot, date, options))());
+
+const heartbeat = program.command("heartbeat").description("Inspect or trigger Heartbeat");
+heartbeat.command("status").option("--json", "print JSON").action((options: { json?: boolean }) => wrap(() => heartbeatStatusCommand(workspaceRoot, options))());
+heartbeat.command("run").option("--json", "print JSON").action((options: { json?: boolean }) => wrap(() => heartbeatRunCommand(workspaceRoot, options))());
+heartbeat.command("show").option("--json", "print JSON").action((options: { json?: boolean }) => wrap(() => heartbeatShowCommand(workspaceRoot, options))());
+
+const todo = program.command("todo").description("Manage the current session Todo list");
+todo.command("show").option("--session <id>", "session id; defaults to latest").option("--json", "print JSON").action((options: { session?: string; json?: boolean }) => wrap(() => todoShowCommand(workspaceRoot, options.session, options))());
+todo.command("replace").requiredOption("--todos <json>", "complete Todo list JSON").option("--session <id>", "session id; defaults to latest").option("--json", "print JSON").action((options: { todos: string; session?: string; json?: boolean }) => wrap(() => todoReplaceCommand(workspaceRoot, options.session, options.todos, options))());
+todo.command("clear").requiredOption("--yes", "confirm clear").option("--session <id>", "session id; defaults to latest").option("--json", "print JSON").action((options: { yes?: boolean; session?: string; json?: boolean }) => wrap(() => todoClearCommand(workspaceRoot, options.session, options))());
+
 const goal = program.command("goal").description("Manage durable goals");
+goal.command("list").option("--json", "print JSON").action((options: { json?: boolean }) => wrap(() => goalListCommand(workspaceRoot, options))());
 goal.command("create").argument("<title>", "goal title").option("--payload <json>", "JSON payload").option("--goal-id <id>", "explicit goal id").option("--json", "print JSON").action((title: string, options: { payload?: string; goalId?: string; json?: boolean }) => wrap(() => goalCreateCommand(workspaceRoot, title, options))());
 for (const [name, action] of [["get", "get"], ["pause", "pause"], ["resume", "resume"], ["cancel", "cancel"]] as const) {
   goal.command(name).argument("<goalId>", "goal id").option("--json", "print JSON").action((goalId: string, options: { json?: boolean }) => wrap(() => goalActionCommand(workspaceRoot, action, goalId, options))());
 }
 
 const graph = program.command("graph").description("Manage durable Agent Graphs");
+graph.command("list").option("--json", "print JSON").action((options: { json?: boolean }) => wrap(() => graphListCommand(workspaceRoot, options))());
 graph.command("create").requiredOption("--nodes <json>", "JSON node array").option("--goal-id <id>", "goal id").option("--graph-id <id>", "explicit graph id").option("--payload <json>", "JSON payload").option("--json", "print JSON").action((options: { nodes: string; goalId?: string; graphId?: string; payload?: string; json?: boolean }) => wrap(() => graphCreateCommand(workspaceRoot, options))());
 for (const [name, action] of [["start", "start"], ["pause", "pause"], ["resume", "resume"], ["cancel", "cancel"], ["inspect", "inspect"], ["events", "events"]] as const) {
   graph.command(name).argument("<graphId>", "graph id").option("--json", "print JSON").action((graphId: string, options: { json?: boolean }) => wrap(() => graphActionCommand(workspaceRoot, action, graphId, options))());
@@ -250,13 +304,6 @@ emotion
   .command("get")
   .argument("[sessionId]", "session or chat id")
   .action((sessionId?: string) => wrap(() => emotionGetCommand(sessionId))());
-emotion
-  .command("auto-analyze")
-  .argument("<state>", "on or off")
-  .action((state: string) => wrap(async () => {
-    if (state !== "on" && state !== "off") throw new InvalidArgumentError("state must be on or off");
-    await emotionAutoAnalyzeCommand(state === "on");
-  })());
 program
   .command("plan")
   .description("Create a plan without executing write, edit, or command tools")

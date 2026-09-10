@@ -89,7 +89,7 @@ export class TodoStore {
     return [
       "## Current plan",
       "",
-      "You maintain this list with `update_todos`. Keep it current: mark an item in_progress when you start it and completed when it is actually done, and add items you discover along the way. Never report work as finished while items remain pending.",
+      "You maintain this list with `TodoWrite`. Keep it current: mark an item in_progress when you start it and completed when it is actually done, and add items you discover along the way. Never report work as finished while items remain pending.",
       "",
       ...lines
     ].join("\n");
