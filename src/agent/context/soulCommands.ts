@@ -21,7 +21,7 @@ export async function runSoulCommand(storage: SoulStorage, args: string[]): Prom
   if (action === "show") {
     const snapshot = await storage.read();
     return [
-      "Soul source: " + (snapshot.source === "user" ? "user override" : "built-in default"),
+      "Soul source: " + (snapshot.source === "user" ? "user override" : "fixed default persona"),
       "Soul file: " + snapshot.path,
       "",
       snapshot.content,
@@ -55,7 +55,7 @@ export async function runSoulCommand(storage: SoulStorage, args: string[]): Prom
     const snapshot = await storage.reset();
     return [
       "Soul override removed.",
-      "Using " + (snapshot.source === "builtin" ? "the built-in default." : "the user Soul.")
+      "Using " + (snapshot.source === "builtin" ? "the fixed default persona." : "the user Soul.")
     ].join("\n");
   }
 

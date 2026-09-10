@@ -1,18 +1,15 @@
 /**
  * 可演化 Soul 的全局 Markdown 存储。
  *
- * SOUL.md 是用户可审计的覆盖文件；文件不存在时使用应用内置默认值。写入采用临时文件
- * 替换和目录锁，保证 CLI、Desktop、TUI 或未来的模型入口不会把文件写成半截内容。
+ * SOUL.md 是隐藏配置目录中的用户覆盖文件；文件不存在时只使用固定 system prompt 中的
+ * 默认人格，不生成内置 Soul 正文。写入采用临时文件替换和目录锁，避免文件写成半截内容。
  */
 import { promises as fs } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { globalAgentDir } from "../../config/paths.js";
-import {
-  BUILTIN_SOUL_CONTENT,
-  renderSoulPrompt,
-  type SoulPromptSource
-} from "../builtinSoul.js";
+import { migrateLegacyGlobalState } from "../../config/globalStateMigration.js";
+import { globalConfigDir } from "../../config/paths.js";
+import { renderSoulPrompt, type SoulPromptSource } from "../builtinSoul.js";
 
 const soulFileName = "SOUL.md";
 const lockDirectoryName = ".soul.lock";
@@ -23,7 +20,7 @@ export const maxSoulTraitChars = 500;
 export const maxSoulTraits = 15;
 
 export interface SoulStorageOptions {
-  agentDir?: string;
+  configDir?: string;
 }
 
 export interface SoulSnapshot {
@@ -35,9 +32,11 @@ export interface SoulSnapshot {
 export class SoulStorage {
   private readonly root: string;
   private readonly filePath: string;
+  private readonly migrateDefaultState: boolean;
 
   constructor(options: SoulStorageOptions = {}) {
-    this.root = path.resolve(options.agentDir ?? globalAgentDir());
+    this.migrateDefaultState = options.configDir === undefined;
+    this.root = path.resolve(options.configDir ?? globalConfigDir());
     this.filePath = path.join(this.root, soulFileName);
   }
 
@@ -50,24 +49,27 @@ export class SoulStorage {
   }
 
   async initialize(): Promise<void> {
+    await this.migrateIfDefault();
     await this.ensureRoot();
   }
 
   async read(): Promise<SoulSnapshot> {
+    await this.migrateIfDefault();
     const userContent = normalizeSoulContent(await readOptional(this.filePath));
     return {
-      content: userContent || BUILTIN_SOUL_CONTENT.trim(),
+      content: userContent,
       source: userContent ? "user" : "builtin",
       path: this.filePath
     };
   }
 
-  async promptText(): Promise<string> {
+  async promptText(): Promise<string | undefined> {
     const snapshot = await this.read();
-    return renderSoulPrompt(snapshot.content, snapshot.source);
+    return snapshot.source === "user" ? renderSoulPrompt(snapshot.content, snapshot.source) : undefined;
   }
 
   async set(content: string): Promise<SoulSnapshot> {
+    await this.migrateIfDefault();
     const normalized = validateSoulContent(content);
     return await this.withLock(async () => {
       await this.writeFile(this.filePath, normalized + "\n");
@@ -75,16 +77,18 @@ export class SoulStorage {
     });
   }
 
-  /** 为外部编辑器准备用户覆盖文件；没有覆盖时先复制当前内置默认值。 */
+  /** 为外部编辑器准备用户覆盖文件；默认人格不复制进用户文件。 */
   async ensureEditable(): Promise<SoulSnapshot> {
+    await this.migrateIfDefault();
     return await this.withLock(async () => {
       const current = normalizeSoulContent(await readOptional(this.filePath));
-      if (!current) await this.writeFile(this.filePath, BUILTIN_SOUL_CONTENT.trim() + "\n");
+      if (!current) await this.writeFile(this.filePath, "# Soul\n\n");
       return await this.read();
     });
   }
 
   async reset(): Promise<SoulSnapshot> {
+    await this.migrateIfDefault();
     return await this.withLock(async () => {
       await fs.unlink(this.filePath).catch((error: unknown) => {
         if (!isNotFound(error)) throw error;
@@ -94,13 +98,14 @@ export class SoulStorage {
   }
 
   async appendTrait(description: string): Promise<SoulSnapshot> {
+    await this.migrateIfDefault();
     const trait = normalizeTrait(description);
     if (!trait) throw new Error("Soul trait cannot be empty.");
     if (trait.length > maxSoulTraitChars) {
       throw new Error("Soul trait cannot exceed " + String(maxSoulTraitChars) + " characters.");
     }
     return await this.withLock(async () => {
-      const current = normalizeSoulContent(await readOptional(this.filePath)) || BUILTIN_SOUL_CONTENT.trim();
+      const current = normalizeSoulContent(await readOptional(this.filePath));
       const next = appendTrait(current, trait);
       validateSoulContent(next);
       await this.writeFile(this.filePath, next + "\n");
@@ -111,6 +116,10 @@ export class SoulStorage {
   private async ensureRoot(): Promise<void> {
     await fs.mkdir(this.root, { recursive: true, mode: 0o700 });
     await fs.chmod(this.root, 0o700);
+  }
+
+  private async migrateIfDefault(): Promise<void> {
+    if (this.migrateDefaultState) await migrateLegacyGlobalState();
   }
 
   private async withLock<T>(work: () => Promise<T>): Promise<T> {
@@ -180,8 +189,9 @@ function normalizeTrait(description: string): string {
 }
 
 function appendTrait(content: string, trait: string): string {
-  const lines = content.trim().split("\n");
   const heading = "## Evolved Traits";
+  if (!content.trim()) return heading + "\n\n- " + trait;
+  const lines = content.trim().split("\n");
   const start = lines.findIndex((line) => line.trim().toLowerCase() === heading.toLowerCase());
   if (start < 0) return content.trim() + "\n\n" + heading + "\n\n- " + trait;
 

@@ -13,10 +13,11 @@ async function main(): Promise<void> {
   const soulPath = path.join(agent, "SOUL.md");
 
   try {
-    const storage = new SoulStorage({ agentDir: agent });
+    const storage = new SoulStorage({ configDir: agent });
     const builtIn = await storage.read();
     assert.equal(builtIn.source, "builtin");
-    assert.match(await storage.promptText(), /<biny_soul source="builtin">/u);
+    assert.equal(builtIn.content, "");
+    assert.equal(await storage.promptText(), undefined);
     await assert.rejects(fs.access(soulPath), /ENOENT/u);
 
     const saved = await storage.set("# Soul\n\nSpeak plainly and verify important claims.");
@@ -36,6 +37,10 @@ async function main(): Promise<void> {
     });
     assert.match(prompt, /<biny_soul source="user">/u);
     assert.match(prompt, /Prefer a short concrete next step\./u);
+    assert.match(prompt, /LANGUAGE RULE \(CRITICAL\)/u);
+    assert.match(prompt, /The active Soul defines identity/u);
+    assert.doesNotMatch(prompt, /<biny_soul source="builtin">/u);
+    assert.doesNotMatch(prompt, /不代表 Biny 是人类/u);
     const telemetry = systemPromptForTelemetry(prompt);
     assert.ok(telemetry);
     assert.match(telemetry, /<biny_soul omitted="true" \/>/u);
@@ -46,6 +51,7 @@ async function main(): Promise<void> {
     const reset = await runSoulCommand(storage, ["delete"]);
     assert.match(reset, /Soul override removed/u);
     assert.equal((await storage.read()).source, "builtin");
+    assert.equal(await storage.promptText(), undefined);
     await assert.rejects(fs.access(soulPath), /ENOENT/u);
   } finally {
     await rm(root, { recursive: true, force: true });

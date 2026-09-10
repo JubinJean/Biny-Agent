@@ -168,7 +168,8 @@ async function main(): Promise<void> {
 
 function testConversationBoundaryPrompt(): void {
   const prompt = buildSystemPrompt({ mode: "qa", cwd: "/workspace" });
-  assert.match(prompt, /AI agent operating on the user's machine/u);
+  assert.match(prompt, /You are Biny — not an assistant, not a chatbot/u);
+  assert.doesNotMatch(prompt, /Biny is not human|不代表 Biny 是人类/u);
   assert.match(prompt, /Keep simple answers simple; do not add headings or lists to simple answers/u);
   assert.match(prompt, /simple greeting or casual exchange/u);
   assert.match(prompt, /without inspecting or modifying the workspace/u);
@@ -178,13 +179,28 @@ function testConversationBoundaryPrompt(): void {
   assert.match(prompt, /external side effects, destructive or costly actions/u);
   assert.match(prompt, /Current permission mode: runtime-managed/u);
   assert.match(prompt, /Current working directory: \/workspace/u);
+  const parentPrompt = buildSystemPrompt({
+    mode: "qa",
+    cwd: "/workspace",
+    parentThreadPrompt: "PARENT THREAD — source session\nParent first request: inspect the release flow"
+  });
+  assert.match(parentPrompt, /PARENT THREAD — source session/u);
+  assert.match(parentPrompt, /inspect the release flow/u);
   assert.doesNotMatch(prompt, /Search the public web/u);
   const webTool = {
-    name: "web_search",
+    name: "WebSearch",
     promptSnippet: "Search the public web",
-    promptGuidelines: ["Use web_search for current public information"]
+    promptGuidelines: ["Use WebSearch for current public information"]
   };
-  assert.match(buildSystemPrompt({ mode: "qa", cwd: "/workspace", tools: [webTool] }), /Use web_search for current public information/u);
+  assert.match(buildSystemPrompt({ mode: "qa", cwd: "/workspace", tools: [webTool] }), /Use WebSearch for current public information/u);
+  const zvecTool = {
+    name: "mcp_zvec_grep_zvec_grep_search",
+    promptSnippet: "Search indexed workspace content by meaning",
+    promptGuidelines: ["Use zvec_grep_search for semantic workspace discovery"]
+  };
+  const zvecPrompt = buildSystemPrompt({ mode: "qa", cwd: "/workspace", tools: [zvecTool] });
+  assert.match(zvecPrompt, /Search indexed workspace content by meaning/u);
+  assert.match(zvecPrompt, /Use zvec_grep_search for semantic workspace discovery/u);
   assert.doesNotMatch(
     buildSystemPrompt({ mode: "qa", cwd: "/workspace", tools: [{ name: "custom_tool" }] }),
     /- custom_tool:/u
@@ -194,13 +210,13 @@ function testConversationBoundaryPrompt(): void {
     "first overflow summary"
   );
   const refreshed = refreshRuntimeSystemPrompt(compacted, "new dynamic capability", [{
-    name: "run_command",
+    name: "Bash",
     promptSnippet: "Run a finite command",
-    promptGuidelines: ["Use run_command only for finite commands"]
+    promptGuidelines: ["Use Bash only for finite commands"]
   }]);
   const recoveredAgain = withActiveRunCompactionSummary(refreshed, "second overflow summary");
   assert.match(recoveredAgain, /new dynamic capability/u);
-  assert.match(recoveredAgain, /Use run_command/u);
+  assert.match(recoveredAgain, /Use Bash/u);
   assert.match(recoveredAgain, /second overflow summary/u);
   assert.doesNotMatch(recoveredAgain, /old dynamic capability|first overflow summary/u);
 }
@@ -208,20 +224,20 @@ function testConversationBoundaryPrompt(): void {
 function testPlanModePolicy(): void {
   const tool = (name: string, risk?: Tool["risk"], source?: Tool["source"]): Tool => ({ name, risk, source } as Tool);
   const tools = [
-    tool("read_file", "read"),
-    tool("write_file", "write"),
-    tool("run_command", "execute"),
-    tool("delegate_task", "execute", "subagent"),
+    tool("Read", "read"),
+    tool("Write", "write"),
+    tool("Bash", "execute"),
+    tool("Task", "execute", "subagent"),
     tool("custom_tool")
   ];
 
   assert.deepEqual(
     selectPlanTools(tools, "ask").map((candidate) => candidate.name),
-    ["read_file"]
+    ["Read"]
   );
   assert.deepEqual(
     selectPlanTools(tools, "full-access").map((candidate) => candidate.name),
-    ["read_file", "write_file", "run_command", "custom_tool"]
+    ["Read", "Write", "Bash", "custom_tool"]
   );
 
   const readPrompt = buildSystemPrompt({ mode: "plan", permissionMode: "ask", cwd: "/workspace" });
@@ -291,7 +307,7 @@ async function testInstructionHierarchyAndCap(): Promise<void> {
     await workspace.initialize();
     assert.deepEqual(workspace.status().loadedInstructions, ["AGENTS.md"]);
 
-    workspace.observeToolResult("read_file", { path: "src/example.ts" }, { path: "src/example.ts", content: "export {};" });
+    workspace.observeToolResult("Read", { path: "src/example.ts" }, { path: "src/example.ts", content: "export {};" });
     await workspace.prepareTurn("explain the file");
     assert.deepEqual(workspace.status().loadedInstructions, ["AGENTS.md", "src/AGENTS.override.md"]);
     const memory = new ContextMemory(() => new ContextTestModel().model, workspace, undefined, 8_000, 32 * 1024);
@@ -317,7 +333,7 @@ async function testInstructionLoadingUsesExplicitPaths(): Promise<void> {
     await workspace.prepareTurn("inspect src/feature/entry.ts");
     assert.deepEqual(workspace.status().loadedInstructions, ["AGENTS.md", "src/feature/AGENTS.md"]);
 
-    workspace.observeToolResult("read_file", { path: "src/feature/entry.ts" }, { path: "src/feature/entry.ts", content: "export const entry = true;" });
+    workspace.observeToolResult("Read", { path: "src/feature/entry.ts" }, { path: "src/feature/entry.ts", content: "export const entry = true;" });
     await workspace.prepareTurn("explain the file");
     assert.deepEqual(workspace.status().loadedInstructions, ["AGENTS.md", "src/feature/AGENTS.md"]);
   });
@@ -415,12 +431,12 @@ async function testMidTurnToolResultPruning(): Promise<void> {
     for (let index = 0; index < 5; index += 1) {
       messages.push({
         role: "assistant",
-        content: [{ type: "toolCall", id: `call-${String(index)}`, name: "read_file", arguments: { path: `f${String(index)}.ts` } }]
+        content: [{ type: "toolCall", id: `call-${String(index)}`, name: "Read", arguments: { path: `f${String(index)}.ts` } }]
       });
       messages.push({
         role: "toolResult",
         toolCallId: `call-${String(index)}`,
-        toolName: "read_file",
+        toolName: "Read",
         content: [{
           type: "text",
           text: index === 0
@@ -469,23 +485,23 @@ async function testActiveRunCompactionPreservesToolBatches(): Promise<void> {
       { role: "user", content: `old request ${"detail ".repeat(1_600)}` },
       {
         role: "assistant",
-        content: [{ type: "toolCall", id: "old-call", name: "read_file", arguments: { path: "old.ts" } }]
+        content: [{ type: "toolCall", id: "old-call", name: "Read", arguments: { path: "old.ts" } }]
       },
       {
         role: "toolResult",
         toolCallId: "old-call",
-        toolName: "read_file",
+        toolName: "Read",
         content: [{ type: "text", text: "old result ".repeat(1_600) }]
       },
       { role: "user", content: "continue with the recent file" },
       {
         role: "assistant",
-        content: [{ type: "toolCall", id: "recent-call", name: "read_file", arguments: { path: "recent.ts" } }]
+        content: [{ type: "toolCall", id: "recent-call", name: "Read", arguments: { path: "recent.ts" } }]
       },
       {
         role: "toolResult",
         toolCallId: "recent-call",
-        toolName: "read_file",
+        toolName: "Read",
         content: [{ type: "text", text: "recent result" }]
       }
     ];
@@ -524,14 +540,14 @@ async function testIncrementalSplitTurnCompaction(): Promise<void> {
           content: [{
             type: "toolCall",
             id: `initial-call-${String(index)}`,
-            name: "read_file",
+            name: "Read",
             arguments: { path: `src/read-${String(index)}.ts`, detail: "detail ".repeat(700) }
           }]
         },
         {
           role: "toolResult",
           toolCallId: `initial-call-${String(index)}`,
-          toolName: "read_file",
+          toolName: "Read",
           content: [{ type: "text", text: `initial result ${String(index)} ${"detail ".repeat(700)}` }]
         }
       );
@@ -553,14 +569,14 @@ async function testIncrementalSplitTurnCompaction(): Promise<void> {
         content: [{
           type: "toolCall",
           id: "split-call",
-          name: "read_file",
+          name: "Read",
           arguments: { path: "src/large.ts", detail: "large argument ".repeat(120) }
         }]
       },
       {
         role: "toolResult",
         toolCallId: "split-call",
-        toolName: "read_file",
+        toolName: "Read",
         content: [{ type: "text", text: "recent result" }]
       }
     ]);
@@ -770,7 +786,7 @@ async function testSessionReplayAndAgentResume(): Promise<void> {
       },
       {
         type: "tool_call",
-        tool: "read_file",
+        tool: "Read",
         args: { path: "src/index.ts" },
         toolCallId: "call-7",
         sequence: 7,
@@ -778,10 +794,10 @@ async function testSessionReplayAndAgentResume(): Promise<void> {
         reasoningContent: "The entry file is the first target.",
         reasoningProviderOptions: { anthropic: { signature: "signed-entry-reasoning" } }
       },
-      { type: "tool_result", tool: "read_file", result: { path: "src/index.ts", content: "export {}" }, toolCallId: "call-7", sequence: 7 },
+      { type: "tool_result", tool: "Read", result: { path: "src/index.ts", content: "export {}" }, toolCallId: "call-7", sequence: 7 },
       {
         type: "tool_call",
-        tool: "read_file",
+        tool: "Read",
         args: { path: "src/worker.ts" },
         toolCallId: "call-8",
         sequence: 8,
@@ -789,7 +805,7 @@ async function testSessionReplayAndAgentResume(): Promise<void> {
         reasoningContent: "The worker is the second target.",
         reasoningProviderOptions: { anthropic: { signature: "signed-worker-reasoning" } }
       },
-      { type: "tool_result", tool: "read_file", result: { path: "src/worker.ts", content: "export class Worker {}" }, toolCallId: "call-8", sequence: 8 },
+      { type: "tool_result", tool: "Read", result: { path: "src/worker.ts", content: "export class Worker {}" }, toolCallId: "call-8", sequence: 8 },
       {
         type: "assistant_message",
         content: "The files define the entry and worker.",
@@ -931,7 +947,7 @@ async function testTruncatedSessionTailAndDanglingToolRecovery(): Promise<void> 
     const filePath = sessionFilePath(workspaceRoot, "interrupted-session");
     const events: SessionEvent[] = [
       { type: "user_message", content: "inspect the project" },
-      { type: "tool_call", tool: "read_file", args: { path: "src/index.ts" }, toolCallId: "dangling-1", sequence: 1 }
+      { type: "tool_call", tool: "Read", args: { path: "src/index.ts" }, toolCallId: "dangling-1", sequence: 1 }
     ];
     await fs.writeFile(filePath, `${events.map((event) => JSON.stringify(event)).join("\n")}\n{"type":"assistant`, "utf8");
 
@@ -953,7 +969,7 @@ async function testTruncatedSessionTailAndDanglingToolRecovery(): Promise<void> 
     const supersededFile = sessionFilePath(workspaceRoot, "superseded-tool-call");
     await fs.writeFile(supersededFile, [
       JSON.stringify({ type: "user_message", content: "first turn" }),
-      JSON.stringify({ type: "tool_call", tool: "read_file", args: { path: "old.ts" }, toolCallId: "old-call", sequence: 1 }),
+      JSON.stringify({ type: "tool_call", tool: "Read", args: { path: "old.ts" }, toolCallId: "old-call", sequence: 1 }),
       JSON.stringify({ type: "assistant_message", content: "continued without that result" }),
       JSON.stringify({ type: "user_message", content: "later turn" })
     ].join("\n") + "\n", "utf8");
@@ -1133,7 +1149,7 @@ async function testSessionAndToolDisplayRedaction(): Promise<void> {
     const commandSecret = "not-a-real-command-bearer-value";
     const command = await createToolPermissionRequest({
       id: "command-secret",
-      name: "run_command",
+      name: "Bash",
       args: { command: `curl -H 'Authorization: Bearer ${commandSecret}' https://example.invalid` }
     }, { workspaceRoot, ignore: [], sessionId: "test" });
     assert.equal(JSON.stringify(command).includes(commandSecret), false);
@@ -1141,7 +1157,7 @@ async function testSessionAndToolDisplayRedaction(): Promise<void> {
     const previewSecret = "not-a-real-preview-value";
     const write = await createToolPermissionRequest({
       id: "preview-secret",
-      name: "write_file",
+      name: "Write",
       args: { path: "safe-preview.txt", content: `apiKey=${previewSecret}\n` }
     }, { workspaceRoot, ignore: [], sessionId: "test" });
     assert.equal(JSON.stringify(write).includes(previewSecret), false);
@@ -1150,7 +1166,7 @@ async function testSessionAndToolDisplayRedaction(): Promise<void> {
     const defaultHiddenBody = "this file body stays behind ctrl+o";
     const conciseWrite = await createToolPermissionRequest({
       id: "concise-write",
-      name: "write_file",
+      name: "Write",
       args: { path: "concise.txt", content: defaultHiddenBody }
     }, { workspaceRoot, ignore: [], sessionId: "test" });
     assert.match(conciseWrite.details, /File: concise\.txt/u);
@@ -1491,7 +1507,7 @@ async function testCredentialAndSymlinkBoundaries(): Promise<void> {
     assert.throws(() => resolveWorkspacePath(workspaceRoot, "config-link.json", []), /resolves to a location ignored/);
     const criticalWrite = await createToolPermissionRequest({
       id: "critical-write",
-      name: "write_file",
+      name: "Write",
       args: { path: ".zshrc", content: "export SAFE_TEST=1\n" }
     }, { workspaceRoot, ignore: [], sessionId: "test-session" });
     assert.equal(criticalWrite.riskLevel, "critical");
@@ -1627,7 +1643,7 @@ async function testMemoryExactDurableContentAndWriter(): Promise<void> {
       kind: "gotcha",
       topic: "debugging",
       title: "Context refresh result",
-      summary: "Refresh src/agent/context/ContextMemory.ts after write_file. apiKey=sk-supersecretvalue123.",
+      summary: "Refresh src/agent/context/ContextMemory.ts after Write. apiKey=sk-supersecretvalue123.",
       decisions: ["Use deterministic SQLite memory."],
       paths: ["src/agent/context/ContextMemory.ts"],
       keywords: ["context", "refresh"],
@@ -1639,7 +1655,7 @@ async function testMemoryExactDurableContentAndWriter(): Promise<void> {
       kind: "gotcha",
       topic: "debugging",
       title: "Context refresh result",
-      summary: "Refresh src/agent/context/ContextMemory.ts after write_file. apiKey=sk-supersecretvalue123.",
+      summary: "Refresh src/agent/context/ContextMemory.ts after Write. apiKey=sk-supersecretvalue123.",
       decisions: ["Use deterministic SQLite memory."],
       paths: ["src/agent/context/ContextMemory.ts"],
       keywords: ["context", "refresh"],
@@ -1944,7 +1960,7 @@ async function testToolWriteMarksSnapshotAndRepoMapDirty(): Promise<void> {
     assert.equal((await memory.status()).snapshotDirty, false);
 
     await fs.writeFile(path.join(workspaceRoot, "src", "new.ts"), "export const created = true;\n", "utf8");
-    memory.observeToolResult("write_file", { path: "src/new.ts" }, { path: "src/new.ts", bytes: 28 });
+    memory.observeToolResult("Write", { path: "src/new.ts" }, { path: "src/new.ts", bytes: 28 });
     const dirty = await memory.status();
     assert.equal(dirty.snapshotDirty, true);
     assert.equal(dirty.repoMapDirty, true);

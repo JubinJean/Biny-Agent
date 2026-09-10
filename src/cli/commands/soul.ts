@@ -26,7 +26,7 @@ export function registerSoulCommands(program: Command): void {
   command.command("append-trait").description("Append one evolved trait")
     .argument("<description...>", "trait description")
     .action((description: string[]) => execute(async () => await show(["append-trait", ...description])));
-  command.command("reset").alias("delete").description("Remove the user override and use the built-in default")
+  command.command("reset").alias("delete").description("Remove the user override and use the fixed default persona")
     .action(() => execute(async () => await show(["reset"])));
   command.command("edit").description("Open SOUL.md in the configured editor")
     .action(() => execute(editSoulCommand));

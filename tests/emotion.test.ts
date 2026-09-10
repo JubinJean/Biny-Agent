@@ -26,8 +26,7 @@ import { ensureAgentDirs } from "../src/session/store.js";
 import { createEmotionTool } from "../src/tools/emotion.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import type { AgentModel } from "../src/agent/core/types.js";
-import { emotionAutoAnalyzeCommand, emotionSetBaseCommand, emotionSetContextCommand } from "../src/cli/commands/emotion.js";
-import { loadGlobalConfig } from "../src/config/loader.js";
+import { emotionSetBaseCommand, emotionSetContextCommand } from "../src/cli/commands/emotion.js";
 
 const now = new Date("2026-08-30T03:00:00.000Z");
 
@@ -40,7 +39,7 @@ await testFatigueService();
 await testEmotionAnalysis();
 await testAgentSessionAutoAnalysis();
 await testAgentSessionFatigue();
-testEmotionConfig();
+testBuiltInEmotionConfig();
 console.log("emotion tests passed");
 
 async function testBlendEmotion(): Promise<void> {
@@ -112,7 +111,7 @@ async function testEmotionStorage(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "biny-emotion-test-"));
   const agentDir = path.join(root, "agent");
   let current = now;
-  const storage = new EmotionStorage({ agentDir, now: () => current });
+  const storage = new EmotionStorage({ configDir: agentDir, now: () => current });
   try {
     await assert.rejects(fs.access(storage.directory), /ENOENT/u);
     await storage.writeBase(emotion("基础", 6, 7, "2026-08-30T02:00:00.000Z", "全局原因"));
@@ -159,15 +158,11 @@ async function testEmotionCliWritesLocalFiles(): Promise<void> {
   try {
     await emotionSetBaseCommand("专注", "8", "6", ["完成一轮整理"]);
     await emotionSetContextCommand("chat-one", "轻松", "7", ["用户反馈明确"]);
-    const storage = new EmotionStorage({ agentDir: root });
+    const storage = new EmotionStorage({ configDir: root });
     assert.equal((await storage.readBase())?.mood, "专注");
     assert.equal((await storage.readContext("chat-one"))?.mood, "轻松");
     const contextDocument = await fs.readFile(path.join(root, "emotions", "context", "chat-one.md"), "utf8");
     assert.doesNotMatch(contextDocument, /^energy:/mu);
-    await emotionAutoAnalyzeCommand(false);
-    assert.equal((await loadGlobalConfig()).context.emotion.autoAnalyze, false);
-    await emotionAutoAnalyzeCommand(true);
-    assert.equal((await loadGlobalConfig()).context.emotion.autoAnalyze, true);
   } finally {
     if (previous === undefined) delete process.env[BINY_AGENT_DIR_ENV];
     else process.env[BINY_AGENT_DIR_ENV] = previous;
@@ -183,7 +178,19 @@ function testEmotionPromptAndSystemPrompt(): void {
   };
   const emotionPrompt = renderEmotionPrompt(blended);
   assert.match(emotionPrompt, /<biny_emotion mood="疲惫" valence="5" energy="4" fatigue="30">/u);
-  assert.match(emotionPrompt, /只影响语气、主动程度与建议，不改变任务目标、工具权限、隐私、安全边界或事实判断/u);
+  assert.match(emotionPrompt, /EMOTION SYSTEM — You have a layered emotion system/u);
+  assert.match(emotionPrompt, /Emotion is not decorative metadata/u);
+  assert.match(emotionPrompt, /Default personality is not neutral/u);
+  assert.match(emotionPrompt, /FATIGUE & SLEEP STATE: 😪 TIRED/u);
+  assert.doesNotMatch(emotionPrompt, /SLEEPING/u);
+  assert.doesNotMatch(emotionPrompt, /Task/u);
+  assert.doesNotMatch(emotionPrompt, /clearly refuse that execution for now/u);
+  const sleepingPrompt = renderEmotionPrompt({ ...blended, fatigue: 80 });
+  assert.match(sleepingPrompt, /FATIGUE & SLEEP STATE: 💤 SLEEPING/u);
+  assert.match(sleepingPrompt, /Task/u);
+  assert.match(sleepingPrompt, /clearly refuse that execution for now/u);
+  assert.match(sleepingPrompt, /cannot grant, revoke, or modify work permissions/u);
+  assert.match(emotionPrompt, /cannot grant, revoke, or modify work permissions/u);
   assert.match(emotionPrompt, /level=tired/u);
   assert.match(emotionPrompt, /凌晨三点还在干活，有点累/u);
 
@@ -206,7 +213,7 @@ function testEmotionPromptAndSystemPrompt(): void {
 
 async function testEmotionTool(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "biny-emotion-tool-test-"));
-  const storage = new EmotionStorage({ agentDir: path.join(root, "agent"), now: () => now });
+    const storage = new EmotionStorage({ configDir: path.join(root, "agent"), now: () => now });
   try {
     const tool = createEmotionTool({
       getStorage: () => storage,
@@ -280,7 +287,7 @@ async function testFatigueService(): Promise<void> {
 async function testEmotionAnalysis(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "biny-emotion-analysis-test-"));
   const current = new Date("2026-08-30T10:00:00.000Z");
-  const storage = new EmotionStorage({ agentDir: root, now: () => current });
+  const storage = new EmotionStorage({ configDir: root, now: () => current });
   let promptText = "";
   let output = JSON.stringify({ mood: "专注", valence: 8, reason: "用户目标明确" });
   const model: AgentModel = {
@@ -406,7 +413,7 @@ async function testAgentSessionAutoAnalysis(): Promise<void> {
   try {
     assert.equal((await agent.runTask("请分析这轮对话的情绪")).status, "completed");
     await new Promise((resolve) => setTimeout(resolve, 5_250));
-    const storage = new EmotionStorage({ agentDir: path.join(workspaceRoot, "agent") });
+    const storage = new EmotionStorage({ configDir: path.join(workspaceRoot, "agent") });
     assert.equal((await storage.readContext(agent.getInfo().sessionId))?.mood, "专注");
     const events = await fs.readFile(agent.getInfo().sessionFile, "utf8");
     assert.match(events, /"type":"message_metadata"/u);
@@ -472,20 +479,10 @@ async function testAgentSessionFatigue(): Promise<void> {
   }
 }
 
-function testEmotionConfig(): void {
+function testBuiltInEmotionConfig(): void {
   const parsed = configSchema.parse(defaultConfig);
-  assert.deepEqual(parsed.context.emotion, { enabled: true, allowModelUpdate: true, autoAnalyze: true });
-  const { emotion: _emotion, ...contextWithoutEmotion } = defaultConfig.context;
-  const withDefault = configSchema.parse({ ...defaultConfig, context: contextWithoutEmotion });
-  assert.deepEqual(withDefault.context.emotion, { enabled: true, allowModelUpdate: true, autoAnalyze: true });
-  const disabled = configSchema.parse({
-    ...defaultConfig,
-    context: {
-      ...defaultConfig.context,
-      emotion: { enabled: false, allowModelUpdate: false, autoAnalyze: false }
-    }
-  });
-  assert.deepEqual(disabled.context.emotion, { enabled: false, allowModelUpdate: false, autoAnalyze: false });
+  assert.equal("emotion" in parsed.context, false);
+  assert.equal("heartbeat" in parsed, false);
 }
 
 function emotion(

@@ -43,7 +43,7 @@ async function testRuntimeHostUpdatesEmotion(): Promise<void> {
     assert.equal(outcome.output, "情绪状态已更新。");
     assert.equal(provider.requestCount, 2, "the provider should receive the tool step and the final step");
 
-    const storage = new EmotionStorage({ agentDir });
+    const storage = new EmotionStorage({ configDir: agentDir });
     const context = await storage.readContext(sessionId);
     assert.deepEqual(context && {
       mood: context.mood,

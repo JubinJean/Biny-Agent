@@ -1,8 +1,9 @@
 /**
  * Agent 疲劳的本地持久化与时间计算。
  *
- * 疲劳跨 session、AgentSession 和进程保留，但只作为表达层提示，不会暂停回合、改变权限
- * 或自动替用户委派任务。时段加成独立计算，记录到文件的基础值不包含该加成。
+ * 疲劳跨 session、AgentSession 和进程保留，并通过 prompt 影响表达与工作节奏；高疲劳时模型
+ * 可以拒绝亲自执行非琐碎任务或使用已有的委派工具，但运行时仍掌握真实权限。时段加成独立
+ * 计算，记录到文件的基础值不包含该加成。
  */
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";

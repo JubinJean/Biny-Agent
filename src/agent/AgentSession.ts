@@ -14,7 +14,7 @@ import {
 } from "../llm/ModelManager.js";
 import { PermissionManager, type PermissionMode } from "../permission/PermissionManager.js";
 import { runPermissionCommand } from "../permission/commands.js";
-import { listSessionSummaries, parseSessionEvents, readSessionEvents, type SessionSummary } from "../session/events.js";
+import { listSessionSummaries, parseSessionEvents, readSessionEvents, readSessionSummary, type SessionSummary } from "../session/events.js";
 import { sessionMessageMetadata } from "../session/messageTree.js";
 import { assertSessionFileSize } from "../session/limits.js";
 import { cachedSessionEvents, sessionFileFingerprint } from "../session/parseCache.js";
@@ -78,7 +78,9 @@ import {
 import { LocalMemory, redactSecrets } from "./context/LocalMemory.js";
 import { IdentityStorage } from "./context/identityStorage.js";
 import { runSoulCommand as executeSoulCommand } from "./context/soulCommands.js";
+import { renderSoulPrompt } from "./builtinSoul.js";
 import { SoulStorage } from "./context/soulStorage.js";
+import { readSecurityPolicy } from "./context/securityPolicy.js";
 import { EmotionStorage } from "./context/emotionStorage.js";
 import { renderEmotionPrompt } from "./context/emotionPrompt.js";
 import {
@@ -153,7 +155,7 @@ export interface AgentSessionOptions {
   recorder: SessionRecorder;
   modelManager?: ModelManager;
   skillPrompt?: string | ((selection?: AgentCapabilitySelection["skills"]) => string | undefined);
-  /** 具名子代理定义元数据段（delegate_task 可用的 agent 列表）。 */
+  /** 具名子代理定义元数据段（Task 可用的 agent 列表）。 */
   subagentPrompt?: string;
   skillPaths?: string[] | ((selection?: AgentCapabilitySelection["skills"]) => string[]);
   /** MCP 服务器 initialize 返回的 instructions 汇总；重连后会变化，因此每回合实时读取。 */
@@ -561,6 +563,34 @@ export class AgentSession {
     }
   }
 
+  /**
+   * Fork 会话只补充父线程的轻量摘要；分支后的真实历史仍由 ContextMemory 管理，避免把父会话
+   * 全量重新塞进每次请求。父线程读取失败时不阻断当前会话。
+   */
+  private async parentThreadPrompt(): Promise<string | undefined> {
+    try {
+      const current = await readSessionCatalogRecord(this.persistenceRoot(), this.recorder.sessionId);
+      const parentSessionId = current?.parentSessionId;
+      if (!parentSessionId) return undefined;
+      const [parent, summary] = await Promise.all([
+        readSessionCatalogRecord(this.persistenceRoot(), parentSessionId),
+        readSessionSummary(this.persistenceRoot(), parentSessionId)
+      ]);
+      const lines = [
+        "PARENT THREAD — This conversation was forked from an earlier Biny session.",
+        `Parent session: ${parentSessionId}`,
+        parent?.title ? `Parent title: ${parent.title}` : undefined,
+        current.branchPoint ? `Fork point: ${JSON.stringify(current.branchPoint)}` : undefined,
+        summary?.firstUserMessage ? `Parent first request: ${summary.firstUserMessage.slice(0, 1_200)}` : undefined,
+        summary?.lastAssistantMessage ? `Parent latest verified reply: ${summary.lastAssistantMessage.slice(0, 1_200)}` : undefined,
+        "The active fork history, current user request, and verified tool results take precedence over this summary."
+      ].filter((line): line is string => line !== undefined);
+      return lines.join("\n");
+    } catch {
+      return undefined;
+    }
+  }
+
   /** 只把当前模型步骤真正可见的工具元数据交给提示词构建器。 */
   private promptTools(toolNames?: readonly string[]) {
     if (!toolNames) return this.options.toolRegistry.list();
@@ -585,7 +615,12 @@ export class AgentSession {
     const identityPrompt = this.activeConfig.context.identity.enabled
       ? await this.identityStorage.promptText(this.activeConfig.context.identity.userEnabled)
       : undefined;
-    const soulPrompt = await this.soulStorage.promptText();
+    const securityPrompt = await readSecurityPolicy();
+    const soulSnapshot = await this.soulStorage.read();
+    const soulPrompt = soulSnapshot.source === "user"
+      ? renderSoulPrompt(soulSnapshot.content, soulSnapshot.source)
+      : undefined;
+    const parentThreadPrompt = await this.parentThreadPrompt();
     const emotionPrompt = await this.currentEmotionPrompt();
     const dailyNotesPrompt = await this.dailyNotesPrompt();
     let crystalPrompt: string | undefined;
@@ -624,8 +659,11 @@ export class AgentSession {
       tools: initialTools,
       soulPrompt,
       personalization,
+      securityPrompt,
       identityPrompt,
+      parentThreadPrompt,
       emotionPrompt,
+      soulSource: soulSnapshot.source,
       activityPrompt,
       dailyNotesPrompt,
       crystalPrompt,
@@ -643,14 +681,12 @@ export class AgentSession {
 
   /** 每次 provider 请求前重新读取情绪，但只替换动态 prompt，不触发上下文重建。 */
   private async currentEmotionPrompt(): Promise<string | undefined> {
-    if (!this.activeConfig.context.emotion.enabled) return undefined;
     const blended = await this.emotionStorage.readBlended(this.recorder.sessionId, this.fatigueService.getFatigue());
     return renderEmotionPrompt(blended);
   }
 
   private async analyzeContextEmotion(sessionId: string, signal: AbortSignal, messageId?: string): Promise<void> {
-    const policy = this.activeConfig.context.emotion;
-    if (this.closed || sessionId !== this.recorder.sessionId || !policy.enabled || !policy.allowModelUpdate || !policy.autoAnalyze) return;
+    if (this.closed || sessionId !== this.recorder.sessionId) return;
     const recorder = this.recorder;
     await recorder.flush();
     const runtime = recorder.runtimeContextSnapshot();
@@ -866,10 +902,6 @@ export class AgentSession {
 
   getCrystalService(): CrystalService {
     return this.crystalService;
-  }
-
-  getHeartbeatConfig(): AgentConfig["heartbeat"] {
-    return this.activeConfig.heartbeat;
   }
 
   /** 刷新文件型每日工作日志，并按记忆开关自动晋升高置信度自省结果。 */
@@ -2185,8 +2217,7 @@ export class AgentSession {
       }
       await this.recordTurnOutcome(outcome);
       if (outcome.status === "completed") {
-        const emotionPolicy = this.activeConfig.context.emotion;
-        if (autoAnalyzeForTurn && emotionPolicy.enabled && emotionPolicy.allowModelUpdate && emotionPolicy.autoAnalyze) {
+        if (autoAnalyzeForTurn) {
           this.emotionAnalysisScheduler.schedule(this.recorder.sessionId, finalAssistantReference?.id);
         }
         // 记忆整理是完成回合后的旁路；不等待模型请求，也不让它改变当前回合终态。
@@ -2520,8 +2551,8 @@ export class AgentSession {
         .filter((entry) => entry.source === "mcp" || entry.source === "plugin" || entry.source === "subagent")
         .map((entry) => entry.tool.name)
     );
-    externalTools.add("web_search");
-    externalTools.add("web_fetch");
+    externalTools.add("WebSearch");
+    externalTools.add("WebFetch");
     return messages.some((message) => message.role === "assistant" && message.content.some(
       (part) => part.type === "toolCall" && externalTools.has(part.name)
     ));
@@ -2570,7 +2601,9 @@ export class AgentSession {
         requestContext: { ...(this.sideModelRequestContext() ?? {}), operation: "memory" }
       });
       if (result.usage) this.recordModelUsage(result.usage, "memory", modelAlias);
-      const content = normalizeGeneratedSkill(result.text);
+      // 模型输出也要重新脱敏：提取前的 transcript 是第一道防线，模型可能会复述
+      // 上下文中的敏感片段；草稿落盘前不能只依赖提示词约束。
+      const content = redactSecrets(normalizeGeneratedSkill(result.text));
       const parsed = parseSkillDocument(content);
       const name = typeof parsed.frontmatter.name === "string" ? parsed.frontmatter.name.trim() : "";
       const description = typeof parsed.frontmatter.description === "string" ? parsed.frontmatter.description.trim() : "";

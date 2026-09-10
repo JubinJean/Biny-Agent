@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
   HeartbeatFileStore,
   HeartbeatScheduler,
   isActiveHour,
-  type HeartbeatConfig
+  type HeartbeatSchedule
 } from "../src/agent/context/heartbeat.js";
 
 await testHeartbeatFileProtocol();
@@ -30,25 +30,22 @@ async function testHeartbeatFileProtocol(): Promise<void> {
 }
 
 async function testHeartbeatActiveWindowAndForce(): Promise<void> {
-  const config: HeartbeatConfig = {
-    enabled: true,
+  const schedule: HeartbeatSchedule = {
     intervalMinutes: 30,
     activeHoursStart: 22,
     activeHoursEnd: 6,
-    baseEmotionRefreshHours: 3,
-    timezone: "UTC",
-    prompt: "检查今天的待办"
+    baseEmotionRefreshHours: 3
   };
-  assert.equal(isActiveHour(config, new Date("2026-09-05T23:00:00.000Z")), true);
-  assert.equal(isActiveHour(config, new Date("2026-09-05T12:00:00.000Z")), false);
+  assert.equal(isActiveHour(schedule, new Date(2026, 8, 5, 23)), true);
+  assert.equal(isActiveHour(schedule, new Date(2026, 8, 5, 12)), false);
 
   const root = await mkdtemp(path.join(os.tmpdir(), "biny-heartbeat-window-"));
   try {
     const prompts: string[] = [];
+    await writeFile(path.join(root, "HEARTBEAT.md"), "检查今天的待办\n", "utf8");
     const scheduler = new HeartbeatScheduler({
-      agentDir: root,
-      getConfig: () => config,
-      now: () => new Date("2026-09-05T12:00:00.000Z"),
+      configDir: root,
+      now: () => new Date(2026, 8, 5, 12),
       run: async (prompt) => { prompts.push(prompt); }
     });
     assert.equal(await scheduler.triggerNow(), true, "强制触发不受活动时段限制");
@@ -66,16 +63,7 @@ async function testHeartbeatDoesNotOverlap(): Promise<void> {
     let release: (() => void) | undefined;
     let calls = 0;
     const scheduler = new HeartbeatScheduler({
-      agentDir: root,
-      getConfig: () => ({
-        enabled: true,
-        intervalMinutes: 1,
-        activeHoursStart: 0,
-        activeHoursEnd: 24,
-        baseEmotionRefreshHours: 3,
-        timezone: "UTC",
-        prompt: undefined
-      }),
+      configDir: root,
       run: async (_prompt, signal) => {
         calls += 1;
         await new Promise<void>((resolve) => {
@@ -99,26 +87,17 @@ async function testHeartbeatDoesNotOverlap(): Promise<void> {
 async function testHeartbeatAddsEmotionAndDiaryPromptsOnce(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "biny-heartbeat-prompts-"));
   try {
-    let now = new Date("2026-09-06T12:00:00.000Z");
+    let now = new Date(2026, 8, 6, 12);
     const prompts: string[] = [];
     const scheduler = new HeartbeatScheduler({
-      agentDir: root,
-      getConfig: () => ({
-        enabled: true,
-        intervalMinutes: 30,
-        activeHoursStart: 0,
-        activeHoursEnd: 24,
-        baseEmotionRefreshHours: 3,
-        timezone: "UTC",
-        prompt: undefined
-      }),
+      configDir: root,
       now: () => now,
       run: async (prompt) => { prompts.push(prompt); }
     });
     assert.equal(await scheduler.triggerNow(), true);
     assert.match(prompts[0] ?? "", /BASE EMOTION REFRESH/u);
     assert.match(prompts[0] ?? "", /MISSED DIARY CATCH-UP/u);
-    now = new Date("2026-09-06T13:00:00.000Z");
+    now = new Date(2026, 8, 6, 13);
     assert.equal(await scheduler.triggerNow(), true);
     assert.doesNotMatch(prompts[1] ?? "", /BASE EMOTION REFRESH/u);
     assert.doesNotMatch(prompts[1] ?? "", /MISSED DIARY CATCH-UP/u);
