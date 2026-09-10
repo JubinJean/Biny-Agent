@@ -1,8 +1,8 @@
 /**
- * Biny Plugin Registry 与项目受管安装目录（仓库目录安装）。
+ * Biny Plugin Registry 与全局/项目受管安装目录（仓库目录安装）。
  *
  * 市场条目只指向 GitHub 仓库里的一个目录（repository + path），免打包、免哈希：
- * 安装 = 通过 GitHub tree API 列出目录文件、逐个 raw 下载写入 `.biny/plugins/<id>`。
+ * 安装 = 通过 GitHub tree API 列出目录文件、逐个 raw 下载写入对应作用域的 plugins/<id>。
  * 安装阶段不 import、不执行包内脚本；运行时只加载清单中显式启用的 entry。
  * 保留的安全边界：路径穿越防护、符号链接拒绝、文件数量/大小兜底上限、默认关闭。
  */
@@ -10,7 +10,7 @@ import { randomUUID } from "node:crypto";
 import { constants, promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { projectBinyDir } from "../config/paths.js";
+import { globalConfigDir, globalPluginRoot, projectBinyDir } from "../config/paths.js";
 import { getSharedProxyAwareFetch } from "../network/proxyFetch.js";
 
 export const BINY_PLUGIN_REGISTRY_URL = "https://raw.githubusercontent.com/Thinkya1/Biny/main/plugins/registry.json";
@@ -123,7 +123,14 @@ export function parsePluginRepository(value: string): { owner: string; name: str
 }
 
 export async function readProjectPluginManifest(workspaceRoot: string): Promise<ProjectPluginManifest> {
-  const root = await ensurePluginRoot(workspaceRoot, true);
+  return await readManagedPluginManifest(await ensurePluginRoot(workspaceRoot, true), "项目");
+}
+
+export async function readGlobalPluginManifest(): Promise<ProjectPluginManifest> {
+  return await readManagedPluginManifest(await ensureGlobalPluginRoot(true), "全局");
+}
+
+async function readManagedPluginManifest(root: string, scope: string): Promise<ProjectPluginManifest> {
   const target = path.join(root, "manifest.json");
   try {
     await assertRegularFile(target);
@@ -132,13 +139,19 @@ export async function readProjectPluginManifest(workspaceRoot: string): Promise<
     return managedPluginManifestSchema.parse(JSON.parse(await fs.readFile(target, "utf8")));
   } catch (error) {
     if (isNotFound(error)) return { format: 1, plugins: [] };
-    throw new Error(`无法读取 Plugin 受管清单：${errorMessage(error)}`);
+    throw new Error(`无法读取${scope} Plugin 受管清单：${errorMessage(error)}`);
   }
 }
 
 export async function writeProjectPluginManifest(workspaceRoot: string, manifest: ProjectPluginManifest): Promise<void> {
   const parsed = managedPluginManifestSchema.parse(manifest);
   const root = await ensurePluginRoot(workspaceRoot);
+  await writeJsonAtomic(path.join(root, "manifest.json"), parsed);
+}
+
+export async function writeGlobalPluginManifest(manifest: ProjectPluginManifest): Promise<void> {
+  const parsed = managedPluginManifestSchema.parse(manifest);
+  const root = await ensureGlobalPluginRoot();
   await writeJsonAtomic(path.join(root, "manifest.json"), parsed);
 }
 
@@ -175,16 +188,29 @@ export async function writePluginRegistryCache(workspaceRoot: string, cache: Plu
 }
 
 export async function listEnabledProjectPluginPaths(workspaceRoot: string): Promise<string[]> {
-  const manifest = await readProjectPluginManifest(workspaceRoot);
-  const root = await ensurePluginRoot(workspaceRoot, true);
-  const canonicalWorkspace = await fs.realpath(path.resolve(workspaceRoot));
+  return await listEnabledManagedPluginPaths(
+    await ensurePluginRoot(workspaceRoot, true),
+    await readProjectPluginManifest(workspaceRoot),
+    path.resolve(workspaceRoot)
+  );
+}
+
+export async function listEnabledGlobalPluginPaths(): Promise<string[]> {
+  const root = await ensureGlobalPluginRoot(true);
+  return await listEnabledManagedPluginPaths(root, await readGlobalPluginManifest());
+}
+
+async function listEnabledManagedPluginPaths(root: string, manifest: ProjectPluginManifest, relativeTo?: string): Promise<string[]> {
+  const canonicalRelativeRoot = relativeTo === undefined ? undefined : await fs.realpath(relativeTo);
   const paths: string[] = [];
   for (const plugin of manifest.plugins) {
     if (!plugin.enabled) continue;
     try {
       const directory = await assertContainedDirectory(root, path.join(root, plugin.directory));
       const entry = await resolveContainedFile(directory, plugin.entry);
-      paths.push(path.relative(canonicalWorkspace, entry).split(path.sep).join("/"));
+      paths.push(canonicalRelativeRoot === undefined
+        ? entry
+        : path.relative(canonicalRelativeRoot, entry).split(path.sep).join("/"));
     } catch {
       // 单个已启用 Plugin 损坏时跳过它，其他 Plugin 仍可继续加载。
     }
@@ -194,6 +220,35 @@ export async function listEnabledProjectPluginPaths(workspaceRoot: string): Prom
 
 export async function installPluginFromRepository(options: {
   workspaceRoot: string;
+  plugin: PluginMarketEntry;
+  fetcher?: typeof globalThis.fetch;
+}): Promise<ManagedPlugin> {
+  return await installManagedPlugin({
+    pluginRoot: await ensurePluginRoot(options.workspaceRoot),
+    readManifest: () => readProjectPluginManifest(options.workspaceRoot),
+    writeManifest: (manifest) => writeProjectPluginManifest(options.workspaceRoot, manifest),
+    plugin: options.plugin,
+    fetcher: options.fetcher
+  });
+}
+
+export async function installGlobalPluginFromRepository(options: {
+  plugin: PluginMarketEntry;
+  fetcher?: typeof globalThis.fetch;
+}): Promise<ManagedPlugin> {
+  return await installManagedPlugin({
+    pluginRoot: await ensureGlobalPluginRoot(),
+    readManifest: readGlobalPluginManifest,
+    writeManifest: writeGlobalPluginManifest,
+    plugin: options.plugin,
+    fetcher: options.fetcher
+  });
+}
+
+async function installManagedPlugin(options: {
+  pluginRoot: string;
+  readManifest(): Promise<ProjectPluginManifest>;
+  writeManifest(manifest: ProjectPluginManifest): Promise<void>;
   plugin: PluginMarketEntry;
   fetcher?: typeof globalThis.fetch;
 }): Promise<ManagedPlugin> {
@@ -220,7 +275,7 @@ export async function installPluginFromRepository(options: {
   const declaredTotal = files.reduce((total, entry) => total + (entry.size ?? 0), 0);
   if (declaredTotal > maxPluginTotalBytes) throw new Error("Plugin 目录超过大小上限。");
 
-  const pluginsRoot = await ensurePluginRoot(options.workspaceRoot);
+  const pluginsRoot = options.pluginRoot;
   const tempDirectory = path.join(pluginsRoot, `.install-${randomUUID()}`);
   const targetDirectory = path.join(pluginsRoot, options.plugin.id);
   await fs.mkdir(tempDirectory, { recursive: false, mode: 0o700 });
@@ -268,7 +323,7 @@ export async function installPluginFromRepository(options: {
     };
     // 目录轮换与清单更新进入串行队列：并发安装其他 Plugin 时不会读到过期清单再整体覆盖。
     await enqueuePluginWrite(async () => {
-      const existing = await readProjectPluginManifest(options.workspaceRoot);
+      const existing = await options.readManifest();
       const old = existing.plugins.find((plugin) => plugin.id === options.plugin.id);
       if (old?.enabled) manifestEntry.enabled = true;
       const backupDirectory = path.join(pluginsRoot, `.backup-${options.plugin.id}-${randomUUID()}`);
@@ -283,7 +338,7 @@ export async function installPluginFromRepository(options: {
           if (!isNotFound(error)) throw error;
         }
         await fs.rename(tempDirectory, targetDirectory);
-        await writeProjectPluginManifest(options.workspaceRoot, {
+        await options.writeManifest({
           format: 1,
           plugins: [...existing.plugins.filter((plugin) => plugin.id !== options.plugin.id), manifestEntry]
         });
@@ -354,42 +409,85 @@ function isSafeRepoPath(value: string): boolean {
 }
 
 export async function setProjectPluginEnabled(workspaceRoot: string, pluginId: string, enabled: boolean): Promise<ManagedPlugin> {
+  return await setManagedPluginEnabled({
+    pluginId,
+    enabled,
+    root: await ensurePluginRoot(workspaceRoot, true),
+    readManifest: () => readProjectPluginManifest(workspaceRoot),
+    writeManifest: (manifest) => writeProjectPluginManifest(workspaceRoot, manifest)
+  });
+}
+
+export async function setGlobalPluginEnabled(pluginId: string, enabled: boolean): Promise<ManagedPlugin> {
+  return await setManagedPluginEnabled({
+    pluginId,
+    enabled,
+    root: await ensureGlobalPluginRoot(true),
+    readManifest: readGlobalPluginManifest,
+    writeManifest: writeGlobalPluginManifest
+  });
+}
+
+async function setManagedPluginEnabled(options: {
+  pluginId: string;
+  enabled: boolean;
+  root: string;
+  readManifest(): Promise<ProjectPluginManifest>;
+  writeManifest(manifest: ProjectPluginManifest): Promise<void>;
+}): Promise<ManagedPlugin> {
   return await enqueuePluginWrite(async () => {
-    const manifest = await readProjectPluginManifest(workspaceRoot);
-    const plugin = manifest.plugins.find((candidate) => candidate.id === pluginId);
-    if (!plugin) throw new Error(`Plugin 不存在：${pluginId}`);
-    const root = await ensurePluginRoot(workspaceRoot, true);
-    await assertContainedDirectory(root, path.join(root, plugin.directory));
-    const next = { ...plugin, enabled, error: undefined };
-    await writeProjectPluginManifest(workspaceRoot, {
+    const manifest = await options.readManifest();
+    const plugin = manifest.plugins.find((candidate) => candidate.id === options.pluginId);
+    if (!plugin) throw new Error(`Plugin 不存在：${options.pluginId}`);
+    await assertContainedDirectory(options.root, path.join(options.root, plugin.directory));
+    const next = { ...plugin, enabled: options.enabled, error: undefined };
+    await options.writeManifest({
       format: 1,
-      plugins: manifest.plugins.map((candidate) => candidate.id === pluginId ? next : candidate)
+      plugins: manifest.plugins.map((candidate) => candidate.id === options.pluginId ? next : candidate)
     });
     return next;
   });
 }
 
 export async function uninstallProjectPlugin(workspaceRoot: string, pluginId: string): Promise<void> {
+  await uninstallManagedPlugin({
+    pluginId,
+    root: await ensurePluginRoot(workspaceRoot, true),
+    readManifest: () => readProjectPluginManifest(workspaceRoot),
+    writeManifest: (manifest) => writeProjectPluginManifest(workspaceRoot, manifest)
+  });
+}
+
+export async function uninstallGlobalPlugin(pluginId: string): Promise<void> {
+  await uninstallManagedPlugin({
+    pluginId,
+    root: await ensureGlobalPluginRoot(true),
+    readManifest: readGlobalPluginManifest,
+    writeManifest: writeGlobalPluginManifest
+  });
+}
+
+async function uninstallManagedPlugin(options: {
+  pluginId: string;
+  root: string;
+  readManifest(): Promise<ProjectPluginManifest>;
+  writeManifest(manifest: ProjectPluginManifest): Promise<void>;
+}): Promise<void> {
   await enqueuePluginWrite(async () => {
-    const manifest = await readProjectPluginManifest(workspaceRoot);
-    const plugin = manifest.plugins.find((candidate) => candidate.id === pluginId);
-    if (!plugin) throw new Error(`Plugin 不存在：${pluginId}`);
-    const root = await ensurePluginRoot(workspaceRoot, true);
-    const directory = await assertContainedDirectory(root, path.join(root, plugin.directory));
+    const manifest = await options.readManifest();
+    const plugin = manifest.plugins.find((candidate) => candidate.id === options.pluginId);
+    if (!plugin) throw new Error(`Plugin 不存在：${options.pluginId}`);
+    const directory = await assertContainedDirectory(options.root, path.join(options.root, plugin.directory));
     await fs.rm(directory, { recursive: true, force: true });
-    await writeProjectPluginManifest(workspaceRoot, {
+    await options.writeManifest({
       format: 1,
-      plugins: manifest.plugins.filter((candidate) => candidate.id !== pluginId)
+      plugins: manifest.plugins.filter((candidate) => candidate.id !== options.pluginId)
     });
   });
 }
 
 export function projectPluginRoot(workspaceRoot: string): string {
   return path.join(projectBinyDir(workspaceRoot), "plugins");
-}
-
-export function projectPluginManifestPath(workspaceRoot: string): string {
-  return path.join(projectPluginRoot(workspaceRoot), "manifest.json");
 }
 
 function chooseEntry(files: string[]): string {
@@ -443,6 +541,30 @@ async function ensurePluginRoot(workspaceRoot: string, optional = false): Promis
     const created = await fs.lstat(root);
     if (created.isSymbolicLink() || !created.isDirectory()) throw new Error("项目 Plugin 目录必须是真实目录。");
   }
+  return root;
+}
+
+async function ensureGlobalPluginRoot(optional = false): Promise<string> {
+  const configRoot = globalConfigDir();
+  try {
+    const configStat = await fs.lstat(configRoot);
+    if (configStat.isSymbolicLink() || !configStat.isDirectory()) throw new Error("全局配置目录必须是真实目录。");
+  } catch (error) {
+    if (!isNotFound(error)) throw error;
+    if (optional) return globalPluginRoot();
+    await fs.mkdir(configRoot, { recursive: true, mode: 0o700 });
+  }
+  await fs.chmod(configRoot, 0o700);
+  const root = globalPluginRoot();
+  try {
+    const stat = await fs.lstat(root);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error("全局 Plugin 目录必须是真实目录。");
+  } catch (error) {
+    if (!isNotFound(error)) throw error;
+    if (optional) return root;
+    await fs.mkdir(root, { recursive: true, mode: 0o700 });
+  }
+  await fs.chmod(root, 0o700);
   return root;
 }
 

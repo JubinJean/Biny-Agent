@@ -32,13 +32,32 @@ export async function loadPlugins(
   registry: ToolRegistry,
   ai: AiRegistry = new AiRegistry()
 ): Promise<string[]> {
+  return await loadPluginsFromRoot(workspaceRoot, workspaceRoot, configuredPaths, config, registry, ai);
+}
+
+/** 从指定受管根目录加载插件；全局插件只能通过全局配置根目录进入这里。 */
+export async function loadPluginsFromRoot(
+  workspaceRoot: string,
+  pluginRoot: string,
+  configuredPaths: string[],
+  config: AgentConfig,
+  registry: ToolRegistry,
+  ai: AiRegistry = new AiRegistry()
+): Promise<string[]> {
   const canonicalWorkspace = await fs.realpath(path.resolve(workspaceRoot));
+  let canonicalPluginRoot: string;
+  try {
+    canonicalPluginRoot = await fs.realpath(path.resolve(pluginRoot));
+  } catch (error) {
+    if (isNotFound(error)) return [];
+    throw error;
+  }
   const files: string[] = [];
   const seen = new Set<string>();
   const collection = { files, seen, visited: 0 };
   for (const configuredPath of configuredPaths) {
-    const target = await resolveWorkspacePluginPath(canonicalWorkspace, configuredPath);
-    if (target) await collectPluginFiles(canonicalWorkspace, target, collection);
+    const target = await resolvePluginPath(canonicalPluginRoot, configuredPath);
+    if (target) await collectPluginFiles(canonicalPluginRoot, target, collection);
   }
 
   const loaded: string[] = [];
@@ -69,13 +88,13 @@ export async function loadPlugins(
       ...(typeof imported.default === "object" && imported.default !== null && Array.isArray(imported.default.tools) ? imported.default.tools : [])
     ];
     for (const tool of exportedTools) registry.registerPluginTool(tool);
-    loaded.push(path.relative(canonicalWorkspace, filePath) || path.basename(filePath));
+    loaded.push(displayPluginPath(canonicalWorkspace, filePath));
   }
   return loaded;
 }
 
 async function collectPluginFiles(
-  workspaceRoot: string,
+  allowedRoot: string,
   target: string,
   collection: { files: string[]; seen: Set<string>; visited: number }
 ): Promise<void> {
@@ -89,7 +108,7 @@ async function collectPluginFiles(
     return;
   }
   if (stat.isSymbolicLink()) throw new Error(`Plugin paths cannot contain symbolic links: ${target}`);
-  if (await escapesWorkspace(workspaceRoot, target)) throw new Error(`Plugin path escapes workspace: ${target}`);
+  if (await escapesRoot(allowedRoot, target)) throw new Error(`Plugin path escapes allowed root: ${target}`);
   if (stat.isFile()) {
     if (stat.nlink !== 1) throw new Error(`Plugin files cannot be hardlinks: ${target}`);
     if ([".js", ".mjs", ".cjs"].includes(path.extname(target).toLowerCase()) && !collection.seen.has(target)) {
@@ -103,22 +122,23 @@ async function collectPluginFiles(
   const entries = await fs.readdir(target, { withFileTypes: true });
   for (const entry of entries) {
     if (entry.name === "node_modules" || entry.name.startsWith(".")) continue;
-    await collectPluginFiles(workspaceRoot, path.join(target, entry.name), collection);
+    await collectPluginFiles(allowedRoot, path.join(target, entry.name), collection);
   }
 }
 
-async function resolveWorkspacePluginPath(workspaceRoot: string, configuredPath: string): Promise<string | undefined> {
-  const absolutePath = path.resolve(workspaceRoot, configuredPath);
-  const relative = path.relative(workspaceRoot, absolutePath);
+async function resolvePluginPath(pluginRoot: string, configuredPath: string): Promise<string | undefined> {
+  const absolutePath = path.resolve(pluginRoot, configuredPath);
+  const relative = path.relative(pluginRoot, absolutePath);
   if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    throw new Error(`Plugin path must stay inside workspace: ${configuredPath}`);
+    throw new Error(`Plugin path must stay inside workspace or its managed root: ${configuredPath}`);
   }
   try {
     const stat = await fs.lstat(absolutePath);
     if (stat.isSymbolicLink()) throw new Error(`Plugin paths cannot be symbolic links: ${configuredPath}`);
     const canonical = await fs.realpath(absolutePath);
-    if (path.relative(workspaceRoot, canonical).startsWith(`..${path.sep}`) || path.isAbsolute(path.relative(workspaceRoot, canonical))) {
-      throw new Error(`Plugin path escapes workspace: ${configuredPath}`);
+    const canonicalRelative = path.relative(pluginRoot, canonical);
+    if (canonicalRelative === ".." || canonicalRelative.startsWith(`..${path.sep}`) || path.isAbsolute(canonicalRelative)) {
+      throw new Error(`Plugin path escapes its managed root: ${configuredPath}`);
     }
     if (canonical !== absolutePath) throw new Error(`Plugin paths cannot contain symbolic links: ${configuredPath}`);
     return canonical;
@@ -142,10 +162,17 @@ function configWithoutCredentials(config: AgentConfig): AgentConfig {
   return safe;
 }
 
-async function escapesWorkspace(workspaceRoot: string, target: string): Promise<boolean> {
+async function escapesRoot(root: string, target: string): Promise<boolean> {
   const canonical = await fs.realpath(target);
-  const relative = path.relative(workspaceRoot, canonical);
+  const relative = path.relative(root, canonical);
   return relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative);
+}
+
+function displayPluginPath(workspaceRoot: string, filePath: string): string {
+  const relative = path.relative(workspaceRoot, filePath);
+  return relative === "" || (!relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+    ? relative || path.basename(filePath)
+    : filePath;
 }
 
 function isNotFound(error: unknown): boolean {

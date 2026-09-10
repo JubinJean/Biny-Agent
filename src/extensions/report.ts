@@ -67,7 +67,7 @@ export function formatExtensionReport(status: ExtensionStatus, section: Extensio
     "Subagent",
     status.subagent.enabled
       ? [
-        `  enabled · delegate_task · adaptive up to ${String(status.subagent.maxSteps)} steps · ${String(status.subagent.maxOutputTokens)} output tokens`,
+        `  enabled · Task · adaptive up to ${String(status.subagent.maxSteps)} steps · ${String(status.subagent.maxOutputTokens)} output tokens`,
         `  concurrency ${String(status.subagent.maxConcurrentSubagents)} · queue cap ${String(status.subagent.maxPendingSubagents)} · timeout ${String(status.subagent.timeoutMs)}ms · model ${status.subagent.model ?? "current"}`,
         `  cost stop threshold ${status.subagent.maxCostUsd === undefined ? "not set" : `$${status.subagent.maxCostUsd.toFixed(6)}`} · tools ${status.subagent.allowedTools.join(", ")}`,
         ...formatSubagentAgents(status.subagent.agents)
@@ -104,7 +104,7 @@ function formatMcpReport(servers: McpServerStatus[]): string {
 
 /** /subagent agents 的独立列表输出（CLI 与 TUI 共用）。 */
 export function formatSubagentAgentList(definitions: readonly SubagentDefinition[]): string {
-  if (!definitions.length) return "No named subagent definitions. Add markdown files (frontmatter: name/description/tools/model) under .biny/agents or ~/.biny/agents.";
+  if (!definitions.length) return "No named subagent definitions. Add markdown files (frontmatter: name/description/tools/model) under .biny/agents or ~/.config/biny/agents.";
   return definitions.map((definition) => {
     const extras = [definition.scope, definition.model ? `model ${definition.model}` : "", definition.tools ? `tools ${definition.tools.join("/")}` : ""].filter(Boolean).join(" · ");
     return `${definition.name} · ${extras} · ${definition.path}\n  ${definition.description}`;
@@ -112,7 +112,7 @@ export function formatSubagentAgentList(definitions: readonly SubagentDefinition
 }
 
 function formatSubagentAgents(agents: SubagentDefinition[]): string[] {
-  if (!agents.length) return ["  named agents: none (add markdown definitions under .biny/agents or ~/.biny/agents)"];
+  if (!agents.length) return ["  named agents: none (add markdown definitions under .biny/agents or ~/.config/biny/agents)"];
   const lines = ["  named agents:"];
   for (const agent of agents) {
     const extras = [agent.scope, agent.model ? `model ${agent.model}` : "", agent.tools ? `tools ${agent.tools.join("/")}` : ""].filter(Boolean).join(" · ");

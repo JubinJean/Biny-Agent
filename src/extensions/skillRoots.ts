@@ -3,10 +3,13 @@
  *
  * `engines` 只描述目录归属；真正的文件安全校验仍由各自的读取模块负责。
  */
+import os from "node:os";
 import path from "node:path";
+import { globalConfigDir } from "../config/paths.js";
 
 export type SkillRootEngine = "biny" | "codex" | "claude" | "pi";
-export type SkillRootSource = "biny" | "agents";
+export type SkillRootSource = "biny" | "agents" | "builtin";
+export type SkillRootScope = "builtin" | "global" | "project";
 
 export interface SkillRootConvention {
   relativePath: string;
@@ -31,8 +34,38 @@ export const GLOBAL_SKILL_ROOT_CONVENTIONS: readonly SkillRootConvention[] = [
 
 export const DEFAULT_PROJECT_SKILL_PATHS = PROJECT_SKILL_ROOT_CONVENTIONS.map(({ relativePath }) => relativePath);
 
-export function defaultGlobalSkillRoots(homeDir: string): string[] {
-  return GLOBAL_SKILL_ROOT_CONVENTIONS.map(({ relativePath }) => (
-    path.isAbsolute(relativePath) ? relativePath : path.join(homeDir, relativePath)
-  ));
+/**
+ * 返回 Skill 根的跨 scope 优先级；数值越小越优先。
+ *
+ * 项目 Skill 必须覆盖全局 Skill。全局配置目录不是 home 下的
+ * `.biny/skills`，因此需要先按实际解析后的路径识别它。
+ */
+export function skillRootPrecedence(scope: SkillRootScope, configuredPath: string, homeDir = os.homedir()): number {
+  if (scope === "builtin") return 300;
+  const conventions = scope === "project" ? PROJECT_SKILL_ROOT_CONVENTIONS : GLOBAL_SKILL_ROOT_CONVENTIONS;
+  let relativePath = path.normalize(configuredPath).split(path.sep).join("/");
+  if (scope === "global") {
+    const configRoot = homeDir === os.homedir()
+      ? globalConfigDir()
+      : globalConfigDir({ env: {}, homeDir });
+    if (path.resolve(configuredPath) === path.resolve(configRoot, "skills")) {
+      relativePath = ".biny/skills";
+    } else if (path.isAbsolute(configuredPath)) {
+      relativePath = path.relative(homeDir, path.resolve(configuredPath)).split(path.sep).join("/");
+    }
+  }
+  const index = conventions.findIndex((convention) => convention.relativePath === relativePath);
+  const fallback = conventions.length + 1;
+  return (scope === "project" ? 0 : 100) + (index === -1 ? fallback : index);
+}
+
+export function defaultGlobalSkillRoots(homeDir?: string): string[] {
+  const resolvedHome = homeDir ?? os.homedir();
+  const configRoot = homeDir === undefined
+    ? globalConfigDir()
+    : globalConfigDir({ env: {}, homeDir });
+  return GLOBAL_SKILL_ROOT_CONVENTIONS.map(({ relativePath }) => {
+    if (relativePath === ".biny/skills") return path.join(configRoot, "skills");
+    return path.isAbsolute(relativePath) ? relativePath : path.join(resolvedHome, relativePath);
+  });
 }

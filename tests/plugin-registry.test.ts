@@ -4,13 +4,21 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  installGlobalPluginFromRepository,
   installPluginFromRepository,
+  listEnabledGlobalPluginPaths,
   listEnabledProjectPluginPaths,
   parsePluginRegistry,
+  readGlobalPluginManifest,
   readProjectPluginManifest,
+  setGlobalPluginEnabled,
   setProjectPluginEnabled,
   writeProjectPluginManifest
 } from "../src/extensions/pluginRegistry.js";
+import { loadPluginsFromRoot } from "../src/extensions/plugins.js";
+import { BINY_AGENT_DIR_ENV, globalPluginRoot } from "../src/config/paths.js";
+import { configSchema, defaultConfig } from "../src/config/schema.js";
+import { ToolRegistry } from "../src/tools/registry.js";
 
 interface MockRepo {
   tree: Array<{ path: string; type: string; size?: number }>;
@@ -177,6 +185,35 @@ async function main(): Promise<void> {
       );
     } finally {
       await rm(ws4, { recursive: true, force: true });
+    }
+
+    // 9. 全局 Plugin 使用 ~/.config/biny/plugins 的独立 manifest，并可被当前工作区加载。
+    const previousAgentDir = process.env[BINY_AGENT_DIR_ENV];
+    const globalRoot = await mkdtemp(path.join(os.tmpdir(), "biny-global-plugin-"));
+    process.env[BINY_AGENT_DIR_ENV] = globalRoot;
+    try {
+      const globalInstalled = await installGlobalPluginFromRepository({
+        plugin: { ...demoEntry, id: "global-demo" },
+        fetcher: mockGitHub(repo)
+      });
+      assert.equal(globalInstalled.enabled, false);
+      assert.equal(path.dirname(globalPluginRoot()), globalRoot);
+      assert.equal(await readFile(path.join(globalPluginRoot(), "global-demo", "index.mjs"), "utf8"), "export default function register() {}\n");
+      await setGlobalPluginEnabled("global-demo", true);
+      assert.deepEqual(await listEnabledGlobalPluginPaths(), [await fs.realpath(path.join(globalPluginRoot(), "global-demo", "index.mjs"))]);
+      assert.equal((await readGlobalPluginManifest()).plugins[0]?.enabled, true);
+      const loadedGlobal = await loadPluginsFromRoot(
+        workspaceRoot,
+        globalPluginRoot(),
+        await listEnabledGlobalPluginPaths(),
+        configSchema.parse(defaultConfig),
+        new ToolRegistry()
+      );
+      assert.deepEqual(loadedGlobal, [await fs.realpath(path.join(globalPluginRoot(), "global-demo", "index.mjs"))]);
+    } finally {
+      if (previousAgentDir === undefined) delete process.env[BINY_AGENT_DIR_ENV];
+      else process.env[BINY_AGENT_DIR_ENV] = previousAgentDir;
+      await rm(globalRoot, { recursive: true, force: true });
     }
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });

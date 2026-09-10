@@ -5,6 +5,7 @@ import path from "node:path";
 import { z } from "zod";
 import { parseSkillDocument } from "./skillCatalog.js";
 import { projectBinyDir } from "../config/paths.js";
+import { redactSecrets } from "../utils/secrets.js";
 
 const maxDrafts = 128;
 const maxDraftBytes = 512 * 1024;
@@ -37,18 +38,19 @@ export async function createSkillDraft(options: {
   status?: SkillDraft["status"];
   error?: string;
 }): Promise<SkillDraft> {
-  const content = validateDraftContent(options.content, options.name, options.description);
+  const description = redactSecrets(options.description);
+  const content = validateDraftContent(redactSecrets(options.content), options.name, description);
   const now = new Date().toISOString();
   const draft: SkillDraft = {
     id: randomUUID(),
     name: options.name,
-    description: options.description,
+    description,
     content,
     status: options.status ?? "pending",
     toolCalls: options.toolCalls,
     createdAt: now,
     updatedAt: now,
-    error: options.error,
+    error: options.error === undefined ? undefined : redactSecrets(options.error),
     installedPath: undefined
   };
   const document = await readDocument(options.workspaceRoot);
@@ -60,7 +62,7 @@ export async function markSkillDraftFailed(workspaceRoot: string, draftId: strin
   return await updateDraft(workspaceRoot, draftId, (draft) => ({
     ...draft,
     status: "failed",
-    error: message.slice(0, 2_000),
+    error: redactSecrets(message).slice(0, 2_000),
     updatedAt: new Date().toISOString()
   }));
 }
@@ -86,7 +88,7 @@ export async function retrySkillDraft(workspaceRoot: string, draftId: string): P
 export async function editSkillDraft(workspaceRoot: string, draftId: string, content: string): Promise<SkillDraft> {
   return await updateDraft(workspaceRoot, draftId, (draft) => ({
     ...draft,
-    content: validateDraftContent(content, draft.name, draft.description),
+    content: validateDraftContent(redactSecrets(content), draft.name, draft.description),
     status: "pending",
     error: undefined,
     updatedAt: new Date().toISOString()
@@ -98,7 +100,7 @@ export async function approveSkillDraft(workspaceRoot: string, draftId: string):
   const draft = document.drafts.find((candidate) => candidate.id === draftId);
   if (!draft) throw new Error("Skill 草稿不存在。");
   if (draft.status === "approved") return draft;
-  const content = validateDraftContent(draft.content, draft.name, draft.description);
+  const content = validateDraftContent(redactSecrets(draft.content), draft.name, draft.description);
   const skillsRoot = path.join(projectBinyDir(workspaceRoot), "skills");
   await ensureRealDirectory(path.dirname(skillsRoot));
   await ensureRealDirectory(skillsRoot);

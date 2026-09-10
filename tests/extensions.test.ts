@@ -97,7 +97,7 @@ function testEmptySkillReport(): void {
   const loadedReport = formatExtensionReport({
     ...status,
     skills: [
-      { name: "zeta", description: "hidden from compact listing", path: "~/.biny/skills/zeta/SKILL.md", filePath: "/tmp/zeta/SKILL.md", rootPath: "/tmp", scope: "global" },
+      { name: "zeta", description: "hidden from compact listing", path: "~/.config/biny/skills/zeta/SKILL.md", filePath: "/tmp/zeta/SKILL.md", rootPath: "/tmp", scope: "global" },
       { name: "alpha", description: "hidden from compact listing", path: ".biny/skills/alpha/SKILL.md", filePath: "/tmp/alpha/SKILL.md", rootPath: "/tmp", scope: "project" }
     ]
   }, "skills");
@@ -106,7 +106,7 @@ function testEmptySkillReport(): void {
 
 function testShellPermissionBoundary(): void {
   const request = analyzePermissionRequest({
-    toolName: "run_command",
+    toolName: "Bash",
     args: { command: "git status && node -e 'process.exit(0)'" },
     sessionId: "test",
     projectRoot: "/workspace"
@@ -126,7 +126,7 @@ function testShellPermissionBoundary(): void {
   assert.equal(new PermissionManager().evaluate(builtinInspection).decision, "allow");
 
   const criticalWrite = analyzePermissionRequest({
-    toolName: "write_file",
+    toolName: "Write",
     args: { path: "temporary/../.zshrc", content: "not-used" },
     sessionId: "test",
     projectRoot: "/workspace"
@@ -135,7 +135,7 @@ function testShellPermissionBoundary(): void {
   assert.equal(criticalWrite.riskLevel, "critical");
 
   const deniedRead = analyzePermissionRequest({
-    toolName: "read_file",
+    toolName: "Read",
     args: { path: "temporary/../private/token.txt" },
     sessionId: "test",
     projectRoot: "/workspace"
@@ -301,6 +301,7 @@ async function testSkillsAndPlugins(workspaceRoot: string): Promise<void> {
     ".agents/skills"
   ]);
   assert.deepEqual(extensionDefaults.plugins, []);
+  assert.deepEqual(extensionDefaults.globalPlugins, []);
   assert.throws(
     () => configSchema.parse({ ...defaultConfig, extensions: { ...defaultConfig.extensions, plugins: [" "] } }),
     /at least 1 character/
@@ -445,18 +446,21 @@ async function testProgressiveSkills(workspaceRoot: string): Promise<void> {
     await writeFile(path.join(globalOnly, "references", "format.md"), "Nested global reference.", "utf8");
 
     const bundle = await loadSkills({ workspaceRoot, projectPaths: [".biny/skills"], globalRoot });
-    assert.deepEqual(bundle.skills.map((skill) => [skill.name, skill.scope]), [
+    assert.deepEqual(bundle.skills.filter((skill) => skill.scope !== "builtin").map((skill) => [skill.name, skill.scope]), [
       ["test-runner", "project"],
-      ["release-notes", "global"],
-      ["test-runner", "global"]
+      ["release-notes", "global"]
     ]);
-    // 渐进式披露：prompt 只含元数据与 invoke_skill 指引，不含技能正文。
+    assert.equal(bundle.conflicts.length, 1);
+    assert.equal(bundle.conflicts[0]?.winner.scope, "project");
+    assert.deepEqual(bundle.conflicts[0]?.shadowed.map((skill) => skill.scope), ["global"]);
+    assert.match(bundle.warnings.find((warning) => warning.includes("Skill conflict")) ?? "", /test-runner/);
+    // 渐进式披露：prompt 只含元数据与 Skill 指引，不含技能正文。
     assert.match(bundle.prompt, /test-runner \(project\).*Run the repository test suite/);
     assert.match(bundle.prompt, /release-notes \(global\).*Draft release notes/);
     assert.ok(bundle.prompt.length <= 8_000);
-    assert.match(bundle.prompt, /invoke_skill/);
+    assert.match(bundle.prompt, /Skill/);
     assert.equal(bundle.prompt.includes("Always run pnpm test"), false);
-    assert.equal(bundle.prompt.includes("Global variant must lose"), true);
+    assert.equal(bundle.prompt.includes("Global variant must lose"), false);
 
     // Pi 风格的 Skill 命令只在提交后读取正文；补全阶段不会把正文放进元数据 prompt。
     const expanded = await expandSkillCommand(bundle, "/skill:test-runner run the tests");
@@ -470,11 +474,10 @@ async function testProgressiveSkills(workspaceRoot: string): Promise<void> {
     assert.equal(await expandSkillCommand(bundle, "/skill:missing do something"), "/skill:missing do something");
 
     const tool = createSkillTool(bundle);
-    assert.equal(tool.name, "invoke_skill");
+    assert.equal(tool.name, "Skill");
     assert.equal(tool.risk, "read");
-    const ambiguous = await tool.resolveExecution({ skill: "test-runner" });
-    assert.equal("isError" in ambiguous && ambiguous.isError, true);
-    if ("isError" in ambiguous) assert.match(ambiguous.errorMessage, /ambiguous/);
+    const resolved = await tool.resolveExecution({ skill: "test-runner" });
+    assert.equal("isError" in resolved, false);
     const projectSkill = bundle.skills.find((skill) => skill.name === "test-runner" && skill.scope === "project");
     assert.ok(projectSkill);
     const execution = await tool.resolveExecution({ skill: "test-runner", path: projectSkill.path });
@@ -561,8 +564,8 @@ async function testProgressiveSkills(workspaceRoot: string): Promise<void> {
     await writeFile(path.join(rootOfficialSkill, "SKILL.md"), "---\nname: root-skill\ndescription: Root workflow\n---\nRoot body.", "utf8");
     await writeFile(path.join(nestedOfficialSkill, "SKILL.md"), "---\nname: nested-skill\ndescription: Nested workflow\n---\nNested body.", "utf8");
     const officialBundle = await loadSkills({ workspaceRoot: nestedWorkspace, projectPaths: [path.join(".agents", "skills")], globalRoot: path.join(workspaceRoot, "no-global") });
-    assert.deepEqual(officialBundle.skills.map((skill) => skill.name), ["nested-skill", "root-skill"]);
-    assert.deepEqual(officialBundle.paths, [
+    assert.deepEqual(officialBundle.skills.filter((skill) => skill.scope !== "builtin").map((skill) => skill.name), ["nested-skill", "root-skill"]);
+    assert.deepEqual(officialBundle.paths.filter((skillPath) => !skillPath.startsWith("builtin")), [
       path.join("service", ".agents", "skills", "nested-skill", "SKILL.md"),
       path.join(".agents", "skills", "root-skill", "SKILL.md")
     ]);
@@ -654,7 +657,7 @@ async function testGlobalSkillSymlinkRoots(): Promise<void> {
 
 async function testExtensionPathBoundary(workspaceRoot: string): Promise<void> {
   const externalRoot = await mkdtemp(path.join(os.tmpdir(), "biny-external-extension-"));
-  // 边界测试固定使用一个不存在的全局技能目录，避免受本机 ~/.biny/skills 影响。
+    // 边界测试固定使用一个不存在的全局技能目录，避免受本机 ~/.config/biny/skills 影响。
   const noGlobal = path.join(workspaceRoot, "no-global-skills");
   const loadWorkspaceSkills = async (root: string, projectPaths: string[]) => await loadSkills({ workspaceRoot: root, projectPaths, globalRoot: noGlobal });
   try {
@@ -772,7 +775,10 @@ rl.on("line", (line) => {
       instructions: "Use the echo tool for demo purposes."
     };
   } else if (request.method === "tools/list") {
-    const tools = [{ name: "echo", description: "Echo text", inputSchema: { type: "object", properties: { value: { type: "string" } }, required: ["value"] } }];
+    const tools = [
+      { name: "echo", description: "Echo text", inputSchema: { type: "object", properties: { value: { type: "string" } }, required: ["value"] } },
+      { name: "zvec_grep_search", description: "Search indexed workspace content", inputSchema: { type: "object", properties: { root: { type: "string" } }, required: ["root"] } }
+    ];
     if (extraTool) tools.push({ name: "extra", description: "Added later", inputSchema: { type: "object" } });
     result = { tools };
   } else if (request.method === "tools/call") {
@@ -812,7 +818,7 @@ rl.on("line", (line) => {
     assert.equal(status?.name, "demo");
     assert.equal(status?.transport, "stdio");
     assert.equal(status?.connected, true);
-    assert.deepEqual(status?.toolNames, ["mcp_demo_echo"]);
+    assert.deepEqual(status?.toolNames, ["mcp_demo_echo", "mcp_demo_zvec_grep_search"]);
     assert.deepEqual(status?.promptNames, ["review"]);
     assert.equal(status?.hasResources, true);
     assert.equal(status?.instructions, "Use the echo tool for demo purposes.");
@@ -820,6 +826,13 @@ rl.on("line", (line) => {
 
     const entry = registry.listEntries()[0];
     assert.equal(entry?.source, "mcp");
+    const indexedSearch = registry.get("mcp_demo_zvec_grep_search");
+    assert.equal(indexedSearch.promptSnippet, "Search indexed workspace content by meaning");
+    assert.deepEqual(indexedSearch.promptGuidelines, [
+      "Use zvec_grep_search when the workspace is the intended source but wording or location is unknown, or semantic, fuzzy, relationship, or cross-file discovery is required.",
+      "Use native Grep for exact text, identifiers, filenames, paths, regular expressions, or exhaustive occurrence requests; for a known anchor that needs broader context, search semantically first and verify with Grep."
+    ]);
+    assert.equal(indexedSearch.risk, "read");
     const callEcho = async (value: string): Promise<unknown> => {
       const execution = await registry.get("mcp_demo_echo").resolveExecution({ value });
       assert.equal("isError" in execution, false);
@@ -851,9 +864,9 @@ rl.on("line", (line) => {
     assert.equal(await callEcho("__grow__"), "__grow__");
     await waitFor(() => host.listServers()[0]?.toolNames.includes("mcp_demo_extra") ?? false);
     // 原子替换必须保留完整新集合，不留下重名跳过告警。
-    assert.deepEqual(host.listServers()[0]?.toolNames, ["mcp_demo_echo", "mcp_demo_extra"]);
+    assert.deepEqual(host.listServers()[0]?.toolNames, ["mcp_demo_echo", "mcp_demo_zvec_grep_search", "mcp_demo_extra"]);
     assert.equal(host.listServers()[0]?.lastError, undefined);
-    assert.deepEqual(registry.listEntries().map((item) => item.tool.name), ["mcp_demo_echo", "mcp_demo_extra"]);
+    assert.deepEqual(registry.listEntries().map((item) => item.tool.name), ["mcp_demo_echo", "mcp_demo_zvec_grep_search", "mcp_demo_extra"]);
 
     // 服务器退出后：状态置为断开，下一次调用触发懒重连（重启子进程）。
     assert.equal(await callEcho("__die__"), "dying");
@@ -861,8 +874,8 @@ rl.on("line", (line) => {
     assert.equal(await callEcho("revived"), "revived");
     assert.equal(host.listServers()[0]?.connected, true);
     // 重连到新进程后也应整体替换，不能残留旧进程声明的 extra 工具。
-    assert.deepEqual(host.listServers()[0]?.toolNames, ["mcp_demo_echo"]);
-    assert.deepEqual(registry.listEntries().map((item) => item.tool.name), ["mcp_demo_echo"]);
+    assert.deepEqual(host.listServers()[0]?.toolNames, ["mcp_demo_echo", "mcp_demo_zvec_grep_search"]);
+    assert.deepEqual(registry.listEntries().map((item) => item.tool.name), ["mcp_demo_echo", "mcp_demo_zvec_grep_search"]);
   } finally {
     await host.close();
   }

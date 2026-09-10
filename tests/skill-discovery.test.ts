@@ -48,7 +48,7 @@ async function main(): Promise<void> {
 
     const installed = await installDiscoveredSkill({ skill: discovered.skills[0]!, homeDir, fetcher });
     assert.equal(installed.name, "demo-skill");
-    assert.equal(await readFile(path.join(homeDir, ".biny", "skills", "demo", "references", "guide.md"), "utf8"), "# Guide\n");
+    assert.equal(await readFile(path.join(homeDir, ".config", "biny", "skills", "demo", "references", "guide.md"), "utf8"), "# Guide\n");
 
     await assert.rejects(
       () => installDiscoveredSkill({ skill: discovered.skills[0]!, homeDir, fetcher }),

@@ -4,12 +4,13 @@
  * 每个定义是一个带 YAML frontmatter 的 markdown 文件：frontmatter 提供
  * name/description/tools/model 元数据，正文即该子代理的附加 system prompt。
  * 项目定义放在 extensions.subagent.agentPaths（默认 .biny/agents），全局定义放在
- * ~/.biny/agents，项目级同名覆盖全局。定义在每次委派时重新读取，
+ * ~/.config/biny/agents，项目级同名覆盖全局。定义在每次委派时重新读取，
  * 允许会话期间编辑生效。
  */
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { globalConfigDir } from "../config/paths.js";
 
 const maxAgentCount = 16;
 const maxAgentFileBytes = 32 * 1024;
@@ -37,7 +38,7 @@ export interface LoadSubagentDefinitionsOptions {
   workspaceRoot: string;
   /** workspace 相对目录，来自 extensions.subagent.agentPaths。 */
   projectPaths: string[];
-  /** 全局定义目录；默认 ~/.biny/agents。 */
+  /** 全局定义目录；默认 ~/.config/biny/agents。 */
   globalRoot?: string;
 }
 
@@ -53,7 +54,7 @@ export async function loadSubagentDefinitions(options: LoadSubagentDefinitionsOp
   }
 
   // 全局定义在项目定义之后加载，同名时项目级优先。全局目录异常只放弃全局定义。
-  const globalRoot = options.globalRoot ?? path.join(os.homedir(), ".biny", "agents");
+  const globalRoot = options.globalRoot ?? path.join(globalConfigDir(), "agents");
   try {
     const canonicalGlobalRoot = await resolveGlobalAgentRoot(globalRoot);
     if (canonicalGlobalRoot) {
@@ -84,7 +85,7 @@ export function buildSubagentDefinitionsPrompt(definitions: readonly SubagentDef
       ].filter(Boolean).join(", ");
       return `- ${definition.name} (${extras}): ${definition.description}`;
     }),
-    "Delegate to one by calling delegate_task with agent: \"<name>\"; omit agent for the default subagent."
+    "Delegate to one by calling Task with agent: \"<name>\"; omit agent for the default subagent."
   ].join("\n");
 }
 

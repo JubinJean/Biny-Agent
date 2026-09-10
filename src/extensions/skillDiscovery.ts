@@ -2,7 +2,7 @@
  * SkillHub 的远程发现能力。
  *
  * 仓库扫描和 skills.sh 请求都在主进程执行；Renderer 只拿经过字段、URL 和大小限制的
- * 元数据。安装时重新解析 GitHub tree，并把技能目录原子写入 `~/.biny/skills`。
+ * 元数据。安装时重新解析 GitHub tree，并把技能目录原子写入 `~/.config/biny/skills`。
  */
 import { randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
@@ -11,6 +11,7 @@ import path from "node:path";
 import { globalConfigDir } from "../config/paths.js";
 import { getSharedProxyAwareFetch } from "../network/proxyFetch.js";
 import { parseSkillDocument } from "./skillCatalog.js";
+import { defaultManagedSkillRoot } from "./managedSkillSources.js";
 
 const githubApiBase = "https://api.github.com";
 const skillsShApi = "https://skills.sh/api/search";
@@ -111,11 +112,12 @@ export function defaultSkillRepos(): SkillRepository[] {
   return defaultSkillRepositories.map((repo) => ({ ...repo }));
 }
 
-export function skillRepositoriesPath(homeDir = os.homedir()): string {
-  return path.join(globalConfigDir({ homeDir }), skillRepositoryFile);
+export function skillRepositoriesPath(homeDir?: string): string {
+  const configRoot = homeDir === undefined ? globalConfigDir() : globalConfigDir({ env: {}, homeDir });
+  return path.join(configRoot, skillRepositoryFile);
 }
 
-export async function listSkillRepositories(homeDir = os.homedir()): Promise<{ repositories: SkillRepository[]; warnings: string[] }> {
+export async function listSkillRepositories(homeDir?: string): Promise<{ repositories: SkillRepository[]; warnings: string[] }> {
   const filePath = skillRepositoriesPath(homeDir);
   try {
     const stat = await fs.lstat(filePath);
@@ -133,7 +135,7 @@ export async function listSkillRepositories(homeDir = os.homedir()): Promise<{ r
   }
 }
 
-export async function addSkillRepository(repository: SkillRepository, homeDir = os.homedir()): Promise<SkillRepository[]> {
+export async function addSkillRepository(repository: SkillRepository, homeDir?: string): Promise<SkillRepository[]> {
   assertRepository(repository);
   const current = await listSkillRepositories(homeDir);
   const next = [...current.repositories];
@@ -144,7 +146,7 @@ export async function addSkillRepository(repository: SkillRepository, homeDir = 
   return next;
 }
 
-export async function removeSkillRepository(owner: string, name: string, homeDir = os.homedir()): Promise<SkillRepository[]> {
+export async function removeSkillRepository(owner: string, name: string, homeDir?: string): Promise<SkillRepository[]> {
   assertRepository({ owner, name, branch: "main", enabled: true });
   const current = await listSkillRepositories(homeDir);
   const next = current.repositories.filter((item) => item.owner.toLowerCase() !== owner.toLowerCase() || item.name.toLowerCase() !== name.toLowerCase());
@@ -231,7 +233,7 @@ export async function installDiscoveredSkill(options: {
   if (expectedBytes > maxSkillBytes) throw new Error(`Skill 总大小超过 ${String(maxSkillBytes)} 字节。`);
 
   const homeDir = options.homeDir ?? os.homedir();
-  const managedRoot = path.join(homeDir, ".biny", "skills");
+  const managedRoot = options.homeDir === undefined ? defaultManagedSkillRoot() : defaultManagedSkillRoot(homeDir);
   await ensureDirectory(managedRoot);
   const installName = lastPathSegment(sourceDirectory === "." ? skill.directory : sourceDirectory);
   assertSafeDirectoryName(installName);
@@ -377,7 +379,7 @@ async function boundedResponseText(response: Response, maxBytes: number): Promis
   return text;
 }
 
-async function writeRepositories(homeDir: string, repositories: SkillRepository[]): Promise<void> {
+async function writeRepositories(homeDir: string | undefined, repositories: SkillRepository[]): Promise<void> {
   const filePath = skillRepositoriesPath(homeDir);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const temporary = `${filePath}.biny-tmp-${process.pid}-${randomBytes(6).toString("hex")}`;

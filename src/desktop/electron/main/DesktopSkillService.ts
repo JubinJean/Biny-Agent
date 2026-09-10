@@ -11,6 +11,7 @@ import path from "node:path";
 import type { AgentConfigStore } from "../../../config/store.js";
 import { updateConfig } from "../../../config/store.js";
 import { configSchema } from "../../../config/schema.js";
+import { globalPluginRoot } from "../../../config/paths.js";
 import { createProjectSkillKey, createSkillRef } from "../../../extensions/skillRef.js";
 import { resolveSkillActivation } from "../../../extensions/skillActivation.js";
 import {
@@ -44,12 +45,16 @@ import {
 } from "../../../extensions/skillDrafts.js";
 import {
   BINY_PLUGIN_REGISTRY_URL,
+  installGlobalPluginFromRepository,
   installPluginFromRepository,
   parsePluginRegistry,
   projectPluginRoot,
+  readGlobalPluginManifest,
   readPluginRegistryCache,
   readProjectPluginManifest,
+  setGlobalPluginEnabled,
   setProjectPluginEnabled,
+  uninstallGlobalPlugin,
   uninstallProjectPlugin,
   writePluginRegistryCache,
 } from "../../../extensions/pluginRegistry.js";
@@ -256,26 +261,42 @@ export class DesktopSkillService {
     }
   }
 
-  async installPlugin(projectId: string, pluginId: string): Promise<DesktopPluginSummary> {
+  async installPlugin(projectId: string, pluginId: string, scope: "project" | "global" = "project"): Promise<DesktopPluginSummary> {
     const project = this.requireProject(projectId);
     const registry = await this.pluginRegistry(projectId);
     const plugin = registry.plugins.find((candidate) => candidate.id === pluginId);
     if (!plugin) throw new Error(`应用市场中不存在 Plugin：${pluginId}`);
+    if (scope === "global") {
+      await installGlobalPluginFromRepository({ plugin, fetcher: this.fetcher });
+      return await this.requireManagedPluginSummary(projectId, pluginId, "global");
+    }
     await installPluginFromRepository({ workspaceRoot: project.path, plugin, fetcher: this.fetcher });
-    return await this.requireManagedPluginSummary(projectId, pluginId);
+    return await this.requireManagedPluginSummary(projectId, pluginId, "project");
   }
 
-  async setPluginEnabled(projectId: string, pluginId: string, enabled: boolean): Promise<DesktopPluginSummary> {
+  async setPluginEnabled(projectId: string, pluginId: string, enabled: boolean, scope: "project" | "global" = "project"): Promise<DesktopPluginSummary> {
     const project = this.requireProject(projectId);
+    if (scope === "global") {
+      await setGlobalPluginEnabled(pluginId, enabled);
+      return await this.requireManagedPluginSummary(projectId, pluginId, "global");
+    }
     await setProjectPluginEnabled(project.path, pluginId, enabled);
-    return await this.requireManagedPluginSummary(projectId, pluginId);
+    return await this.requireManagedPluginSummary(projectId, pluginId, "project");
   }
 
-  async uninstallPlugin(projectId: string, pluginId: string): Promise<void> {
+  async uninstallPlugin(projectId: string, pluginId: string, scope: "project" | "global" = "project"): Promise<void> {
+    if (scope === "global") {
+      await uninstallGlobalPlugin(pluginId);
+      return;
+    }
     await uninstallProjectPlugin(this.requireProject(projectId).path, pluginId);
   }
 
-  async pluginDirectory(projectId: string): Promise<string> {
+  async pluginDirectory(projectId: string, scope: "project" | "global" = "project"): Promise<string> {
+    if (scope === "global") {
+      this.requireProject(projectId);
+      return globalPluginRoot();
+    }
     return projectPluginRoot(this.requireProject(projectId).path);
   }
 
@@ -304,10 +325,60 @@ export class DesktopSkillService {
 
   private async listPlugins(projectId?: string): Promise<{ plugins: DesktopPluginSummary[]; warnings: string[] }> {
     const projects = this.projectsFor(projectId);
-    const results = await Promise.all(projects.map(async (project) => await this.listProjectPlugins(project.id, project.name, project.path)));
+    const [global, ...results] = await Promise.all([
+      this.listGlobalPlugins(),
+      ...projects.map(async (project) => await this.listProjectPlugins(project.id, project.name, project.path))
+    ]);
     return {
-      plugins: results.flatMap((result) => result.plugins),
-      warnings: results.flatMap((result) => result.warnings)
+      plugins: [...global.plugins, ...results.flatMap((result) => result.plugins)],
+      warnings: [...global.warnings, ...results.flatMap((result) => result.warnings)]
+    };
+  }
+
+  private async listGlobalPlugins(): Promise<{ plugins: DesktopPluginSummary[]; warnings: string[] }> {
+    let config;
+    try {
+      config = await this.configStore.load();
+    } catch (error) {
+      return { plugins: [], warnings: [`无法读取全局 Plugin 配置：${errorMessage(error)}`] };
+    }
+    let manifest;
+    try {
+      manifest = await readGlobalPluginManifest();
+    } catch (error) {
+      return { plugins: [], warnings: [`无法读取全局 Plugin 清单：${errorMessage(error)}`] };
+    }
+    const managedDirectories = new Set(manifest.plugins.map((plugin) => plugin.directory));
+    const configured = await Promise.all(config.extensions.globalPlugins.map(async (configuredPath) => (
+      await this.globalConfiguredPluginSummary(configuredPath, managedDirectories)
+    )));
+    const managed = await Promise.all(manifest.plugins.map(async (plugin) => await this.globalPluginSummary(plugin)));
+    return {
+      plugins: [...configured.flatMap((plugin) => plugin === undefined ? [] : [plugin]), ...managed],
+      warnings: []
+    };
+  }
+
+  private async globalConfiguredPluginSummary(configuredPath: string, managedDirectories: ReadonlySet<string>): Promise<DesktopPluginSummary | undefined> {
+    const root = path.resolve(globalPluginRoot());
+    const target = path.resolve(root, configuredPath);
+    const relative = path.relative(root, target);
+    if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return undefined;
+    if (managedDirectories.has(relative.split(path.sep)[0] ?? "")) return undefined;
+    let moduleCount: number | undefined;
+    try {
+      moduleCount = await countPluginModules(target);
+    } catch {
+      moduleCount = undefined;
+    }
+    return {
+      id: createHash("sha256").update(`global:${target}`).digest("hex").slice(0, 32),
+      name: path.basename(target),
+      path: path.join("~/.config/biny/plugins", relative).split(path.sep).join("/"),
+      scope: "global",
+      projectName: "全局",
+      status: moduleCount === undefined ? "missing" : "configured",
+      moduleCount: moduleCount ?? 0
     };
   }
 
@@ -397,7 +468,13 @@ export class DesktopSkillService {
     };
   }
 
-  private async requireManagedPluginSummary(projectId: string, pluginId: string): Promise<DesktopPluginSummary> {
+  private async requireManagedPluginSummary(projectId: string, pluginId: string, scope: "project" | "global"): Promise<DesktopPluginSummary> {
+    if (scope === "global") {
+      const manifest = await readGlobalPluginManifest();
+      const plugin = manifest.plugins.find((candidate) => candidate.id === pluginId);
+      if (!plugin) throw new Error(`全局 Plugin 不存在：${pluginId}`);
+      return await this.globalPluginSummary(plugin);
+    }
     const project = this.requireProject(projectId);
     const result = await this.listProjectPlugins(project.id, project.name, project.path);
     const entry = result.plugins.find((plugin) => plugin.managed && plugin.path.endsWith(`/${pluginId}`));
@@ -408,6 +485,36 @@ export class DesktopSkillService {
       return await this.managedPluginSummary(project.id, project.name, project.path, plugin);
     }
     return entry;
+  }
+
+  private async globalPluginSummary(plugin: Awaited<ReturnType<typeof readGlobalPluginManifest>>["plugins"][number]): Promise<DesktopPluginSummary> {
+    const target = path.join(globalPluginRoot(), plugin.directory);
+    let moduleCount = 0;
+    let status: DesktopPluginSummary["status"] = plugin.error ? "failed" : plugin.enabled ? "configured" : "disabled";
+    let error: string | undefined = plugin.error;
+    try {
+      moduleCount = (await countPluginModules(target)) ?? 0;
+      if (moduleCount === 0) status = "missing";
+    } catch (caught) {
+      status = "missing";
+      error = errorMessage(caught);
+    }
+    return {
+      id: createHash("sha256").update(`global:managed:${plugin.id}`).digest("hex").slice(0, 32),
+      name: plugin.name,
+      path: path.join("~/.config/biny/plugins", plugin.directory).split(path.sep).join("/"),
+      scope: "global",
+      projectId: undefined,
+      projectName: "全局",
+      status,
+      moduleCount,
+      version: plugin.version,
+      category: plugin.category,
+      description: plugin.description,
+      enabled: plugin.enabled,
+      managed: true,
+      error
+    };
   }
 }
 

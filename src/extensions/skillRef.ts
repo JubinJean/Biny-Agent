@@ -7,7 +7,7 @@
  */
 import { createHash } from "node:crypto";
 
-export type SkillRefScope = "global" | "project";
+export type SkillRefScope = "builtin" | "global" | "project";
 
 export interface SkillRefInput {
   scope: SkillRefScope;
@@ -19,6 +19,7 @@ export interface SkillRefInput {
 export function createSkillRef(input: SkillRefInput): string {
   const normalizedName = normalizeSkillName(input.name);
   const source = input.source === undefined ? "" : `${input.source}:`;
+  if (input.scope === "builtin") return `builtin:${normalizedName}`;
   if (input.scope === "global") return `global:${source}${normalizedName}`;
   const projectKey = createHash("sha256").update(input.projectRoot ?? "").digest("hex").slice(0, 16);
   return `project-${projectKey}:${source}${normalizedName}`;

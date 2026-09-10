@@ -25,7 +25,7 @@ async function main(): Promise<void> {
 
     const results = await importUnmanagedSkills({ homeDir, ids: [candidates[0]!.id] });
     assert.deepEqual(results.map((result) => ({ name: result.name, alreadyInstalled: result.alreadyInstalled })), [{ name: "import-me", alreadyInstalled: false }]);
-    assert.equal(await readFile(path.join(homeDir, ".biny", "skills", "import-me", "references", "guide.md"), "utf8"), "# Guide\n");
+    assert.equal(await readFile(path.join(homeDir, ".config", "biny", "skills", "import-me", "references", "guide.md"), "utf8"), "# Guide\n");
     assert.equal((await lstat(path.join(agentsRoot, "import-me"))).isSymbolicLink(), true);
 
     const afterImport = await scanSkillCatalog({ homeDir });

@@ -2,7 +2,7 @@
  * Agent Skills 扩展模块（渐进式披露）。
  *
  * 新根回合开始前只扫描 YAML frontmatter 的 name/description 并按总预算拼进 system prompt；
- * 完整指令由显式 `/skill:name` 提交或 invoke_skill 按需读取，references/scripts/assets
+ * 完整指令由显式 `/skill:name` 提交或 Skill 按需读取，references/scripts/assets
  * 仍由 read_skill_resource 按需读取。
  * 默认发现 Biny 受管目录和各 Agent 的标准全局 Skill 根；全局入口中的已有软链会被保留，
  * 项目 Skill 根仍禁止越界软链，避免工作区配置意外扩大运行时读取范围。
@@ -15,11 +15,13 @@ import { parseDocument } from "yaml";
 import { z } from "zod";
 import { ToolAccesses } from "../tools/access.js";
 import type { Tool } from "../tools/types.js";
-import { DEFAULT_PROJECT_SKILL_PATHS, defaultGlobalSkillRoots, GLOBAL_SKILL_ROOT_CONVENTIONS, type SkillRootSource } from "./skillRoots.js";
+import { globalConfigDir } from "../config/paths.js";
+import { DEFAULT_PROJECT_SKILL_PATHS, defaultGlobalSkillRoots, GLOBAL_SKILL_ROOT_CONVENTIONS, skillRootPrecedence, type SkillRootSource } from "./skillRoots.js";
 import { resolveSkillActivation } from "./skillActivation.js";
 import { createSkillId, createSkillRef } from "./skillRef.js";
 import type { SkillRef } from "./skillTypes.js";
 import type { CapabilitySelectionValue } from "../agent/capabilitySelection.js";
+import { builtinSkillRoot } from "./builtinSkills.js";
 
 const maxDiscoveredSkillCount = 256;
 const maxSkillMetadataBytes = 64 * 1024;
@@ -29,7 +31,7 @@ const maxSkillDescriptionChars = 1024;
 const maxInitialSkillPromptChars = 8_000;
 const maxListedSkillResources = 100;
 
-export type SkillScope = "project" | "global";
+export type SkillScope = "builtin" | "project" | "global";
 
 export interface SkillDefinition {
   ref: SkillRef;
@@ -43,6 +45,7 @@ export interface SkillDefinition {
   /** Root the file must stay inside when it is re-read at invoke time. */
   rootPath: string;
   scope: SkillScope;
+  source: SkillRootSource;
 }
 
 export interface SkillBundle {
@@ -50,8 +53,15 @@ export interface SkillBundle {
   paths: string[];
   prompt: string;
   warnings: string[];
+  conflicts: SkillConflict[];
   /** 阻止部分 Skill 能力可用的加载问题；重复项等诊断不应放入这里。 */
   errors: string[];
+}
+
+export interface SkillConflict {
+  name: string;
+  winner: SkillDefinition;
+  shadowed: SkillDefinition[];
 }
 
 export interface LoadSkillsOptions {
@@ -81,16 +91,20 @@ interface SkillFileCandidate {
   snapshot: SkillFileSnapshot;
 }
 
+interface SkillCandidate {
+  skill: SkillDefinition;
+  precedence: number;
+}
+
 export async function loadSkills(options: LoadSkillsOptions): Promise<SkillBundle> {
   const canonicalWorkspace = await fs.realpath(path.resolve(options.workspaceRoot));
-  const skills: SkillDefinition[] = [];
+  const candidates: SkillCandidate[] = [];
   const warnings: string[] = [];
   const errors: string[] = [];
   const seen = new Set<string>();
-  const seenNames = new Set<string>();
-  // 按根目录优先级扫描；同一 scope 内的同名 Skill 只保留先发现的版本。
+  // 先收集所有合法候选，再按跨 scope 的统一优先级选胜者。
   for (const configuredPath of [...new Set([...DEFAULT_PROJECT_SKILL_PATHS, ...options.projectPaths])]) {
-    if (skills.length >= maxDiscoveredSkillCount) break;
+    if (candidates.length >= maxDiscoveredSkillCount) break;
     if (isOfficialProjectSkillPath(configuredPath)) {
       const repositoryRoot = await findRepositoryRoot(canonicalWorkspace);
       for (const target of officialProjectSkillTargets(canonicalWorkspace, repositoryRoot)) {
@@ -101,7 +115,7 @@ export async function loadSkills(options: LoadSkillsOptions): Promise<SkillBundl
         await collectSkillFiles(repositoryRoot, absolutePath, files, seen);
         // 目标目录按构造就是各级 .agents/skills，source 固定为 agents；当候选落在
         // canonicalWorkspace 之外（工作区是仓库子目录）时不能靠相对路径推断。
-        await appendSkillDefinitions(skills, warnings, errors, canonicalWorkspace, files, "project", seenNames, options, "agents");
+        await appendSkillDefinitions(candidates, warnings, errors, canonicalWorkspace, files, "project", skillRootPrecedence("project", ".agents/skills"), "agents");
       }
       continue;
     }
@@ -109,13 +123,13 @@ export async function loadSkills(options: LoadSkillsOptions): Promise<SkillBundl
     if (!absolutePath) continue;
     const files: SkillFileCandidate[] = [];
     await collectSkillFiles(canonicalWorkspace, absolutePath, files, seen);
-    await appendSkillDefinitions(skills, warnings, errors, canonicalWorkspace, files, "project", seenNames, options, sourceForProjectSkill(files[0]?.path, canonicalWorkspace));
+    await appendSkillDefinitions(candidates, warnings, errors, canonicalWorkspace, files, "project", skillRootPrecedence("project", configuredPath), sourceForProjectSkill(files[0]?.path, canonicalWorkspace));
   }
 
   // 显式传 globalRoot 时只扫描该目录（测试和嵌入方可隔离）；默认与 SkillHub 使用相同根目录。
   const globalRoots = options.globalRoot
     ? [options.globalRoot]
-    : defaultGlobalSkillRoots(os.homedir());
+    : defaultGlobalSkillRoots();
   const resolvedGlobalRoots: Array<{ configuredPath: string; canonicalPath: string }> = [];
   for (const configuredPath of globalRoots) {
     try {
@@ -130,11 +144,11 @@ export async function loadSkills(options: LoadSkillsOptions): Promise<SkillBundl
   const allowedGlobalDirectories = [...new Set(resolvedGlobalRoots.map(({ canonicalPath }) => canonicalPath))];
   const globalSeen = new Set<string>();
   for (const { configuredPath, canonicalPath } of resolvedGlobalRoots) {
-    if (skills.length >= maxDiscoveredSkillCount) break;
+    if (candidates.length >= maxDiscoveredSkillCount) break;
     try {
       const globalFiles: SkillFileCandidate[] = [];
       await collectSkillFiles(canonicalPath, canonicalPath, globalFiles, globalSeen, true, allowedGlobalDirectories);
-      await appendSkillDefinitions(skills, warnings, errors, canonicalWorkspace, globalFiles, "global", seenNames, options, sourceForGlobalRoot(configuredPath));
+      await appendSkillDefinitions(candidates, warnings, errors, canonicalWorkspace, globalFiles, "global", skillRootPrecedence("global", configuredPath), sourceForGlobalRoot(configuredPath));
     } catch (error) {
       const message = `Skipped skill root ${canonicalPath}: ${errorMessage(error)}`;
       warnings.push(message);
@@ -142,16 +156,23 @@ export async function loadSkills(options: LoadSkillsOptions): Promise<SkillBundl
     }
   }
 
-  if (skills.length >= maxDiscoveredSkillCount) {
+  const bundledRoot = builtinSkillRoot();
+  const bundledFiles: SkillFileCandidate[] = [];
+  await collectSkillFiles(bundledRoot, bundledRoot, bundledFiles, new Set<string>());
+  await appendSkillDefinitions(candidates, warnings, errors, canonicalWorkspace, bundledFiles, "builtin", skillRootPrecedence("builtin", bundledRoot), "builtin");
+
+  if (candidates.length >= maxDiscoveredSkillCount) {
     const message = `Only the first ${String(maxDiscoveredSkillCount)} skills were discovered.`;
     warnings.push(message);
     errors.push(message);
   }
+  const { skills, conflicts } = selectSkillCandidates(candidates, options, warnings);
   return {
     skills,
     paths: skills.map((skill) => skill.path),
     prompt: buildSkillPrompt(skills),
     warnings,
+    conflicts,
     errors
   };
 }
@@ -189,32 +210,20 @@ function officialProjectSkillTargets(workspaceRoot: string, repositoryRoot: stri
 }
 
 async function appendSkillDefinitions(
-  skills: SkillDefinition[],
+  candidates: SkillCandidate[],
   warnings: string[],
   errors: string[],
   projectRoot: string,
   files: SkillFileCandidate[],
   scope: SkillScope,
-  seenNames: Set<string>,
-  options: LoadSkillsOptions,
+  precedence: number,
   source: SkillRootSource
 ): Promise<void> {
   for (const candidate of files.sort((left, right) => left.path.localeCompare(right.path))) {
-    if (skills.length >= maxDiscoveredSkillCount) break;
+    if (candidates.length >= maxDiscoveredSkillCount) break;
     try {
       const skill = await readSkillMetadata(projectRoot, candidate, scope, source);
-      if (!resolveSkillActivation({
-        ref: skill.ref,
-        globalDefaults: options.globalDefaults,
-        projectOverrides: options.projectOverrides
-      }).enabled) continue;
-      const nameKey = `${scope}:${skill.name.toLocaleLowerCase()}`;
-      if (seenNames.has(nameKey)) {
-        warnings.push(`Skipped duplicate skill ${skill.name} at ${candidate.path}.`);
-        continue;
-      }
-      seenNames.add(nameKey);
-      skills.push(skill);
+      candidates.push({ skill, precedence });
     } catch (error) {
       const message = `Skipped ${candidate.path}: ${errorMessage(error)}`;
       warnings.push(message);
@@ -223,10 +232,47 @@ async function appendSkillDefinitions(
   }
 }
 
+function selectSkillCandidates(
+  candidates: SkillCandidate[],
+  options: LoadSkillsOptions,
+  warnings: string[]
+): { skills: SkillDefinition[]; conflicts: SkillConflict[] } {
+  const grouped = new Map<string, SkillCandidate[]>();
+  for (const candidate of candidates) {
+    const key = candidate.skill.name.toLocaleLowerCase();
+    const group = grouped.get(key);
+    if (group) group.push(candidate);
+    else grouped.set(key, [candidate]);
+  }
+
+  const winners: SkillCandidate[] = [];
+  const conflicts: SkillConflict[] = [];
+  for (const group of grouped.values()) {
+    group.sort((left, right) => left.precedence - right.precedence || left.skill.path.localeCompare(right.skill.path));
+    const winner = group[0];
+    if (!winner) continue;
+    winners.push(winner);
+    const shadowed = group.slice(1).map(({ skill }) => skill);
+    if (shadowed.length) {
+      conflicts.push({ name: winner.skill.name, winner: winner.skill, shadowed });
+      warnings.push(`Skill conflict for ${winner.skill.name}: using ${winner.skill.path}; shadowed ${shadowed.map((skill) => skill.path).join(", ")}.`);
+    }
+  }
+
+  const skills = winners
+    .filter(({ skill }) => resolveSkillActivation({
+      ref: skill.ref,
+      globalDefaults: options.globalDefaults,
+      projectOverrides: options.projectOverrides
+    }).enabled)
+    .map(({ skill }) => skill);
+  return { skills, conflicts };
+}
+
 function buildSkillPrompt(skills: SkillDefinition[]): string {
   if (!skills.length) return "";
   const header = "Available skills (metadata only; full instructions are not loaded yet):";
-  const footer = "Before doing a task that matches a skill, call invoke_skill with its name. A $skill-name mention is an explicit invocation and must be honored. When names are duplicated, also pass the listed path. If a user submits /skill:name, its full instructions are already included in that message; follow them without loading the same Skill again.";
+  const footer = "Before doing a task that matches a skill, call Skill with its name. A $skill-name mention is an explicit invocation and must be honored. If a user submits /skill:name, its full instructions are already included in that message; follow them without loading the same Skill again.";
   const render = (descriptionLimit: number, limit = skills.length): string => {
     const lines = skills.slice(0, limit).map((skill) => {
       const description = truncateChars(skill.description, descriptionLimit);
@@ -245,7 +291,7 @@ function buildSkillPrompt(skills: SkillDefinition[]): string {
   return render(80, visible);
 }
 
-/** 按当前回合的 Skill 选择裁剪渐进式披露元数据；正文仍由 invoke_skill 按需读取。 */
+/** 按当前回合的 Skill 选择裁剪渐进式披露元数据；正文仍由 Skill 按需读取。 */
 export function skillPromptForSelection(bundle: SkillBundle, selection?: CapabilitySelectionValue): string {
   return buildSkillPrompt(selectSkills(bundle, selection));
 }
@@ -310,14 +356,14 @@ export async function expandSkillCommand(bundle: SkillBundle, input: string): Pr
 
 export function createSkillTool(source: SkillBundleSource): Tool {
   return {
-    name: "invoke_skill",
+    name: "Skill",
     description: "Load the full instructions of an available skill by name. Call this before performing a task that a listed skill covers, then follow the returned instructions.",
     promptSnippet: "Load the full instructions for an available skill",
     parameters: {
       type: "object",
       properties: {
         skill: { type: "string", description: "Skill name exactly as listed in the available skills." },
-        path: { type: "string", description: "Listed skill path. Required only when multiple skills have the same name." }
+        path: { type: "string", description: "Optional listed path for selecting an exact active skill." }
       },
       required: ["skill"],
       additionalProperties: false
@@ -329,7 +375,7 @@ export function createSkillTool(source: SkillBundleSource): Tool {
     resolveExecution(args: unknown) {
       const parsed = invokeSkillArgsSchema.safeParse(args);
       if (!parsed.success) {
-        return { isError: true as const, result: "invoke_skill requires a skill name.", errorMessage: "invoke_skill requires a skill name." };
+        return { isError: true as const, result: "Skill requires a skill name.", errorMessage: "Skill requires a skill name." };
       }
       const requested = parsed.data.skill;
       const bundle = currentBundle(source);
@@ -343,7 +389,7 @@ export function createSkillTool(source: SkillBundleSource): Tool {
         accesses: ToolAccesses.readFile(definition.filePath),
         display: { kind: "generic" as const, summary: `Skill ${definition.name}`, detail: { path: definition.path } },
         description: `Load skill instructions from ${definition.path}`,
-        approvalRule: `invoke_skill:${definition.name}`,
+        approvalRule: `Skill:${definition.name}`,
         async execute(): Promise<unknown> {
           const content = await readSkillFileFresh(definition.rootPath, definition.filePath, maxSkillInstructionBytes);
           let body = content;
@@ -381,14 +427,14 @@ const readSkillResourceArgsSchema = z.object({
 export function createSkillResourceTool(source: SkillBundleSource): Tool {
   return {
     name: "read_skill_resource",
-    description: "Read a text resource from an activated skill. Use a relative path listed by invoke_skill.",
+    description: "Read a text resource from an activated skill. Use a relative path listed by Skill.",
     promptSnippet: "Read a referenced text resource from an activated skill",
     parameters: {
       type: "object",
       properties: {
         skill: { type: "string", description: "Activated skill name." },
         path: { type: "string", description: "Resource path relative to the skill directory." },
-        skillPath: { type: "string", description: "Listed skill path when the name is ambiguous." }
+        skillPath: { type: "string", description: "Optional listed path for selecting an exact active skill." }
       },
       required: ["skill", "path"],
       additionalProperties: false
@@ -442,9 +488,6 @@ function resolveSkill(bundle: SkillBundle, requested: string, requestedPath?: st
     const known = bundle.skills.map((skill) => `${skill.name} [${skill.path}]`).join(", ") || "none";
     return `Unknown skill: ${requested}${requestedPath ? ` at ${requestedPath}` : ""}. Available skills: ${known}.`;
   }
-  if (!requestedPath && matches.length > 1) {
-    return `Skill name is ambiguous: ${requested}. Pass one of these paths: ${matches.map((skill) => skill.path).join(", ")}.`;
-  }
   return selected;
 }
 
@@ -484,10 +527,11 @@ async function readSkillMetadata(projectRoot: string, candidate: SkillFileCandid
     id: createSkillId(ref),
     name,
     description,
-    path: scope === "global" ? globalDisplayPath(rootPath, relative) : relative,
+    path: scope === "global" ? globalDisplayPath(rootPath, relative) : scope === "builtin" ? `builtin/${relative}` : relative,
     filePath: candidate.path,
     rootPath,
-    scope
+    scope,
+    source
   };
 }
 
@@ -505,6 +549,7 @@ function sourceForProjectSkill(candidatePath: string | undefined, projectRoot: s
 }
 
 function sourceForGlobalRoot(configuredPath: string): SkillRootSource {
+  if (path.resolve(configuredPath) === path.join(globalConfigDir(), "skills")) return "biny";
   const relative = path.relative(os.homedir(), path.resolve(configuredPath)).split(path.sep).join("/");
   return GLOBAL_SKILL_ROOT_CONVENTIONS.find((convention) => convention.relativePath === relative)?.source ?? "agents";
 }

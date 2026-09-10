@@ -23,6 +23,7 @@ import { useSettingsDraft } from "./SettingsDraftContext.js";
 
 type SettingsExtensionKind = "plugins" | "skills";
 type PluginTab = "installed" | "market";
+type PluginScope = "project" | "global";
 
 const EMPTY_SNAPSHOT: DesktopSkillCatalogSnapshot = {
   skills: [],
@@ -58,6 +59,7 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
   const [skillContent, setSkillContent] = useState<Record<string, DesktopSkillFilePreview>>({});
   const [contentLoadingId, setContentLoadingId] = useState<string>();
   const [pluginTab, setPluginTab] = useState<PluginTab>("installed");
+  const [pluginScope, setPluginScope] = useState<PluginScope>("global");
   const [busyPluginId, setBusyPluginId] = useState<string>();
   const [importDialogOpen, setImportDialogOpen] = useState(false);
   const [importing, setImporting] = useState(false);
@@ -220,11 +222,11 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
     }
   }, [onError, projectId]);
 
-  const installPlugin = useCallback(async (plugin: DesktopPluginMarketEntry): Promise<void> => {
+  const installPlugin = useCallback(async (plugin: DesktopPluginMarketEntry, scope: PluginScope): Promise<void> => {
     if (!projectId) return;
     setBusyPluginId(plugin.id);
     try {
-      await window.biny.installPlugin(projectId, plugin.id);
+      await window.biny.installPlugin(projectId, plugin.id, scope);
       await load();
     } catch (error) {
       onError(errorMessage(error));
@@ -239,7 +241,7 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
     if (!pluginId) return;
     setBusyPluginId(pluginId);
     try {
-      await window.biny.setPluginEnabled(projectId, pluginId, plugin.enabled !== true);
+      await window.biny.setPluginEnabled(projectId, pluginId, plugin.enabled !== true, plugin.scope);
       await load();
     } catch (error) {
       onError(errorMessage(error));
@@ -254,7 +256,7 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
     if (!pluginId) return;
     setBusyPluginId(pluginId);
     try {
-      await window.biny.uninstallPlugin(projectId, pluginId);
+      await window.biny.uninstallPlugin(projectId, pluginId, plugin.scope);
       await load();
     } catch (error) {
       onError(errorMessage(error));
@@ -311,13 +313,15 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
         loading={loading}
         busyPluginId={busyPluginId}
         onCategory={setCategory}
-        onInstall={(plugin) => void installPlugin(plugin)}
+        onInstall={(plugin, scope) => void installPlugin(plugin, scope)}
         onPluginTab={setPluginTab}
         onQuery={setQuery}
         onRefresh={() => void refreshPlugins()}
         onSetEnabled={(plugin) => void setPluginEnabled(plugin)}
         onUninstall={(plugin) => void uninstallPlugin(plugin)}
-        onOpenDirectory={() => { void window.biny.openPluginDirectory(projectId).catch((error: unknown) => onError(errorMessage(error))); }}
+        onOpenDirectory={() => { void window.biny.openPluginDirectory(projectId, pluginScope).catch((error: unknown) => onError(errorMessage(error))); }}
+        onScope={setPluginScope}
+        pluginScope={pluginScope}
         pluginTab={pluginTab}
         plugins={visiblePlugins}
         market={visibleMarket}
@@ -453,7 +457,7 @@ const SkillSettingsCard = memo(function SkillSettingsCard({ activation, contentL
   return (
     <article className={`settings-skill-card${expanded ? " is-expanded" : ""}${activation.enabled ? "" : " is-disabled"}`}>
       <div className="settings-skill-card-main">
-        <div className="settings-skill-card-heading"><h4>{skill.name}</h4><span>{skill.scope === "global" ? "全局" : "项目"} · {sourceLabel}</span></div>
+        <div className="settings-skill-card-heading"><h4>{skill.name}</h4><span>{skill.scope === "builtin" ? "内置" : skill.scope === "global" ? "全局" : "项目"} · {sourceLabel}</span></div>
         <p>{skill.description || "暂无描述"}</p>
         <div className="settings-skill-card-footer">
           <button aria-expanded={expanded} className="settings-skill-content-toggle" onClick={onToggleContent} type="button"><Icon name="chevron" size={16} />查看内容</button>
@@ -521,8 +525,9 @@ interface PluginsSettingsContentProps {
   loading: boolean;
   market: DesktopPluginMarketEntry[];
   onCategory(category: string): void;
-  onInstall(plugin: DesktopPluginMarketEntry): void;
+  onInstall(plugin: DesktopPluginMarketEntry, scope: PluginScope): void;
   onOpenDirectory(): void;
+  onScope(scope: PluginScope): void;
   onPluginTab(tab: PluginTab): void;
   onQuery(query: string): void;
   onRefresh(): void;
@@ -530,11 +535,12 @@ interface PluginsSettingsContentProps {
   onUninstall(plugin: DesktopPluginSummary): void;
   pluginTab: PluginTab;
   plugins: DesktopPluginSummary[];
+  pluginScope: PluginScope;
   query: string;
   registry: DesktopPluginRegistrySnapshot;
 }
 
-const PluginsSettingsContent = memo(function PluginsSettingsContent({ busyPluginId, category, loading, market, onCategory, onInstall, onOpenDirectory, onPluginTab, onQuery, onRefresh, onSetEnabled, onUninstall, pluginTab, plugins, query, registry }: PluginsSettingsContentProps): React.JSX.Element {
+const PluginsSettingsContent = memo(function PluginsSettingsContent({ busyPluginId, category, loading, market, onCategory, onInstall, onOpenDirectory, onPluginTab, onQuery, onRefresh, onScope, onSetEnabled, onUninstall, pluginScope, pluginTab, plugins, query, registry }: PluginsSettingsContentProps): React.JSX.Element {
   const categories = ["全部", ...new Set(registry.plugins.map((plugin) => plugin.category))];
   return <>
     <div className="settings-plugin-toolbar">
@@ -545,22 +551,27 @@ const PluginsSettingsContent = memo(function PluginsSettingsContent({ busyPlugin
       <button className="settings-plugin-action" onClick={onRefresh} type="button"><Icon name="refresh" size={18} />刷新</button>
       <button className="settings-plugin-action" onClick={onOpenDirectory} type="button"><Icon name="folder-open" size={18} />打开文件夹</button>
     </div>
+    <div className="settings-plugin-tabs settings-plugin-scope-tabs" role="tablist" aria-label="插件安装范围">
+      <button aria-selected={pluginScope === "global"} className={pluginScope === "global" ? "is-active" : ""} onClick={() => onScope("global")} role="tab" type="button">全局</button>
+      <button aria-selected={pluginScope === "project"} className={pluginScope === "project" ? "is-active" : ""} onClick={() => onScope("project")} role="tab" type="button">当前项目</button>
+    </div>
     <div className="settings-plugin-categories" role="tablist" aria-label="插件分类">
       {categories.map((item) => <button aria-selected={category === item} className={category === item ? "is-active" : ""} key={item} onClick={() => onCategory(item)} role="tab" type="button">{item}</button>)}
     </div>
     <label className="settings-extension-search settings-plugin-search"><Icon name="search" size={18} /><input aria-label="搜索插件" onChange={(event) => onQuery(event.target.value)} placeholder="搜索插件…" value={query} />{query ? <button aria-label="清空搜索" onClick={() => onQuery("")} type="button"><Icon name="close" size={14} /></button> : null}</label>
     {registry.loadingError ? <div className="settings-extension-notice is-warning">应用市场刷新失败：{registry.loadingError}{registry.stale ? "，当前显示上次缓存。" : "，当前没有可用缓存。"}</div> : null}
     <div className="settings-extension-notice">Plugin 无沙箱隔离，只安装你信任的来源。</div>
-    {pluginTab === "market" ? <section className="settings-extension-scroll" aria-label="Plugin 应用市场">{loading && !market.length ? <ExtensionSettingsLoading /> : !market.length ? <ExtensionSettingsEmpty icon="puzzle" title="没有匹配的 Plugin" detail="刷新市场或换一个搜索词。" /> : market.map((plugin) => <PluginMarketCard busy={busyPluginId === plugin.id} key={plugin.id} onInstall={onInstall} plugin={plugin} />)}</section> : <section className="settings-plugin-list" aria-label="已安装 Plugin">{loading && !plugins.length ? <ExtensionSettingsLoading /> : !plugins.length ? <ExtensionSettingsEmpty icon="puzzle" title="还没有安装 Plugin" detail="从官方应用市场安装后，默认保持关闭。" /> : plugins.map((plugin) => <PluginSettingsCard busy={busyPluginId === plugin.path.split("/").at(-1)} key={plugin.id} onSetEnabled={onSetEnabled} onUninstall={onUninstall} plugin={plugin} />)}</section>}
+    {pluginTab === "market" ? <section className="settings-extension-scroll" aria-label="Plugin 应用市场">{loading && !market.length ? <ExtensionSettingsLoading /> : !market.length ? <ExtensionSettingsEmpty icon="puzzle" title="没有匹配的 Plugin" detail="刷新市场或换一个搜索词。" /> : market.map((plugin) => <PluginMarketCard busy={busyPluginId === plugin.id} key={plugin.id} onInstall={(candidate) => onInstall(candidate, pluginScope)} plugin={plugin} />)}</section> : <section className="settings-plugin-list" aria-label="已安装 Plugin">{loading && !plugins.length ? <ExtensionSettingsLoading /> : !plugins.length ? <ExtensionSettingsEmpty icon="puzzle" title="还没有安装 Plugin" detail="从官方应用市场安装后，默认保持关闭。" /> : plugins.map((plugin) => <PluginSettingsCard busy={busyPluginId === plugin.path.split("/").at(-1)} key={`${plugin.scope}:${plugin.id}`} onSetEnabled={onSetEnabled} onUninstall={onUninstall} plugin={plugin} />)}</section>}
   </>;
 });
 
 const PluginMarketCard = memo(function PluginMarketCard({ busy, onInstall, plugin }: { busy: boolean; onInstall(plugin: DesktopPluginMarketEntry): void; plugin: DesktopPluginMarketEntry }): React.JSX.Element {
-  return <article className="settings-plugin-card"><span className="settings-plugin-card-icon"><Icon name="puzzle" size={23} /></span><div><h3>{plugin.name}{plugin.featured ? <span className="settings-plugin-featured">精选</span> : null}</h3><p>{plugin.category} · v{plugin.version}{plugin.author ? ` · ${plugin.author.name}` : ""}</p><span className="settings-plugin-description">{plugin.description}</span>{plugin.tags.length ? <p className="settings-plugin-tags">{plugin.tags.map((tag) => `#${tag}`).join(" ")}</p> : null}</div><button className="settings-plugin-install-button" disabled={busy} onClick={() => onInstall(plugin)} type="button">{busy ? "安装中…" : "安装"}</button></article>;
+  return <article className="settings-plugin-card"><span className="settings-plugin-card-icon"><Icon name="puzzle" size={23} /></span><div className="settings-plugin-card-main"><h3><span className="settings-plugin-card-name">{plugin.name}</span>{plugin.featured ? <span className="settings-plugin-featured">精选</span> : null}</h3><p>{plugin.category} · v{plugin.version}{plugin.author ? ` · ${plugin.author.name}` : ""}</p><span className="settings-plugin-description">{plugin.description}</span>{plugin.tags.length ? <p className="settings-plugin-tags">{plugin.tags.map((tag) => `#${tag}`).join(" ")}</p> : null}</div><button className="settings-plugin-install-button" disabled={busy} onClick={() => onInstall(plugin)} type="button">{busy ? "安装中…" : "安装"}</button></article>;
 });
 
 const PluginSettingsCard = memo(function PluginSettingsCard({ busy, onSetEnabled, onUninstall, plugin }: { busy: boolean; onSetEnabled(plugin: DesktopPluginSummary): void; onUninstall(plugin: DesktopPluginSummary): void; plugin: DesktopPluginSummary }): React.JSX.Element {
-  return <article className="settings-plugin-card"><span className="settings-plugin-card-icon"><Icon name="puzzle" size={23} /></span><div><h3>{plugin.name}</h3><p>{plugin.projectName} · {plugin.path}{plugin.version ? ` · v${plugin.version}` : ""}</p><span className={`settings-plugin-status is-${plugin.status}`}>{plugin.status === "disabled" ? "已安装但未启用" : plugin.status === "missing" ? "路径不可用" : plugin.status === "failed" ? "加载失败" : `${plugin.moduleCount} 个模块`}</span>{plugin.error ? <span className="settings-plugin-description">{plugin.error}</span> : null}</div>{plugin.managed ? <><button aria-checked={plugin.enabled === true} aria-label={`${plugin.enabled === true ? "停用" : "启用"}插件 ${plugin.name}`} className={`settings-extension-switch${plugin.enabled === true ? " is-on" : ""}`} disabled={busy} onClick={() => onSetEnabled(plugin)} role="switch" type="button"><span /></button><button className="settings-plugin-danger-button" disabled={busy} onClick={() => onUninstall(plugin)} type="button">卸载</button></> : null}</article>;
+  const scopeLabel = plugin.scope === "global" ? "全局" : plugin.projectName ?? "当前项目";
+  return <article className="settings-plugin-card"><span className="settings-plugin-card-icon"><Icon name="puzzle" size={23} /></span><div className="settings-plugin-card-main"><h3><span className="settings-plugin-card-name">{plugin.name}</span></h3><p>{scopeLabel} · {plugin.path}{plugin.version ? ` · v${plugin.version}` : ""}</p><span className={`settings-plugin-status is-${plugin.status}`}>{plugin.status === "disabled" ? "已安装但未启用" : plugin.status === "missing" ? "路径不可用" : plugin.status === "failed" ? "加载失败" : `${plugin.moduleCount} 个模块`}</span>{plugin.error ? <span className="settings-plugin-description">{plugin.error}</span> : null}</div>{plugin.managed ? <><button aria-checked={plugin.enabled === true} aria-label={`${plugin.enabled === true ? "停用" : "启用"}插件 ${plugin.name}`} className={`settings-extension-switch${plugin.enabled === true ? " is-on" : ""}`} disabled={busy} onClick={() => onSetEnabled(plugin)} role="switch" type="button"><span /></button><button className="settings-plugin-danger-button" disabled={busy} onClick={() => onUninstall(plugin)} type="button">卸载</button></> : null}</article>;
 });
 
 function activationFor(skill: DesktopSkillCatalogEntry, globalDefaults: Record<string, boolean>, projectOverrides: Record<string, boolean>): DesktopSkillActivation {

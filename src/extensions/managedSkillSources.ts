@@ -2,13 +2,13 @@
  * Biny 受管 Skill 来源库。
  *
  * 来源库只保存用户显式导入的 `SKILL.md` 副本；它不是运行时发现根，也不会因为被导入
- * 就自动生效。安装动作会再把经过校验的副本写入 `~/.biny/skills`，从而保留“导入”和
+ * 就自动生效。安装动作会再把经过校验的副本写入 `~/.config/biny/skills`，从而保留“导入”和
  * “启用”之间的清晰边界。
  */
 import { randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
-import os from "node:os";
 import path from "node:path";
+import { globalConfigDir } from "../config/paths.js";
 import { parseSkillDocument } from "./skillCatalog.js";
 
 const maxSkillFileBytes = 512 * 1024;
@@ -27,12 +27,14 @@ export interface ManagedSkillSourceSnapshot {
   warnings: string[];
 }
 
-export function defaultManagedSkillSourcesRoot(homeDir = os.homedir()): string {
-  return path.join(homeDir, ".biny", "skill-sources");
+export function defaultManagedSkillSourcesRoot(homeDir?: string): string {
+  const configRoot = homeDir === undefined ? globalConfigDir() : globalConfigDir({ env: {}, homeDir });
+  return path.join(configRoot, "skill-sources");
 }
 
-export function defaultManagedSkillRoot(homeDir = os.homedir()): string {
-  return path.join(homeDir, ".biny", "skills");
+export function defaultManagedSkillRoot(homeDir?: string): string {
+  const configRoot = homeDir === undefined ? globalConfigDir() : globalConfigDir({ env: {}, homeDir });
+  return path.join(configRoot, "skills");
 }
 
 export async function listManagedSkillSources(options: {

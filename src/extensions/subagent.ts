@@ -58,7 +58,7 @@ export interface SubagentOptions {
 
 export function createSubagentTool(options: SubagentOptions, taskManager: SubagentTaskManager): Tool<{ task: string; agent?: string }, string> {
   return {
-    name: "delegate_task",
+    name: "Task",
     description: "Delegate a focused repository investigation, implementation, repair, or finite validation task to a bounded subagent. Pass agent to run a named subagent definition.",
     promptSnippet: "Delegate a focused, bounded workspace task to a subagent",
     parameters: subagentParameters,
@@ -75,7 +75,7 @@ export function createSubagentTool(options: SubagentOptions, taskManager: Subage
           detail: args.task
         },
         description: "Runs a bounded workspace subagent with an explicit local-tool allowlist and restricted validation commands.",
-        approvalRule: "delegate_task",
+        approvalRule: "Task",
         async execute(context): Promise<string> {
           return await taskManager.run(args.task, {
             parentRunId: options.getParentRunId?.() ?? context.toolCallId,
@@ -133,7 +133,7 @@ async function runNativeSubagentTask(
       ? "Inspect, implement, repair, and validate the focused task using only the explicitly available workspace tools."
       : "Inspect the repository using only the available local read/search/git inspection tools.",
     "Never request secrets, credentials, environment files, config.json, network access, long-running processes, or another subagent.",
-    "Use run_command only for finite allowlisted build, test, lint, and typecheck commands.",
+    "Use Bash only for finite allowlisted build, test, lint, and typecheck commands.",
     "Return concise grounded findings with exact paths, changes, and validation evidence.",
     ...(definition ? ["", `Named subagent role "${definition.name}":`, definition.prompt] : [])
   ].join("\n");
@@ -238,12 +238,12 @@ async function executeNativeSubagentTool(
   scheduler?: ToolScheduler<unknown>
 ): Promise<unknown> {
   const execute = async (): Promise<unknown> => {
-    if (toolName === "read_file") {
+    if (toolName === "Read") {
       const filePath = execution.accesses?.find((access) => access.kind === "file")?.path;
       if (filePath) {
         const stat = await fs.stat(filePath);
         if (stat.size > maxSubagentReadBytes) {
-          throw new Error(`Subagent read_file limit exceeded (${String(stat.size)} bytes; max ${String(maxSubagentReadBytes)}). Use search instead.`);
+          throw new Error(`Subagent Read limit exceeded (${String(stat.size)} bytes; max ${String(maxSubagentReadBytes)}). Use search instead.`);
         }
       }
     }
@@ -372,11 +372,11 @@ function assertSafeToolInput(toolName: string, input: unknown, accessMode: Subag
   if (typeof input.path === "string" && isSensitiveSubagentPath(input.path)) {
     throw new Error(`Subagent access denied for protected path: ${input.path}`);
   }
-  if (toolName === "run_command") {
+  if (toolName === "Bash") {
     if (accessMode !== "workspace") throw new Error("Subagent command execution is not available in read-only mode.");
     const command = typeof input.command === "string" ? input.command.trim() : "";
     if (!isAllowedSubagentValidationCommand(command)) {
-      throw new Error("Subagent run_command only permits finite build, test, lint, and typecheck commands without shell operators.");
+      throw new Error("Subagent Bash only permits finite build, test, lint, and typecheck commands without shell operators.");
     }
   }
 }
@@ -406,10 +406,10 @@ export function isAllowedSubagentValidationCommand(command: string): boolean {
 }
 
 function sanitizeToolResult(toolName: string, result: unknown): unknown {
-  if (toolName === "list_files" && isRecord(result) && Array.isArray(result.files)) {
+  if (toolName === "Glob" && isRecord(result) && Array.isArray(result.files)) {
     return { ...result, files: result.files.filter((file): file is string => typeof file === "string" && !isSensitiveSubagentPath(file)) };
   }
-  if ((toolName === "search_files" || toolName === "grep_search") && isRecord(result) && Array.isArray(result.matches)) {
+  if (toolName === "Grep" && isRecord(result) && Array.isArray(result.matches)) {
     return {
       ...result,
       matches: result.matches

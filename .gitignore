@@ -17,6 +17,10 @@ ARCHITECTURE.local.md
 # 本地文档不进入仓库，仅发布根目录 README
 *.md
 !/README.md
+# 随 Biny 发布的内置 Skill 是源码资源，不属于本地文档。
+!/src/bundled-skills/
+!/src/bundled-skills/**/
+!/src/bundled-skills/**/*.md
 AGENTS.md
 docs/TUI_INTERACTION_REQUIREMENTS.md
 # Local agent evaluation runs and reports

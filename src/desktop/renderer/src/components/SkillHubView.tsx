@@ -66,7 +66,6 @@ export function SkillHubView({ onError, onOpenRuntime }: { onError(message: stri
     () => [...new Set([
       ...snapshot.warnings,
       ...snapshot.diagnostics
-        .filter((diagnostic) => diagnostic.kind !== "duplicate_id")
         .map((diagnostic) => diagnostic.message)
     ])],
     [snapshot.diagnostics, snapshot.warnings]
@@ -367,7 +366,7 @@ const SkillCard = memo(function SkillCard({ skill, selected, onSelect }: { skill
       <span className="biny-skill-card-icon"><Icon name="wand" size={17} /></span>
       <span className="biny-skill-card-main">
         <span className="biny-skill-card-title">{skill.name}</span>
-        <span className="biny-skill-card-meta">{skill.scope === "global" ? "全局" : "项目"}</span>
+        <span className="biny-skill-card-meta">{skill.scope === "builtin" ? "内置" : skill.scope === "global" ? "全局" : "项目"}</span>
         <span className="biny-skill-card-description">{skill.description}</span>
       </span>
       <Icon name="arrow-right" size={15} />
@@ -387,7 +386,7 @@ const ManagedSkillSources = memo(function ManagedSkillSources({
       <div className="biny-skill-sources-heading"><h2>本地来源</h2><span>导入不会自动启用</span></div>
       <div className="biny-skill-source-grid">
         {sources.map((source) => <article className="biny-skill-source-card" key={source.id}>
-          <div><h3>{source.name}</h3><p>{source.description}</p></div>
+          <div className="biny-skill-source-card-main"><h3>{source.name}</h3><p>{source.description}</p></div>
           <button disabled={source.installed} onClick={() => onInstall(source.id)} type="button">{source.installed ? "已安装" : "安装"}</button>
         </article>)}
       </div>
@@ -433,11 +432,11 @@ const SkillDetail = memo(function SkillDetail({
       <div className="biny-skill-detail-header">
         <div className="biny-skill-detail-title-row">
           <span className="biny-skill-detail-icon"><Icon name="wand" size={18} /></span>
-          <div><h2>{skill.name}</h2><p>{skill.scope === "global" ? "全局" : "项目"}</p></div>
+          <div><h2>{skill.name}</h2><p>{skill.scope === "builtin" ? "内置" : skill.scope === "global" ? "全局" : "项目"}</p></div>
         </div>
         <div className="biny-skill-detail-actions">
           <button onClick={onOpenDirectory} type="button"><Icon name="folder-open" size={14} />打开目录</button>
-          {editing ? <><button onClick={onCancelEdit} type="button">取消</button><button className="is-primary" disabled={saving} onClick={onSave} type="button">{saving ? "保存中…" : "保存"}</button></> : <button onClick={onEdit} type="button"><Icon name="edit" size={14} />编辑</button>}
+          {skill.scope !== "builtin" ? editing ? <><button onClick={onCancelEdit} type="button">取消</button><button className="is-primary" disabled={saving} onClick={onSave} type="button">{saving ? "保存中…" : "保存"}</button></> : <button onClick={onEdit} type="button"><Icon name="edit" size={14} />编辑</button> : null}
         </div>
       </div>
       <div className="biny-skill-detail-path" title={skill.absolutePath}>{skill.absolutePath}</div>
@@ -484,7 +483,7 @@ const PluginCatalogContent = memo(function PluginCatalogContent({ plugins, loadi
   return (
     <>
       <div className="biny-extension-heading">
-        <div><h1>插件</h1><p>管理 Biny 项目配置中的本地插件模块。</p></div>
+        <div><h1>插件</h1><p>管理全局和项目配置中的本地插件模块。</p></div>
         <span className="biny-extension-count">已配置 {plugins.length}</span>
       </div>
       {loading && !plugins.length ? <ExtensionLoading /> : !plugins.length ? <div className="biny-extension-empty biny-plugin-empty"><span><Icon name="plug" size={22} /></span><h2>还没有配置插件</h2><p>在项目配置的 extensions.plugins 中声明 .js、.mjs 或 .cjs 文件或目录。</p></div> : (
@@ -495,10 +494,11 @@ const PluginCatalogContent = memo(function PluginCatalogContent({ plugins, loadi
 });
 
 const PluginCard = memo(function PluginCard({ plugin }: { plugin: DesktopPluginSummary }): React.JSX.Element {
+  const scopeLabel = plugin.scope === "global" ? "全局" : plugin.projectName ?? "当前项目";
   return (
     <article className="biny-plugin-card">
       <span className="biny-skill-card-icon"><Icon name="plug" size={17} /></span>
-      <div><h2>{plugin.name}</h2><p>{plugin.projectName} · {plugin.path}</p><span className={plugin.status === "configured" ? "biny-plugin-status is-ready" : "biny-plugin-status is-missing"}>{plugin.status === "configured" ? `${plugin.moduleCount} 个模块` : "路径不可用"}</span></div>
+      <div className="biny-plugin-card-main"><h2>{plugin.name}</h2><p>{scopeLabel} · {plugin.path}</p><span className={plugin.status === "configured" ? "biny-plugin-status is-ready" : "biny-plugin-status is-missing"}>{plugin.status === "configured" ? `${plugin.moduleCount} 个模块` : "路径不可用"}</span></div>
     </article>
   );
 });

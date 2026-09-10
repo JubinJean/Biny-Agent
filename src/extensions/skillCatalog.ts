@@ -12,11 +12,14 @@ import { parseDocument } from "yaml";
 import {
   GLOBAL_SKILL_ROOT_CONVENTIONS,
   PROJECT_SKILL_ROOT_CONVENTIONS,
+  skillRootPrecedence,
   type SkillRootConvention,
   type SkillRootEngine,
   type SkillRootSource
 } from "./skillRoots.js";
+import { globalConfigDir } from "../config/paths.js";
 import { createSkillId, createSkillRef, normalizeSkillName } from "./skillRef.js";
+import { builtinSkillRoot } from "./builtinSkills.js";
 
 const maxMetadataBytes = 64 * 1024;
 const maxEditorBytes = 512 * 1024;
@@ -24,7 +27,7 @@ const maxSkillCount = 512;
 const maxFileCount = 512;
 const maxSkillDescriptionChars = 1_024;
 
-export type SkillCatalogScope = "global" | "project";
+export type SkillCatalogScope = "builtin" | "global" | "project";
 export type SkillCatalogEngine = "biny" | "codex" | "claude" | "pi";
 export type SkillCatalogSource = SkillRootSource;
 export type SkillCatalogDiagnosticKind = "unsupported_root" | "unsupported_symlink" | "scan_failed" | "invalid_metadata" | "duplicate_id";
@@ -145,7 +148,7 @@ export async function scanSkillCatalog(options: { homeDir?: string; projectRoots
   const winners = new Map<string, GroupedSkill>();
   for (const candidate of groupedSkills) {
     if (candidate.item.parseError !== undefined) continue;
-    const key = logicalSkillKey(candidate.item);
+    const key = logicalSkillKey(candidate.item, projectRoots);
     if (!winners.has(key)) winners.set(key, candidate);
   }
 
@@ -156,7 +159,7 @@ export async function scanSkillCatalog(options: { homeDir?: string; projectRoots
   const inventory = groupedSkills
     .map((candidate) => {
       const entry = entries.get(candidate)!;
-      const winner = winners.get(logicalSkillKey(candidate.item));
+      const winner = winners.get(logicalSkillKey(candidate.item, projectRoots));
       if (winner !== undefined && winner !== candidate) entry.shadowedBy = entries.get(winner)!.ref;
       return entry;
     })
@@ -173,7 +176,7 @@ export async function scanSkillCatalog(options: { homeDir?: string; projectRoots
   const skills = inventory
     .filter((entry) => entry.shadowedBy === undefined && entry.parseError === undefined)
     .sort((left, right) => {
-      if (left.scope !== right.scope) return left.scope === "global" ? -1 : 1;
+      if (left.scope !== right.scope) return scopeOrder(left.scope) - scopeOrder(right.scope);
       return left.name.localeCompare(right.name);
     });
   if (skills.length > maxSkillCount) {
@@ -208,6 +211,7 @@ export async function readSkillCatalogFile(entry: SkillCatalogEntry, relativePat
 }
 
 export async function writeSkillCatalogFile(entry: SkillCatalogEntry, relativePath: string, content: string): Promise<void> {
+  if (entry.source === "builtin") throw new Error("内置 Skill 只读，不能编辑。");
   if (Buffer.byteLength(content, "utf8") > maxEditorBytes) {
     throw new Error(`Skill 文件超过 ${String(maxEditorBytes)} 字节，无法保存。`);
   }
@@ -256,7 +260,7 @@ function buildSkillRoots(homeDir: string, projectRoots: string[]): SkillRoot[] {
       scope,
       engine,
       source: convention.source,
-      precedence: (scope === "global" ? GLOBAL_SKILL_ROOT_CONVENTIONS : PROJECT_SKILL_ROOT_CONVENTIONS).indexOf(convention),
+      precedence: skillRootPrecedence(scope, scope === "global" ? directory : convention.relativePath, homeDir),
       directory,
       projectRoot,
       allowExternalSymlinks: scope === "global" && convention.allowExternalSymlinks === true
@@ -264,7 +268,9 @@ function buildSkillRoots(homeDir: string, projectRoots: string[]): SkillRoot[] {
   };
 
   for (const convention of GLOBAL_SKILL_ROOT_CONVENTIONS) {
-    const directory = path.isAbsolute(convention.relativePath)
+    const directory = convention.relativePath === ".biny/skills"
+      ? path.join(globalConfigDir({ env: {}, homeDir }), "skills")
+      : path.isAbsolute(convention.relativePath)
       ? convention.relativePath
       : path.join(homeDir, convention.relativePath);
     for (const engine of convention.engines) add("global", convention, engine, directory);
@@ -277,6 +283,15 @@ function buildSkillRoots(homeDir: string, projectRoots: string[]): SkillRoot[] {
       }
     }
   }
+  const bundledRoot = builtinSkillRoot();
+  roots.push({
+    scope: "builtin",
+    engine: "biny",
+    source: "builtin",
+    precedence: skillRootPrecedence("builtin", bundledRoot, homeDir),
+    directory: bundledRoot,
+    allowExternalSymlinks: false
+  });
   return roots;
 }
 
@@ -454,8 +469,16 @@ function skillRef(item: DiscoveredSkill): string {
   });
 }
 
-function logicalSkillKey(item: DiscoveredSkill): string {
-  return `${item.root.scope}:${item.root.projectRoot ?? "global"}:${normalizeSkillName(item.name)}`;
+function logicalSkillKey(item: DiscoveredSkill, projectRoots: readonly string[]): string {
+  const name = normalizeSkillName(item.name);
+  if (item.root.scope === "project") return `workspace:${item.root.projectRoot}:${name}`;
+  if (projectRoots.length === 1) return `workspace:${projectRoots[0]}:${name}`;
+  return `global:${name}`;
+}
+
+function scopeOrder(scope: SkillCatalogScope): number {
+  // 保持既有桌面清单的全局、项目顺序；内置 Skill 作为最低优先级资源列在最后。
+  return scope === "global" ? 0 : scope === "project" ? 1 : 2;
 }
 
 async function findSkillMarkdown(directory: string): Promise<string | undefined> {

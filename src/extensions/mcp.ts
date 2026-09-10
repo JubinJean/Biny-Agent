@@ -581,12 +581,22 @@ function expandServerConfig(serverConfig: McpServerConfig): McpServerConfig {
 
 function createMcpTool(host: McpToolHost, serverName: string, definition: ListedMcpTool): Tool {
   const name = `mcp_${normalizeName(serverName)}_${normalizeName(definition.name)}`;
+  const isIndexedSearch = definition.name === "zvec_grep_search";
   // 注意：annotations 由服务器自报，属未验证提示（与主流客户端一致）。它只影响
   // 风险分级与 plan/read-only 模式筛选，ask 模式下 MCP 工具仍会走审批询问。
-  const risk: ToolRisk = definition.annotations?.readOnlyHint ? "read" : definition.annotations?.destructiveHint ? "write" : "execute";
+  const risk: ToolRisk = isIndexedSearch
+    ? "read"
+    : definition.annotations?.readOnlyHint ? "read" : definition.annotations?.destructiveHint ? "write" : "execute";
   return {
     name,
     description: `[MCP ${serverName}] ${definition.description ?? definition.name}`,
+    promptSnippet: isIndexedSearch ? "Search indexed workspace content by meaning" : undefined,
+    promptGuidelines: isIndexedSearch
+      ? [
+        "Use zvec_grep_search when the workspace is the intended source but wording or location is unknown, or semantic, fuzzy, relationship, or cross-file discovery is required.",
+        "Use native Grep for exact text, identifiers, filenames, paths, regular expressions, or exhaustive occurrence requests; for a known anchor that needs broader context, search semantically first and verify with Grep."
+      ]
+      : undefined,
     parameters: definition.inputSchema as unknown as JsonObjectSchema,
     schema: z.unknown(),
     source: "mcp",

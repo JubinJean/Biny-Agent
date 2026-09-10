@@ -15,6 +15,11 @@ async function main(): Promise<void> {
       content: initial,
       toolCalls: 5
     });
+    assert.equal(draft.status, "pending");
+    await assert.rejects(
+      readFile(path.join(workspaceRoot, ".biny", "skills", "repeatable-workflow", "SKILL.md"), "utf8"),
+      /ENOENT/u
+    );
     const edited = await editSkillDraft(workspaceRoot, draft.id, "---\nname: repeatable-workflow\ndescription: A reusable local workflow.\n---\n\nDo the edited step.\n");
     assert.equal(edited.status, "pending");
     assert.match(edited.content, /edited step/u);
@@ -23,6 +28,22 @@ async function main(): Promise<void> {
     assert.equal(approved.status, "approved");
     assert.equal(approved.installedPath, ".biny/skills/repeatable-workflow/SKILL.md");
     assert.match(await readFile(path.join(workspaceRoot, ".biny", "skills", "repeatable-workflow", "SKILL.md"), "utf8"), /edited step/u);
+
+    const secretDraft = await createSkillDraft({
+      workspaceRoot,
+      name: "redacted-workflow",
+      description: "A redacted workflow.",
+      content: "---\nname: redacted-workflow\ndescription: A redacted workflow.\n---\n\napiKey=top-secret-value\n",
+      toolCalls: 2
+    });
+    assert.doesNotMatch(secretDraft.content, /top-secret-value/u);
+    assert.match(secretDraft.content, /apiKey=\[redacted\]/u);
+    const redactedApproved = await approveSkillDraft(workspaceRoot, secretDraft.id);
+    assert.equal(redactedApproved.status, "approved");
+    assert.doesNotMatch(
+      await readFile(path.join(workspaceRoot, ".biny", "skills", "redacted-workflow", "SKILL.md"), "utf8"),
+      /top-secret-value/u
+    );
 
     const duplicate = await createSkillDraft({
       workspaceRoot,

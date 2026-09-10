@@ -24,18 +24,34 @@ async function main(): Promise<void> {
     const agentsSkillRoot = path.join(homeDir, ".agents", "skills");
     await mkdir(agentsSkillRoot, { recursive: true });
 
-    const binySkill = path.join(homeDir, ".biny", "skills", "biny-only");
+    const binySkill = path.join(homeDir, ".config", "biny", "skills", "biny-only");
     await mkdir(binySkill, { recursive: true });
     await writeFile(path.join(binySkill, "skill.md"), "---\nname: biny-only\ndescription: Biny skill\n---\n\nBiny body\n");
 
     const projectSkill = path.join(projectRoot, ".agents", "skills", "project-skill");
     await mkdir(projectSkill, { recursive: true });
     await writeFile(path.join(projectSkill, "SKILL.md"), "---\nname: project-skill\ndescription: Project skill\n---\n\nProject body\n");
+    const globalProjectCopy = path.join(homeDir, ".agents", "skills", "project-skill");
+    await mkdir(globalProjectCopy, { recursive: true });
+    await writeFile(path.join(globalProjectCopy, "SKILL.md"), "---\nname: project-skill\ndescription: Global copy\n---\n\nGlobal body\n");
 
     const snapshot = await scanSkillCatalog({ homeDir, projectRoots: [projectRoot] });
     assert.equal(snapshot.warnings.length, 0);
-    assert.deepEqual(snapshot.skills.map((skill) => skill.name), ["biny-only", "shared-skill", "project-skill"]);
-    assert.equal(snapshot.inventory.length, 3);
+    assert.deepEqual(snapshot.skills.filter((skill) => skill.scope !== "builtin").map((skill) => skill.name), ["biny-only", "shared-skill", "project-skill"]);
+    assert.equal(snapshot.inventory.length, 12);
+    assert.deepEqual(snapshot.skills.filter((skill) => skill.scope === "builtin").map((skill) => skill.name), [
+      "daily-report",
+      "memory-management",
+      "plan-weave",
+      "scheduler",
+      "self-reflection",
+      "tasks",
+      "todo",
+      "workspace-search"
+    ]);
+    const projectCopy = snapshot.inventory.find((skill) => skill.name === "project-skill" && skill.scope === "global");
+    assert.ok(projectCopy?.shadowedBy);
+    assert.equal(snapshot.skills.find((skill) => skill.name === "project-skill")?.scope, "project");
 
     const shared = snapshot.skills.find((skill) => skill.name === "shared-skill");
     assert.ok(shared);

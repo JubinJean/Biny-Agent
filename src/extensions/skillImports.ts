@@ -8,6 +8,7 @@ import { randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { globalConfigDir } from "../config/paths.js";
 import { scanSkillCatalog, type SkillCatalogEngine, type SkillCatalogEntry, type SkillCatalogSnapshot } from "./skillCatalog.js";
 
 const maxImportedFileCount = 1_024;
@@ -52,7 +53,9 @@ export async function importUnmanagedSkills(options: {
   const snapshot = await scanSkillCatalog({ homeDir, projectRoots: options.projectRoots });
   const selected = new Set(options.ids);
   const candidates = listUnmanagedSkillCandidates(snapshot).filter((candidate) => selected.has(candidate.id));
-  const managedRoot = path.join(homeDir, ".biny", "skills");
+  const managedRoot = options.homeDir === undefined
+    ? path.join(globalConfigDir(), "skills")
+    : path.join(globalConfigDir({ env: {}, homeDir }), "skills");
   await ensureManagedRoot(managedRoot);
   const results: SkillImportResult[] = [];
   for (const candidate of candidates) {
