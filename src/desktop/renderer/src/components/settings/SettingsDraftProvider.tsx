@@ -18,6 +18,7 @@ import type {
   DesktopMemorySettings,
   DesktopModelConfigurationInput,
   DesktopPermissionSettings,
+  DesktopSettingsModelsInput,
   DesktopSettingsSaveInput,
   DesktopSettingsSaveResult,
   DesktopSettingsSnapshot,
@@ -301,6 +302,57 @@ export function SettingsDraftProvider({
     await window.biny.updateSettingsDraftState({ dirty: false, canSave: false, open: active }).catch(() => undefined);
   }, [active, adoptSnapshot, releaseAllCredentials, snapshot]);
 
+  // 模型页的即时保存串行化：连续动作（连接、开关模型、改密钥）各自带着「当前草稿 +
+  // 本次变更」的完整 models 段进入同一互斥队列，后一笔基于前一笔提交后的快照继续。
+  const modelsSaveTailRef = useRef<Promise<unknown>>(Promise.resolve());
+
+  const saveModels = useCallback(async (models: DesktopSettingsModelsInput): Promise<DesktopSettingsSaveResult | undefined> => {
+    const base = snapshotRef.current;
+    if (!base) throw new Error("设置尚未加载完成。");
+    if (saveState === "recovery_required") {
+      onNotify("存在未恢复的保存事务，请先处理再修改模型配置。");
+      return undefined;
+    }
+    const operation = modelsSaveTailRef.current.then(async (): Promise<DesktopSettingsSaveResult | undefined> => {
+      // 队列执行时取最新基线：前一笔即时保存可能已经推进了 configRevision。
+      const snapshotNow = snapshotRef.current;
+      if (!snapshotNow) throw new Error("设置尚未加载完成。");
+      const result = await window.biny.saveSettings(snapshotNow.projectId, {
+        expectedPreferenceRevision: snapshotNow.preferenceRevision,
+        expectedConfigRevision: snapshotNow.configRevision,
+        models
+      });
+      if (result.status === "committed") {
+        // models 段已完整包含在提交里：基线推进后把它从草稿清零，其余分页草稿保留。
+        snapshotRef.current = result.snapshot;
+        setSnapshot(result.snapshot);
+        setSaveState(result.snapshot.pendingRecovery ? "recovery_required" : "clean");
+        setDraft((current) => current ? {
+          ...current,
+          models: {
+            upserts: [],
+            removeAliases: [],
+            defaultModel: undefined,
+            oauthCredentialHandles: current.models.oauthCredentialHandles.filter((handle) => !models.oauthCredentialHandles?.includes(handle)),
+            modelProfiles: structuredClone(result.snapshot.models.modelProfiles ?? {})
+          }
+        } : current);
+        onCommitted(result.snapshot);
+      } else if (result.status === "rolled_back") {
+        setSnapshot(result.snapshot);
+        snapshotRef.current = result.snapshot;
+        setSaveState("dirty");
+        onNotify(result.message ?? (result.conflicts?.length ? "模型设置已在其他位置更改，请重试" : "模型设置保存失败，已恢复原设置"));
+      } else {
+        setSaveState("recovery_required");
+        onNotify(result.message);
+      }
+      return result;
+    });
+    modelsSaveTailRef.current = operation.then(() => undefined, () => undefined);
+    return operation;
+  }, [onCommitted, onNotify, saveState]);
+
   const saveAll = useCallback(async (): Promise<DesktopSettingsSaveResult | undefined> => {
     if (!snapshot || !draft || runtimeBlocked || invalid || dirtyCount === 0 || saveState === "recovery_required") return undefined;
     setSaveState("saving");
@@ -363,6 +415,7 @@ export function SettingsDraftProvider({
     setSkills,
     upsertModel,
     removeModel,
+    saveModels,
     setDefaultModel,
     setModelProfile,
     stageCredential,
@@ -382,6 +435,7 @@ export function SettingsDraftProvider({
     releaseCredential,
     removeModel,
     saveAll,
+    saveModels,
     saveState,
     preferencesOnly,
     setChat,

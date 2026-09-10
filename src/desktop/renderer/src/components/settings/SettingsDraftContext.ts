@@ -12,6 +12,7 @@ import type {
   DesktopIdentitySettings,
   DesktopMemorySettings,
   DesktopModelConfigurationInput,
+  DesktopSettingsModelsInput,
   DesktopPermissionSettings,
   DesktopSettingsSaveResult,
   DesktopSettingsSnapshot,
@@ -68,6 +69,11 @@ export interface SettingsDraftContextValue {
   setSkills(value: DesktopSkillSettingsInput): void;
   upsertModel(value: DesktopModelConfigurationInput): void;
   removeModel(alias: string): void;
+  /**
+   * 只提交 models 段的即时保存（复刻「零保存按钮」的服务商配置体验）。入参是完整的
+   * models 段（草稿待提交项 + 本次变更），提交成功后 models 草稿清零，其余分页草稿不动。
+   */
+  saveModels(models: DesktopSettingsModelsInput): Promise<DesktopSettingsSaveResult | undefined>;
   setDefaultModel(alias: string, thinking: ThinkingSelection): void;
   setModelProfile(providerAlias: string, modelId: string, profile: ModelProfile | undefined): void;
   stageCredential(secret: string, scope: DesktopSettingsCredentialScope): Promise<DesktopStagedSettingsCredential>;

@@ -92,7 +92,6 @@ export const desktopIpc = {
   deleteSession: "desktop:session:delete",
   exportSession: "desktop:session:export",
   importSession: "desktop:session:import",
-  sessionMenu: "desktop:session:menu",
   sendPrompt: "desktop:agent:send",
   toolCatalog: "desktop:agent:tool-catalog",
   resumeInterruptedTurn: "desktop:agent:resume-interrupted",
@@ -520,9 +519,9 @@ export interface DesktopWorkspaceDirectory {
   entries: DesktopWorkspaceDirectoryEntry[];
 }
 
-export type DesktopSkillScope = "global" | "project";
+export type DesktopSkillScope = "builtin" | "global" | "project";
 export type DesktopSkillEngine = "biny" | "codex" | "claude" | "pi";
-export type DesktopSkillSource = "biny" | "agents";
+export type DesktopSkillSource = "biny" | "agents" | "builtin";
 
 export interface DesktopSkillDiagnostic {
   kind: "unsupported_root" | "unsupported_symlink" | "scan_failed" | "invalid_metadata" | "duplicate_id";
@@ -667,9 +666,9 @@ export interface DesktopPluginSummary {
   id: string;
   name: string;
   path: string;
-  scope: "project";
-  projectId: string;
-  projectName: string;
+  scope: "project" | "global";
+  projectId?: string;
+  projectName?: string;
   status: "configured" | "missing" | "disabled" | "failed";
   moduleCount: number;
   version?: string;
@@ -857,6 +856,8 @@ export interface DesktopModelConfigurationInput {
   apiKeyHandle?: string;
   apiKeyEnv?: string;
   requiresApiKey?: boolean;
+  /** 模型目录的鉴权要求独立于聊天请求。 */
+  modelsRequiresApiKey?: boolean;
   supportsTools: boolean;
   supportsThinking?: boolean;
   parallelToolCalls?: boolean;
@@ -1395,6 +1396,7 @@ export interface DesktopWorktreeStatus {
 export type DesktopRuntimeMutation =
   | "task.create"
   | "task.start"
+  | "task.run"
   | "task.cancel"
   | "task.approve"
   | "task.resume"
@@ -1429,6 +1431,7 @@ export type DesktopRuntimeMutation =
   | "worktree.remove";
 
 export type DesktopMenuAction = "new-task" | "open-project" | "search" | "settings" | "toggle-sidebar" | "focus-composer";
+/** 侧栏会话右键菜单的动作；菜单本身由渲染进程绘制。 */
 export type DesktopSessionMenuAction = "rename" | "pin" | "unpin" | "archive" | "unarchive" | "duplicate" | "export-bundle" | "export-claude" | "delete";
 
 /** 内嵌终端创建结果。`replay` 是复用已有终端时回放的最近输出。 */
@@ -1477,7 +1480,6 @@ export interface DesktopApi {
   exportSession(projectId: string, sessionId: string, format: "biny" | "claude"): Promise<DesktopWorkspaceSnapshot>;
   /** 从 Biny bundle / Claude Code / Codex rollout 文件导入一条新会话并选中它。 */
   importSession(projectId: string): Promise<DesktopWorkspaceSnapshot>;
-  showSessionMenu(projectId: string, sessionId: string, pinned: boolean, archived?: boolean): Promise<DesktopSessionMenuAction | undefined>;
   sendPrompt(
     projectId: string,
     sessionId: string | undefined,
@@ -1627,10 +1629,10 @@ export interface DesktopApi {
   openSkillDirectory(skillId: string): Promise<void>;
   pluginRegistry(projectId: string): Promise<DesktopPluginRegistrySnapshot>;
   refreshPluginRegistry(projectId: string): Promise<DesktopPluginRegistrySnapshot>;
-  installPlugin(projectId: string, pluginId: string): Promise<DesktopPluginSummary>;
-  setPluginEnabled(projectId: string, pluginId: string, enabled: boolean): Promise<DesktopPluginSummary>;
-  uninstallPlugin(projectId: string, pluginId: string): Promise<void>;
-  openPluginDirectory(projectId: string): Promise<void>;
+  installPlugin(projectId: string, pluginId: string, scope?: "project" | "global"): Promise<DesktopPluginSummary>;
+  setPluginEnabled(projectId: string, pluginId: string, enabled: boolean, scope?: "project" | "global"): Promise<DesktopPluginSummary>;
+  uninstallPlugin(projectId: string, pluginId: string, scope?: "project" | "global"): Promise<void>;
+  openPluginDirectory(projectId: string, scope?: "project" | "global"): Promise<void>;
   mcpSnapshot(projectId?: string): Promise<DesktopMcpSnapshot>;
   mcpCatalog(): Promise<DesktopMcpCatalogState>;
   mcpRefreshCatalog(): Promise<DesktopMcpCatalogState>;

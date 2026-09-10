@@ -262,6 +262,7 @@ function PhaseBody({ phase, running, showTitle, projectId, onPreviewFile, onOpen
         onOpenExternal={onOpenExternal}
         onPreviewFile={onPreviewFile}
         onResolvePermission={onResolvePermission}
+        presentation="row"
         projectId={projectId}
         tool={phase.tool}
       />
@@ -269,6 +270,8 @@ function PhaseBody({ phase, running, showTitle, projectId, onPreviewFile, onOpen
   }
   const seconds = phase.durationMs !== undefined ? Math.max(1, Math.round(phase.durationMs / 1000)) : undefined;
   const streaming = running && !phase.completed;
+  // 模型只声明思考不回传内容时不渲染正文，只留状态标题（同 ThinkingBlock 的空思考处理）。
+  const detail = reasoningDetailText(phase);
   return (
     <div className="chat-activity-phase">
       {showTitle ? (
@@ -277,7 +280,7 @@ function PhaseBody({ phase, running, showTitle, projectId, onPreviewFile, onOpen
           {!streaming && seconds !== undefined ? <span className="chat-activity-phase-rest"> 了 {seconds} 秒</span> : null}
         </div>
       ) : null}
-      <div className="chat-activity-thinking-text">{reasoningDetailText(phase)}</div>
+      {detail ? <div className="chat-activity-thinking-text">{detail}</div> : null}
     </div>
   );
 }

@@ -1,7 +1,7 @@
 /**
  * 流内通知行：上下文压缩标记。
  * 是 transcript 里的普通行，不伪装成工具卡片。
- * 轮次级失败/未完成输出走 `RunErrorCard`（统一的错误卡片）。
+ * 轮次级失败/未完成输出不在这里展示（生成错误横幅在输入框上方）。
  */
 import { memo, useState } from "react";
 import { Icon } from "../Icon.js";

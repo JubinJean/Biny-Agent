@@ -132,9 +132,9 @@ export function timelineToolEntries(tools: TimelineTool[]): TimelineToolEntry[] 
   });
 }
 
-function executionToolLabel(tool: string): string {
-  if (tool === "run_command") return "Bash";
-  if (tool === "invoke_skill" || tool === "skill_call") return "技能调用";
+export function executionToolLabel(tool: string): string {
+  if (tool === "Bash") return "Bash";
+  if (tool === "Skill" || tool === "skill_call") return "技能调用";
   return tool;
 }
 
@@ -1115,9 +1115,9 @@ function appendReasoning(existing: string, next: string | undefined): string {
   return `${existing}\n\n${next}`;
 }
 
-/** “已使用技能”只认真实 invoke_skill 调用，不能把启动时全部可用路径投影成已使用。 */
+/** “已使用技能”只认真实 Skill 调用，不能把启动时全部可用路径投影成已使用。 */
 function appendInvokedSkill(turn: TimelineTurn, tool: string, args: unknown): void {
-  if (tool !== "invoke_skill" || typeof args !== "object" || args === null || !("skill" in args)) return;
+  if (tool !== "Skill" || typeof args !== "object" || args === null || !("skill" in args)) return;
   const skill = (args as { skill?: unknown }).skill;
   if (typeof skill === "string" && skill.trim() && !turn.skills.includes(skill.trim())) turn.skills.push(skill.trim());
 }
@@ -1220,20 +1220,20 @@ function historicalToolProjection(tool: string, args: unknown): { display?: Tool
   const record = typeof args === "object" && args !== null ? args as Record<string, unknown> : undefined;
   const path = typeof record?.path === "string" ? record.path : undefined;
   const query = typeof record?.query === "string" ? record.query : undefined;
-  if (tool === "read_file" || tool === "write_file" || tool === "edit_file") {
-    const operation = tool === "read_file" ? "read" : tool === "write_file" ? "write" : "edit";
+  if (tool === "Read" || tool === "Write" || tool === "edit_file") {
+    const operation = tool === "Read" ? "read" : tool === "Write" ? "write" : "edit";
     return { path, display: { kind: "file_io", operation, path } };
   }
-  if (tool === "search_files" || tool === "grep_search") {
+  if (tool === "Grep") {
     return {
       path: undefined,
-      display: { kind: "file_io", operation: tool === "search_files" ? "search" : "grep", path: ".", detail: query }
+      display: { kind: "file_io", operation: "grep", path: ".", detail: query }
     };
   }
-  if (tool === "web_search") {
+  if (tool === "WebSearch") {
     return { path: undefined, display: query ? { kind: "generic", summary: query, detail: args } : undefined };
   }
-  if (tool === "list_files") return { path: undefined, display: { kind: "file_io", operation: "list", path: "." } };
+  if (tool === "Glob") return { path: undefined, display: { kind: "file_io", operation: "list", path: "." } };
   if (tool === "git_diff" || tool === "git_status") {
     return { path: undefined, display: { kind: "file_io", operation: "git", path: ".", detail: tool === "git_diff" ? "git diff" : "git status --short" } };
   }
@@ -1269,7 +1269,7 @@ export function listTimelineFiles(turns: TimelineTurn[]): TimelineChangedFile[] 
 
 function changedFileOperation(tool: TimelineTool): TimelineChangedFile["operation"] | undefined {
   if (tool.display?.kind === "file_io" && (tool.display.operation === "write" || tool.display.operation === "edit")) return tool.display.operation;
-  if (tool.tool === "write_file") return "write";
+  if (tool.tool === "Write") return "write";
   if (tool.tool === "edit_file") return "edit";
   return undefined;
 }

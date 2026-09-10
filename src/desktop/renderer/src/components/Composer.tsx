@@ -59,6 +59,12 @@ interface ComposerProps {
   skills: DesktopSkillCatalogEntry[];
   toolCatalog: DesktopToolCatalogEntry[];
   onSend(input: string, mode: InteractiveAgentRunMode, attachments: DesktopAttachment[], delivery?: "steer" | "followUp", idempotencyKey?: string, capabilitySelection?: AgentCapabilitySelection): Promise<void>;
+  /** 正在编辑的历史消息；nonce 变化时把 value 回填进输入框并聚焦（Alma 式编辑）。 */
+  editingMessage?: { nonce: number; value: string };
+  /** 提交编辑：原位替换该消息并重新生成回复。 */
+  onSubmitEdit(input: string): Promise<void>;
+  /** 取消编辑（横幅 X / 退出编辑态）。 */
+  onCancelEdit(): void;
   onSlashCommand(command: string): Promise<void>;
   onExpandSkillCommand(input: string): Promise<string>;
   onStop(): Promise<void>;
@@ -107,6 +113,9 @@ export const Composer = memo(function Composer({
   skills,
   toolCatalog,
   onSend,
+  editingMessage,
+  onSubmitEdit,
+  onCancelEdit,
   onSlashCommand,
   onExpandSkillCommand,
   onStop,
@@ -164,6 +173,16 @@ export const Composer = memo(function Composer({
     inputRef.current?.focus();
   }, [prefillInput]);
 
+  // 编辑模式：横幅常驻 + 新的编辑请求（nonce）到达时回填一次文本并聚焦。
+  const editing = editingMessage !== undefined;
+  const editNonce = editingMessage?.nonce;
+  useEffect(() => {
+    if (editNonce === undefined) return;
+    setInput(editingMessage?.value ?? "");
+    inputRef.current?.focus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只对新的编辑请求响应，回填取当帧闭包
+  }, [editNonce]);
+
   useEffect(() => {
     if (!running) setStopPending(false);
   }, [running]);
@@ -207,7 +226,24 @@ export const Composer = memo(function Composer({
 
   const submit = async (delivery?: "steer" | "followUp", submittedInput = input): Promise<void> => {
     const value = submittedInput.trim() || (attachments.length ? "请分析这些附件。" : "");
-    if (!project || !value || busy || submitFlightRef.current || pendingAttachments.length || memoryToggleBusy) return;
+    if (!project || !value || busy || submitFlightRef.current || sessionWriterConflict) return;
+    // 编辑模式：提交直接走「替换原消息并重新生成」，不携带附件，也不走模型切换/斜杠命令链路。
+    if (editing) {
+      submitFlightRef.current = true;
+      setBusy(true);
+      try {
+        setInput("");
+        await onSubmitEdit(value);
+      } catch (submitError) {
+        setInput(value);
+        onWarning(errorMessage(submitError));
+      } finally {
+        setBusy(false);
+        submitFlightRef.current = false;
+      }
+      return;
+    }
+    if (pendingAttachments.length || memoryToggleBusy) return;
     submitFlightRef.current = true;
     try {
       const pendingModelSwitch = modelSwitchPromiseRef.current;
@@ -443,6 +479,23 @@ export const Composer = memo(function Composer({
         void addFiles([...event.dataTransfer.files]);
       }}
     >
+      {editing ? (
+        <div className="composer-edit-banner" role="status">
+          <Icon name="edit" size={13} />
+          <span>正在编辑历史消息，发送后替换原消息并重新生成回复</span>
+          <button
+            aria-label="取消编辑"
+            onClick={() => {
+              setInput("");
+              onCancelEdit();
+            }}
+            title="取消编辑"
+            type="button"
+          >
+            <Icon name="close" size={13} />
+          </button>
+        </div>
+      ) : null}
       <ChatComposer
         className={`biny-composer${running ? " is-running" : ""}`}
         density="compact"
@@ -637,9 +690,7 @@ export const Composer = memo(function Composer({
                   <span>上下文使用量</span>
                   <strong>{usage.percent}% 已占用</strong>
                   <strong>{usage.used} / {usage.max} tokens</strong>
-                  {usage.contextWindowIsFallback ? (
-                    <span>上下文窗口未声明，当前按保守预算</span>
-                  ) : usage.reserved ? (
+                  {usage.reserved ? (
                     <span>模型窗口 {usage.window}，其中 {usage.reserved} 为输出等预留</span>
                   ) : null}
                 </span>

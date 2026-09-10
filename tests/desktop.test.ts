@@ -67,6 +67,7 @@ import { reasoningDetailText } from "../src/desktop/renderer/src/reasoningPresen
 import { projectWebSearchView } from "../src/desktop/renderer/src/webSearchPresentation.js";
 import type { TimelineTool } from "../src/desktop/renderer/src/sessionTimeline.js";
 import { catalogForConnection, customCatalogEntry, providerCatalog } from "../src/desktop/renderer/src/providerCatalog.js";
+import { stagedModelChoices } from "../src/desktop/renderer/src/components/settings/providerModelProjection.js";
 import { thinkingLabel as composerThinkingLabel } from "../src/desktop/renderer/src/components/composer/composerLabels.js";
 import { DESKTOP_COMPOSER_COMMAND_NAMES, buildDesktopComposerItems, isSkillSlashCommand, normalizeSkillSlashCommand } from "../src/desktop/renderer/src/components/composer/desktopSlashCommands.js";
 import { highlightFencedCode, highlightWorkspaceFile } from "../src/desktop/renderer/src/syntaxHighlight.js";
@@ -110,8 +111,8 @@ await testWorkspaceFilePreview();
 await testWorkspaceDirectoryListing();
 await testDesktopGitInspectionDisablesHelpers();
 await testDesktopGitBranches();
-testWorkspaceSyntaxHighlighting();
-testFencedCodeHighlighting();
+await testWorkspaceSyntaxHighlighting();
+await testFencedCodeHighlighting();
 testAttachmentReferenceRoundTrip();
 await testInlineImageReading();
 testCommandHighlighting();
@@ -150,6 +151,7 @@ await testDesktopNavigationReadsDoNotPersistSelection();
 await testDesktopSidebarListsEveryProjectSession();
 await testDesktopProjectReorder();
 testProviderCatalogResolution();
+testSettingsModelThinkingProjection();
 testComposerThinkingLabels();
 testModelChoicesDeduplicateEquivalentAliases();
 testHistoricalAbortProjection();
@@ -158,6 +160,7 @@ testMessageVersionTimelineProjection();
 testLiveRetryReplacesTargetTurn();
 testDesktopUsagePresentation();
 testHistoricalToolProjection();
+testMemoryMetadataStaysOutOfTimeline();
 testWebSearchProjection();
 testHistoricalReasoningAndSkillProjection();
 testExecutionTimelineKeepsReasoningAndToolsInOrder();
@@ -598,10 +601,10 @@ async function testPermissionRequiredToolResultIsFailed(): Promise<void> {
 
 function testPendingPermissionToolSelection(): void {
   const tools: TimelineTool[] = [
-    { id: "write-1", tool: "write_file", args: {}, status: "success", updates: [] },
+    { id: "write-1", tool: "Write", args: {}, status: "success", updates: [] },
     {
       id: "write-2",
-      tool: "write_file",
+      tool: "Write",
       args: {},
       status: "running",
       updates: [],
@@ -610,7 +613,7 @@ function testPendingPermissionToolSelection(): void {
         resolved: false,
         request: {
           toolCallId: "write-2",
-          tool: "write_file",
+          tool: "Write",
           title: "Allow write",
           details: "Write another file",
           requireFullYes: true,
@@ -622,8 +625,8 @@ function testPendingPermissionToolSelection(): void {
   ];
   assert.equal(activeTimelineTool(tools)?.id, "write-2");
   assert.deepEqual(timelineToolEntries(tools).map((entry) => [entry.key, entry.label]), [
-    ["write-1", "write_file 1"],
-    ["write-2", "write_file 2 · 待授权"]
+    ["write-1", "Write 1"],
+    ["write-2", "Write 2 · 待授权"]
   ]);
 }
 
@@ -1232,20 +1235,21 @@ async function testDesktopGitBranches(): Promise<void> {
   }
 }
 
-function testWorkspaceSyntaxHighlighting(): void {
-  const highlighted = highlightWorkspaceFile("src/index.ts", "const answer: number = 42;\n");
+async function testWorkspaceSyntaxHighlighting(): Promise<void> {
+  const highlighted = await highlightWorkspaceFile("src/index.ts", "const answer: number = 42;\n");
   assert.equal(highlighted.language, "typescript");
-  assert.match(highlighted.html, /hljs-keyword/);
-  assert.match(highlighted.html, /hljs-number/);
+  // shiki 双主题：明暗两组颜色都以 CSS 变量输出，主题切换由全局 .shiki 规则完成
+  assert.match(highlighted.html, /--shiki-light/);
+  assert.match(highlighted.html, /--shiki-dark/);
 }
 
-function testFencedCodeHighlighting(): void {
-  const typescript = highlightFencedCode("const answer: number = 42;", "ts");
+async function testFencedCodeHighlighting(): Promise<void> {
+  const typescript = await highlightFencedCode("const answer: number = 42;", "ts");
   assert.equal(typescript.language, "typescript");
-  assert.match(typescript.html, /hljs-keyword/);
+  assert.match(typescript.html, /--shiki-light/);
 
   // 认不出的语言标注不高亮，但仍然要转义后交出去。
-  const unknown = highlightFencedCode("<script>alert(1)</script>", "brainfuck");
+  const unknown = await highlightFencedCode("<script>alert(1)</script>", "brainfuck");
   assert.equal(unknown.language, undefined);
   assert.equal(unknown.html, "&lt;script&gt;alert(1)&lt;/script&gt;");
 }
@@ -1262,7 +1266,7 @@ function testAttachmentReferenceRoundTrip(): void {
 
   // 没有附件块，以及格式对不上的历史消息，都要原样返回。
   assert.deepEqual(splitAttachmentReferences("普通消息"), { text: "普通消息", attachments: [] });
-  const malformed = "普通消息\n\nAttached files (read them with read_file using these @attachments/ paths):\n- 说明文字";
+  const malformed = "普通消息\n\nAttached files (read them with Read using these @attachments/ paths):\n- 说明文字";
   assert.deepEqual(splitAttachmentReferences(malformed), { text: malformed, attachments: [] });
 }
 
@@ -2087,6 +2091,7 @@ async function testDesktopModelConfiguration(): Promise<void> {
           modelProfile: {
             contextWindow: 512_000,
             maxInputTokens: 480_000,
+            maxOutputTokens: 96_000,
             thinkingLevelMap: { off: "none", high: "gateway-high" }
           }
         }],
@@ -2101,6 +2106,7 @@ async function testDesktopModelConfiguration(): Promise<void> {
       "deepseek-v4-flash": {
         contextWindow: 512_000,
         maxInputTokens: 480_000,
+        maxOutputTokens: 96_000,
         thinkingLevelMap: { off: "none", high: "gateway-high" }
       }
     });
@@ -3293,21 +3299,63 @@ function testProviderCatalogResolution(): void {
   assert.equal(custom.models.length, 0);
 
   // Known vendors still resolve, and the saved endpoint disambiguates two
-  // catalog entries that share a hostname.
-  assert.equal(catalogForConnection({ provider: "api-x-ai", providerType: "openai-compatible" })?.id, "xai");
+  // catalog entries that share a hostname. Vendors outside the trimmed
+  // mainstream catalog must resolve to undefined instead of a wrong vendor.
+  assert.equal(catalogForConnection({ provider: "api-x-ai", providerType: "openai-compatible" }), undefined);
   const codex = catalogForConnection({ provider: "openai-codex", providerType: "openai-codex" });
   assert.deepEqual(codex?.models.map((model) => model.id), openAiCodexCatalogModels.map((model) => model.id));
   assert.equal(
     catalogForConnection({ provider: "api-z-ai", providerType: "openai-compatible" }, "https://api.z.ai/api/coding/paas/v4")?.id,
     "zai-coding-plan"
   );
-  assert.equal(
-    catalogForConnection({ provider: "api-z-ai", providerType: "openai-compatible" }, "https://api.z.ai/api/paas/v4")?.id,
-    "zai"
-  );
+  assert.equal(catalogForConnection({ provider: "zai", providerType: "zai" })?.id, "zai");
   const deepseekSeed = providerCatalog.find((provider) => provider.id === "deepseek")?.models[0];
   assert.equal(deepseekSeed?.contextWindow, 1_000_000);
   assert.deepEqual(deepseekSeed?.thinkingLevelMap, { off: "none", high: "high", max: "max" });
+}
+
+function testSettingsModelThinkingProjection(): void {
+  const saved = {
+    alias: "deepseek-v4-flash",
+    displayName: "DeepSeek V4 Flash",
+    provider: "deepseek",
+    providerType: "deepseek",
+    model: "deepseek-v4-flash",
+    modelKey: "deepseek\u0000deepseek-v4-flash",
+    capabilities: { tools: true, reasoning: false, reasoningStream: false, reasoningSummary: false, vision: false, audio: false, streaming: true },
+    efforts: ["high", "max"] as const,
+    defaultThinking: "high" as const,
+    thinkingLevelMap: { off: "none", high: "high", max: "max" },
+    available: true,
+    source: "configured" as const
+  };
+  const healed = stagedModelChoices([saved], [], [], {})[0];
+  assert.deepEqual(healed?.thinkingLevelMap, {
+    off: "none",
+    minimal: "high",
+    low: "high",
+    medium: "high",
+    high: "high",
+    xhigh: "max",
+    max: "max"
+  });
+  assert.deepEqual(healed?.efforts, ["minimal", "low", "medium", "high", "xhigh", "max"]);
+
+  const explicit = stagedModelChoices([saved], [], [], {
+    deepseek: {
+      "deepseek-v4-flash": {
+        contextWindow: 512_000,
+        maxInputTokens: 480_000,
+        maxOutputTokens: 96_000,
+        thinkingLevelMap: { off: "none", high: "gateway-high", max: "gateway-max" }
+      }
+    }
+  })[0];
+  assert.deepEqual(explicit?.thinkingLevelMap, { off: "none", high: "gateway-high", max: "gateway-max" });
+  assert.equal(explicit?.contextWindow, 512_000);
+  assert.equal(explicit?.maxInputTokens, 480_000);
+  assert.equal(explicit?.maxOutputTokens, 96_000);
+  assert.equal(explicit?.contextWindowIsFallback, false);
 }
 
 function testComposerThinkingLabels(): void {
@@ -3332,15 +3380,12 @@ function testModelChoicesDeduplicateEquivalentAliases(): void {
   assert.deepEqual(listModelChoices(config).map((model) => model.alias), [
     "deepseek-v4-flash",
     "deepseek-v4-pro",
-    "deepseek/deepseek-chat",
-    "deepseek/deepseek-reasoner"
+    "deepseek/deepseek-v4-flash-vision-exp"
   ]);
   assert.deepEqual(listConfiguredModelChoices(config).map((model) => model.alias), [
     "deepseek-v4-flash",
     "deepseek-v4-pro"
   ]);
-  assert.equal(listModelChoices(config).find((model) => model.alias === "deepseek/deepseek-chat")?.showInPicker, false);
-  assert.equal(listModelChoices(config).find((model) => model.alias === "deepseek/deepseek-reasoner")?.showInPicker, false);
   assert.deepEqual(listPickerModelChoices(config).map((model) => model.alias), [
     "deepseek-v4-flash",
     "deepseek-v4-pro"
@@ -3384,7 +3429,12 @@ function testModelChoicesDeduplicateEquivalentAliases(): void {
     "opencode-ai-minimax-m3"
   ]);
   assert.equal(multiProviderChoices.find((model) => model.alias === "opencode-ai-minimax-m3")?.capabilities?.reasoning, true);
-  assert.deepEqual(multiProviderChoices.find((model) => model.alias === "opencode-ai-minimax-m3")?.efforts, ["high", "max"]);
+  // minimax 事实已随精简退出 models.dev 快照；这里退化为按模型 ID 家族推断的档位，
+  // 并按原生值去重后只保留 high/max 两个代表档位。
+  assert.deepEqual(multiProviderChoices.find((model) => model.alias === "opencode-ai-minimax-m3")?.efforts, [
+    "high",
+    "max"
+  ]);
   assert.equal(multiProviderChoices.find((model) => model.alias === "opencode-ai-minimax-m3")?.defaultThinking, "high");
   assert.equal(multiProviderChoices.some((model) => model.alias === "opencode-ai/minimax-m2.7"), false);
   const configuredCatalogModel: ModelCatalogEntry = { ...catalogModel, id: "minimax-m3", displayName: "MiniMax-M3" };
@@ -3400,8 +3450,8 @@ function testModelChoicesDeduplicateEquivalentAliases(): void {
 function testHistoricalAbortProjection(): void {
   const events: SessionEvent[] = [
     { type: "user_message", content: "sleep", time: "2026-01-01T00:00:00.000Z" },
-    { type: "tool_call", tool: "run_command", args: { command: "sleep 20" }, toolCallId: "tool-1", sequence: 1 },
-    { type: "tool_result", tool: "run_command", result: { stdout: "", stderr: "Command interrupted.", exitCode: 1 }, toolCallId: "tool-1", sequence: 1 },
+    { type: "tool_call", tool: "Bash", args: { command: "sleep 20" }, toolCallId: "tool-1", sequence: 1 },
+    { type: "tool_result", tool: "Bash", result: { stdout: "", stderr: "Command interrupted.", exitCode: 1 }, toolCallId: "tool-1", sequence: 1 },
     { type: "error", message: "This operation was aborted" }
   ];
   const timeline = buildSessionTimeline(events, []);
@@ -3662,11 +3712,36 @@ function testDesktopUsagePresentation(): void {
 function testHistoricalToolProjection(): void {
   const timeline = buildSessionTimeline([
     { type: "user_message", content: "read" },
-    { type: "tool_call", tool: "read_file", args: { path: "src/index.ts" }, toolCallId: "tool" },
-    { type: "tool_result", tool: "read_file", result: { path: "src/index.ts", content: "hello" }, toolCallId: "tool" }
+    { type: "tool_call", tool: "Read", args: { path: "src/index.ts" }, toolCallId: "tool" },
+    { type: "tool_result", tool: "Read", result: { path: "src/index.ts", content: "hello" }, toolCallId: "tool" }
   ], []);
   assert.equal(timeline[0]?.tools[0]?.path, "src/index.ts");
   assert.deepEqual(timeline[0]?.tools[0]?.display, { kind: "file_io", operation: "read", path: "src/index.ts" });
+}
+
+/** 自动记忆属于后台元数据，不应制造聊天轮次或时间线步骤。 */
+function testMemoryMetadataStaysOutOfTimeline(): void {
+  const timeline = buildSessionTimeline([
+    { type: "user_message", content: "记住我喜欢简短回答" },
+    { type: "assistant_message", content: "好，我记住了" },
+    {
+      type: "message_metadata",
+      messageId: "assistant-1",
+      metadata: {
+        memoryExtracted: true,
+        createdMemories: [{ id: "memory-1", content: "用户偏好简短回答" }],
+        deletedMemories: []
+      }
+    },
+    { type: "user_message", content: "继续" },
+    { type: "assistant_message", content: "继续处理" }
+  ], []);
+
+  assert.deepEqual(timeline.map((turn) => [turn.user, turn.assistant]), [
+    ["记住我喜欢简短回答", "好，我记住了"],
+    ["继续", "继续处理"]
+  ]);
+  assert.equal(JSON.stringify(timeline).includes("memory-1"), false);
 }
 
 function testWebSearchProjection(): void {
@@ -3683,8 +3758,8 @@ function testWebSearchProjection(): void {
   };
   const timeline = buildSessionTimeline([
     { type: "user_message", content: "查天气" },
-    { type: "tool_call", tool: "web_search", args: { query: "Chicago weather" }, toolCallId: "search" },
-    { type: "tool_result", tool: "web_search", result: searchResult, toolCallId: "search" }
+    { type: "tool_call", tool: "WebSearch", args: { query: "Chicago weather" }, toolCallId: "search" },
+    { type: "tool_result", tool: "WebSearch", result: searchResult, toolCallId: "search" }
   ], []);
   const tool = timeline[0]?.tools[0];
   assert.equal(tool?.status, "success");
@@ -3719,9 +3794,9 @@ function testWebSearchProjection(): void {
 function testHistoricalReasoningAndSkillProjection(): void {
   const timeline = buildSessionTimeline([
     { type: "user_message", content: "explain", skills: [".agent/skills/programmatic-tools/SKILL.md"], time: "2026-01-01T00:00:00.000Z" },
-    { type: "tool_call", tool: "invoke_skill", args: { skill: "programmatic-tools" }, toolCallId: "skill", time: "2026-01-01T00:00:00.500Z" },
-    { type: "tool_result", tool: "invoke_skill", result: { instructions: "Use tools." }, toolCallId: "skill", time: "2026-01-01T00:00:00.750Z" },
-    { type: "tool_call", tool: "run_command", args: { command: "pwd" }, reasoningContent: "先确认当前工作目录。", time: "2026-01-01T00:00:01.000Z" },
+    { type: "tool_call", tool: "Skill", args: { skill: "programmatic-tools" }, toolCallId: "skill", time: "2026-01-01T00:00:00.500Z" },
+    { type: "tool_result", tool: "Skill", result: { instructions: "Use tools." }, toolCallId: "skill", time: "2026-01-01T00:00:00.750Z" },
+    { type: "tool_call", tool: "Bash", args: { command: "pwd" }, reasoningContent: "先确认当前工作目录。", time: "2026-01-01T00:00:01.000Z" },
     { type: "assistant_message", content: "done", reasoningContent: "然后整理结果。", time: "2026-01-01T00:00:02.512Z" }
   ], []);
   assert.deepEqual(timeline[0]?.skills, ["programmatic-tools"]);
@@ -3732,10 +3807,10 @@ function testHistoricalReasoningAndSkillProjection(): void {
 function testExecutionTimelineKeepsReasoningAndToolsInOrder(): void {
   const timeline = buildSessionTimeline([
     { type: "user_message", content: "inspect and test" },
-    { type: "tool_call", tool: "read_file", args: { path: "src/index.ts" }, toolCallId: "read", assistantContent: "先检查入口。", reasoningContent: "先确认入口文件。" },
-    { type: "tool_result", tool: "read_file", result: { path: "src/index.ts" }, toolCallId: "read" },
-    { type: "tool_call", tool: "run_command", args: { command: "pnpm test" }, toolCallId: "test", assistantContent: "再运行测试。", reasoningContent: "根据入口继续验证。" },
-    { type: "tool_result", tool: "run_command", result: { exitCode: 0 }, toolCallId: "test" },
+    { type: "tool_call", tool: "Read", args: { path: "src/index.ts" }, toolCallId: "read", assistantContent: "先检查入口。", reasoningContent: "先确认入口文件。" },
+    { type: "tool_result", tool: "Read", result: { path: "src/index.ts" }, toolCallId: "read" },
+    { type: "tool_call", tool: "Bash", args: { command: "pnpm test" }, toolCallId: "test", assistantContent: "再运行测试。", reasoningContent: "根据入口继续验证。" },
+    { type: "tool_result", tool: "Bash", result: { exitCode: 0 }, toolCallId: "test" },
     { type: "assistant_message", content: "完成。", reasoningContent: "最后整理结果。" }
   ], []);
   const turn = timeline[0];
@@ -3757,13 +3832,13 @@ function testLiveExecutionTimelineKeepsReasoningAndToolsInOrder(): void {
     { ...base, type: "reasoning.started", phase: "initial" },
     { ...base, timestamp: "2026-01-01T00:00:01.000Z", type: "reasoning.delta", content: "先检查入口。" },
     { ...base, timestamp: "2026-01-01T00:00:02.000Z", type: "reasoning.completed" },
-    { ...base, timestamp: "2026-01-01T00:00:03.000Z", type: "tool.started", toolCallId: "read", tool: "read_file", args: { path: "src/index.ts" } },
-    { ...base, timestamp: "2026-01-01T00:00:04.000Z", type: "tool.completed", toolCallId: "read", tool: "read_file", result: {}, durationMs: 1_000 },
+    { ...base, timestamp: "2026-01-01T00:00:03.000Z", type: "tool.started", toolCallId: "read", tool: "Read", args: { path: "src/index.ts" } },
+    { ...base, timestamp: "2026-01-01T00:00:04.000Z", type: "tool.completed", toolCallId: "read", tool: "Read", result: {}, durationMs: 1_000 },
     { ...base, timestamp: "2026-01-01T00:00:05.000Z", type: "reasoning.started", phase: "continuing" },
     { ...base, timestamp: "2026-01-01T00:00:06.000Z", type: "reasoning.delta", content: "再运行测试。" },
     { ...base, timestamp: "2026-01-01T00:00:07.000Z", type: "reasoning.completed" },
-    { ...base, timestamp: "2026-01-01T00:00:08.000Z", type: "tool.started", toolCallId: "test", tool: "run_command", args: { command: "pnpm test" } },
-    { ...base, timestamp: "2026-01-01T00:00:09.000Z", type: "tool.completed", toolCallId: "test", tool: "run_command", result: {}, durationMs: 1_000 },
+    { ...base, timestamp: "2026-01-01T00:00:08.000Z", type: "tool.started", toolCallId: "test", tool: "Bash", args: { command: "pnpm test" } },
+    { ...base, timestamp: "2026-01-01T00:00:09.000Z", type: "tool.completed", toolCallId: "test", tool: "Bash", result: {}, durationMs: 1_000 },
     { ...base, timestamp: "2026-01-01T00:00:10.000Z", type: "assistant.delta", content: "完成。" },
     { ...base, timestamp: "2026-01-01T00:00:11.000Z", type: "assistant.completed", content: "完成。" },
     { ...base, timestamp: "2026-01-01T00:00:12.000Z", type: "run.completed", durationMs: 12_000 }
@@ -3837,15 +3912,15 @@ function testChangedFileProjection(): void {
   const base = { sessionId: "session", runId: "write-run", timestamp: "2026-01-01T00:00:00.000Z" };
   const started = buildSessionTimeline([], [
     { ...base, type: "message.user", messageId: "message", content: "write" },
-    { ...base, type: "tool.started", toolCallId: "write-tool", tool: "write_file", args: { path: "hello.py" }, display: { kind: "file_io", operation: "write", path: "hello.py" } }
+    { ...base, type: "tool.started", toolCallId: "write-tool", tool: "Write", args: { path: "hello.py" }, display: { kind: "file_io", operation: "write", path: "hello.py" } }
   ]);
   assert.equal(started[0]?.tools[0]?.path, "hello.py");
   assert.deepEqual(listChangedFiles(started[0]!), [{ path: "hello.py", operation: "write", status: "writing" }]);
 
   const completed = buildSessionTimeline([], [
     { ...base, type: "message.user", messageId: "message", content: "write" },
-    { ...base, type: "tool.started", toolCallId: "write-tool", tool: "write_file", args: { path: "hello.py" }, display: { kind: "file_io", operation: "write", path: "hello.py" } },
-    { ...base, type: "tool.completed", toolCallId: "write-tool", tool: "write_file", result: { path: "hello.py" }, durationMs: 10 }
+    { ...base, type: "tool.started", toolCallId: "write-tool", tool: "Write", args: { path: "hello.py" }, display: { kind: "file_io", operation: "write", path: "hello.py" } },
+    { ...base, type: "tool.completed", toolCallId: "write-tool", tool: "Write", result: { path: "hello.py" }, durationMs: 10 }
   ]);
   assert.deepEqual(listChangedFiles(completed[0]!), [{ path: "hello.py", operation: "write", status: "completed" }]);
 
@@ -3873,10 +3948,10 @@ function testLiveTimelineProjection(): void {
 
   const successfulCommand = buildSessionTimeline([], [
     { ...base, runId: "successful-command", type: "message.user", messageId: "command-message", content: "run" },
-    { ...base, runId: "successful-command", type: "tool.started", toolCallId: "command", tool: "run_command", args: { command: "pnpm test" }, display: { kind: "command", command: "pnpm test", cwd: "/workspace" } },
-    { ...base, runId: "successful-command", type: "tool.progress", toolCallId: "command", tool: "run_command", update: { kind: "stdout", text: "passed\n" } },
-    { ...base, runId: "successful-command", type: "tool.progress", toolCallId: "command", tool: "run_command", update: { kind: "stderr", text: "warning\n" } },
-    { ...base, runId: "successful-command", type: "tool.completed", toolCallId: "command", tool: "run_command", result: { exitCode: 0 }, durationMs: 8 }
+    { ...base, runId: "successful-command", type: "tool.started", toolCallId: "command", tool: "Bash", args: { command: "pnpm test" }, display: { kind: "command", command: "pnpm test", cwd: "/workspace" } },
+    { ...base, runId: "successful-command", type: "tool.progress", toolCallId: "command", tool: "Bash", update: { kind: "stdout", text: "passed\n" } },
+    { ...base, runId: "successful-command", type: "tool.progress", toolCallId: "command", tool: "Bash", update: { kind: "stderr", text: "warning\n" } },
+    { ...base, runId: "successful-command", type: "tool.completed", toolCallId: "command", tool: "Bash", result: { exitCode: 0 }, durationMs: 8 }
   ]);
   assert.deepEqual(successfulCommand[0]?.tools[0]?.command, {
     command: "pnpm test",
@@ -3888,15 +3963,15 @@ function testLiveTimelineProjection(): void {
 
   const failedCommand = buildSessionTimeline([], [
     { ...base, runId: "failed-command", type: "message.user", messageId: "command-message", content: "run" },
-    { ...base, runId: "failed-command", type: "tool.started", toolCallId: "command", tool: "run_command", args: { command: "false" }, display: { kind: "command", command: "false" } },
-    { ...base, runId: "failed-command", type: "tool.failed", toolCallId: "command", tool: "run_command", result: { exitCode: 1 }, error: "Command exited with code 1.", durationMs: 8 }
+    { ...base, runId: "failed-command", type: "tool.started", toolCallId: "command", tool: "Bash", args: { command: "false" }, display: { kind: "command", command: "false" } },
+    { ...base, runId: "failed-command", type: "tool.failed", toolCallId: "command", tool: "Bash", result: { exitCode: 1 }, error: "Command exited with code 1.", durationMs: 8 }
   ]);
   assert.equal(failedCommand[0]?.tools[0]?.status, "failed");
 
   const typedFailure = buildSessionTimeline([], [
     { ...base, runId: "typed-failure", type: "message.user", messageId: "typed-message", content: "run" },
-    { ...base, runId: "typed-failure", type: "tool.started", toolCallId: "typed-command", tool: "run_command", args: { command: "false" }, display: { kind: "command", command: "false" } },
-    { ...base, runId: "typed-failure", type: "tool.failed", toolCallId: "typed-command", tool: "run_command", result: { status: "failed", exitCode: 1 }, error: "Command exited with code 1.", durationMs: 8 },
+    { ...base, runId: "typed-failure", type: "tool.started", toolCallId: "typed-command", tool: "Bash", args: { command: "false" }, display: { kind: "command", command: "false" } },
+    { ...base, runId: "typed-failure", type: "tool.failed", toolCallId: "typed-command", tool: "Bash", result: { status: "failed", exitCode: 1 }, error: "Command exited with code 1.", durationMs: 8 },
     { ...base, runId: "typed-failure", type: "run.incomplete", durationMs: 30, reason: "Step limit reached.", stopReason: "step_limit", finishReason: "tool-calls", steps: 8 }
   ]);
   assert.equal(typedFailure[0]?.tools[0]?.status, "failed");
@@ -3986,8 +4061,8 @@ function testLiveReasoningAndSkillProjection(): void {
       model: { alias: "test", provider: "test", label: "test/model", reasoning: "High" },
       skills: [".agent/skills/programmatic-tools/SKILL.md"]
     },
-    { sessionId: "session", runId: "reasoning-run", timestamp: "2026-01-01T00:00:00.500Z", type: "tool.started", toolCallId: "skill", tool: "invoke_skill", args: { skill: "programmatic-tools" } },
-    { sessionId: "session", runId: "reasoning-run", timestamp: "2026-01-01T00:00:00.750Z", type: "tool.completed", toolCallId: "skill", tool: "invoke_skill", result: { instructions: "Use tools." } },
+    { sessionId: "session", runId: "reasoning-run", timestamp: "2026-01-01T00:00:00.500Z", type: "tool.started", toolCallId: "skill", tool: "Skill", args: { skill: "programmatic-tools" } },
+    { sessionId: "session", runId: "reasoning-run", timestamp: "2026-01-01T00:00:00.750Z", type: "tool.completed", toolCallId: "skill", tool: "Skill", result: { instructions: "Use tools." } },
     { sessionId: "session", runId: "reasoning-run", timestamp: "2026-01-01T00:00:01.000Z", type: "reasoning.started", phase: "initial" },
     { sessionId: "session", runId: "reasoning-run", timestamp: "2026-01-01T00:00:02.512Z", type: "reasoning.delta", content: "先拆分问题。" },
     { sessionId: "session", runId: "reasoning-run", timestamp: "2026-01-01T00:00:02.512Z", type: "reasoning.completed" },
@@ -4001,7 +4076,9 @@ function testLiveReasoningAndSkillProjection(): void {
 
 function testReasoningDetailDoesNotUseCompletionStatusAsContent(): void {
   assert.equal(reasoningDetailText({ content: "  先检查入口。  " }), "先检查入口。");
-  assert.equal(reasoningDetailText({ content: "" }), "该模型未返回可展示的思考内容");
+  // 模型没回传思考内容时返回空串，由展示层折叠成纯状态行，不渲染占位句。
+  assert.equal(reasoningDetailText({ content: "" }), "");
+  assert.equal(reasoningDetailText({ content: "   " }), "");
 }
 
 function testDesktopNavigationHistory(): void {
@@ -4054,7 +4131,7 @@ function fakeCommandRuntime(requireFullYes = false, statusGate?: Promise<void>):
   };
   const request = {
     toolCallId: "tool-1",
-    tool: "write_file",
+    tool: "Write",
     title: "Allow write",
     details: "Write a file",
     requireFullYes,
@@ -4139,7 +4216,7 @@ function fakeCommandRuntime(requireFullYes = false, statusGate?: Promise<void>):
       yield {
         type: "tool.started",
         toolCallId: "tool-1",
-        tool: "write_file",
+        tool: "Write",
         args: {
           path: "a.ts",
           apiKey: secretProbe ? "opaque-live-tool-secret" : undefined,
@@ -4162,12 +4239,12 @@ function fakeCommandRuntime(requireFullYes = false, statusGate?: Promise<void>):
         yield {
           type: "tool.failed",
           toolCallId: "tool-1",
-          tool: "write_file",
+          tool: "Write",
           error: "The target changed after approval.",
           result: output
         };
       } else {
-        yield { type: "tool.completed", toolCallId: "tool-1", tool: "write_file", result: output };
+        yield { type: "tool.completed", toolCallId: "tool-1", tool: "Write", result: output };
       }
       yield { type: "assistant.delta", content: secretProbe ? "password=opaque-live-tool-secret" : "done" };
       const content = secretProbe ? "Authorization: Bearer opaque-live-tool-secret" : "done";

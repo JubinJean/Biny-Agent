@@ -42,13 +42,13 @@ interface ToolPresentation {
 
 /** 内置工具的展示映射；键为工具注册名。 */
 const TOOL_PRESENTATIONS: Record<string, ToolPresentation> = {
-  web_fetch: { group: "web", label: "网络获取", detail: "抓取 URL 的原始内容。", icon: "site" },
-  web_search: { group: "web", label: "网络搜索", detail: "在网上搜索最新信息。", icon: "search" },
-  read_file: { group: "workspace", label: "读取文件", detail: "读取文件内容以获取上下文。", icon: "file" },
-  list_files: { group: "workspace", label: "列出文件", detail: "按 glob 模式列出匹配的文件。", icon: "folder-open" },
-  search_files: { group: "workspace", label: "搜索文件", detail: "在工作区文件中搜索文本。", icon: "search" },
+  WebFetch: { group: "web", label: "网络获取", detail: "抓取 URL 的原始内容。", icon: "site" },
+  WebSearch: { group: "web", label: "网络搜索", detail: "在网上搜索最新信息。", icon: "search" },
+  Read: { group: "workspace", label: "读取文件", detail: "读取文件内容以获取上下文。", icon: "file" },
+  Glob: { group: "workspace", label: "列出文件", detail: "按 glob 模式列出匹配的文件。", icon: "folder-open" },
+  Grep: { group: "workspace", label: "搜索文件", detail: "在工作区文件中搜索文本。", icon: "search" },
   read_tool_result: { group: "workspace", label: "读取工具输出", detail: "分页读取归档的工具输出。", icon: "archive" },
-  write_file: { group: "workspace", label: "写入文件", detail: "用提供的内容覆盖文件。", icon: "edit" },
+  Write: { group: "workspace", label: "写入文件", detail: "用提供的内容覆盖文件。", icon: "edit" },
   edit_file: { group: "workspace", label: "编辑文件", detail: "精确替换文件中的文本片段。", icon: "edit" },
   multi_edit: { group: "workspace", label: "多处编辑", detail: "在一次修改里应用多个替换。", icon: "edit" },
   apply_patch: { group: "workspace", label: "补丁编辑", detail: "应用结构化补丁修改文件。", icon: "diff" },
@@ -57,14 +57,14 @@ const TOOL_PRESENTATIONS: Record<string, ToolPresentation> = {
   git_status: { group: "workspace", label: "Git 状态", detail: "查看工作区变更状态。", icon: "branch" },
   git_diff: { group: "workspace", label: "Git 差异", detail: "查看文件差异。", icon: "diff" },
   git_commit: { group: "workspace", label: "Git 提交", detail: "提交暂存的变更。", icon: "check" },
-  run_command: { group: "shell", label: "执行命令", detail: "在工作区执行 Shell 命令。", icon: "terminal" },
+  Bash: { group: "shell", label: "执行命令", detail: "在工作区执行 Shell 命令。", icon: "terminal" },
   start_process: { group: "shell", label: "启动进程", detail: "启动由 Biny 托管的长驻进程。", icon: "terminal" },
   read_process_output: { group: "shell", label: "读取进程输出", detail: "读取托管进程的日志输出。", icon: "archive" },
   process_status: { group: "shell", label: "进程状态", detail: "查看托管进程的运行状态。", icon: "activity" },
   stop_process: { group: "shell", label: "停止进程", detail: "停止托管进程组。", icon: "close" },
-  update_todos: { group: "planning", label: "待办同步", detail: "执行计划时更新共享待办列表。", icon: "list-tree" },
-  delegate_task: { group: "planning", label: "任务委派", detail: "启动子代理处理多步骤任务。", icon: "person" },
-  invoke_skill: { group: "planning", label: "技能调用", detail: "调用已启用的技能或工作流。", icon: "wand" },
+  TodoWrite: { group: "planning", label: "待办同步", detail: "执行计划时更新共享待办列表。", icon: "list-tree" },
+  Task: { group: "planning", label: "任务委派", detail: "启动子代理处理多步骤任务。", icon: "person" },
+  Skill: { group: "planning", label: "技能调用", detail: "调用已启用的技能或工作流。", icon: "wand" },
   read_skill_resource: { group: "planning", label: "读取技能资源", detail: "读取技能附带的资源文件。", icon: "file" },
   save_memory: { group: "memory", label: "保存记忆", detail: "把值得记住的信息写入记忆。", icon: "brain" },
   recall_memory: { group: "memory", label: "召回记忆", detail: "按语义检索历史记忆。", icon: "brain" },
@@ -85,7 +85,8 @@ const SOURCE_GROUPS: Record<Exclude<DesktopToolCatalogEntry["source"], "mcp">, {
 
 const skillSourceLabels: Record<DesktopSkillCatalogEntry["source"], string> = {
   agents: "外部 Agent 技能",
-  biny: "Biny 技能"
+  biny: "Biny 技能",
+  builtin: "Biny 内置技能"
 };
 
 const AUTO_DESCRIPTIONS: Record<CapabilityTab, string> = {

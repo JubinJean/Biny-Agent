@@ -27,11 +27,9 @@ import { ThinkingBlock } from "./chat/ThinkingBlock.js";
 import { ExecutionGroup, type ExecutionGroupStep } from "./chat/ExecutionGroup.js";
 import { ChangesSummary } from "./chat/ChangesSummary.js";
 import { RunErrorCard, RunErrorRow } from "./chat/RunErrorCard.js";
-import { pickThinkingMessage } from "../thinkingMessages.js";
 
 interface MessageTimelineProps {
   projectId: string;
-  sessionId?: string;
   turns: TimelineTurn[];
   pendingUserMessage?: PendingUserMessage;
   onPreviewFile(path: string): void;
@@ -40,7 +38,10 @@ interface MessageTimelineProps {
   thinking: boolean;
   onRetry(targetMessageId: string, input: string, idempotencyKey: string): Promise<void>;
   onSwitchVersion(messageId: string, direction: "prev" | "next"): Promise<void>;
-  onEditUserMessage(input: string, userMessageIndex: number, idempotencyKey: string): Promise<void>;
+  /** 点「编辑」：把消息文本交给底部输入框（Alma 式编辑），提交由 Composer 走 App 回调。 */
+  onEditRequest(turn: TimelineTurn): void;
+  /** 进行中的编辑重写：App 提交时置位，替换回合出现后由 App 清除。 */
+  editInFlight?: { turnId: string; user: string; userMessageIndex?: number };
   onCreateBranch(): void;
   onRollbackFiles(turn: TimelineTurn): void;
   onDeleteUserMessage(turnId: string): void;
@@ -61,36 +62,10 @@ interface OptimisticRewrite {
   settled: boolean;
 }
 
-export const MessageTimeline = memo(function MessageTimeline({ projectId, sessionId, turns, pendingUserMessage, onPreviewFile, onOpenExternal, onResolvePermission, thinking, onRetry, onSwitchVersion, onEditUserMessage, onCreateBranch, onRollbackFiles, onDeleteUserMessage }: MessageTimelineProps): React.JSX.Element {
-  const [editing, setEditing] = useState<{ turnId: string; value: string; userMessageIndex: number }>();
-  // 重试/重写会先把目标之后的消息从视图中撤掉，再等待新回合流入；这里保留同样的
-  // 乐观投影。持久化仍由 App/Runtime 负责，组件只在请求尚未完成时负责视觉上的覆盖。
+export const MessageTimeline = memo(function MessageTimeline({ projectId, turns, pendingUserMessage, onPreviewFile, onOpenExternal, onResolvePermission, thinking, onRetry, onSwitchVersion, onEditRequest, editInFlight, onCreateBranch, onRollbackFiles, onDeleteUserMessage }: MessageTimelineProps): React.JSX.Element {
+  // 重试会先把目标之后的消息从视图中撤掉，再等待新回合流入；这里保留同样的乐观投影。
+  // 编辑的重写投影来自 App（editInFlight），提交入口在底部输入框，不经过本组件状态。
   const [optimisticRewrite, setOptimisticRewrite] = useState<OptimisticRewrite>();
-  const [rewriteThinkingMessage] = useState(() => pickThinkingMessage());
-  // 供稳定回调读取最新编辑状态：submitEditing 若直接依赖 editing，每次击键都会得到新引用，
-  // 进而让所有 Turn 的 memo 失效。用 ref 读取后，回调引用在整个编辑过程保持稳定。
-  const editingRef = useRef(editing);
-  useEffect(() => {
-    editingRef.current = editing;
-  }, [editing]);
-
-  // 这些回调作为 prop 传给被 React.memo 包裹的 Turn，必须保持引用稳定：流式期间父组件每帧
-  // 重渲染，只有回调与 turn 引用都稳定，没有变化的轮次才会被 memo 跳过。
-  const startEditing = useCallback((turn: TimelineTurn): void => {
-    if (turn.userMessageIndex === undefined) return;
-    // 编辑框里只放用户真正输入的那部分；附件清单是发送时补的，重发也带不回原来的附件。
-    setEditing({ turnId: turn.id, value: splitAttachmentReferences(turn.user).text, userMessageIndex: turn.userMessageIndex });
-  }, []);
-
-  const cancelEditing = useCallback((): void => {
-    setEditing(undefined);
-    setOptimisticRewrite(undefined);
-  }, []);
-
-  const changeEditing = useCallback((value: string): void => {
-    // 只有正在被编辑的那一轮会渲染输入框并触发 onChange，无需再按 turnId 过滤。
-    setEditing((current) => current ? { ...current, value } : current);
-  }, []);
 
   const startOptimisticRewrite = useCallback((turn: TimelineTurn, mode: OptimisticRewrite["mode"], user = turn.user): void => {
     setOptimisticRewrite({
@@ -110,44 +85,22 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
     });
   }, []);
 
-  const submitEditing = useCallback(async (): Promise<void> => {
-    const current = editingRef.current;
-    if (!current || !sessionId) return;
-    startOptimisticRewrite({
-      id: current.turnId,
-      user: current.value,
-      assistant: "",
-      reasoning: "",
-      skills: [],
-      status: "running",
-      tools: [],
-      steps: [],
-      userMessageIndex: current.userMessageIndex
-    }, "edit", current.value);
-    try {
-      await onEditUserMessage(current.value, current.userMessageIndex, globalThis.crypto.randomUUID());
-      settleOptimisticRewrite(current.turnId, true);
-      setEditing(undefined);
-    } catch (error) {
-      settleOptimisticRewrite(current.turnId, false);
-      throw error;
-    }
-  }, [onEditUserMessage, sessionId, settleOptimisticRewrite, startOptimisticRewrite]);
+  // 编辑投影与重试投影共用同一套渲染；编辑投影的清除（替换回合已出现）由 App 负责。
+  const rewrite: OptimisticRewrite | undefined = useMemo(
+    () => optimisticRewrite ?? (editInFlight
+      ? { turnId: editInFlight.turnId, user: editInFlight.user, userMessageIndex: editInFlight.userMessageIndex, mode: "edit", settled: false }
+      : undefined),
+    [optimisticRewrite, editInFlight]
+  );
 
   useEffect(() => {
     const pending = optimisticRewrite;
-    if (!pending?.settled) return;
+    if (!pending?.settled || pending.mode !== "retry") return;
     const target = turns.find((turn) => turn.id === pending.turnId);
-    const hasRetryReplacement = pending.mode === "retry"
-      && target !== undefined
+    const hasRetryReplacement = target !== undefined
       && (target.retryOfMessageId !== undefined
         || target.assistantMessageId !== pending.assistantMessageId);
-    const hasEditReplacement = pending.mode === "edit"
-      && pending.userMessageIndex !== undefined
-      && turns.some((turn) => turn.id !== pending.turnId
-        && turn.userMessageIndex === pending.userMessageIndex
-        && turn.user === pending.user);
-    if (hasRetryReplacement || hasEditReplacement) {
+    if (hasRetryReplacement) {
       setOptimisticRewrite((current) => current?.turnId === pending.turnId ? undefined : current);
     }
   }, [optimisticRewrite, turns]);
@@ -158,7 +111,7 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
       : turn.user === pendingUserMessage.content
   ));
   const displayedTurns = useMemo(() => {
-    const pending = optimisticRewrite;
+    const pending = rewrite;
     if (!pending) return turns;
     const targetIndex = turns.findIndex((turn) => turn.id === pending.turnId);
     const replacementIndex = targetIndex >= 0
@@ -203,8 +156,10 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
       decodeTokens: undefined,
       finishReason: undefined
     }, pending.user)];
-  }, [optimisticRewrite, turns]);
+  }, [rewrite, turns]);
 
+  // 失败不在消息流里展示：最近一次失败由 Workspace 的生成错误横幅（输入框上方）承载，
+  // 重试入口在消息操作条的「重新生成」，与 Alma 的失败呈现一致。
   // 只有最近的失败/未完成轮次展开完整错误卡；更早的错误折叠成一行，避免历史错误长期占据时间线。
   const latestFailedTurnId = useMemo(() => {
     for (let index = displayedTurns.length - 1; index >= 0; index -= 1) {
@@ -214,6 +169,7 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
     return undefined;
   }, [displayedTurns]);
 
+  // 失败/未完成轮次在消息流内展示错误（卡片/一行式），输入框上方的生成错误横幅只承载最近一次。
   return (
     <div className="message-timeline">
       {pendingUserMessage && !hasRealPendingMessage ? (
@@ -231,11 +187,7 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
           errorExpanded={turn.id === latestFailedTurnId}
           onCreateBranch={onCreateBranch}
           onDeleteUserMessage={onDeleteUserMessage}
-          editing={editing?.turnId === turn.id ? editing : undefined}
-          onCancelEdit={cancelEditing}
-          onChangeEdit={changeEditing}
-          onStartEdit={startEditing}
-          onSubmitEdit={submitEditing}
+          onEditRequest={onEditRequest}
           onPreviewFile={onPreviewFile}
           onOpenExternal={onOpenExternal}
           onResolvePermission={onResolvePermission}
@@ -248,10 +200,10 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, sessio
           turn={turn}
         />
       ))}
-      {optimisticRewrite && !thinking ? (
+      {rewrite && !thinking ? (
         <div className="biny-thinking-status" role="status">
-          <ThinkingOrb aria-label={rewriteThinkingMessage} className="biny-thinking-status-orb" size={20} state="connecting" theme="auto" />
-          <span className="biny-thinking-status-label chat-shimmer-text">{rewriteThinkingMessage}…</span>
+          <ThinkingOrb aria-label="思考中" className="biny-thinking-status-orb" size={20} state="solving" theme="auto" />
+          <span className="biny-thinking-status-label chat-shimmer-text">思考中…</span>
         </div>
       ) : null}
     </div>
@@ -305,7 +257,6 @@ function optimisticRewriteTurn(turn: TimelineTurn, user: string): TimelineTurn {
 const Turn = memo(function Turn({
   projectId,
   turn,
-  editing,
   errorExpanded,
   onPreviewFile,
   onOpenExternal,
@@ -314,17 +265,13 @@ const Turn = memo(function Turn({
   onRetryStart,
   onRetrySettled,
   onSwitchVersion,
-  onCancelEdit,
-  onChangeEdit,
-  onStartEdit,
-  onSubmitEdit,
+  onEditRequest,
   onCreateBranch,
   onRollbackFiles,
   onDeleteUserMessage
 }: {
   projectId: string;
   turn: TimelineTurn;
-  editing?: { value: string };
   /** 是否为最近的失败轮次：驱动错误展示默认展开还是折叠。 */
   errorExpanded: boolean;
   onPreviewFile(path: string): void;
@@ -334,16 +281,14 @@ const Turn = memo(function Turn({
   onRetryStart(turn: TimelineTurn, mode: "retry" | "edit", user?: string): void;
   onRetrySettled(turnId: string, succeeded: boolean): void;
   onSwitchVersion(messageId: string, direction: "prev" | "next"): Promise<void>;
-  onCancelEdit(): void;
-  onChangeEdit(value: string): void;
-  onStartEdit(turn: TimelineTurn): void;
-  onSubmitEdit(): Promise<void>;
+  onEditRequest(turn: TimelineTurn): void;
   onCreateBranch(): void;
   onRollbackFiles(turn: TimelineTurn): void;
   onDeleteUserMessage(turnId: string): void;
 }): React.JSX.Element {
   const running = turn.status === "running" || turn.status === "waiting_permission";
-  // 失败/未完成的轮次和正常结束一样渲染完整收尾：错误卡落在模型消息位置，footer 照常出现。
+  // 失败/未完成的轮次和正常结束一样渲染完整收尾：错误展示落在模型消息位置（卡片或一行式），
+  // footer 照常出现，重试入口同时在错误卡和操作条里。
   const runFailed = !running && isRunErrorStatus(turn.status);
   // 完整错误卡只给「当场发生的失败」：挂载期间经历过运行态再落败才算当场；
   // 重新打开会话时看到的旧失败（哪怕是最新的那条）一律默认折叠成一行，避免旧错误长期占着时间线。
@@ -391,17 +336,13 @@ const Turn = memo(function Turn({
         <UserMessage
           content={turn.user}
           hasChangedFiles={listChangedFiles(turn).length > 0}
-          editing={editing}
           onCreateBranch={onCreateBranch}
           onDelete={() => onDeleteUserMessage(turn.id)}
-          onCancelEdit={onCancelEdit}
-          onChangeEdit={onChangeEdit}
-          onEdit={() => onStartEdit(turn)}
+          onEdit={() => onEditRequest(turn)}
           onOpenExternal={onOpenExternal}
           onPreviewFile={onPreviewFile}
           onRegenerate={canRetry ? retry : undefined}
           onRollbackFiles={() => onRollbackFiles(turn)}
-          onSubmitEdit={onSubmitEdit}
           projectId={projectId}
           time={turn.timestamp}
         />
@@ -582,7 +523,7 @@ function ExecutionTimeline({
         if (step.kind === "user") {
           return (
             <div className="execution-step execution-user-step user-message" key={step.id}>
-              <div className="user-bubble"><MarkdownContent content={step.content} onOpenExternal={onOpenExternal} onPreviewFile={onPreviewFile} projectId={projectId} /></div>
+              <div className="user-bubble"><MarkdownContent breaks content={step.content} onOpenExternal={onOpenExternal} onPreviewFile={onPreviewFile} projectId={projectId} /></div>
             </div>
           );
         }
@@ -664,56 +605,33 @@ function ReasoningStepView({ running, step }: {
 function UserMessage({
   content,
   hasChangedFiles,
-  editing,
   onCreateBranch,
   onDelete,
   onEdit,
-  onCancelEdit,
-  onChangeEdit,
   onOpenExternal,
   onPreviewFile,
   onRegenerate,
   onRollbackFiles,
-  onSubmitEdit,
   projectId,
   time
 }: {
   content: string;
   hasChangedFiles: boolean;
-  editing?: { value: string };
   onCreateBranch(): void;
   onDelete(): void;
   onEdit(): void;
-  onCancelEdit(): void;
-  onChangeEdit(value: string): void;
   onOpenExternal(url: string): void;
   onPreviewFile(path: string): void;
   onRegenerate?(): Promise<void>;
   onRollbackFiles(): void;
-  onSubmitEdit(): Promise<void>;
   projectId: string;
   /** 消息时间（ISO 字符串）；存在时操作行前置 hover 揭示的日期感知时钟。 */
   time?: string;
 }): React.JSX.Element {
-  const { open: menuOpen, setOpen: setMenuOpen, containerRef: actionsRef } = useDismissableMenu();
+  // 更多菜单走 portal fixed 定位（与助手菜单共用 hook），内联渲染会把消息列表往下挤。
+  const { open: menuOpen, position: menuPosition, anchorRef: moreAnchorRef, menuRef, toggle, close: closeMenu } = useAnchoredMenu({ width: 208, estimatedHeight: 180 });
   // 发送时追加给模型的附件清单不该原样显示，拆出来渲染成附件卡片。
   const message = useMemo(() => splitAttachmentReferences(content), [content]);
-
-  if (editing) {
-    // 编辑态不套气泡：气泡自带主题底色/内边距，会把编辑器包成「盒中盒」。
-    return (
-      <article className="chat-message user-message is-editing" data-sender="user">
-        <InlineUserMessageEditor
-          value={editing.value}
-          onCancel={onCancelEdit}
-          onChange={onChangeEdit}
-          onSubmit={onSubmitEdit}
-        />
-      </article>
-    );
-  }
-
-  const closeMenu = (): void => setMenuOpen(false);
   const clock = time ? <MessageClock time={Date.parse(time)} /> : null;
   return (
     <article className="chat-message user-message" data-sender="user">
@@ -721,101 +639,25 @@ function UserMessage({
         {message.text ? <MarkdownContent content={message.text} onOpenExternal={onOpenExternal} onPreviewFile={onPreviewFile} projectId={projectId} /> : null}
         {message.attachments.length ? <MessageAttachments attachments={message.attachments} projectId={projectId} /> : null}
       </div>
-      <div className={`user-message-actions${menuOpen ? " is-open" : ""}`} data-time-hover-root ref={actionsRef}>
+      <div className={`user-message-actions${menuOpen ? " is-open" : ""}`} data-time-hover-root>
         {clock}
         <button aria-label="复制消息" className="user-message-action" onClick={() => copyText(message.text)} title="复制消息" type="button"><Icon name="copy" size={16} /></button>
         {onRegenerate ? <button aria-label="重新生成" className="user-message-action" onClick={() => { void onRegenerate(); }} title="重新生成" type="button"><Icon name="refresh" size={16} /></button> : null}
         <button aria-label="编辑消息" className="user-message-action" onClick={onEdit} title="编辑消息" type="button"><Icon name="edit" size={16} /></button>
-        <button aria-expanded={menuOpen} aria-haspopup="menu" aria-label="更多消息操作" className="user-message-action" onClick={() => setMenuOpen(!menuOpen)} title="更多" type="button"><Icon name="more" size={16} /></button>
-        {menuOpen ? (
-          <div className="user-message-menu" role="menu">
-            <button className="message-menu-item" onClick={() => { copyText(message.text); closeMenu(); }} role="menuitem" type="button"><Icon name="copy" size={14} /><span>复制为 Markdown</span></button>
-            <button className="message-menu-item" onClick={() => { copyText(plainTextFromMarkdown(message.text)); closeMenu(); }} role="menuitem" type="button"><Icon name="copy" size={14} /><span>复制为纯文本</span></button>
-            <button className="message-menu-item" onClick={() => { onCreateBranch(); closeMenu(); }} role="menuitem" type="button"><Icon name="branch" size={14} /><span>创建分支</span></button>
-            <button className="message-menu-item" disabled={!hasChangedFiles} onClick={() => { onRollbackFiles(); closeMenu(); }} role="menuitem" title={hasChangedFiles ? "回滚本条消息产生的文件修改" : "当前消息没有可回滚的文件修改"} type="button"><Icon name="arrow-left" size={14} /><span>回滚文件</span></button>
-            <div className="message-menu-separator" />
-            <button className="message-menu-item is-danger" onClick={() => { onDelete(); closeMenu(); }} role="menuitem" type="button"><Icon name="trash" size={14} /><span>删除消息</span></button>
-          </div>
-        ) : null}
+        <button aria-expanded={menuOpen} aria-haspopup="menu" aria-label="更多消息操作" className="user-message-action" onClick={toggle} ref={moreAnchorRef} title="更多" type="button"><Icon name="more" size={16} /></button>
       </div>
+      {menuOpen && menuPosition ? createPortal(
+        <div className="message-menu" data-direction={menuPosition.direction} ref={menuRef} role="menu" style={menuPosition.style}>
+          <button className="message-menu-item" onClick={() => { copyText(message.text); closeMenu(); }} role="menuitem" type="button"><Icon name="copy" size={14} /><span>复制为 Markdown</span></button>
+          <button className="message-menu-item" onClick={() => { copyText(plainTextFromMarkdown(message.text)); closeMenu(); }} role="menuitem" type="button"><Icon name="copy" size={14} /><span>复制为纯文本</span></button>
+          <button className="message-menu-item" onClick={() => { onCreateBranch(); closeMenu(); }} role="menuitem" type="button"><Icon name="branch" size={14} /><span>创建分支</span></button>
+          <button className="message-menu-item" disabled={!hasChangedFiles} onClick={() => { onRollbackFiles(); closeMenu(); }} role="menuitem" title={hasChangedFiles ? "回滚本条消息产生的文件修改" : "当前消息没有可回滚的文件修改"} type="button"><Icon name="arrow-left" size={14} /><span>回滚文件</span></button>
+          <div className="message-menu-separator" />
+          <button className="message-menu-item is-danger" onClick={() => { onDelete(); closeMenu(); }} role="menuitem" type="button"><Icon name="trash" size={14} /><span>删除消息</span></button>
+        </div>,
+        document.body
+      ) : null}
     </article>
-  );
-}
-
-function InlineUserMessageEditor({ value, onCancel, onChange, onSubmit }: {
-  value: string;
-  onCancel(): void;
-  onChange(value: string): void;
-  onSubmit(): Promise<void>;
-}): React.JSX.Element {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string>();
-  const submitFlightRef = useRef(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const composingRef = useRef(false);
-  const initialValueRef = useRef(value);
-
-  useEffect(() => {
-    textareaRef.current?.focus();
-    textareaRef.current?.setSelectionRange(initialValueRef.current.length, initialValueRef.current.length);
-  }, []);
-
-  const submit = async (): Promise<void> => {
-    if (busy || submitFlightRef.current || !value.trim()) return;
-    submitFlightRef.current = true;
-    setBusy(true);
-    setError(undefined);
-    try {
-      await onSubmit();
-    } catch (submitError) {
-      setError(submitError instanceof Error ? submitError.message : String(submitError));
-    } finally {
-      setBusy(false);
-      submitFlightRef.current = false;
-    }
-  };
-
-  return (
-    <div className={`user-message-editor${busy ? " is-busy" : ""}`}>
-      <textarea
-        aria-label="编辑用户消息"
-        disabled={busy}
-        onChange={(event) => onChange(event.target.value)}
-        onCompositionEnd={() => { composingRef.current = false; }}
-        onCompositionStart={() => { composingRef.current = true; }}
-        onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing || composingRef.current) return;
-          if (event.key === "Escape" && !busy) {
-            event.preventDefault();
-            onCancel();
-            return;
-          }
-          if (event.key !== "Enter" || event.shiftKey) return;
-          event.preventDefault();
-          void submit();
-        }}
-        ref={textareaRef}
-        rows={1}
-        value={value}
-      />
-      {error ? <div className="user-message-editor-error"><Icon name="warning" size={12} /><span>{error}</span></div> : null}
-      <div className="user-message-editor-actions">
-        <span className="user-message-editor-hint">
-          {busy ? "发送中…" : <><kbd>Esc</kbd> 取消 · <kbd>⏎</kbd> 发送</>}
-        </span>
-        <button className="user-message-editor-cancel" disabled={busy} onClick={onCancel} type="button">取消</button>
-        <button
-          aria-label="发送编辑后的消息"
-          className="biny-send-button"
-          disabled={busy || !value.trim()}
-          onClick={() => void submit()}
-          title="发送（Enter）"
-          type="button"
-        >
-          <Icon name="arrow-up" size={15} />
-        </button>
-      </div>
-    </div>
   );
 }
 
@@ -853,17 +695,15 @@ function AssistantActions({ content, timestamp, metrics, runMs, usage, finishRea
 }): React.JSX.Element {
   const [speaking, setSpeaking] = useState(false);
   const stopSpeechRef = useRef<() => void>(undefined);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<{ direction: "up" | "down"; style: CSSProperties }>();
-  const moreButtonRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const usageRows = buildUsageDetailRows(usage, metrics ?? {});
+  const tone = finishReason ? finishReasonTone(finishReason) : undefined;
+  // 更多菜单走 portal fixed 定位；条目数按需增减（用量/结束原因 + 分隔线），高度用于弹出方向判断。
+  const menuItemCount = 3 + (usageRows.length ? 1 : 0) + (finishReason ? 1 : 0) + ((usageRows.length || finishReason) ? 1 : 0);
+  const { open: menuOpen, position: menuPosition, anchorRef: moreButtonRef, menuRef, toggle: toggleMenu, close: closeMenu } = useAnchoredMenu({ width: 208, estimatedHeight: menuItemCount * 32 + 12 });
   const usageItemRef = useRef<HTMLButtonElement>(null);
   const [usagePopover, setUsagePopover] = useState<{ top: number; left: number }>();
   const usageHideTimerRef = useRef<number | undefined>(undefined);
   const [copiedKind, setCopiedKind] = useState<"markdown" | "plain">();
-
-  const usageRows = buildUsageDetailRows(usage, metrics ?? {});
-  const tone = finishReason ? finishReasonTone(finishReason) : undefined;
 
   // 组件卸载（切会话、消息被折叠）时朗读与悬浮卡定时器都要跟着停。
   useEffect(() => () => {
@@ -879,56 +719,6 @@ function AssistantActions({ content, timestamp, metrics, runMs, usage, finishRea
     setSpeaking(true);
     stopSpeechRef.current = speak(plainTextFromMarkdown(content), () => setSpeaking(false));
   };
-
-  const closeMenu = useCallback((): void => setMenuOpen(false), []);
-
-  // 打开菜单时按更多按钮的视口位置算 fixed 坐标：下方放不下就向上弹。
-  const toggleMenu = (): void => {
-    if (menuOpen) {
-      setMenuOpen(false);
-      return;
-    }
-    const anchor = moreButtonRef.current?.getBoundingClientRect();
-    if (!anchor) {
-      setMenuOpen(true);
-      return;
-    }
-    const gap = 6;
-    const menuWidth = 208;
-    const itemCount = 3 + (usageRows.length ? 1 : 0) + (finishReason ? 1 : 0) + ((usageRows.length || finishReason) ? 1 : 0);
-    const estimatedHeight = itemCount * 32 + 12;
-    const spaceBelow = window.innerHeight - anchor.bottom - gap;
-    const direction = spaceBelow >= estimatedHeight || spaceBelow >= anchor.top - gap ? "down" : "up";
-    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - menuWidth - 8));
-    setMenuPosition(direction === "down"
-      ? { direction, style: { left, top: anchor.bottom + gap } }
-      : { direction, style: { left, bottom: window.innerHeight - anchor.top + gap } });
-    setMenuOpen(true);
-  };
-
-  // 点击菜单/按钮外部、Esc、滚动或缩放窗口时收起（portal 不在 DOM 树内，外部判断要显式做）。
-  useEffect(() => {
-    if (!menuOpen) return;
-    const onPointerDown = (event: PointerEvent): void => {
-      const target = event.target as Node;
-      if (moreButtonRef.current?.contains(target) || menuRef.current?.contains(target)) return;
-      setMenuOpen(false);
-    };
-    const onKeyDown = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") setMenuOpen(false);
-    };
-    const dismiss = (): void => setMenuOpen(false);
-    window.addEventListener("pointerdown", onPointerDown);
-    window.addEventListener("keydown", onKeyDown);
-    window.addEventListener("scroll", dismiss, true);
-    window.addEventListener("resize", dismiss);
-    return () => {
-      window.removeEventListener("pointerdown", onPointerDown);
-      window.removeEventListener("keydown", onKeyDown);
-      window.removeEventListener("scroll", dismiss, true);
-      window.removeEventListener("resize", dismiss);
-    };
-  }, [menuOpen]);
 
   const cancelUsageHide = useCallback((): void => {
     if (usageHideTimerRef.current === undefined) return;
@@ -971,7 +761,7 @@ function AssistantActions({ content, timestamp, metrics, runMs, usage, finishRea
     setCopiedKind(kind);
     window.setTimeout(() => {
       setCopiedKind(undefined);
-      setMenuOpen(false);
+      closeMenu();
     }, 800);
   };
 
@@ -1015,7 +805,7 @@ function AssistantActions({ content, timestamp, metrics, runMs, usage, finishRea
       </div>
       {menuOpen && menuPosition ? createPortal(
         <div
-          className="assistant-menu"
+          className="message-menu"
           data-direction={menuPosition.direction}
           onClick={(event) => event.stopPropagation()}
           ref={menuRef}
@@ -1150,31 +940,68 @@ function AttachmentCard({ attachment, projectId }: { attachment: AttachmentRefer
 }
 
 /**
- * 悬浮菜单的开合：点到容器外面或按 Esc 就关。
- *
- * `containerRef` 要挂在同时包住触发按钮和菜单的那层容器上，否则点菜单项本身也会被当成外部点击。
+ * 消息"更多"菜单的开合与 fixed 定位：菜单通过 portal 挂到 document.body（脱离消息列表文档流，
+ * 不会被滚动容器裁剪），打开时按锚点按钮的视口位置算坐标，下方放不下就向上弹；
+ * 点击锚点/菜单以外、Esc、滚动或缩放窗口时收起。portal 不在组件 DOM 树内，
+ * 外部点击判断必须显式比对锚点和菜单两个 ref。
  */
-function useDismissableMenu(): {
+function useAnchoredMenu({ width, estimatedHeight }: { width: number; estimatedHeight: number }): {
   open: boolean;
-  setOpen(open: boolean): void;
-  containerRef: React.RefObject<HTMLDivElement | null>;
+  position: { direction: "up" | "down"; style: CSSProperties } | undefined;
+  anchorRef: React.RefObject<HTMLButtonElement | null>;
+  menuRef: React.RefObject<HTMLDivElement | null>;
+  toggle(): void;
+  close(): void;
 } {
   const [open, setOpen] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<{ direction: "up" | "down"; style: CSSProperties }>();
+  const anchorRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  const close = useCallback((): void => setOpen(false), []);
+
+  const toggle = useCallback((): void => {
+    if (open) {
+      setOpen(false);
+      return;
+    }
+    const anchor = anchorRef.current?.getBoundingClientRect();
+    if (!anchor) {
+      setOpen(true);
+      return;
+    }
+    const gap = 6;
+    const spaceBelow = window.innerHeight - anchor.bottom - gap;
+    const direction = spaceBelow >= estimatedHeight || spaceBelow >= anchor.top - gap ? "down" : "up";
+    const left = Math.max(8, Math.min(anchor.left, window.innerWidth - width - 8));
+    setPosition(direction === "down"
+      ? { direction, style: { left, top: anchor.bottom + gap } }
+      : { direction, style: { left, bottom: window.innerHeight - anchor.top + gap } });
+    setOpen(true);
+  }, [open, estimatedHeight, width]);
+
   useEffect(() => {
     if (!open) return;
-    const closeOnOutsidePointer = (event: PointerEvent): void => {
-      if (!containerRef.current?.contains(event.target as Node)) setOpen(false);
+    const onPointerDown = (event: PointerEvent): void => {
+      const target = event.target as Node;
+      if (anchorRef.current?.contains(target) || menuRef.current?.contains(target)) return;
+      setOpen(false);
     };
-    const closeOnEscape = (event: KeyboardEvent): void => {
+    const onKeyDown = (event: KeyboardEvent): void => {
       if (event.key === "Escape") setOpen(false);
     };
-    window.addEventListener("pointerdown", closeOnOutsidePointer);
-    window.addEventListener("keydown", closeOnEscape);
+    const dismiss = (): void => setOpen(false);
+    window.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("scroll", dismiss, true);
+    window.addEventListener("resize", dismiss);
     return () => {
-      window.removeEventListener("pointerdown", closeOnOutsidePointer);
-      window.removeEventListener("keydown", closeOnEscape);
+      window.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("scroll", dismiss, true);
+      window.removeEventListener("resize", dismiss);
     };
   }, [open]);
-  return { open, setOpen, containerRef };
+
+  return { open, position, anchorRef, menuRef, toggle, close };
 }

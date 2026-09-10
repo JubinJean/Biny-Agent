@@ -12,8 +12,8 @@ import type {
   DesktopWorkspaceDirectoryEntry,
   DesktopWorkspaceFilePreview
 } from "../../../../protocol.js";
-import { highlightWorkspaceFile } from "../../syntaxHighlight.js";
 import { workspaceFileMarker } from "../../workspaceFileMarker.js";
+import { useHighlightedCode } from "../../useHighlightedCode.js";
 import { useInlineImage } from "../../inlineImage.js";
 import { CopyButton } from "../CopyButton.js";
 import { Icon } from "../Icon.js";
@@ -114,7 +114,7 @@ function FilePreviewContent({ preview, projectId, onOpenFile }: {
 
 /** 文本/代码预览：语言 + 大小元信息行，正文是行号 gutter + 高亮代码。 */
 function CodeFilePreview({ file }: { file: DesktopWorkspaceFilePreview }): React.JSX.Element {
-  const highlighted = highlightWorkspaceFile(file.path, file.content ?? "");
+  const highlighted = useHighlightedCode(file.content ?? "", undefined, file.path);
   const lines = (file.content ?? "").split("\n");
   if (lines.at(-1) === "") lines.pop();
   return (
@@ -130,7 +130,7 @@ function CodeFilePreview({ file }: { file: DesktopWorkspaceFilePreview }): React
         <div aria-hidden="true" className="file-preview-gutter">
           {lines.map((_, index) => <span key={index}>{index + 1}</span>)}
         </div>
-        <pre className="file-preview-code"><code className={highlighted.language ? `hljs language-${highlighted.language}` : "hljs"} dangerouslySetInnerHTML={{ __html: highlighted.html }} /></pre>
+        <pre className="file-preview-code"><code className={highlighted.language ? `shiki language-${highlighted.language}` : "shiki"} dangerouslySetInnerHTML={{ __html: highlighted.html }} /></pre>
       </div>
     </div>
   );

@@ -2,8 +2,8 @@
  * 桌面端内嵌浏览器与 cookie 管理。
  *
  * 浏览器窗口跑在独立的持久 partition 上，用户在里面登录网站（Google、小红书……），登录态
- * 由 Electron 自己保存；同时这里把 cookie 同步写进共享 jar，`web_search` 的 Google provider
- * 和 `web_fetch` 就能读到同一份登录态 —— 登录一次，agent 侧直接可用。
+ * 由 Electron 自己保存；同时这里把 cookie 同步写进共享 jar，`WebSearch` 的 Google provider
+ * 和 `WebFetch` 就能读到同一份登录态 —— 登录一次，agent 侧直接可用。
  *
  * 几个刻意的选择：
  * - 用独立 partition 而不是默认 session：浏览的是任意站点，不能和应用自身的 session 混在一起；
@@ -13,8 +13,11 @@
  * 导入导出用 Cookie-Editor 的 JSON 格式，用户可以和浏览器扩展互相搬运登录态。
  */
 import { promises as fs } from "node:fs";
+import { randomBytes } from "node:crypto";
+import net from "node:net";
 import { BrowserWindow, dialog, session, type Cookie, type CookiesSetDetails } from "electron";
 import type { DesktopCookieJarStatus } from "../../protocol.js";
+import type { BrowserAutomationEndpoint } from "../../../tools/browser.js";
 import {
   parseCookieJar,
   serializeCookieJar,
@@ -31,6 +34,10 @@ const syncDebounceMs = 800;
 
 export class DesktopBrowserService {
   private window: BrowserWindow | undefined;
+  private automationServer: net.Server | undefined;
+  private automationCredentials: BrowserAutomationEndpoint | undefined;
+  /** 一个可见 BrowserWindow 对应一个上下文；来自不同 Runtime Host 的请求也必须在这里串行。 */
+  private automationTail: Promise<void> = Promise.resolve();
   private syncTimer: ReturnType<typeof setTimeout> | undefined;
   private syncTail = Promise.resolve();
   private cookieListenerAttached = false;
@@ -41,6 +48,35 @@ export class DesktopBrowserService {
     private readonly getJarPath: () => Promise<string>,
     private readonly assertCookieMutationAllowed: () => void = () => undefined
   ) {}
+
+  /** 启动给 Runtime Host 使用的本地控制面；Unix socket 权限和随机令牌双重限制访问。 */
+  async startAutomationServer(endpoint: string): Promise<BrowserAutomationEndpoint> {
+    if (this.automationCredentials) return this.automationCredentials;
+    try {
+      await fs.unlink(endpoint);
+    } catch (error) {
+      if (!isNotFound(error)) throw error;
+    }
+    const credentials = { endpoint, token: randomBytes(32).toString("hex") };
+    const server = net.createServer((socket) => this.handleAutomationConnection(socket, credentials.token));
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error): void => {
+        server.off("listening", onListening);
+        reject(error);
+      };
+      const onListening = (): void => {
+        server.off("error", onError);
+        resolve();
+      };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(endpoint);
+    });
+    await fs.chmod(endpoint, 0o600);
+    this.automationServer = server;
+    this.automationCredentials = credentials;
+    return credentials;
+  }
 
   /**
    * 打开浏览器窗口并导航到目标地址；窗口已存在则复用（再开一个只会让登录态看起来分裂）。
@@ -165,11 +201,169 @@ export class DesktopBrowserService {
 
   /** 退出前先把内存里的最新登录态落盘，再销毁浏览器窗口。 */
   async dispose(): Promise<void> {
+    await this.stopAutomationServer();
     if (this.syncTimer) clearTimeout(this.syncTimer);
     this.syncTimer = undefined;
     if (this.browserSessionManaged) await this.syncToJar();
     if (this.window && !this.window.isDestroyed()) this.window.destroy();
     this.window = undefined;
+  }
+
+  private async stopAutomationServer(): Promise<void> {
+    const server = this.automationServer;
+    this.automationServer = undefined;
+    this.automationCredentials = undefined;
+    if (server) await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+
+  private handleAutomationConnection(socket: net.Socket, token: string): void {
+    socket.setEncoding("utf8");
+    let buffer = "";
+    socket.on("data", (chunk: string) => {
+      buffer += chunk;
+      if (Buffer.byteLength(buffer, "utf8") > 256 * 1024) {
+        socket.destroy(new Error("Browser automation request is too large."));
+        return;
+      }
+      while (true) {
+        const newline = buffer.indexOf("\n");
+        if (newline < 0) return;
+        const line = buffer.slice(0, newline);
+        buffer = buffer.slice(newline + 1);
+        void this.handleAutomationRequest(line, token, socket);
+      }
+    });
+  }
+
+  private async handleAutomationRequest(line: string, token: string, socket: net.Socket): Promise<void> {
+    let id = "unknown";
+    try {
+      const request = asRecord(JSON.parse(line));
+      id = readString(request.id, "id");
+      if (request.token !== token) throw new Error("Browser automation authentication failed.");
+      const method = readString(request.method, "method");
+      const args = asRecord(request.args);
+      const result = await this.enqueueAutomation(() => this.executeAutomation(method, args));
+      socket.write(`${JSON.stringify({ id, ok: true, result })}\n`);
+    } catch (error) {
+      socket.write(`${JSON.stringify({ id, ok: false, error: error instanceof Error ? error.message : String(error) })}\n`);
+    }
+  }
+
+  private enqueueAutomation<TResult>(operation: () => Promise<TResult>): Promise<TResult> {
+    const run = this.automationTail.then(operation, operation);
+    this.automationTail = run.then(() => undefined, () => undefined);
+    return run;
+  }
+
+  private async executeAutomation(method: string, args: Record<string, unknown>): Promise<unknown> {
+    if (method === "navigate") {
+      const url = readString(args.url, "url");
+      if (!isHttpUrl(url)) throw new Error("Browser navigation only supports HTTP and HTTPS URLs.");
+      await this.open(url);
+      return await this.pageState();
+    }
+    await this.ensureWindow();
+    if (method === "read_dom") return await this.readDom(readNumber(args.maxCharacters, 24_000, 100_000));
+    if (method === "click") return await this.click(readString(args.selector, "selector"));
+    if (method === "fill") return await this.fill(readString(args.selector, "selector"), readString(args.value, "value"));
+    if (method === "press") return await this.press(args.selector === undefined ? undefined : readString(args.selector, "selector"), readString(args.key, "key"));
+    throw new Error(`Unsupported browser automation method: ${method}`);
+  }
+
+  private async ensureWindow(): Promise<BrowserWindow> {
+    if (!this.window || this.window.isDestroyed()) await this.open();
+    if (!this.window || this.window.isDestroyed()) throw new Error("Browser window is unavailable.");
+    return this.window;
+  }
+
+  private async pageState(): Promise<{ url: string; title: string }> {
+    const result = await this.evaluate("({ url: location.href, title: document.title })");
+    const state = asRecord(result);
+    return { url: readString(state.url, "url"), title: typeof state.title === "string" ? state.title : "" };
+  }
+
+  private async readDom(maxCharacters: number): Promise<unknown> {
+    return await this.evaluate(`(() => {
+      const cssPath = (element) => {
+        if (element.id) return '#' + CSS.escape(element.id);
+        const parts = [];
+        let current = element;
+        while (current && current.nodeType === 1 && parts.length < 6) {
+          let part = current.tagName.toLowerCase();
+          if (current.parentElement) {
+            const siblings = Array.from(current.parentElement.children).filter((child) => child.tagName === current.tagName);
+            if (siblings.length > 1) part += ':nth-of-type(' + (siblings.indexOf(current) + 1) + ')';
+          }
+          parts.unshift(part);
+          current = current.parentElement;
+        }
+        return parts.join(' > ');
+      };
+      const nodes = Array.from(document.querySelectorAll('a,button,input,textarea,select,[role="button"],[role="link"],[contenteditable="true"]')).slice(0, 200);
+      return {
+        url: location.href,
+        title: document.title,
+        text: (document.body?.innerText || '').slice(0, ${String(maxCharacters)}),
+        interactive: nodes.map((element) => ({
+          tag: element.tagName.toLowerCase(),
+          role: element.getAttribute('role') || undefined,
+          name: element.getAttribute('aria-label') || element.getAttribute('placeholder') || element.innerText?.trim().slice(0, 120) || undefined,
+          selector: cssPath(element)
+        }))
+      };
+    })()`);
+  }
+
+  private async click(selector: string): Promise<unknown> {
+    return await this.evaluate(`(() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      if (!(element instanceof HTMLElement)) throw new Error('No visible HTML element matched the selector.');
+      element.scrollIntoView({ block: 'center', inline: 'center' });
+      element.click();
+      return { tag: element.tagName.toLowerCase(), text: element.innerText?.trim().slice(0, 200) || '' };
+    })()`);
+  }
+
+  private async fill(selector: string, value: string): Promise<unknown> {
+    return await this.evaluate(`(() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      if (!(element instanceof HTMLElement)) throw new Error('No visible HTML element matched the selector.');
+      element.scrollIntoView({ block: 'center', inline: 'center' });
+      element.focus();
+      if (element.isContentEditable) element.textContent = ${JSON.stringify(value)};
+      else if ('value' in element) {
+        const prototype = Object.getPrototypeOf(element);
+        const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
+        if (descriptor?.set) descriptor.set.call(element, ${JSON.stringify(value)});
+        else element.value = ${JSON.stringify(value)};
+      } else throw new Error('The matched element is not an editable field.');
+      element.dispatchEvent(new InputEvent('input', { bubbles: true, inputType: 'insertText', data: ${JSON.stringify(value)} }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+      return { tag: element.tagName.toLowerCase() };
+    })()`);
+  }
+
+  private async press(selector: string | undefined, key: string): Promise<unknown> {
+    if (selector) await this.evaluate(`(() => { const element = document.querySelector(${JSON.stringify(selector)}); if (!(element instanceof HTMLElement)) throw new Error('No visible HTML element matched the selector.'); element.focus(); })()`);
+    await this.sendDebuggerCommand("Input.dispatchKeyEvent", { type: "keyDown", key, text: key.length === 1 ? key : undefined });
+    await this.sendDebuggerCommand("Input.dispatchKeyEvent", { type: "keyUp", key });
+    return await this.pageState();
+  }
+
+  private async evaluate(expression: string): Promise<unknown> {
+    const result = asRecord(await this.sendDebuggerCommand("Runtime.evaluate", { expression, returnByValue: true, awaitPromise: true }));
+    const exception = asRecord(result.exceptionDetails);
+    if (Object.keys(exception).length) throw new Error(typeof exception.text === "string" ? exception.text : "Browser page evaluation failed.");
+    const remote = asRecord(result.result);
+    return remote.value;
+  }
+
+  private async sendDebuggerCommand(method: string, params: Record<string, unknown>): Promise<unknown> {
+    const window = await this.ensureWindow();
+    const debuggerSession = window.webContents.debugger;
+    if (!debuggerSession.isAttached()) debuggerSession.attach("1.3");
+    return await debuggerSession.sendCommand(method, params);
   }
 
   private async readSessionCookies(): Promise<StoredCookie[]> {
@@ -272,4 +466,25 @@ function isHttpUrl(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null ? value as Record<string, unknown> : {};
+}
+
+function readString(value: unknown, name: string): string {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`Browser automation requires ${name}.`);
+  return value;
+}
+
+function readNumber(value: unknown, fallback: number, maximum: number): number {
+  if (value === undefined) return fallback;
+  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1 || value > maximum) {
+    throw new Error(`Browser automation ${String(value)} is outside the supported range.`);
+  }
+  return value;
+}
+
+function isNotFound(error: unknown): boolean {
+  return typeof error === "object" && error !== null && "code" in error && (error as { code?: unknown }).code === "ENOENT";
 }

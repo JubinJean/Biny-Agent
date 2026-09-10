@@ -97,7 +97,7 @@ try {
   const aResponse = responses.get("parallel-probe-A")!;
   aResponse.writeHead(200, { "content-type": "text/event-stream" });
   aResponse.end([
-    `data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "parallel-write", type: "function", function: { name: "write_file", arguments: JSON.stringify({ path: "a.txt", content: "A" }) } }] }, finish_reason: null }] })}\n\n`,
+    `data: ${JSON.stringify({ choices: [{ index: 0, delta: { tool_calls: [{ index: 0, id: "parallel-write", type: "function", function: { name: "Write", arguments: JSON.stringify({ path: "a.txt", content: "A" }) } }] }, finish_reason: null }] })}\n\n`,
     `data: ${JSON.stringify({ choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }] })}\n\n`,
     "data: [DONE]\n\n"
   ].join(""));

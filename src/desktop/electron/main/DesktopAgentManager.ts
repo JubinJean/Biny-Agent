@@ -49,6 +49,7 @@ import { FileModelsStore, restoreProviderCatalogs, type ModelsStore } from "../.
 import { listConfiguredModelChoices, listPickerModelChoices, modelRuntimeInfo, type ModelRuntimeInfo, type ThinkingSelection } from "../../../llm/ModelManager.js";
 import type { PermissionMode, PermissionResult } from "../../../permission/PermissionManager.js";
 import { webSearchKeyEnvNames } from "../../../tools/web/search.js";
+import type { BrowserAutomationEndpoint } from "../../../tools/browser.js";
 import { executeRuntimeCommand } from "../../../runtime/commands.js";
 import {
   createInteractiveAgentHost,
@@ -81,7 +82,7 @@ import {
 } from "../../../personalization/index.js";
 import { activeRun, isTerminalRunEvent, pendingPermission, runtimeIsBusy, type AgentHostEvent, type AgentRuntimeUpdate, type InteractiveRuntimeSnapshot } from "../../../runtime/agentEvents.js";
 import { evaluateTaskRetry } from "../../../runtime/TaskRetryPolicy.js";
-import { isTaskRunTerminal } from "../../../runtime/TaskRunStore.js";
+import { isTaskRunTerminal, type TaskRetrySafety, type TaskRunWithAttempts } from "../../../runtime/TaskRunStore.js";
 import { splitAttachmentReferences, withAttachmentReferences } from "../../attachmentReferences.js";
 import type {
   DesktopAttachment,
@@ -206,6 +207,8 @@ export class DesktopAgentManager {
   private readonly draftSessionIds = new Map<string, string>();
   /** 同一发送/编辑操作键复用 Promise，避免 IPC 重入再次产生用户消息或分叉会话。 */
   private readonly idempotentPromptRequests = new Map<string, Promise<DesktopRunReceipt>>();
+  /** fallback runtime 没有 RuntimeHostServer 的 task promise 表时，由 Desktop 自己保证幂等派发。 */
+  private readonly taskPromises = new Map<string, Promise<unknown>>();
   private idleRuntimeRebuildTail: Promise<void> = Promise.resolve();
   private readonly pendingSessionReads = new Map<string, {
     initialRevision: string | undefined;
@@ -224,7 +227,8 @@ export class DesktopAgentManager {
     private readonly emit: (projectId: string, update: AgentRuntimeUpdate, meta?: { sessionId?: string; primary?: boolean }) => void,
     openExternal?: (url: string) => Promise<void>,
     private readonly modelsStore: ModelsStore = new FileModelsStore(),
-    private readonly fetcher: typeof globalThis.fetch = globalThis.fetch
+    private readonly fetcher: typeof globalThis.fetch = globalThis.fetch,
+    private readonly browserAutomation?: BrowserAutomationEndpoint
   ) {
     this.modelLogin = new DesktopModelLoginService(openExternal ?? (async () => {
       throw new Error("当前环境无法打开浏览器。");
@@ -271,7 +275,7 @@ export class DesktopAgentManager {
       this.configStore.load(project.path).catch(() => undefined),
       this.projects.listWorkspaceSessions(project, runtimeSnapshots, this.projectEvents(projectId))
     ]);
-    const catalogs = config ? await restoreProviderCatalogs(Object.keys(config.providers), this.modelsStore) : [];
+    const catalogs = config ? await restoreProviderCatalogs(Object.keys(config.providers), this.modelsStore, config.providers) : [];
     const models = config ? listConfiguredModelChoices(config, catalogs) : [];
     const pickerModels = config ? listPickerModelChoices(config, catalogs) : [];
     const runtimeProjection = runtime === undefined ? undefined : await this.runtimeProjection(projectId);
@@ -915,7 +919,7 @@ export class DesktopAgentManager {
       // 改一个下拉项启动一个拿不到凭据的 detached Host。先验证并持久化选中的可用模型，
       // 真正发送消息时再在主进程按新默认模型启动。
       this.assertNoRunningTasks("任务运行期间不能切换默认模型。");
-      const catalogs = await restoreProviderCatalogs(Object.keys(config.providers), this.modelsStore);
+      const catalogs = await restoreProviderCatalogs(Object.keys(config.providers), this.modelsStore, config.providers);
       const effective = await updateConfig(this.configStore, project.path, (persisted) => {
         const targetRuntime = new ModelRuntime(persisted, catalogs);
         const resolved = targetRuntime.resolve(alias);
@@ -987,7 +991,7 @@ export class DesktopAgentManager {
   async settingsConfigSnapshot(projectId: string): Promise<DesktopSettingsConfigSnapshot> {
     const project = this.projects.requireProject(projectId);
     const current = await this.requireVersionedConfig().loadVersioned!(project.path);
-    const catalogs = await restoreProviderCatalogs(Object.keys(current.config.providers), this.modelsStore);
+    const catalogs = await restoreProviderCatalogs(Object.keys(current.config.providers), this.modelsStore, current.config.providers);
     return describeSettingsConfigSnapshot(current.config, current.revision, projectId, project.path, catalogs);
   }
 
@@ -1864,7 +1868,7 @@ export class DesktopAgentManager {
     // 自定义/聚合端点不在本地 provider 表里，没有实时目录可言；回退到静态候选而不是抛错，
     // 调用方会把它和已配置模型合并展示（详情层会静默预取，不能让缺失配置刷错误日志）。
     if (!provider) return { providerAlias, source: "static", fetchedAt: new Date().toISOString(), models: [] };
-    const catalogs = await restoreProviderCatalogs(Object.keys(config.providers), this.modelsStore);
+    const catalogs = await restoreProviderCatalogs(Object.keys(config.providers), this.modelsStore, config.providers);
     const runtime = new ModelRuntime(config, catalogs, undefined, this.modelsStore, this.fetcher);
     try {
       const models = await runtime.refreshModels(providerAlias, undefined, force);
@@ -1883,10 +1887,12 @@ export class DesktopAgentManager {
     this.projects.requireProject(projectId);
     const current = await this.loadProjectConfig(projectId);
     const candidate = this.buildConfigWithModel(current, input);
-    const catalogs = await restoreProviderCatalogs(Object.keys(candidate.providers), this.modelsStore);
+    const catalogs = await restoreProviderCatalogs(Object.keys(candidate.providers), this.modelsStore, candidate.providers);
     const runtime = new ModelRuntime(candidate, catalogs, undefined, this.modelsStore, this.fetcher);
     try {
-      const models = await runtime.refreshModels(input.providerAlias);
+      // 候选配置可能复用了同一 provider alias，但密钥/端点已变化；不能用旧 ETag 的
+      // 304 当成当前候选账号的目录，新增连接始终做一次无条件读取。
+      const models = await runtime.refreshModels(input.providerAlias, undefined, true);
       return { providerAlias: input.providerAlias, source: "fetched", fetchedAt: new Date().toISOString(), models };
     } catch (error) {
       throw new Error(`无法从服务商获取模型列表：${formatModelConnectionError(error)}`, { cause: error });
@@ -2017,6 +2023,7 @@ export class DesktopAgentManager {
       apiKey: input.apiKey ?? existingProvider?.apiKey,
       apiKeyEnv: input.apiKeyEnv ?? existingProvider?.apiKeyEnv ?? profile.apiKeyEnv,
       requiresApiKey: input.requiresApiKey,
+      modelsRequiresApiKey: input.modelsRequiresApiKey ?? (sameProvider ? existingProvider?.modelsRequiresApiKey : undefined),
       authMode: existingProvider?.authMode,
       oauth: existingProvider?.oauth,
       timeoutMs: sameProvider ? existingProvider.timeoutMs : undefined,
@@ -2151,7 +2158,16 @@ export class DesktopAgentManager {
       throw new Error("工作树操作需要 Runtime Host；当前项目正在使用同进程 fallback。请重启 Biny 后重试。");
     }
     if (operation === "task.create") return commands.taskRuns.create({ task: payload.task, sessionId: optionalPayloadString(payload.sessionId), parentRunId: optionalPayloadString(payload.parentRunId) });
-    if (operation === "task.start") throw new Error("TaskRun start is unavailable until a TaskRun execution adapter is attached; use an explicit AgentRun, Automation, or Graph entrypoint.");
+    if (operation === "task.start") {
+      const started = await this.startFallbackTaskRun(commands, requiredPayloadString(payload.taskRunId, "taskRunId"), optionalTaskRetrySafety(payload.retrySafety));
+      return commands.taskRuns.get(started.task.taskRunId);
+    }
+    if (operation === "task.run") {
+      const taskRunId = requiredPayloadString(payload.taskRunId, "taskRunId");
+      const started = await this.startFallbackTaskRun(commands, taskRunId, optionalTaskRetrySafety(payload.retrySafety));
+      await started.completion;
+      return commands.taskRuns.get(taskRunId);
+    }
     if (operation === "task.cancel") {
       const taskRunId = requiredPayloadString(payload.taskRunId, "taskRunId");
       const reason = optionalPayloadString(payload.reason) ?? "TaskRun cancelled.";
@@ -2177,7 +2193,9 @@ export class DesktopAgentManager {
       const taskRunId = requiredPayloadString(payload.taskRunId, "taskRunId");
       const decision = evaluateTaskRetry(commands.taskRuns.get(taskRunId));
       if (!decision.allowed) throw new Error(`Task retry rejected (${decision.code}): ${decision.reason}`);
-      throw new Error(`Task retry admitted for ${decision.failureClass}, but no TaskRun execution adapter is attached; refusing to mark the task running without starting a new AgentRun.`);
+      commands.taskRuns.retry(taskRunId);
+      const started = await this.startFallbackTaskRun(commands, taskRunId, decision.attempt.retrySafety);
+      return commands.taskRuns.get(started.task.taskRunId);
     }
     if (operation === "task.resume") throw new Error("TaskRun resume requires an explicit safe-boundary continuation admission; it cannot be inferred from a TaskRun status.");
     if (operation === "automation.create") return commands.automationStore.create(payload as unknown as AutomationCreateInput);
@@ -2542,7 +2560,8 @@ export class DesktopAgentManager {
           sessionId: undefined,
           resumeInterrupted: false,
           clientId: `desktop-${process.pid}`,
-          surface: "desktop"
+          surface: "desktop",
+          browserAutomation: this.browserAutomation
         });
         attached = connected?.client;
         spawnedHost = connected?.spawnedProcess;
@@ -2561,6 +2580,7 @@ export class DesktopAgentManager {
           configStore: this.configStore,
           attachmentRoot: this.projects.attachmentsRoot(project),
           sessionId: fresh ? sessionId : undefined,
+          browserAutomation: this.browserAutomation,
           resourceRegistry: factoryOptions?.resourceRegistry,
           resourceBoot: factoryOptions?.resourceBoot ?? (factoryOptions?.resourceRegistry === undefined ? "blocking" : "background")
         });
@@ -2949,6 +2969,79 @@ export class DesktopAgentManager {
       : expectedRevision;
   }
 
+  private async startFallbackTaskRun(
+    commands: CommandRuntime,
+    taskRunId: string,
+    retrySafety: TaskRetrySafety | undefined
+  ): Promise<{ task: TaskRunWithAttempts; completion: Promise<unknown> }> {
+    const task = commands.taskRuns.get(taskRunId);
+    if (!task) throw new Error(`TaskRun ${taskRunId} does not exist.`);
+    const existingPromise = this.taskPromises.get(taskRunId);
+    if (existingPromise) return { task, completion: existingPromise };
+    if (isTaskRunTerminal(task.status)) return { task, completion: Promise.resolve(task) };
+
+    let current = task;
+    if (current.status === "running" || current.status === "verifying") current = commands.taskRuns.requeue(taskRunId);
+    if (current.status === "created") commands.taskRuns.transition(taskRunId, "queued");
+    const attempt = commands.taskRuns.createAttempt(taskRunId, {
+      parentRunId: current.parentRunId,
+      retrySafety: retrySafety ?? "unknown"
+    });
+    const latest = commands.taskRuns.get(taskRunId);
+    if (!latest) throw new Error(`TaskRun ${taskRunId} disappeared before execution.`);
+
+    let submitted;
+    try {
+      submitted = commands.startSubagentTask(taskPrompt(latest.task), {
+        taskId: taskRunId,
+        parentRunId: latest.parentRunId,
+        accessMode: "workspace"
+      });
+    } catch (error) {
+      const failure = error instanceof Error ? error : new Error(String(error));
+      this.finishFallbackTaskRun(commands, taskRunId, attempt.attemptId, "failed", { message: failure.message, failureClass: "dispatch_failed" });
+      throw failure;
+    }
+
+    const completion = submitted.completion.then(
+      (output) => {
+        this.finishFallbackTaskRun(commands, taskRunId, attempt.attemptId, "completed", undefined, { output });
+        return output;
+      },
+      (error: unknown) => {
+        const failure = error instanceof Error ? error : new Error(String(error));
+        const status = failure.name === "SubagentTaskAbortedError" || failure.name === "AbortError" ? "aborted" as const : "failed" as const;
+        this.finishFallbackTaskRun(commands, taskRunId, attempt.attemptId, status, { message: failure.message, failureClass: status === "failed" ? "execution_failed" : "cancelled" });
+        throw failure;
+      }
+    ).finally(() => {
+      if (this.taskPromises.get(taskRunId) === completion) this.taskPromises.delete(taskRunId);
+    });
+    this.taskPromises.set(taskRunId, completion);
+    void completion.catch(() => undefined);
+    return { task: latest, completion };
+  }
+
+  private finishFallbackTaskRun(
+    commands: CommandRuntime,
+    taskRunId: string,
+    attemptId: string,
+    status: "completed" | "failed" | "aborted",
+    failure?: unknown,
+    artifacts?: unknown
+  ): void {
+    try {
+      const current = commands.taskRuns.get(taskRunId);
+      if (current && !isTaskRunTerminal(current.status)) {
+        commands.taskRuns.transition(taskRunId, status, { attemptId, failure, artifacts });
+      } else if (current?.status === status) {
+        commands.taskRuns.transition(taskRunId, status, { attemptId, failure, artifacts });
+      }
+    } catch {
+      // 子代理最终结果已通过 session 事件记录；投影失败不能制造第二个终态。
+    }
+  }
+
   private projectEvents(projectId: string): Map<string, AgentHostEvent[]> {
     const current = this.liveEvents.get(projectId);
     if (current) return current;
@@ -2960,6 +3053,22 @@ export class DesktopAgentManager {
 
 function sessionReadKey(projectId: string, sessionId: string): string {
   return `${projectId}\u0000${sessionId}`;
+}
+
+function taskPrompt(task: unknown): string {
+  if (typeof task === "string" && task.trim()) return task.trim();
+  if (typeof task === "object" && task !== null) {
+    const record = task as Record<string, unknown>;
+    const title = typeof record.title === "string" ? record.title.trim() : "";
+    const description = typeof record.description === "string" ? record.description.trim() : "";
+    if (title || description) return [title, description].filter(Boolean).join("\n\n");
+  }
+  const serialized = JSON.stringify(task);
+  return serialized === undefined ? String(task) : serialized;
+}
+
+function optionalTaskRetrySafety(value: unknown): TaskRetrySafety | undefined {
+  return value === "safe" || value === "idempotent" || value === "unsafe" || value === "unknown" ? value : undefined;
 }
 
 function memoryStats(entries: MemoryEntriesResult): { total: number; autoGenerated: number; manualAdded: number } {
@@ -3190,6 +3299,7 @@ async function executeRemoteRuntimeMutation(runtime: RuntimeHostClient, operatio
   }
   if (operation === "task.create") return await unwrapHostOperationResult(runtime.taskCreate({ task: payload.task, sessionId: optionalPayloadString(payload.sessionId), parentRunId: optionalPayloadString(payload.parentRunId) }));
   if (operation === "task.start") return await unwrapHostOperationResult(runtime.taskStart(requiredPayloadString(payload.taskRunId, "taskRunId"), { attemptId: optionalPayloadString(payload.attemptId), runId: optionalPayloadString(payload.runId), turnId: optionalPayloadString(payload.turnId), retrySafety: optionalPayloadString(payload.retrySafety) }));
+  if (operation === "task.run") return await unwrapHostOperationResult(runtime.taskRun(requiredPayloadString(payload.taskRunId, "taskRunId"), { retrySafety: optionalPayloadString(payload.retrySafety) }));
   if (operation === "task.cancel") return await unwrapHostOperationResult(runtime.taskCancel(requiredPayloadString(payload.taskRunId, "taskRunId"), optionalPayloadString(payload.reason)));
   if (operation === "task.approve") return await unwrapHostOperationResult(runtime.taskApprove(requiredPayloadString(payload.taskRunId, "taskRunId")));
   if (operation === "task.resume") return await unwrapHostOperationResult(runtime.taskResume(requiredPayloadString(payload.taskRunId, "taskRunId"), { runId: optionalPayloadString(payload.runId), turnId: optionalPayloadString(payload.turnId), retrySafety: optionalPayloadString(payload.retrySafety) }));

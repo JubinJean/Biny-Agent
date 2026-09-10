@@ -389,7 +389,6 @@ function ModelSubmenu({ currentAlias, groups, onSelect, unsetLabel }: { currentA
               >
                 <span className="model-picker-option-label">
                   <strong>{model.displayName}</strong>
-                  {model.contextWindowIsFallback ? <small>上下文窗口未声明，当前按保守预算</small> : null}
                 </span>
                 {selected ? <Icon name="check" size={14} /> : null}
               </button>

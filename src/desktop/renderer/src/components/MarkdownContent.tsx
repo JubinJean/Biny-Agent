@@ -2,17 +2,21 @@
  * 消息正文的 Markdown 渲染。
  *
  * 助手回复、思考内容和用户消息共用这一套：链接按本地路径 / 外链分流，代码块带语言标签和高亮，
- * 图片和 `@attachments/` 附件走主进程转 data URL 内联显示。
+ * 图片和 `@attachments/` 附件走主进程转 data URL 内联显示；公式走 KaTeX，mermaid 围栏
+ * 交给懒加载的 MermaidBlock。
  *
- * 渲染的是模型输出，一切外部内容都当不可信处理：只有经 highlight.js 转义过的高亮结果会用
+ * 渲染的是模型输出，一切外部内容都当不可信处理：只有经高亮库转义过的高亮结果会用
  * `dangerouslySetInnerHTML`，其余节点都交给 React 转义。
  */
 import React, { isValidElement, memo, useMemo, useState } from "react";
 import Markdown from "react-markdown";
+import rehypeKatex from "rehype-katex";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import remarkBreaks from "remark-breaks";
 import { useInlineImage } from "../inlineImage.js";
-import { highlightFencedCode } from "../syntaxHighlight.js";
-import { CopyButton } from "./CopyButton.js";
+import { MermaidBlock } from "./MermaidBlock.js";
+import { MarkdownCodeBlock } from "./MarkdownCodeBlock.js";
 import { Icon } from "./Icon.js";
 
 interface MarkdownContentProps {
@@ -20,6 +24,8 @@ interface MarkdownContentProps {
   projectId: string;
   /** 附加到根节点的修饰类，例如思考内容用的 `is-compact`。 */
   variant?: string;
+  /** 用户消息传 true：单换行渲染成换行（聊天里手敲的换行不应被 Markdown 吞掉）。 */
+  breaks?: boolean;
   onPreviewFile(path: string): void;
   onOpenExternal(url: string): void;
 }
@@ -28,9 +34,14 @@ export const MarkdownContent = memo(function MarkdownContent({
   content,
   projectId,
   variant,
+  breaks,
   onPreviewFile,
   onOpenExternal
 }: MarkdownContentProps): React.JSX.Element {
+  const remarkPlugins = useMemo(
+    () => (breaks ? [remarkGfm, remarkBreaks, remarkMath] : [remarkGfm, remarkMath]),
+    [breaks]
+  );
   return (
     <div className={variant ? `markdown-body ${variant}` : "markdown-body"}>
       <Markdown
@@ -64,6 +75,8 @@ export const MarkdownContent = memo(function MarkdownContent({
           },
           pre({ children }) {
             const block = fencedCode(children);
+            // 图表单独渲染；解析失败时 MermaidBlock 自己回退成普通代码块
+            if (block.language?.toLowerCase() === "mermaid") return <MermaidBlock code={block.code} />;
             return <MarkdownCodeBlock code={block.code} language={block.language} />;
           },
           table({ children }) {
@@ -71,26 +84,15 @@ export const MarkdownContent = memo(function MarkdownContent({
             return <div className="markdown-table"><table>{children}</table></div>;
           }
         }}
-        remarkPlugins={[remarkGfm]}
+        // singleDollarTextMath 关闭：$ 是常见计价符号，只认 $$...$$ 行内/块级公式
+        remarkPlugins={remarkPlugins}
+        rehypePlugins={[[rehypeKatex, { throwOnError: false, errorColor: "var(--biny-danger)" }]]}
       >
         {content}
       </Markdown>
     </div>
   );
 });
-
-function MarkdownCodeBlock({ code, language }: { code: string; language?: string }): React.JSX.Element {
-  const highlighted = useMemo(() => highlightFencedCode(code, language), [code, language]);
-  return (
-    <div className="markdown-code-block">
-      <div className="markdown-code-header">
-        <span className="markdown-code-language">{language ?? "文本"}</span>
-        <CopyButton className="markdown-code-copy" label="复制代码" showLabel value={code} />
-      </div>
-      <pre><code className="hljs" dangerouslySetInnerHTML={{ __html: highlighted.html }} /></pre>
-    </div>
-  );
-}
 
 /** 图片没读到（不是图片、太大、路径不存在）时退回成一行文件名，不留一块空白。 */
 function InlineImage({ alt, path, projectId }: { alt: string; path: string; projectId: string }): React.JSX.Element {

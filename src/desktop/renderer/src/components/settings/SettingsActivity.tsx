@@ -247,7 +247,15 @@ function SettingsActivityForm({ activity, onChange, onRefreshRuntime, onRuntimeC
   const screenPermission = permissionStatus(runtime?.screenRecordingGranted);
   const accessibilityPermission = permissionStatus(runtime?.accessibilityGranted);
   const activityUpdating = activityUpdateCount > 0;
-
+  const activityStatusClass = runtime?.state === "error"
+    ? " is-error"
+    : runtime?.state === "permission_required" || runtime?.state === "unavailable"
+      ? " is-warning"
+      : isRecording
+        ? " is-recording"
+        : activity.enabled
+          ? " is-enabled"
+          : "";
   return (
       <div className="settings-sections activity-settings">
       <section aria-busy={activityUpdating} className="activity-card activity-overview" id="activity-overview" tabIndex={-1}>
@@ -256,7 +264,7 @@ function SettingsActivityForm({ activity, onChange, onRefreshRuntime, onRuntimeC
             <div className="activity-title-line">
               <Icon name="activity" size={16} />
               <h3>活动记录器</h3>
-              <span className={`activity-status-badge${isRecording ? " is-recording" : activity.enabled ? " is-enabled" : ""}`}>
+              <span className={`activity-status-badge${activityStatusClass}`}>
                 {runtimeLabel}
               </span>
               {isRuntimeRunning && runtime?.screenLocked ? <span className="activity-status-badge is-locked"><Icon name="lock" size={11} />已锁屏</span> : null}
@@ -279,7 +287,7 @@ function SettingsActivityForm({ activity, onChange, onRefreshRuntime, onRuntimeC
           </div>
           <div aria-hidden="true" className="activity-progress"><span style={{ width: `${storagePercent}%` }} /></div>
         </div>
-        {runtime?.error ? <p className="activity-section-description" role="alert">{runtime.error}</p> : null}
+        {runtime?.error ? <p className="activity-section-description is-error" role="alert">{runtime.error}</p> : null}
         {feedback ? <p aria-live="polite" className="activity-feedback" role="status">{feedback}</p> : null}
       </section>
 

@@ -442,6 +442,7 @@ async function testModelProfilesCommitAndRollback(): Promise<void> {
     const profile = {
       contextWindow: 1_000_000,
       maxInputTokens: 950_000,
+      maxOutputTokens: 128_000,
       thinkingLevelMap: { off: "none", high: "high", max: "max" }
     };
     const committed = await transaction.save("project", {

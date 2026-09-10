@@ -38,6 +38,10 @@ interface DesktopEventBridgeOptions {
   setWriterConflict: Dispatch<SetStateAction<DesktopSessionWriterConflict | undefined>>;
   setSidebarSessions: Dispatch<SetStateAction<DesktopSessionSummary[]>>;
   setWorkspace: Dispatch<SetStateAction<DesktopWorkspaceSnapshot | undefined>>;
+  /** 当前会话新一轮生成开始（run.started）：清掉生成错误横幅。 */
+  onGenerationStarted(): void;
+  /** 当前会话生成失败（run.failed / run.incomplete / run.blocked）：弹出输入框上方的错误横幅。 */
+  onGenerationError(message: string): void;
 }
 
 export function useDesktopEventBridge({
@@ -50,7 +54,9 @@ export function useDesktopEventBridge({
   setSkillDraftNotices,
   setWriterConflict,
   setSidebarSessions,
-  setWorkspace
+  setWorkspace,
+  onGenerationStarted,
+  onGenerationError
 }: DesktopEventBridgeOptions): void {
   useEffect(() => {
     const eventQueue: DesktopAgentEventEnvelope[] = [];
@@ -117,6 +123,17 @@ export function useDesktopEventBridge({
           const contextEvents = currentEvents.filter(hasContextStatus);
           const latestContext = contextEvents.at(-1);
           if (latestContext) setContextBudget(latestContext.context.budget);
+          // 生成错误横幅由 live 事件直接驱动（Alma 语义）：新一轮开始即清除，
+          // 失败即置位。与 document 的重放/刷新解耦，横幅不会因终态刷新闪退。
+          let generationStarted = false;
+          let generationFailure: string | undefined;
+          for (const event of currentEvents) {
+            if (event.type === "run.started") generationStarted = true;
+            if (event.type === "run.failed") generationFailure = event.error;
+            if (event.type === "run.incomplete" || event.type === "run.blocked") generationFailure = event.reason;
+          }
+          if (generationStarted) onGenerationStarted();
+          if (generationFailure !== undefined) onGenerationError(generationFailure);
         }
       }
 
@@ -139,5 +156,5 @@ export function useDesktopEventBridge({
       for (const timer of refreshTimers.values()) clearTimeout(timer);
       refreshTimers.clear();
     };
-  }, [activeProjectIdRef, mergeProjectSnapshot, onError, selectedSessionIdRef, setContextBudget, setDocument, setSkillDraftNotices, setSidebarSessions, setWorkspace, setWriterConflict]);
+  }, [activeProjectIdRef, mergeProjectSnapshot, onError, selectedSessionIdRef, setContextBudget, setDocument, setSkillDraftNotices, setSidebarSessions, setWorkspace, setWriterConflict, onGenerationError, onGenerationStarted]);
 }

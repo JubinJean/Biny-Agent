@@ -4,7 +4,9 @@
  * 把工具名分类成视觉变体、派生行标题与状态语义；以及消息时钟的时间/指标格式化
  * （日期感知时钟、用时、首 token 延迟、解码吞吐）。全部为纯函数，不依赖 React，便于单测。
  */
+import type { OrbState } from "thinking-orbs";
 import type { TimelineRunStatus, TimelineTool, TimelineTurn } from "./sessionTimeline.js";
+import { executionToolLabel } from "./sessionTimeline.js";
 import type { SessionUsage } from "../../../session/metadata.js";
 import type { IconName } from "./components/Icon.js";
 
@@ -40,15 +42,14 @@ export const VARIANT_TITLES: Record<ToolRowVariant, string> = {
   others: "Tool call",
 };
 
-/** 已知工具名 → 变体；未知工具（含 MCP 动态工具）落到通用 `others`，行标题回退显示原始工具名。 */
+/** 已知工具名 → 变体；未知工具落到通用 `others`，行标题回退显示原始工具名。 */
 const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
-  run_command: "bash",
-  read_file: "read",
-  web_fetch: "read",
-  web_search: "search",
-  search_files: "search",
-  grep_search: "search",
-  write_file: "write",
+  Bash: "bash",
+  Read: "read",
+  WebFetch: "read",
+  WebSearch: "search",
+  Grep: "search",
+  Write: "write",
   edit_file: "edit",
   multi_edit: "edit",
   apply_patch: "edit",
@@ -62,10 +63,10 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   process_status: "process",
   read_process_output: "process",
   list_processes: "process",
-  list_files: "read",
+  Glob: "read",
   read_tool_result: "read",
-  update_todos: "edit",
-  invoke_skill: "skill",
+  TodoWrite: "edit",
+  Skill: "skill",
   skill_call: "skill",
   read_skill_resource: "read",
   activity_search: "search",
@@ -80,6 +81,7 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
 
 /** 把工具名分类成行变体。 */
 export function classifyTool(toolName: string): ToolRowVariant {
+  if (/(?:^|_)zvec_grep_search$/u.test(toolName)) return "search";
   return TOOL_VARIANTS[toolName] ?? "others";
 }
 
@@ -89,6 +91,51 @@ export function toolRowState(tool: TimelineTool): ToolRowState {
   if (tool.status === "failed" || tool.status === "denied" || tool.status === "unknown") return "error";
   if (tool.status === "cancelled" || tool.status === "aborted") return "stopped";
   return "ok";
+}
+
+/** 状态行的一次活动语义：真实标签 + 配套 orb 动画（thinking-orbs 的 state）。 */
+export interface TurnActivity {
+  label: string;
+  orbState: OrbState;
+}
+
+const THINKING_ACTIVITY: TurnActivity = { label: "思考中", orbState: "solving" };
+
+/**
+ * 从运行中的轮次派生当前真实活动，驱动聊天底部的状态行（Alma 式）。
+ * 优先级：等待授权 > 正在运行的工具/技能 > 思考；轮次不存在或已落定时回到「思考中」。
+ */
+export function currentTurnActivity(turn: TimelineTurn | undefined): TurnActivity {
+  if (!turn || (turn.status !== "running" && turn.status !== "waiting_permission")) return THINKING_ACTIVITY;
+  if (turn.status === "waiting_permission") {
+    const pending = [...turn.tools].reverse().find((tool) => tool.permission && !tool.permission.resolved);
+    return {
+      label: pending ? `等待授权：${executionToolLabel(pending.tool)}` : "等待授权",
+      orbState: "listening"
+    };
+  }
+  const active = [...turn.tools].reverse().find((tool) => tool.status === "running" || tool.status === "waiting");
+  return active ? toolCallActivity(active) : THINKING_ACTIVITY;
+}
+
+/** 运行中工具的状态行文案；措辞与 sessionTimeline 的 toolStatus 保持一致，orb 动画随活动语义区分。 */
+function toolCallActivity(tool: TimelineTool): TurnActivity {
+  if (tool.tool === "Skill" || tool.tool === "skill_call") {
+    const args = typeof tool.args === "object" && tool.args !== null ? tool.args as Record<string, unknown> : undefined;
+    const skill = typeof args?.skill === "string" ? args.skill.trim() : "";
+    return { label: skill ? `正在使用技能 ${skill}` : "正在使用技能", orbState: "shaping" };
+  }
+  if (tool.tool === "WebSearch") return { label: "正在搜索网页", orbState: "searching" };
+  const display = tool.display;
+  if (display?.kind === "command") return { label: "正在运行命令", orbState: "working" };
+  if (display?.kind === "file_io") {
+    if (display.operation === "read") return { label: "正在读取文件", orbState: "searching" };
+    if (display.operation === "write" || display.operation === "edit") return { label: "正在修改文件", orbState: "composing" };
+    if (display.operation === "search" || display.operation === "grep") return { label: "正在搜索项目", orbState: "searching" };
+    if (display.operation === "git") return { label: "正在检查 Git 状态", orbState: "working" };
+  }
+  if (tool.description) return { label: tool.description, orbState: "connecting" };
+  return { label: `正在执行 ${executionToolLabel(tool.tool)}`, orbState: "connecting" };
 }
 
 /** 错误行的折叠摘要 = 失败文本首行（DSH：错误摘要替换摘要槽）。 */
@@ -112,7 +159,7 @@ export function runErrorPresentation(status: TimelineRunStatus, message?: string
   }
 }
 
-/** 失败/阻塞/未完成/取消/中止：这些终态的错误输出统一走 RunErrorCard。 */
+/** 失败/阻塞/未完成/取消/中止：这些终态属于「本轮失败」，由输入框上方的生成错误横幅统一呈现。 */
 export function isRunErrorStatus(status: TimelineRunStatus): boolean {
   return status === "failed"
     || status === "blocked"

@@ -302,30 +302,37 @@ export function McpServersView({ projectId, onError, onSuccess }: McpServersView
     }));
   }, []);
 
+  const tabSwitcher = (
+    <div className="biny-mcp-tabs settings-plugin-tabs" role="tablist" aria-label="MCP 服务器列表">
+      <button aria-selected={tab === "market"} className={tab === "market" ? "is-active" : ""} onClick={() => setTab("market")} role="tab" type="button"><Icon name="site" size={15} />应用市场</button>
+      <button aria-selected={tab === "installed"} className={tab === "installed" ? "is-active" : ""} onClick={() => setTab("installed")} role="tab" type="button"><Icon name="server" size={15} />已安装 <span>{snapshot?.servers.length ?? 0}</span></button>
+    </div>
+  );
+
   return (
     <div className="biny-mcp-page" id="mcp-servers" tabIndex={-1}>
 
-      <div className="biny-mcp-tabs" role="tablist" aria-label="MCP 服务器列表">
-        <button aria-selected={tab === "market"} className={tab === "market" ? "is-active" : ""} onClick={() => setTab("market")} role="tab" type="button"><Icon name="site" size={15} />应用市场</button>
-        <button aria-selected={tab === "installed"} className={tab === "installed" ? "is-active" : ""} onClick={() => setTab("installed")} role="tab" type="button"><Icon name="server" size={15} />已安装 <span>{snapshot?.servers.length ?? 0}</span></button>
-      </div>
-
       {tab === "market" ? (
-        <div className="biny-mcp-toolbar">
-          <label className="biny-mcp-search">
-            <Icon name="search" size={15} />
-            <input aria-label="搜索 MCP 服务器" onChange={(event) => setQuery(event.target.value)} placeholder="搜索 MCP 服务器…" value={query} />
-            {query ? <button aria-label="清空搜索" onClick={() => setQuery("")} type="button"><Icon name="close" size={13} /></button> : null}
-          </label>
-          <label className="biny-mcp-category"><span className="sr-only">筛选分类</span><select aria-label="筛选分类" onChange={(event) => setCategory(event.target.value)} value={category}><option value="">所有分类</option>{catalog.categories.map((item) => <option key={item} value={item}>{item}</option>)}</select><Icon name="chevron" size={14} /></label>
-          <button aria-label="刷新 MCP 列表" className="biny-mcp-icon-button" disabled={loading} onClick={() => void load(true)} title="刷新" type="button"><Icon name="refresh" size={16} /></button>
-        </div>
+        <>
+          <div className="settings-plugin-toolbar biny-mcp-toolbar">
+            {tabSwitcher}
+            <button className="settings-plugin-action" disabled={loading} onClick={() => void load(true)} type="button"><Icon name="refresh" size={16} />刷新</button>
+          </div>
+          <div className="biny-mcp-filter-row">
+            <label className="biny-mcp-search settings-extension-search">
+              <Icon name="search" size={15} />
+              <input aria-label="搜索 MCP 服务器" onChange={(event) => setQuery(event.target.value)} placeholder="搜索 MCP 服务器…" value={query} />
+              {query ? <button aria-label="清空搜索" onClick={() => setQuery("")} type="button"><Icon name="close" size={13} /></button> : null}
+            </label>
+            <label className="biny-mcp-category"><span className="sr-only">筛选分类</span><select aria-label="筛选分类" onChange={(event) => setCategory(event.target.value)} value={category}><option value="">所有分类</option>{catalog.categories.map((item) => <option key={item} value={item}>{item}</option>)}</select><Icon name="chevron" size={14} /></label>
+          </div>
+        </>
       ) : (
-        <div className="biny-mcp-toolbar">
-          <p className="biny-mcp-count">{(snapshot?.servers.length ?? 0) === 0 ? "未安装 MCP 服务器" : `已安装 ${snapshot?.servers.length} 个服务器`}</p>
+        <div className="settings-plugin-toolbar biny-mcp-toolbar">
+          {tabSwitcher}
           <div className="biny-mcp-toolbar-actions">
-            <button className="biny-mcp-add-button" onClick={openNew} type="button"><Icon name="add" size={16} />添加服务器</button>
-            <button aria-label="刷新 MCP 列表" className="biny-mcp-icon-button" disabled={loading} onClick={() => void load(true)} title="刷新" type="button"><Icon name="refresh" size={16} /></button>
+            <button className="settings-plugin-install-button biny-mcp-add-button" onClick={openNew} type="button"><Icon name="add" size={16} />添加服务器</button>
+            <button className="settings-plugin-action" disabled={loading} onClick={() => void load(true)} type="button"><Icon name="refresh" size={16} />刷新</button>
           </div>
         </div>
       )}
@@ -388,11 +395,13 @@ const McpMarketCard = memo(function McpMarketCard({ entry, onInstall, onOpenExte
     <article className="biny-mcp-market-card">
       <div className="biny-mcp-card-topline">
         <span className="biny-mcp-card-icon"><Icon name="server" size={20} /></span>
-        <div className="biny-mcp-card-heading"><h2>{entry.name}</h2><span>{entry.author ? `作者 ${entry.author}` : "社区服务器"}{entry.category ? ` · ${entry.category}` : ""}</span></div>
+        <div className="biny-mcp-card-heading"><h2><span className="biny-mcp-card-name">{entry.name}</span></h2><span>{entry.author ? `作者 ${entry.author}` : "社区服务器"}{entry.category ? ` · ${entry.category}` : ""}</span></div>
         <div className="biny-mcp-card-badges">{entry.verified ? <span className="biny-mcp-badge is-verified"><Icon name="check" size={12} />已验证</span> : null}{entry.featured ? <span className="biny-mcp-badge is-featured">精选</span> : null}</div>
       </div>
-      <p className="biny-mcp-card-description">{entry.description || "暂无描述"}</p>
-      <div className="biny-mcp-tags">{entry.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}</div>
+      <div className="biny-mcp-market-copy">
+        <p className="biny-mcp-card-description">{entry.description || "暂无描述"}</p>
+        <div className="biny-mcp-tags">{entry.tags.slice(0, 3).map((tag) => <span key={tag}>{tag}</span>)}</div>
+      </div>
       <div className="biny-mcp-card-footer">
         <div className="biny-mcp-install-options">{initialInstallation ? <button aria-label={`安装 ${entry.name}`} className="biny-mcp-install-button" onClick={() => onInstall(entry, initialInstallation)} title={`安装 ${entry.name}`} type="button"><Icon name="download" size={14} />安装</button> : null}</div>
         {entry.repositoryUrl || entry.websiteUrl ? <button aria-label={`打开 ${entry.name} 页面`} className="biny-mcp-link-button" onClick={() => onOpenExternal(entry.repositoryUrl ?? entry.websiteUrl ?? "")} title="打开项目页面" type="button"><Icon name="external" size={15} /></button> : null}
@@ -411,7 +420,7 @@ const McpInstalledContent = memo(function McpInstalledContent({ servers, loading
   if (loading && !servers.length) return <McpEmpty icon="refresh" title="正在读取已安装服务器" detail="正在同步配置和运行状态…" />;
   if (!servers.length) return <McpEmpty icon="server" title="还没有安装 MCP 服务器" detail="可以从应用市场安装，或点击右上角添加自定义 Stdio / Remote 服务器。" />;
   return (
-    <div className="biny-mcp-installed-layout">
+    <div className={`biny-mcp-installed-layout${details || detailsLoading ? " has-details" : ""}`}>
       <div className="biny-mcp-installed-list">{servers.map((server) => <McpInstalledCard busy={busyName === server.name} key={server.name} onDelete={onDelete} onDetails={onDetails} onEdit={onEdit} onReconnect={onReconnect} onSetEnabled={onSetEnabled} server={server} />)}</div>
       {details || detailsLoading ? <McpDetailsPanel details={details} loading={detailsLoading} onClose={onCloseDetails} /> : null}
     </div>
@@ -425,7 +434,7 @@ const McpInstalledCard = memo(function McpInstalledCard({ server, busy, onSetEna
     <article className={`biny-mcp-installed-card is-${server.state}`}>
       <div className="biny-mcp-installed-heading">
         <div className="biny-mcp-card-heading">
-          <h2>{server.name}<span className={`biny-mcp-status is-${server.state}`}><Icon name={statusIcon} size={11} />{statusLabel}</span></h2>
+          <h2><span className="biny-mcp-card-name">{server.name}</span><span className={`biny-mcp-status is-${server.state}`}><Icon name={statusIcon} size={11} />{statusLabel}</span></h2>
           {server.description ? <p className="biny-mcp-card-desc">{server.description}</p> : null}
         </div>
       </div>
@@ -448,7 +457,7 @@ const McpInstalledCard = memo(function McpInstalledCard({ server, busy, onSetEna
 });
 
 const McpDetailsPanel = memo(function McpDetailsPanel({ details, loading, onClose }: { details?: DesktopMcpServerDetails; loading: boolean; onClose(): void }): React.JSX.Element {
-  return <aside aria-label="MCP 服务器详情" className="biny-mcp-details" role="dialog"><div className="biny-mcp-details-header"><div><span className="biny-mcp-eyebrow">运行详情</span><h2>{details?.server.name ?? "MCP 服务器"}</h2></div><button aria-label="关闭详情" className="biny-mcp-icon-button" onClick={onClose} type="button"><Icon name="close" size={15} /></button></div>{loading ? <p className="biny-mcp-details-empty">正在读取工具、提示和资源…</p> : details ? <div className="biny-mcp-details-body"><div className="biny-mcp-detail-summary"><span className={`biny-mcp-status is-${details.server.state}`}><i />{details.server.state === "connected" ? "已连接" : "未连接"}</span><span>{details.server.toolNames.length} 个工具</span><span>{details.server.promptNames.length} 个提示</span></div><CapabilityList label="工具" values={details.server.toolNames} /><CapabilityList label="提示" values={details.server.promptNames} /><ResourceList resources={details.resources} /></div> : null}</aside>;
+  return <aside aria-label="MCP 服务器详情" className="biny-mcp-details" role="dialog"><div className="biny-mcp-details-header"><h2>{details?.server.name ?? "MCP 服务器"}</h2><button aria-label="关闭详情" className="biny-mcp-icon-button" onClick={onClose} type="button"><Icon name="close" size={15} /></button></div>{loading ? <p className="biny-mcp-details-empty">正在读取工具、提示和资源…</p> : details ? <div className="biny-mcp-details-body"><div className="biny-mcp-detail-summary"><span className={`biny-mcp-status is-${details.server.state}`}><i />{details.server.state === "connected" ? "已连接" : "未连接"}</span><span>{details.server.toolNames.length} 个工具</span><span>{details.server.promptNames.length} 个提示</span></div><CapabilityList label="工具" values={details.server.toolNames} /><CapabilityList label="提示" values={details.server.promptNames} /><ResourceList resources={details.resources} /></div> : null}</aside>;
 });
 
 const CapabilityList = memo(function CapabilityList({ label, values }: { label: string; values: string[] }): React.JSX.Element {

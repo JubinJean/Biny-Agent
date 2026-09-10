@@ -1,5 +1,5 @@
 /**
- * web_search 工具结果的桌面端展示投影。
+ * WebSearch 工具结果的桌面端展示投影。
  *
  * 纯函数模块：把工具的 args/result 转换为搜索卡片视图模型，
  * 供 ToolActivity 渲染，也供 tests/desktop.test.ts 直接断言。

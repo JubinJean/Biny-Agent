@@ -9,8 +9,8 @@ import { useEffect, useRef, useState } from "react";
 import { ThinkingOrb } from "thinking-orbs";
 import type { DesktopProject, DesktopRuntimeMutation, DesktopRuntimeProjection, DesktopSessionLimits, DesktopSessionWriterConflict } from "../../../protocol.js";
 import type { SkillDraftNotice } from "../app/useDesktopEventBridge.js";
+import { currentTurnActivity, humanizeRunError, type TurnActivity } from "../chatModel.js";
 import type { TimelineTurn } from "../sessionTimeline.js";
-import { pickThinkingMessage } from "../thinkingMessages.js";
 import { desktopWorktreeView } from "../worktreePresentation.js";
 import { Icon } from "./Icon.js";
 import { MessageTimeline } from "./MessageTimeline.js";
@@ -46,7 +46,7 @@ interface WorkspaceProps {
   thinking: boolean;
   running: boolean;
   thinkingStartedAt?: string;
-  /** 当前会话的技能草稿审核卡片；渲染在消息流末尾、运行状态行之前。 */
+  /** 当前会话的技能草稿审核卡片；固定在输入框上方，不随消息流滚走。 */
   skillDraftNotices?: SkillDraftNotice[];
   /** 卡片动画收起完成后把它从列表移除。 */
   onDismissSkillDraftNotice?(id: string): void;
@@ -60,7 +60,13 @@ interface WorkspaceProps {
   writerConflict?: DesktopSessionWriterConflict;
   /** 会话体量接近持久化上限时的预警信息；未接近时缺省。 */
   sessionLimits?: DesktopSessionLimits;
-  onEditUserMessage(input: string, userMessageIndex: number, idempotencyKey: string): Promise<void>;
+  /** 点「编辑」用户消息：文本回填到底部输入框。 */
+  onEditRequest(turn: TimelineTurn): void;
+  /** 进行中的编辑重写投影；提交与清除都由 App 负责。 */
+  editInFlight?: { turnId: string; user: string; userMessageIndex?: number };
+  /** 当前要展示的生成错误文本（Alma 式瞬态：live 失败事件驱动）；空值 = 不展示。 */
+  generationError?: string;
+  onDismissGenerationError(): void;
   onCreateBranch(): void;
   onRollbackFiles(turn: TimelineTurn): void;
   onDeleteUserMessage(turnId: string): void;
@@ -112,7 +118,10 @@ export function Workspace({
   onRetryWriterConflict,
   writerConflict,
   sessionLimits,
-  onEditUserMessage,
+  onEditRequest,
+  editInFlight,
+  generationError,
+  onDismissGenerationError,
   onCreateBranch,
   onRollbackFiles,
   onDeleteUserMessage,
@@ -133,6 +142,9 @@ export function Workspace({
     ? pendingHomePrompt
     : undefined;
   const streaming = running || pendingPrompt !== undefined || turns.some((turn) => turn.status === "running" || turn.status === "waiting_permission");
+  // 状态行在整个运行期间常驻消息流末尾（Alma 式活动状态）：文案从最后一条轮次的
+  // 实时状态派生——思考中 / 正在使用技能 X / 正在读取文件 / 等待授权……，回合结束即退场。
+  const lastTurn = turns.at(-1);
   const isHome = !loading && !runtimeError && !projectId;
   const showWelcome = !loading && !runtimeError && !sessionId && !streaming && turns.length === 0;
   // 上限预警按会话 dismiss：换会话要重新提示，同会话点掉后不再打扰。
@@ -244,7 +256,8 @@ export function Workspace({
               <MessageTimeline
                 onCreateBranch={onCreateBranch}
                 onDeleteUserMessage={onDeleteUserMessage}
-                onEditUserMessage={onEditUserMessage}
+                editInFlight={editInFlight}
+                onEditRequest={onEditRequest}
                 onOpenExternal={onOpenExternal}
                 onPreviewFile={onPreviewFile}
                 onResolvePermission={onResolvePermission}
@@ -256,26 +269,17 @@ export function Workspace({
                   : undefined}
                 thinking={thinking}
                 projectId={projectId}
-                sessionId={sessionId}
                 turns={turns}
               />
-              {/* 技能草稿审核卡：消息流末尾、运行状态行之前（回合成功后的审核入口）。 */}
-              {skillDraftNotices && skillDraftNotices.length > 0 && projectId ? (
-                <div className="biny-skill-draft-notices">
-                  {skillDraftNotices.map((notice) => (
-                    <SkillDraftNoticeCard
-                      key={notice.id}
-                      notice={notice}
-                      onDismiss={(id) => onDismissSkillDraftNotice?.(id)}
-                      onError={onRuntimeError}
-                      onOpenSkillSettings={() => onOpenSkillSettings?.()}
-                      projectId={projectId}
-                    />
-                  ))}
-                </div>
+              {/* 活动状态行：消息流末尾、最后一条消息下方，运行期间常驻；
+                文案是当前真实活动（思考/工具/技能/等待授权），回合结束即退场。 */}
+              {running || pendingPrompt !== undefined ? (
+                <ThinkingStatus
+                  activity={currentTurnActivity(lastTurn)}
+                  key={thinkingStartedAt ?? "thinking"}
+                  startedAt={thinkingStartedAt}
+                />
               ) : null}
-              {/* 运行状态行：消息流末尾，与 DSH 的 TurnStatus 同位置。 */}
-              {thinking || pendingPrompt ? <ThinkingStatus key={thinkingStartedAt ?? "thinking"} startedAt={thinkingStartedAt} /> : null}
             </ChatScroll>
           ) : (
             <div className="biny-chat-empty"><Icon name="message" size={20} /><span>开始一段新的对话</span></div>
@@ -283,6 +287,23 @@ export function Workspace({
         </div>
         {renderWelcome ? null : (
           <div className={`biny-chat-composer${pendingPrompt ? " is-entering" : ""}`}>
+            {skillDraftNotices && skillDraftNotices.length > 0 && projectId ? (
+              <div aria-label="待审核的技能" className="biny-skill-draft-notices" role="region">
+                {skillDraftNotices.map((notice) => (
+                  <SkillDraftNoticeCard
+                    key={notice.id}
+                    notice={notice}
+                    onDismiss={(id) => onDismissSkillDraftNotice?.(id)}
+                    onError={onRuntimeError}
+                    onOpenSkillSettings={() => onOpenSkillSettings?.()}
+                    projectId={projectId}
+                  />
+                ))}
+              </div>
+            ) : null}
+            {generationError ? (
+              <GenerationErrorBanner error={generationError} onDismiss={onDismissGenerationError} />
+            ) : null}
             {writerConflict ? <SessionWriterConflictBanner onRetry={onRetryWriterConflict} /> : children}
           </div>
         )}
@@ -292,9 +313,24 @@ export function Workspace({
   );
 }
 
-function ThinkingStatus({ startedAt }: { startedAt?: string }): React.JSX.Element {
+/** 生成错误横幅：危险色描边卡（警告图标 + 标题 + 错误文本 + 关闭），错误原文放 tooltip。 */
+function GenerationErrorBanner({ error, onDismiss }: { error: string; onDismiss(): void }): React.JSX.Element {
+  return (
+    <div className="biny-generation-error" role="alert">
+      <Icon name="warning" size={14} />
+      <div className="biny-generation-error-body">
+        <p className="biny-generation-error-title">生成错误</p>
+        <p className="biny-generation-error-text" title={error}>{humanizeRunError(error)}</p>
+      </div>
+      <button aria-label="关闭错误提示" onClick={onDismiss} title="关闭" type="button">
+        <Icon name="close" size={13} />
+      </button>
+    </div>
+  );
+}
+
+function ThinkingStatus({ activity, startedAt }: { activity: TurnActivity; startedAt?: string }): React.JSX.Element {
   const [elapsedSeconds, setElapsedSeconds] = useState(() => elapsedSecondsSince(startedAt));
-  const [thinkingMessage] = useState(() => pickThinkingMessage());
 
   useEffect(() => {
     const update = (): void => setElapsedSeconds(elapsedSecondsSince(startedAt));
@@ -306,8 +342,9 @@ function ThinkingStatus({ startedAt }: { startedAt?: string }): React.JSX.Elemen
 
   return (
     <div className="biny-thinking-status" role="status">
-      <ThinkingOrb aria-label={thinkingMessage} className="biny-thinking-status-orb" size={20} state="connecting" theme="auto" />
-      <span className="biny-thinking-status-label chat-shimmer-text">{thinkingMessage}…</span>
+      {/* thinking-orbs 只有 20/64 两档画布；16px 展示由 CSS 盒子缩小（同 Alma 的 cssSize 做法）。 */}
+      <ThinkingOrb aria-label={activity.label} className="biny-thinking-status-orb" size={20} state={activity.orbState} theme="auto" />
+      <span className="biny-thinking-status-label chat-shimmer-text">{activity.label}…</span>
       <span className="biny-thinking-status-duration">{elapsedSeconds}s</span>
     </div>
   );

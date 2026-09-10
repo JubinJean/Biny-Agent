@@ -7,6 +7,7 @@ import type { DesktopRuntimeMutation } from "../../protocol.js";
 const startsWork: Record<DesktopRuntimeMutation, boolean> = {
   "task.create": true,
   "task.start": true,
+  "task.run": true,
   "task.cancel": false,
   "task.approve": true,
   "task.resume": true,

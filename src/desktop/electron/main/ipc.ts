@@ -11,11 +11,9 @@ import {
   BrowserWindow,
   dialog,
   ipcMain,
-  Menu,
   nativeTheme,
   shell,
   systemPreferences,
-  type MenuItemConstructorOptions,
   type MessageBoxOptions,
   type OpenDialogOptions,
   type SaveDialogOptions
@@ -34,7 +32,7 @@ import {
   thinkingSchema
 } from "./settingsSaveInputSchema.js";
 import { clampFontSize } from "../../fontPreference.js";
-import type { DesktopActiveView, DesktopBootstrap, DesktopQuickChatSettings, DesktopSessionMenuAction, DesktopSettingsCloseResponse, DesktopSettingsDraftState, DesktopSettingsSaveInput, DesktopSystemSettingsPane, DesktopThemePreference } from "../../protocol.js";
+import type { DesktopActiveView, DesktopBootstrap, DesktopQuickChatSettings, DesktopSettingsCloseResponse, DesktopSettingsDraftState, DesktopSettingsSaveInput, DesktopSystemSettingsPane, DesktopThemePreference } from "../../protocol.js";
 import { desktopIpc } from "../../protocol.js";
 import { DesktopAgentManager } from "./DesktopAgentManager.js";
 import { ActivityRecorderService } from "./ActivityRecorderService.js";
@@ -83,6 +81,7 @@ const userMessageIndexSchema = z.number().int().nonnegative();
 const titleSchema = z.string().trim().min(1).max(120);
 const identityDocumentSchema = z.enum(["user"]);
 const identityContentSchema = z.string().max(64 * 1024);
+const pluginScopeSchema = z.enum(["project", "global"]).optional();
 const identityReasonSchema = z.string().max(1_000).optional();
 const branchNameSchema = z.string().trim().min(1).max(255);
 const revisionSchema = z.string().max(200).optional();
@@ -175,7 +174,7 @@ const memoryEntryPatchSchema = z.object({
   userEvidence: memoryUserEvidenceSchema
 }).strict();
 const runtimeMutationSchema = z.enum([
-  "task.create", "task.start", "task.cancel", "task.approve", "task.resume", "task.retry",
+  "task.create", "task.start", "task.run", "task.cancel", "task.approve", "task.resume", "task.retry",
   "automation.create", "automation.pause", "automation.resume", "automation.run", "automation.delete",
   "goal.create", "goal.pause", "goal.resume", "goal.cancel",
   "graph.create", "graph.start", "graph.pause", "graph.resume", "graph.cancel",
@@ -450,12 +449,6 @@ export function registerDesktopIpc(context: IpcContext): void {
       : await dialog.showMessageBox(options);
     if (confirmation.response !== 0) return await context.agents.workspaceSnapshot(parsedProjectId);
     return await context.agents.deleteSession(parsedProjectId, parsedSessionId);
-  });
-
-  handle(desktopIpc.sessionMenu, async (_event, projectId: unknown, sessionId: unknown, pinned: unknown, archived: unknown) => {
-    idSchema.parse(projectId);
-    idSchema.parse(sessionId);
-    return await showSessionMenu(context.getWindow(), z.boolean().parse(pinned), z.boolean().optional().default(false).parse(archived));
   });
 
   handle(desktopIpc.exportSession, async (_event, projectId: unknown, sessionId: unknown, format: unknown) => {
@@ -1062,20 +1055,20 @@ export function registerDesktopIpc(context: IpcContext): void {
 
   handle(desktopIpc.pluginRegistry, async (_event, projectId: unknown) => await context.skills.pluginRegistry(idSchema.parse(projectId)));
   handle(desktopIpc.pluginRegistryRefresh, async (_event, projectId: unknown) => await context.skills.pluginRegistry(idSchema.parse(projectId), true));
-  handleRecoveryGated(desktopIpc.pluginInstall, async (_event, projectId: unknown, pluginId: unknown) => {
+  handleRecoveryGated(desktopIpc.pluginInstall, async (_event, projectId: unknown, pluginId: unknown, scope: unknown) => {
     context.agents.assertNoRunningTasks("任务运行期间不能安装 Plugin。");
-    return await context.skills.installPlugin(idSchema.parse(projectId), idSchema.parse(pluginId));
+    return await context.skills.installPlugin(idSchema.parse(projectId), idSchema.parse(pluginId), pluginScopeSchema.parse(scope));
   });
-  handleRecoveryGated(desktopIpc.pluginSetEnabled, async (_event, projectId: unknown, pluginId: unknown, enabled: unknown) => {
+  handleRecoveryGated(desktopIpc.pluginSetEnabled, async (_event, projectId: unknown, pluginId: unknown, enabled: unknown, scope: unknown) => {
     context.agents.assertNoRunningTasks("任务运行期间不能切换 Plugin。");
-    return await context.skills.setPluginEnabled(idSchema.parse(projectId), idSchema.parse(pluginId), z.boolean().parse(enabled));
+    return await context.skills.setPluginEnabled(idSchema.parse(projectId), idSchema.parse(pluginId), z.boolean().parse(enabled), pluginScopeSchema.parse(scope));
   });
-  handleRecoveryGated(desktopIpc.pluginUninstall, async (_event, projectId: unknown, pluginId: unknown) => {
+  handleRecoveryGated(desktopIpc.pluginUninstall, async (_event, projectId: unknown, pluginId: unknown, scope: unknown) => {
     context.agents.assertNoRunningTasks("任务运行期间不能卸载 Plugin。");
-    await context.skills.uninstallPlugin(idSchema.parse(projectId), idSchema.parse(pluginId));
+    await context.skills.uninstallPlugin(idSchema.parse(projectId), idSchema.parse(pluginId), pluginScopeSchema.parse(scope));
   });
-  handle(desktopIpc.pluginOpenDirectory, async (_event, projectId: unknown) => {
-    const error = await shell.openPath(await context.skills.pluginDirectory(idSchema.parse(projectId)));
+  handle(desktopIpc.pluginOpenDirectory, async (_event, projectId: unknown, scope: unknown) => {
+    const error = await shell.openPath(await context.skills.pluginDirectory(idSchema.parse(projectId), pluginScopeSchema.parse(scope)));
     if (error) throw new Error(error);
   });
 
@@ -1216,34 +1209,4 @@ function themeBackgroundColor(preference: DesktopThemePreference): string {
 function handle(channel: string, listener: Parameters<typeof ipcMain.handle>[1]): void {
   ipcMain.removeHandler(channel);
   ipcMain.handle(channel, listener);
-}
-
-/**
- * 弹出会话右键菜单并返回用户选择。
- *
- * Electron 的菜单项 click 与关闭回调是分开的：click 只记下选择，等 popup 的 callback 触发
- * （菜单真正关闭）才 resolve，所以直接点空白处关闭会得到 undefined。
- */
-async function showSessionMenu(window: BrowserWindow | undefined, pinned: boolean, archived: boolean): Promise<DesktopSessionMenuAction | undefined> {
-  return await new Promise((resolve) => {
-    let selected: DesktopSessionMenuAction | undefined;
-    const choose = (action: DesktopSessionMenuAction): void => {
-      selected = action;
-    };
-    const template: MenuItemConstructorOptions[] = [
-      { label: "重命名", click: () => choose("rename") },
-      { label: pinned ? "取消置顶" : "置顶", click: () => choose(pinned ? "unpin" : "pin") },
-      { label: archived ? "取消归档" : "归档", click: () => choose(archived ? "unarchive" : "archive") },
-      { label: "复制会话", click: () => choose("duplicate") },
-      { type: "separator" },
-      { label: "导出会话包 (.json)…", click: () => choose("export-bundle") },
-      { label: "导出为 Claude Code (.jsonl)…", click: () => choose("export-claude") },
-      { type: "separator" },
-      { label: "删除", click: () => choose("delete") }
-    ];
-    Menu.buildFromTemplate(template).popup({
-      window,
-      callback: () => resolve(selected)
-    });
-  });
 }

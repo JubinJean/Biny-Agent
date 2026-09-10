@@ -6,10 +6,10 @@
  * 复制到视觉组件中。
  */
 import { createPortal } from "react-dom";
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SidebarLayoutSnapshot } from "../../../sidebarLayout.js";
 import { clampSidebarWidth, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH } from "../../../sidebarSizing.js";
-import type { DesktopProject, DesktopSessionSummary, DesktopSessionTreePage } from "../../../protocol.js";
+import type { DesktopProject, DesktopSessionMenuAction, DesktopSessionSummary, DesktopSessionTreePage } from "../../../protocol.js";
 import type { SidebarPeekHandlers, SidebarResizeHandlers } from "../app/useSidebarLayout.js";
 import { useClosingPresence } from "../useClosingPresence.js";
 import { Icon, type IconName } from "./Icon.js";
@@ -42,7 +42,7 @@ interface SidebarProps {
   onCreateEmptyProject(): void;
   onSelectSession(projectId: string, sessionId: string): void;
   onLoadSessionChildren(projectId: string, parentSessionId: string, cursor?: string): Promise<DesktopSessionTreePage>;
-  onSessionMenu(session: DesktopSessionSummary): void;
+  onSessionAction(session: DesktopSessionSummary, action: DesktopSessionMenuAction): void;
   onProjectPinned(projectId: string, pinned: boolean): void;
   onReorderProjects(projectIds: string[]): void;
   onRefreshProject(projectId: string): void;
@@ -72,7 +72,7 @@ export const Sidebar = memo(function Sidebar({
   onCreateEmptyProject,
   onSelectSession,
   onLoadSessionChildren,
-  onSessionMenu,
+  onSessionAction,
   onProjectPinned,
   onReorderProjects,
   onRefreshProject,
@@ -100,6 +100,9 @@ export const Sidebar = memo(function Sidebar({
   const [projectMenuOpen, setProjectMenuOpen] = useState<string>();
   const [projectOrganizationMenuOpen, setProjectOrganizationMenuOpen] = useState(false);
   const [projectCreateMenuOpen, setProjectCreateMenuOpen] = useState(false);
+  const [sessionMenu, setSessionMenu] = useState<{ session: DesktopSessionSummary; point: { x: number; y: number } }>();
+  // 关闭时数据保留在 sessionMenu 里，让退场动画期间菜单内容不消失。
+  const [sessionMenuVisible, setSessionMenuVisible] = useState(false);
   const [projectSort, setProjectSort] = useState<ProjectSort>("priority");
   const [dragState, setDragState] = useState<ProjectDragState | undefined>(undefined);
   const dragStateRef = useRef<ProjectDragState | undefined>(undefined);
@@ -107,19 +110,21 @@ export const Sidebar = memo(function Sidebar({
   const projectCreateButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
-    if (!projectMenuOpen && !projectOrganizationMenuOpen && !projectCreateMenuOpen) return;
+    if (!projectMenuOpen && !projectOrganizationMenuOpen && !projectCreateMenuOpen && !sessionMenuVisible) return;
     const closeOnPointerDown = (event: PointerEvent): void => {
       const target = event.target;
       if (target instanceof Element && target.closest(".biny-sidebar-menu-anchor, .biny-sidebar-menu")) return;
       setProjectMenuOpen(undefined);
       setProjectOrganizationMenuOpen(false);
       setProjectCreateMenuOpen(false);
+      setSessionMenuVisible(false);
     };
     const closeOnEscape = (event: KeyboardEvent): void => {
       if (event.key !== "Escape") return;
       setProjectMenuOpen(undefined);
       setProjectOrganizationMenuOpen(false);
       setProjectCreateMenuOpen(false);
+      setSessionMenuVisible(false);
     };
     window.addEventListener("pointerdown", closeOnPointerDown);
     window.addEventListener("keydown", closeOnEscape);
@@ -127,16 +132,23 @@ export const Sidebar = memo(function Sidebar({
       window.removeEventListener("pointerdown", closeOnPointerDown);
       window.removeEventListener("keydown", closeOnEscape);
     };
-  }, [projectCreateMenuOpen, projectMenuOpen, projectOrganizationMenuOpen]);
+  }, [projectCreateMenuOpen, projectMenuOpen, projectOrganizationMenuOpen, sessionMenuVisible]);
 
   useEffect(() => {
     if (layout.mode !== "collapsed") return;
     setProjectMenuOpen(undefined);
     setProjectOrganizationMenuOpen(false);
     setProjectCreateMenuOpen(false);
+    setSessionMenuVisible(false);
     setDragState(undefined);
     dragStateRef.current = undefined;
   }, [layout.mode]);
+
+  const openSessionContextMenu = useCallback((session: DesktopSessionSummary, point: { x: number; y: number }): void => {
+    setProjectMenuOpen(undefined);
+    setSessionMenu({ point, session });
+    setSessionMenuVisible(true);
+  }, []);
 
   const sessionsByProject = useMemo(() => {
     const grouped = new Map<string, DesktopSessionSummary[]>();
@@ -332,7 +344,7 @@ export const Sidebar = memo(function Sidebar({
           <ProjectSessions
             limit={PROJECT_SESSION_COLLAPSE_LIMIT}
             onSelectSession={onSelectSession}
-            onSessionMenu={onSessionMenu}
+            onSessionContextMenu={openSessionContextMenu}
             projectId={project.id}
             selectedSessionId={selectedSessionId}
             sessions={projectSessions}
@@ -376,7 +388,7 @@ export const Sidebar = memo(function Sidebar({
               {/* 置顶会话排在置顶文件夹之前，避免文件夹把会话顶到下面。 */}
               <SessionList
                 onSelectSession={onSelectSession}
-                onSessionMenu={onSessionMenu}
+                onSessionContextMenu={openSessionContextMenu}
                     selectedSessionId={selectedSessionId}
                 sessions={pinnedSessions}
                 flat
@@ -452,7 +464,7 @@ export const Sidebar = memo(function Sidebar({
             <CollapsibleSessionList
               limit={DIALOGUE_SESSION_COLLAPSE_LIMIT}
               onSelectSession={onSelectSession}
-              onSessionMenu={onSessionMenu}
+              onSessionContextMenu={openSessionContextMenu}
                 selectedSessionId={selectedSessionId}
               sessions={dialogueSessions}
               expandedSessionIds={expandedSessionIds}
@@ -475,6 +487,14 @@ export const Sidebar = memo(function Sidebar({
       </div>
       {resizable ? <SidebarResizer width={layout.contentWidth} {...resizeHandlers} /> : null}
       </aside>
+      <SessionContextMenu
+        menu={sessionMenu}
+        onAction={(action) => {
+          setSessionMenuVisible(false);
+          if (sessionMenu) onSessionAction(sessionMenu.session, action);
+        }}
+        open={sessionMenuVisible}
+      />
       <SidebarChrome
         collapsed={!contentVisible}
         floating
@@ -595,14 +615,14 @@ function SidebarSection({ label, icon, expanded, actions, onToggle, children }: 
   );
 }
 
-function ProjectSessions({ projectId, sessions, selectedSessionId, onSelectSession, onSessionMenu, flat = false, limit = PROJECT_SESSION_COLLAPSE_LIMIT, expandedSessionIds, loadingSessionIds, sessionNextCursors, onToggleSession, onLoadMoreSessionChildren }: { projectId: string; sessions: DesktopSessionSummary[]; selectedSessionId?: string; onSelectSession(projectId: string, sessionId: string): void; onSessionMenu(session: DesktopSessionSummary): void; flat?: boolean; limit?: number; expandedSessionIds: Set<string>; loadingSessionIds: Set<string>; sessionNextCursors: Map<string, string>; onToggleSession(session: DesktopSessionSummary): void; onLoadMoreSessionChildren(session: DesktopSessionSummary): void }): React.JSX.Element | null {
+function ProjectSessions({ projectId, sessions, selectedSessionId, onSelectSession, onSessionContextMenu, flat = false, limit = PROJECT_SESSION_COLLAPSE_LIMIT, expandedSessionIds, loadingSessionIds, sessionNextCursors, onToggleSession, onLoadMoreSessionChildren }: { projectId: string; sessions: DesktopSessionSummary[]; selectedSessionId?: string; onSelectSession(projectId: string, sessionId: string): void; onSessionContextMenu(session: DesktopSessionSummary, point: { x: number; y: number }): void; flat?: boolean; limit?: number; expandedSessionIds: Set<string>; loadingSessionIds: Set<string>; sessionNextCursors: Map<string, string>; onToggleSession(session: DesktopSessionSummary): void; onLoadMoreSessionChildren(session: DesktopSessionSummary): void }): React.JSX.Element | null {
   if (!sessions.length) return <div className="biny-sidebar-empty-row biny-sidebar-project-empty">没有聊天</div>;
   return (
     <CollapsibleSessionList
       limit={limit}
       flat={flat}
       onSelectSession={onSelectSession}
-      onSessionMenu={onSessionMenu}
+      onSessionContextMenu={onSessionContextMenu}
       projectId={projectId}
       selectedSessionId={selectedSessionId}
       sessions={sessions}
@@ -621,7 +641,7 @@ interface SessionListProps {
   sessions: DesktopSessionSummary[];
   selectedSessionId?: string;
   onSelectSession(projectId: string, sessionId: string): void;
-  onSessionMenu(session: DesktopSessionSummary): void;
+  onSessionContextMenu(session: DesktopSessionSummary, point: { x: number; y: number }): void;
   expandedSessionIds: Set<string>;
   loadingSessionIds: Set<string>;
   sessionNextCursors: Map<string, string>;
@@ -648,7 +668,7 @@ function CollapsibleSessionList({ limit, ...props }: SessionListProps & { limit:
   );
 }
 
-function SessionList({ flat = false, projectId, sessions, selectedSessionId, onSelectSession, onSessionMenu, expandedSessionIds, loadingSessionIds, sessionNextCursors, onToggleSession, onLoadMoreSessionChildren }: SessionListProps): React.JSX.Element {
+function SessionList({ flat = false, projectId, sessions, selectedSessionId, onSelectSession, onSessionContextMenu, expandedSessionIds, loadingSessionIds, sessionNextCursors, onToggleSession, onLoadMoreSessionChildren }: SessionListProps): React.JSX.Element {
   const byParent = new Map<string | undefined, DesktopSessionSummary[]>();
   const ids = new Set(sessions.map((session) => session.id));
   for (const session of sessions) {
@@ -695,7 +715,7 @@ function SessionList({ flat = false, projectId, sessions, selectedSessionId, onS
             onClick={() => onSelectSession(projectId ?? session.projectId, session.id)}
             onContextMenu={(event) => {
               event.preventDefault();
-              onSessionMenu(session);
+              onSessionContextMenu(session, { x: event.clientX, y: event.clientY });
             }}
             title={session.firstUserMessage || session.title}
             type="button"
@@ -830,6 +850,25 @@ function ProjectMenu({ anchorRef, project, open, onPin, onRefresh, onReveal, onO
   );
 }
 
+/** 会话右键菜单：替代原先由主进程弹出的原生菜单，样式与侧栏其余菜单保持一致。 */
+function SessionContextMenu({ menu, onAction, open }: { menu?: { session: DesktopSessionSummary; point: { x: number; y: number } }; onAction(action: DesktopSessionMenuAction): void; open: boolean }): React.JSX.Element | null {
+  if (!menu) return null;
+  const { session } = menu;
+  return (
+    <FloatingSidebarMenu ariaLabel="会话操作菜单" open={open} point={menu.point}>
+      <button onClick={() => onAction("rename")} role="menuitem" type="button"><Icon name="edit" size={15} /><span>重命名</span></button>
+      <button onClick={() => onAction(session.pinned ? "unpin" : "pin")} role="menuitem" type="button"><Icon name="pin" size={15} /><span>{session.pinned ? "取消置顶" : "置顶"}</span></button>
+      <button onClick={() => onAction(session.archived ? "unarchive" : "archive")} role="menuitem" type="button"><Icon name="archive" size={15} /><span>{session.archived ? "取消归档" : "归档"}</span></button>
+      <button onClick={() => onAction("duplicate")} role="menuitem" type="button"><Icon name="copy" size={15} /><span>复制会话</span></button>
+      <div className="biny-sidebar-menu-separator" />
+      <button onClick={() => onAction("export-bundle")} role="menuitem" type="button"><Icon name="download" size={15} /><span>导出会话包…</span></button>
+      <button onClick={() => onAction("export-claude")} role="menuitem" type="button"><Icon name="download" size={15} /><span>导出为 Claude Code…</span></button>
+      <div className="biny-sidebar-menu-separator" />
+      <button className="is-danger" onClick={() => onAction("delete")} role="menuitem" type="button"><Icon name="trash" size={15} /><span>删除</span></button>
+    </FloatingSidebarMenu>
+  );
+}
+
 function SidebarOrganizationMenu({ anchorRef, open, sort, onSortChange }: { anchorRef: FloatingMenuAnchor; open: boolean; sort: ProjectSort; onSortChange(value: ProjectSort): void }): React.JSX.Element {
   return (
     <FloatingSidebarMenu anchorRef={anchorRef} ariaLabel="项目排序菜单" className="is-narrow" open={open}>
@@ -857,7 +896,7 @@ function SidebarCreationMenu({ anchorRef, open, onCreateEmptyProject, onOpenProj
   );
 }
 
-function FloatingSidebarMenu({ anchorRef, ariaLabel, className = "", children, open }: { anchorRef: FloatingMenuAnchor; ariaLabel: string; className?: string; children: React.ReactNode; open: boolean }): React.JSX.Element | null {
+function FloatingSidebarMenu({ anchorRef, ariaLabel, className = "", children, open, point }: { /** 省略 anchorRef 时必须提供 point，按指针坐标定位（右键菜单）。 */ anchorRef?: FloatingMenuAnchor; ariaLabel: string; className?: string; children: React.ReactNode; open: boolean; point?: { x: number; y: number } }): React.JSX.Element | null {
   const presence = useClosingPresence(open);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const [position, setPosition] = useState<{ left: number; top: number; origin: "top-left" | "bottom-left" }>();
@@ -869,11 +908,15 @@ function FloatingSidebarMenu({ anchorRef, ariaLabel, className = "", children, o
       if (frame !== undefined) return;
       frame = window.requestAnimationFrame(() => {
         frame = undefined;
-        const anchor = anchorRef.current;
+        const anchor = anchorRef?.current;
         const surface = surfaceRef.current;
-        if (!anchor || !surface) return;
-        const rect = anchor.getBoundingClientRect();
-        const width = surface.offsetWidth || (className === "is-narrow" ? 166 : 222);
+        if (!anchor && !point) return;
+        if (!surface) return;
+        // 坐标定位时构造一个以指针为锚点的虚拟矩形，复用同一套翻转与视口收拢逻辑。
+        const rect = point
+          ? { left: point.x, right: point.x, top: point.y, bottom: point.y }
+          : anchor!.getBoundingClientRect();
+        const width = surface.offsetWidth || (className === "is-narrow" ? 166 : 238);
         const height = surface.offsetHeight;
         const viewportPadding = 8;
         const gap = 6;
@@ -895,7 +938,7 @@ function FloatingSidebarMenu({ anchorRef, ariaLabel, className = "", children, o
     window.addEventListener("resize", updatePosition);
     document.addEventListener("scroll", updatePosition, true);
     const resizeObserver = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(updatePosition);
-    if (anchorRef.current) resizeObserver?.observe(anchorRef.current);
+    if (anchorRef?.current) resizeObserver?.observe(anchorRef.current);
     if (surfaceRef.current) resizeObserver?.observe(surfaceRef.current);
     return () => {
       if (frame !== undefined) window.cancelAnimationFrame(frame);
@@ -903,7 +946,7 @@ function FloatingSidebarMenu({ anchorRef, ariaLabel, className = "", children, o
       document.removeEventListener("scroll", updatePosition, true);
       resizeObserver?.disconnect();
     };
-  }, [anchorRef, className, presence.present]);
+  }, [anchorRef, className, point, presence.present]);
 
   if (!presence.present) return null;
   return createPortal(

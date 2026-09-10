@@ -2,11 +2,11 @@
  * 带语法高亮的代码展示卡片（工具展开体专用）。
  *
  * 头部：文件名/语言标签 + hover 浮现的复制按钮；
- * 正文：hljs 高亮 + 可选行号槽（等宽行高对齐，长行横向滚动不换行，保证行号不错位）；
+ * 正文：Shiki 高亮 + 可选行号槽（等宽行高对齐，长行横向滚动不换行，保证行号不错位）；
  * 超过折叠行数时给「展开全部」按钮。
  */
 import { memo, useMemo, useState } from "react";
-import { highlightFencedCode, highlightWorkspaceFile } from "../../syntaxHighlight.js";
+import { useHighlightedCode } from "../../useHighlightedCode.js";
 import { CopyButton } from "../CopyButton.js";
 import { Icon } from "../Icon.js";
 
@@ -30,10 +30,7 @@ export const CodeView = memo(function CodeView({
   onPreviewFile?(path: string): void;
 }): React.JSX.Element {
   const [expanded, setExpanded] = useState(false);
-  const highlighted = useMemo(
-    () => (filePath ? highlightWorkspaceFile(filePath, code) : highlightFencedCode(code, language)),
-    [code, filePath, language],
-  );
+  const highlighted = useHighlightedCode(code, language, filePath);
   const lines = useMemo(() => {
     const split = code.split("\n");
     if (split.at(-1) === "") split.pop();
@@ -67,7 +64,7 @@ export const CodeView = memo(function CodeView({
             {lines.map((_, index) => <span key={index}>{index + 1}</span>)}
           </div>
         ) : null}
-        <pre className="chat-codeview-pre"><code className="hljs" dangerouslySetInnerHTML={{ __html: highlighted.html }} /></pre>
+        <pre className="chat-codeview-pre"><code className="shiki" dangerouslySetInnerHTML={{ __html: highlighted.html }} /></pre>
       </div>
       {collapsible && !expanded ? (
         <button className="expand-output" onClick={() => setExpanded(true)} type="button">

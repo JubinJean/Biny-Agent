@@ -23,6 +23,7 @@ export type IconName =
   | "chart"
   | "check"
   | "circle-add"
+  | "circle-close"
   | "chevron"
   | "close"
   | "code"
@@ -135,6 +136,7 @@ function pathFor(name: IconName): React.JSX.Element {
     case "chart": return <><path {...common} d="M4 20V5M4 20h17" /><path {...common} d="M8 17v-5M12 17V7M16 17v-8" /></>;
     case "check": return <path {...common} d="m5 12 4.2 4.2L19 6.5" />;
     case "circle-add": return <><circle {...common} cx="12" cy="12" r="10" /><path {...common} d="M8 12h8" /><path {...common} d="M12 8v8" /></>;
+    case "circle-close": return <><circle {...common} cx="12" cy="12" r="10" /><path {...common} d="m15 9-6 6" /><path {...common} d="m9 9 6 6" /></>;
     case "chevron": return <path {...common} d="m6 9 6 6 6-6" />;
     case "close": return <path {...common} d="m6 6 12 12M18 6 6 18" />;
     case "code": return <path {...common} d="m8.5 8-4 4 4 4M15.5 8l4 4-4 4M14 5l-4 14" />;

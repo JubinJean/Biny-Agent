@@ -601,6 +601,7 @@ button:disabled { opacity: 0.42; }
 .model-profile-editor-fields input:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent); }
 .model-profile-thinking-fields { display: grid; gap: 7px; padding-top: 4px; }
 .model-profile-field-label { padding-bottom: 1px; font-weight: 560; }
+.model-profile-auto-map { color: var(--text-tertiary); font-family: var(--font-mono); font-size: calc(10px * var(--font-scale)); line-height: 1.5; overflow-wrap: anywhere; }
 .model-profile-thinking-fields > label { grid-template-columns: 145px minmax(0, 1fr); }
 .model-profile-thinking-fields input::placeholder { color: var(--text-tertiary); }
 .settings-secondary-button {
@@ -1263,14 +1264,13 @@ button:disabled { opacity: 0.42; }
 .file-preview-body .file-preview-code { flex: 1; min-width: 0; }
 .file-preview-gutter { position: sticky; left: 0; z-index: 1; display: flex; flex: none; flex-direction: column; width: 46px; padding: 13px 0 24px; border-right: 1px solid var(--border); background: var(--code); color: var(--text-tertiary); font: calc(11.5px * var(--font-scale))/1.55 var(--font-mono); text-align: right; opacity: 0.65; user-select: none; }
 .file-preview-gutter > span { padding-right: 12px; }
-.hljs { color: var(--text); background: transparent; }
-.hljs-comment, .hljs-quote, .hljs-doctag { color: var(--text-tertiary); }
-.hljs-keyword, .hljs-selector-tag, .hljs-literal, .hljs-section, .hljs-name { color: var(--blue); }
-.hljs-string, .hljs-title, .hljs-attribute, .hljs-symbol, .hljs-bullet, .hljs-addition { color: var(--green); }
-.hljs-number, .hljs-regexp, .hljs-link { color: var(--amber); }
-.hljs-built_in, .hljs-type, .hljs-variable, .hljs-template-variable, .hljs-selector-class, .hljs-selector-id { color: var(--red); }
-.hljs-meta, .hljs-meta .hljs-keyword, .hljs-tag { color: var(--text-secondary); }
-.hljs-deletion { color: var(--red); }
+/* 代码高亮（Shiki 双主题）：明暗颜色在一次高亮时输出为 CSS 变量，切主题只换变量取值，不重新高亮。 */
+.shiki { background: transparent; }
+.shiki span { color: var(--shiki-light); }
+:root[data-theme="dark"] .shiki span { color: var(--shiki-dark); }
+@media (prefers-color-scheme: dark) {
+  :root[data-theme="system"] .shiki span { color: var(--shiki-dark); }
+}
 .file-preview-state { display: flex; min-height: 180px; align-items: center; justify-content: center; gap: 8px; padding: 24px; color: var(--text-tertiary); text-align: center; font-size: calc(11px * var(--font-scale)); }
 .file-preview-state.is-error { color: var(--red); }
 .file-preview-open { padding: 5px 12px; border: 1px solid var(--border); border-radius: 7px; background: var(--surface-soft); color: var(--text); font-size: calc(11px * var(--font-scale)); }

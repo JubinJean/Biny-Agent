@@ -23,6 +23,7 @@ import type {
   DesktopProject,
   DesktopRuntimeMutation,
   DesktopSessionDocument,
+  DesktopSessionMenuAction,
   DesktopSessionWriterConflict,
   DesktopSessionSummary,
   DesktopSessionTreePage,
@@ -48,6 +49,7 @@ import {
   type DesktopNavigationTarget
 } from "./navigationHistory.js";
 import { listChangedFiles, type TimelineTurn } from "./sessionTimeline.js";
+import { splitAttachmentReferences } from "../../attachmentReferences.js";
 import { desktopApiVersionMismatchMessage, errorMessage } from "./app/desktopApi.js";
 import {
   applyProjectOrder,
@@ -622,6 +624,11 @@ function DesktopApp(): React.JSX.Element {
     return () => { active = false; };
   }, [commitNavigation, mergeWorkspaceProject, openSession, setSidebarExpandedWidth]);
 
+  // 生成错误横幅（Alma 式瞬态）：由事件桥在 live 失败事件到达时置位、新一轮开始（run.started）
+  // 时清除，与 document 的重放/终态刷新完全解耦——历史重放永不弹，横幅也不会被刷新闪退掉。
+  const [generationError, setGenerationError] = useState<string>();
+  const clearGenerationError = useCallback((): void => setGenerationError(undefined), []);
+
   useDesktopEventBridge({
     activeProjectIdRef: projectRef,
     selectedSessionIdRef: selectedRef,
@@ -632,7 +639,9 @@ function DesktopApp(): React.JSX.Element {
     setSkillDraftNotices,
     setWriterConflict,
     setSidebarSessions,
-    setWorkspace
+    setWorkspace,
+    onGenerationStarted: clearGenerationError,
+    onGenerationError: setGenerationError
   });
 
   useEffect(() => window.biny.onSessionHandoff((target) => {
@@ -781,10 +790,8 @@ function DesktopApp(): React.JSX.Element {
     }
   }, [mergeProjectSnapshot]);
 
-  const openSessionMenu = useCallback(async (session: DesktopSessionSummary): Promise<void> => {
+  const runSessionAction = useCallback(async (session: DesktopSessionSummary, action: DesktopSessionMenuAction): Promise<void> => {
     try {
-      const action = await window.biny.showSessionMenu(session.projectId, session.id, session.pinned, session.archived ?? false);
-      if (!action) return;
       if (action === "rename") {
         setRenameTarget({ kind: "session", projectId: session.projectId, sessionId: session.id, title: session.title, metadataRevision: session.metadataRevision });
         return;
@@ -1031,6 +1038,50 @@ function DesktopApp(): React.JSX.Element {
     await editPrompt(input, "chat", [], sessionId, userMessageIndex, idempotencyKey);
   }, [editPrompt]);
 
+  // 编辑历史消息（Alma 式）：点「编辑」把文本回填到底部输入框，提交后原位替换并重新生成。
+  // editingMessage 是编辑态的唯一事实源；editInFlight 只驱动时间线的乐观投影，
+  // 在替换回合真正出现在时间线里之前保持置位，避免旧消息闪回。
+  const [editingMessage, setEditingMessage] = useState<{ turnId: string; userMessageIndex: number; value: string; nonce: number }>();
+  const [editInFlight, setEditInFlight] = useState<{ turnId: string; user: string; userMessageIndex?: number }>();
+  const requestEditMessage = useCallback((turn: TimelineTurn): void => {
+    if (turn.userMessageIndex === undefined) return;
+    // 编辑框里只放用户真正输入的那部分；附件清单是发送时补的，重发也带不回原来的附件。
+    setEditingMessage({
+      turnId: turn.id,
+      userMessageIndex: turn.userMessageIndex,
+      value: splitAttachmentReferences(turn.user).text,
+      nonce: Date.now()
+    });
+    setFocusToken((value) => value + 1);
+  }, []);
+  const submitEditedMessage = useCallback(async (value: string): Promise<void> => {
+    const current = editingMessage;
+    if (!current) return;
+    setEditInFlight({ turnId: current.turnId, user: value, userMessageIndex: current.userMessageIndex });
+    try {
+      await editUserMessage(value, current.userMessageIndex, globalThis.crypto.randomUUID());
+      setEditingMessage(undefined);
+    } catch (error) {
+      setEditInFlight(undefined);
+      throw error;
+    }
+  }, [editingMessage, editUserMessage]);
+  const cancelEditMessage = useCallback((): void => {
+    setEditingMessage(undefined);
+    setEditInFlight(undefined);
+  }, []);
+  // Composer 被 memo 包裹，编辑态对象必须引用稳定，否则 App 每次渲染都会连带 Composer 重渲染。
+  const composerEditingMessage = useMemo(
+    () => editingMessage ? { nonce: editingMessage.nonce, value: editingMessage.value } : undefined,
+    [editingMessage]
+  );
+  // 切会话/切项目时退出编辑态、清掉生成错误横幅：都是当前会话的瞬态，不带过去。
+  useEffect(() => {
+    setEditingMessage(undefined);
+    setEditInFlight(undefined);
+    setGenerationError(undefined);
+  }, [selectedSessionId, workspace?.project.id]);
+
   const deleteUserMessage = useCallback((turnId: string): void => {
     const scope = `${projectRef.current ?? "none"}:${selectedRef.current ?? "draft"}`;
     const key = `${scope}:${turnId}`;
@@ -1174,9 +1225,9 @@ function DesktopApp(): React.JSX.Element {
   const selectSidebarSession = useCallback((projectId: string, sessionId: string): void => {
     void navigateToSession(projectId, sessionId);
   }, [navigateToSession]);
-  const openSidebarSessionMenu = useCallback((session: DesktopSessionSummary): void => {
-    void openSessionMenu(session);
-  }, [openSessionMenu]);
+  const runSidebarSessionAction = useCallback((session: DesktopSessionSummary, action: DesktopSessionMenuAction): void => {
+    void runSessionAction(session, action);
+  }, [runSessionAction]);
 
 
   const saveAttachment = useCallback(async (file: File): Promise<DesktopAttachment> => {
@@ -1291,13 +1342,29 @@ function DesktopApp(): React.JSX.Element {
   const visibleTurns = useMemo(() => turns
     .map((turn) => deletedUserMessages.has(`${messageScope}:${turn.id}`) ? { ...turn, user: "" } : turn)
     .filter((turn) => turn.user || turn.assistant || turn.tools.length || turn.error), [deletedUserMessages, messageScope, turns]);
+  // 替换回合出现（同 userMessageIndex 且文本一致）后才撤掉编辑乐观投影，避免旧消息闪回。
+  useEffect(() => {
+    const pending = editInFlight;
+    if (!pending) return;
+    const replaced = visibleTurns.some((turn) => turn.id !== pending.turnId
+      && pending.userMessageIndex !== undefined
+      && turn.userMessageIndex === pending.userMessageIndex
+      && turn.user === pending.user);
+    if (replaced) setEditInFlight(undefined);
+  }, [editInFlight, visibleTurns]);
+
   // 原始模型窗口只作为主展示分母；实际输入、有效输入预算和 Codex 风格 headroom 分开
   // 投影，不能把预留伪装成已使用。优先使用当前运行时预算，重开会话或刚启动时再回退到
   // Runtime 信息和模型目录。
   const contextUsage = useMemo<ContextUsage | undefined>(() => {
     const info = workspace?.runtime?.info;
     const models = workspace?.models ?? [];
-    const selectedModel = models.find((model) => model.alias === info?.modelAlias) ?? models[0];
+    // 没有匹配到 Runtime 当前 alias 时不能退回列表第一项；第一项可能属于另一个 provider，
+    // 会把错误模型的上下文窗口投影到当前会话。预算自身带有 modelAlias，是更可靠的来源。
+    const activeModelAlias = contextBudget?.modelAlias ?? info?.modelAlias;
+    const selectedModel = activeModelAlias === undefined
+      ? undefined
+      : models.find((model) => model.alias === activeModelAlias);
     const contextWindow = contextBudget?.contextWindow ?? info?.contextWindow ?? selectedModel?.contextWindow;
     const contextWindowIsFallback = contextBudget?.contextWindowIsFallback
       ?? info?.contextWindowIsFallback
@@ -1468,6 +1535,9 @@ function DesktopApp(): React.JSX.Element {
       models={workspace?.pickerModels ?? workspace?.models ?? []}
       onSaveAttachment={saveAttachment}
       onSend={sendPromptWithTransition}
+      editingMessage={composerEditingMessage}
+      onSubmitEdit={submitEditedMessage}
+      onCancelEdit={cancelEditMessage}
       onSlashCommand={runSlashCommand}
       onExpandSkillCommand={expandSkillCommand}
       onStop={async () => {
@@ -1596,7 +1666,7 @@ function DesktopApp(): React.JSX.Element {
           onRevealProject={revealSidebarProject}
           onSelectSession={selectSidebarSession}
           onLoadSessionChildren={loadSessionChildren}
-          onSessionMenu={openSidebarSessionMenu}
+          onSessionAction={runSidebarSessionAction}
           onSettings={openSettings}
           onToggleSidebar={toggleSidebar}
           layout={sidebarLayout}
@@ -1619,7 +1689,10 @@ function DesktopApp(): React.JSX.Element {
         loading={loading}
         onCreateBranch={openTurnBranch}
         onDeleteUserMessage={deleteUserMessage}
-        onEditUserMessage={editUserMessage}
+        onEditRequest={requestEditMessage}
+        editInFlight={editInFlight}
+        generationError={generationError}
+        onDismissGenerationError={clearGenerationError}
         onOpenExternal={openExternalLink}
         onOpenProject={() => void openProject()}
         onPreviewFile={inspector.previewFile}

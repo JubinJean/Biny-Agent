@@ -84,7 +84,6 @@ function testExplicitProviderCapabilities(): void {
   assert.equal(providerDefinition("openai").embedding?.wire, "openai-compatible");
   assert.equal(providerDefinition("gemini").embedding?.wire, "openai-compatible");
   assert.equal(providerDefinition("gemini").embedding?.models[0]?.id, "gemini-embedding-001");
-  assert.equal(providerDefinition("google-native").embedding?.wire, "google-generative-ai");
   assert.equal(providerDefinition("anthropic").embedding, undefined);
   assert.equal(providerDefinition("unregistered-provider").embedding, undefined);
 }
@@ -193,7 +192,7 @@ async function testGoogleEmbeddingWire(): Promise<void> {
   const bodies: unknown[] = [];
   const runtime = new ProviderEmbeddingRuntime(
     "google",
-    providerConfig("google-native", "https://generativelanguage.googleapis.com/v1beta", "google-secret"),
+    providerConfig("gemini", "https://generativelanguage.googleapis.com/v1beta", "google-secret"),
     embeddingDefinition("google-generative-ai", 3),
     "gemini-embedding-test",
     {

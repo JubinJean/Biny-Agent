@@ -24,12 +24,14 @@ import { IoCard } from "./chat/IoCard.js";
 interface ToolActivityProps {
   projectId: string;
   tool: TimelineTool;
+  /** row：聚合组导轨里的紧凑行；card（默认）：独立工具卡片。 */
+  presentation?: "card" | "row";
   onPreviewFile(path: string): void;
   onOpenExternal(url: string): void;
   onResolvePermission(requestId: string, result: PermissionResult): Promise<void>;
 }
 
-export const ToolActivity = memo(function ToolActivity({ projectId, tool, onPreviewFile, onOpenExternal, onResolvePermission }: ToolActivityProps): React.JSX.Element {
+export const ToolActivity = memo(function ToolActivity({ projectId, tool, presentation, onPreviewFile, onOpenExternal, onResolvePermission }: ToolActivityProps): React.JSX.Element {
   const permissionPending = Boolean(tool.permission && !tool.permission.resolved);
   const auto = permissionPending || tool.status === "failed" || tool.status === "denied" || tool.status === "unknown" || tool.status === "cancelled";
   // override 连同当时的状态一起记：状态一变（比如从 running 变 success）就作废，回到自动策略。
@@ -39,14 +41,12 @@ export const ToolActivity = memo(function ToolActivity({ projectId, tool, onPrev
   const command = useMemo(() => commandDetails(tool), [tool]);
   const diff = useMemo(() => tool.diff ? analyzeDiff(tool.diff) : undefined, [tool.diff]);
   const fileChange = useMemo(() => fileChangeDetails(tool), [tool]);
-  const webSearch = useMemo(() => tool.tool === "web_search" ? projectWebSearchView(tool.args, tool.result) : undefined, [tool.args, tool.result, tool.tool]);
+  const webSearch = useMemo(() => tool.tool === "WebSearch" ? projectWebSearchView(tool.args, tool.result) : undefined, [tool.args, tool.result, tool.tool]);
   const variant = classifyTool(tool.tool);
   const rowState = toolRowState(tool);
   const summary = toolSummary(tool, command, diff, webSearch);
   const durationMs = useLiveDuration(tool);
   const errorText = meaningfulError(tool, command);
-  const pathSummary = tool.display?.kind === "file_io"
-    && (tool.display.operation === "read" || tool.display.operation === "write" || tool.display.operation === "edit");
 
   const resolve = async (result: PermissionResult): Promise<void> => {
     if (!tool.permission || resolving) return;
@@ -61,11 +61,11 @@ export const ToolActivity = memo(function ToolActivity({ projectId, tool, onPrev
   return (
     <article className={`execution-step tool-activity is-${tool.status}`} data-project-id={projectId}>
       <ToolCallBlock
+        compact={presentation === "row"}
         durationLabel={durationMs !== undefined ? formatDuration(durationMs) : undefined}
         errorSummary={errorText ? firstLine(errorText) : null}
         expandable
         expanded={expanded}
-        highlightSummary={pathSummary}
         onToggle={() => setOverride({ status: tool.status, expanded: !expanded })}
         state={rowState}
         summary={summary}
@@ -268,7 +268,7 @@ function fileChangeDetails(tool: TimelineTool): FileChangeDetails | undefined {
   const display = tool.display?.kind === "file_io" ? tool.display : undefined;
   const args = typeof tool.args === "object" && tool.args !== null ? tool.args as Record<string, unknown> : undefined;
   const path = display?.path ?? tool.path ?? stringField(args, "path");
-  if (tool.tool === "write_file" || display?.operation === "write") {
+  if (tool.tool === "Write" || display?.operation === "write") {
     const content = display?.content ?? stringField(args, "content");
     if (content === undefined) return undefined;
     return { operation: "write", path, content };
@@ -505,7 +505,7 @@ function toolSummary(tool: TimelineTool, command: TimelineCommand | undefined, d
 function commandDetails(tool: TimelineTool): TimelineCommand | undefined {
   if (tool.command) return tool.command;
   const args = typeof tool.args === "object" && tool.args !== null ? tool.args as Record<string, unknown> : undefined;
-  const inferredCommand = tool.tool === "run_command" ? stringField(args, "command") : undefined;
+  const inferredCommand = tool.tool === "Bash" ? stringField(args, "command") : undefined;
   if (tool.display?.kind !== "command" && !inferredCommand) return undefined;
   const result = typeof tool.result === "object" && tool.result !== null ? tool.result as Record<string, unknown> : undefined;
   return {

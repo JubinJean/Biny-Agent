@@ -108,6 +108,14 @@ async function startDesktopApplication(): Promise<void> {
     quickChatWindow?.send(channel, payload);
   };
   const settingsClose = new DesktopSettingsCloseCoordinator();
+  // 浏览器控制面先于 Agent Host 启动，这样独立 Runtime Host 也能拿到同一个可见窗口。
+  // 回调只在用户/Agent 真的触碰 cookie 或浏览器动作时执行，此时 agents 已完成装配。
+  const defaultCookieJarPath = path.join(desktopRoot, "cookies.json");
+  const browser = new DesktopBrowserService(
+    async () => (await configStore.load()).web.cookies.path ?? defaultCookieJarPath,
+    () => agents.assertNoRunningTasks("任务运行期间不能修改 Cookie 或驱动浏览器。")
+  );
+  const browserAutomation = await browser.startAutomationServer(path.join(desktopRoot, "browser-control.sock"));
   const agents = new DesktopAgentManager(state, projects, configStore, (projectId, update, meta) => {
     broadcastToWindows(desktopIpc.event, { projectId, ...update, ...meta });
     const event = update.event;
@@ -119,7 +127,7 @@ async function startDesktopApplication(): Promise<void> {
         silent: true
       }).show();
     }
-  }, async (url) => await shell.openExternal(url), undefined, net.fetch.bind(net) as unknown as typeof globalThis.fetch);
+  }, async (url) => await shell.openExternal(url), undefined, net.fetch.bind(net) as unknown as typeof globalThis.fetch, browserAutomation);
   const mcp = new DesktopMcpService(
     configStore,
     projects,
@@ -163,13 +171,6 @@ async function startDesktopApplication(): Promise<void> {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(desktopIpc.terminalEvent, event);
   });
   await activity.initialize();
-  // 内嵌浏览器把 cookie 同步到这份共享 jar，agent 的 web 工具默认读同一个位置。
-  const defaultCookieJarPath = path.join(desktopRoot, "cookies.json");
-  const browser = new DesktopBrowserService(
-    async () => (await configStore.load()).web.cookies.path ?? defaultCookieJarPath,
-    () => agents.assertNoRunningTasks("任务运行期间不能修改 Cookie。")
-  );
-
   /** 渲染进程启动时拉取的一次性初始状态：项目列表、当前项目、布局尺寸等。 */
   const bootstrap = async (): Promise<DesktopBootstrap> => {
     const allProjects = await projects.refreshAllProjects();

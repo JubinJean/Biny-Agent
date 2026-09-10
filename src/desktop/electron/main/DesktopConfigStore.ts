@@ -20,6 +20,8 @@ import {
   type CredentialStore
 } from "../../../config/credentials.js";
 import { DesktopSafeStorageCredentialStore } from "./DesktopSafeStorageCredentialStore.js";
+import { migrateLegacyGlobalState } from "../../../config/globalStateMigration.js";
+import { globalConfigDir } from "../../../config/paths.js";
 import type { AgentConfig } from "../../../config/schema.js";
 import type { AgentConfigStore } from "../../../config/store.js";
 import {
@@ -43,6 +45,7 @@ export class DesktopConfigStore implements AgentConfigStore {
   ) {}
 
   async load(workspaceRoot = this.root): Promise<AgentConfig> {
+    if (path.resolve(this.root) === path.resolve(globalConfigDir())) await migrateLegacyGlobalState();
     // 纯读不获取全局写锁：config.json 经 writeStoreFile 的 tmp+rename 原子替换，读不到半写文件；
     // 真实 Keychain 账号只在 journal 存在期间被改写，所以「锁外确认无待恢复事务」就能安全地
     // 直接读 config + 水合凭据。这是切换模型等纯读路径的常态。

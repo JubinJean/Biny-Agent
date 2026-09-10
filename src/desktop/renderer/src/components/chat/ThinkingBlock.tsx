@@ -2,8 +2,9 @@
  * 思考链块。
  *
  * 交互：
- * - 流式思考中自动展开：呼吸灯 + 微光标题，正文实时追加并贴底滚动（用户上翻则松手）；
+ * - 流式思考中有正文时自动展开：呼吸灯 + 微光标题，正文实时追加并贴底滚动（用户上翻则松手）；
  * - 思考结束自动收起成一行：✓ 思考完成 · 用时；点击可随时再展开/收起；
+ * - 模型没回传思考内容时折叠成不可展开的纯状态行，不渲染占位正文；
  * - 用户的手动展开/收起会覆盖自动行为，直到 running 翻转（新一轮思考）后失效。
  */
 import { memo, useEffect, useRef, useState } from "react";
@@ -29,9 +30,14 @@ export const ThinkingBlock = memo(function ThinkingBlock({
    */
   summary?: string;
 }): React.JSX.Element {
-  // 自动策略：running 开 / 完成收；override 记住用户手动选择，状态翻转即作废。
+  // 自动策略：流式且有内容时展开；完成收起；override 记住用户手动选择，running
+  // 翻转（新一轮思考）即作废。部分模型只声明思考不回传内容——落定后没有正文就
+  // 折叠成不可展开的纯状态行（Alma 式：只报「思考了 N 秒」），流式期间也不为空
+  // 正文撑开一块空白。
+  const hasText = text.trim().length > 0;
+  const expandable = running || hasText;
   const [override, setOverride] = useState<{ running: boolean; open: boolean }>();
-  const open = override && override.running === running ? override.open : running;
+  const open = override && override.running === running ? override.open : running && hasText;
   const compact = summary !== undefined;
 
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -59,9 +65,10 @@ export const ThinkingBlock = memo(function ThinkingBlock({
     <section className={`chat-thinking${running ? " is-running" : ""}${compact ? " chat-thinking--compact" : ""}`} data-state={running ? "running" : "done"}>
       {running ? <span className="chat-visually-hidden">正在思考</span> : null}
       <button
-        aria-expanded={open}
+        aria-expanded={expandable ? open : undefined}
         className="chat-row-header chat-thinking-header"
-        onClick={() => setOverride({ running, open: !open })}
+        disabled={!expandable}
+        onClick={expandable ? () => setOverride({ running, open: !open }) : undefined}
         type="button"
       >
         <span className="chat-row-leading">
@@ -75,13 +82,15 @@ export const ThinkingBlock = memo(function ThinkingBlock({
         {!compact && !running && durationMs !== undefined ? (
           <span className="chat-thinking-rest">了 {Math.max(1, Math.round(durationMs / 1000))} 秒</span>
         ) : null}
-        <span className="chat-row-chevron"><Icon name="chevron" size={12} /></span>
+        {expandable ? <span className="chat-row-chevron"><Icon name="chevron" size={12} /></span> : null}
       </button>
-      <Collapse open={open}>
-        <div className="chat-thinking-body" onScroll={handleScroll} ref={bodyRef}>
-          <div className="chat-thinking-text">{text}</div>
-        </div>
-      </Collapse>
+      {expandable ? (
+        <Collapse open={open}>
+          <div className="chat-thinking-body" onScroll={handleScroll} ref={bodyRef}>
+            <div className="chat-thinking-text">{text}</div>
+          </div>
+        </Collapse>
+      ) : null}
     </section>
   );
 });
