@@ -33,7 +33,6 @@ async function main(): Promise<void> {
   await testModelSwitchDoesNotPersistInferredMetadata();
   await testPersistedProviderCatalog();
   await testRefreshModelsForceBypassesConditionalGet();
-  await testGoogleProviderCatalog();
   await testExtensibleProviderRuntime();
   await testCompatibleSystemRole();
   await testFactoryProviderDefaults();
@@ -310,38 +309,6 @@ async function testRefreshModelsForceBypassesConditionalGet(): Promise<void> {
   }
 }
 
-async function testGoogleProviderCatalog(): Promise<void> {
-  const originalFetch = globalThis.fetch;
-  let requestHeaders: Headers | undefined;
-  globalThis.fetch = (async (input, init) => {
-    assert.equal(String(input), "https://generativelanguage.googleapis.com/v1beta/models");
-    requestHeaders = new Headers(init?.headers);
-    return new Response(JSON.stringify({
-      models: [{
-        name: "models/gemini-catalog-test",
-        displayName: "Gemini Catalog Test",
-        inputTokenLimit: 65_536,
-        outputTokenLimit: 8_192,
-        supportedGenerationMethods: ["generateContent"]
-      }]
-    }), { status: 200, headers: { "content-type": "application/json" } });
-  }) as typeof fetch;
-  try {
-    const config = configSchema.parse({
-      ...defaultConfig,
-      defaultModel: "google-test",
-      providers: { google: { type: "google-native", apiKey: "google-key" } },
-      models: { "google-test": { provider: "google", model: "gemini-catalog-test", apiBackend: "google_generative_ai" } }
-    });
-    const models = await new ProviderRegistry(config).refreshModels("google");
-    assert.equal(requestHeaders?.get("x-goog-api-key"), "google-key");
-    // 动态目录不能决定传输协议；Google 的 adapter 来自本地 ProviderDefinition。
-    assert.equal(models.find((model) => model.id === "gemini-catalog-test")?.apiBackend, undefined);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
-}
-
 async function testGoogleGenerativeAiTransport(): Promise<void> {
   let requestUrl = "";
   let requestHeaders: Headers | undefined;
@@ -529,7 +496,15 @@ async function testProviderRuntimeCatalog(): Promise<void> {
     assert.equal(models[0]?.capabilities.reasoningSummary, true);
     assert.equal(models[0]?.capabilities.parallelToolCalls, true);
     assert.deepEqual(models[0]?.reasoningEfforts, ["high", "max"]);
-    assert.deepEqual(models[0]?.thinkingLevelMap, { off: "none", high: "high", max: "max" });
+    assert.deepEqual(models[0]?.thinkingLevelMap, {
+      off: "none",
+      minimal: "high",
+      low: "high",
+      medium: "high",
+      high: "high",
+      xhigh: "max",
+      max: "max"
+    });
     assert.equal(providers.catalogsSnapshot()[0]?.[1][0]?.provider, "catalog");
   } finally {
     globalThis.fetch = originalFetch;
@@ -631,6 +606,7 @@ async function testProviderRuntimeMetadata(): Promise<void> {
   const openaiSettings = providers.require("openai").createModelSettings({ ...config, defaultModel: "gpt-alias", thinking: { enabled: true, effort: "high" } }, config.models["gpt-alias"]!);
   assert.deepEqual(openaiSettings.providerOptions, { openai: { reasoningEffort: "high" } });
   const geminiSettings = providers.require("gemini").createModelSettings({ ...config, defaultModel: "gemini-pro", thinking: { enabled: true, effort: "high" } }, config.models["gemini-pro"]!);
+  // 按ID 推断 [high,max] 后同名快照保证选 high 就下发 high，不再错位成 max。
   assert.deepEqual(geminiSettings.providerOptions, { google: { reasoningEffort: "high", thinkingBudget: 4_096, includeThoughts: true } });
 
   const liveConfig = configSchema.parse({
@@ -767,7 +743,15 @@ async function testOpenCodeModelSwitchRepairsThinkingMetadata(): Promise<void> {
   assert.equal(manager.getInfo().modelAlias, "minimax");
   assert.equal(manager.getInfo().thinking, "high");
   assert.equal(stored.models.minimax?.capabilities?.reasoning, true);
-  assert.deepEqual(stored.models.minimax?.thinkingLevelMap, { off: "none", high: "high", max: "max" });
+  assert.deepEqual(stored.models.minimax?.thinkingLevelMap, {
+    off: "none",
+    minimal: "high",
+    low: "high",
+    medium: "high",
+    high: "high",
+    xhigh: "max",
+    max: "max"
+  });
 }
 
 async function testNoOffThinkingUsesDefaultEffort(): Promise<void> {

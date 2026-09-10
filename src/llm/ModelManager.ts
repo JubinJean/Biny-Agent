@@ -67,7 +67,7 @@ export class ModelManager {
     ai: AiRegistry = new AiRegistry(),
     modelsStore: ModelsStore = new FileModelsStore()
   ): Promise<ModelManager> {
-    const catalogs = await restoreProviderCatalogs(Object.keys(config.providers), modelsStore);
+    const catalogs = await restoreProviderCatalogs(Object.keys(config.providers), modelsStore, config.providers);
     return new ModelManager(workspaceRoot, config, configStore, ai, modelsStore, catalogs);
   }
 

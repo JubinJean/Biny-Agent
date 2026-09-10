@@ -92,6 +92,8 @@ export interface ProviderDefinition {
   baseUrl?: string;
   apiKeyEnv?: string;
   requiresApiKey: boolean;
+  /** 模型目录可以与聊天请求使用不同的鉴权要求；公开 /models 端点可设为 false。 */
+  modelsRequiresApiKey?: boolean;
   authModes: AiAuthMode[];
   reasoningProtocol?: "deepseek" | "openai" | "google" | "anthropic" | "alibaba" | "moonshotai";
   embedding?: ProviderEmbeddingDefinition;

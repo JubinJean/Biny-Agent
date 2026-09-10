@@ -9,7 +9,7 @@ import {
   GENERATED_MODELS_DEV_METADATA,
   GENERATED_MODELS_DEV_PROVIDER_ALIASES
 } from "./modelMetadata.generated.js";
-import { inferReasoningEfforts } from "./capabilities.js";
+import { completeThinkingLevelMap, inferReasoningEfforts, isKimiAlwaysThinkingModel, projectThinkingLevelMap, thinkingLevelMapForModel } from "./capabilities.js";
 import { openAiCodexThinkingLevelMaps } from "./codexModels.js";
 import type { ModelCapabilities, ModelCatalogEntry } from "./types.js";
 import type { ModelPricing, ReasoningEffort, ThinkingLevelMap } from "../config/schema.js";
@@ -87,12 +87,10 @@ export function inferThinkingLevelMap(
 ): ThinkingLevelMap | undefined {
   if (generatedThinkingLevelMap && Object.entries(generatedThinkingLevelMap)
     .some(([level, native]) => level !== "off" && native !== null)) {
-    return { ...generatedThinkingLevelMap };
+    return completeThinkingLevelMap(generatedThinkingLevelMap, !isKimiAlwaysThinkingModel(modelId));
   }
   const efforts = inferReasoningEfforts(modelId);
-  return efforts.length
-    ? { off: "none", ...thinkingLevelMapForEfforts(efforts) }
-    : undefined;
+  return efforts.length ? thinkingLevelMapForModel(modelId, true, efforts) : undefined;
 }
 
 function openCodeKnownModelMetadata(baseUrl: string | undefined, modelId: string): ModelMetadata | undefined {
@@ -102,7 +100,7 @@ function openCodeKnownModelMetadata(baseUrl: string | undefined, modelId: string
     return GENERATED_MODELS_DEV_METADATA.deepseek?.[normalized];
   }
   if (normalized === "minimax-m3") {
-    return GENERATED_MODELS_DEV_METADATA.minimax?.["MiniMax-M3"];
+    return GENERATED_MODELS_DEV_METADATA.openrouter?.["minimax/minimax-m3"];
   }
   return undefined;
 }
@@ -139,13 +137,13 @@ function metadataToCatalogEntry(id: string, metadata: ModelMetadata, provider: s
     reasoningEfforts: [...metadata.reasoningEfforts],
     reasoningEffortsSource: metadata.reasoningEfforts.length ? "declared" : undefined,
     thinkingLevelMap: metadata.thinkingLevelMap
-      ? { ...metadata.thinkingLevelMap }
-      : metadata.reasoningEfforts.length ? thinkingLevelMapForEfforts(metadata.reasoningEfforts) : undefined,
+      ? completeThinkingLevelMap(metadata.thinkingLevelMap, !isKimiAlwaysThinkingModel(id))
+      : metadata.reasoningEfforts.length ? thinkingLevelMapForModel(id, true, metadata.reasoningEfforts) : undefined,
     pricing: metadata.pricing ? { ...metadata.pricing } : undefined
   };
 }
 
-/** 只把模型明确声明的 efforts 转成 canonical map，不凭空增加关闭思考档位。 */
+/** 把目录声明的原生 efforts 映射到完整的本地档位集合。 */
 export function thinkingLevelMapForEfforts(efforts: readonly ReasoningEffort[]): ThinkingLevelMap {
-  return Object.fromEntries(efforts.map((effort) => [effort, effort]));
+  return projectThinkingLevelMap(efforts, true);
 }

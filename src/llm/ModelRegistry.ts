@@ -4,8 +4,7 @@
  * 配置模型是稳定来源，provider `/models` 是可刷新来源。两者在这里合并成同一份模型视图；
  * 注册表只保存模型元数据，不保存 API key，也不会把实时目录自动写回项目配置。
  */
-import { effectiveThinkingSelection, modelCapabilities, modelContextBudget, modelReasoningConfig, modelThinkingLevelMap } from "../ai/capabilities.js";
-import { thinkingLevelMapForEfforts } from "../ai/modelMetadata.js";
+import { completeThinkingLevelMap, effectiveThinkingSelection, isKimiAlwaysThinkingModel, modelCapabilities, modelContextBudget, modelReasoningConfig, modelThinkingLevelMap, thinkingLevelMapForModel } from "../ai/capabilities.js";
 import type { ModelCatalogEntry } from "../ai/types.js";
 import type {
   AgentConfig,
@@ -253,7 +252,8 @@ function catalogEntryToModel(entry: ModelCatalogEntry): ModelAliasConfig {
   const levelMap = entry.reasoningEffortsSource === "inferred"
     ? undefined
     : entry.thinkingLevelMap
-      ?? (entry.reasoningEfforts.length ? thinkingLevelMapForEfforts(entry.reasoningEfforts) : undefined);
+      ? completeThinkingLevelMap(entry.thinkingLevelMap, !isKimiAlwaysThinkingModel(entry.id))
+      : entry.reasoningEfforts.length ? thinkingLevelMapForModel(entry.id, true, entry.reasoningEfforts) : undefined;
   return {
     provider: entry.provider,
     model: entry.id,

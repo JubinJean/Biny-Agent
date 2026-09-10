@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { inferReasoningEfforts, modelCapabilities, modelContextBudget, modelReasoningConfig, modelThinkingLevelMap, nativeReasoningEffort, reasoningBudgetTokens, thinkingLevelMapForModel } from "../src/ai/capabilities.js";
+import { inferReasoningEfforts, modelCapabilities, modelContextBudget, modelReasoningConfig, modelThinkingLevelMap, nativeReasoningEffort, projectThinkingLevelMap, reasoningBudgetTokens, thinkingLevelMapForModel, effectiveThinkingSelection } from "../src/ai/capabilities.js";
 import { builtinProviderModels } from "../src/ai/builtinModels.js";
 import { openAiCodexCatalogModels } from "../src/ai/codexModels.js";
 import { parseModelCatalog } from "../src/ai/modelCatalog.js";
@@ -51,6 +51,12 @@ assert.equal(thinkingSelectionForModel("off", {
   defaultThinking: "high",
   thinkingLevelMap: { off: "none", high: "high", max: "max" }
 }), "off");
+// 档位列表按原生值去重后，旧档位换模型时按原生值找到等价代表档位。
+assert.equal(thinkingSelectionForModel("medium", {
+  efforts: ["low", "high", "max"],
+  defaultThinking: "high",
+  thinkingLevelMap: { off: "none", minimal: "low", low: "low", medium: "high", high: "high", xhigh: "max", max: "max" }
+}), "high");
 const budget = modelContextBudget(model, config.context.maxInputTokens, "small");
 assert.equal(budget.contextWindow, 16_384);
 assert.equal(budget.effectiveContextWindow, 15_564);
@@ -79,8 +85,21 @@ const deepseekUnknownAliasConfig = configSchema.parse({
 });
 const deepseekRuntime = new ProviderRegistry(deepseekUnknownAliasConfig);
 const normalizedFlash = deepseekRuntime.forModel("flash-alias").model;
+// 档位列表按原生值去重：deepseek-v4-flash 只有 low/high/max 三个原生值，客户端也只展示三档。
 assert.deepEqual(modelReasoningConfig(normalizedFlash)?.efforts, ["low", "high", "max"]);
-assert.deepEqual(modelThinkingLevelMap(normalizedFlash), { low: "low", high: "high", max: "max" });
+assert.deepEqual(modelThinkingLevelMap(normalizedFlash), {
+  off: "none",
+  minimal: "low",
+  low: "low",
+  medium: "high",
+  high: "high",
+  xhigh: "max",
+  max: "max"
+});
+// 旧偏好落在被去重合并的档位上时，按原生值投影到代表档位，而不是回退成 off。
+assert.equal(effectiveThinkingSelection(normalizedFlash, { enabled: true, effort: "minimal" }), "low");
+assert.equal(effectiveThinkingSelection(normalizedFlash, { enabled: true, effort: "medium" }), "high");
+assert.equal(effectiveThinkingSelection(normalizedFlash, { enabled: true, effort: "xhigh" }), "max");
 assert.equal(modelCapabilities(normalizedFlash).reasoningStream, true);
 assert.equal(normalizedFlash.contextWindow, 1_000_000);
 
@@ -109,7 +128,11 @@ const customReasoningRuntime = new ProviderRegistry(customReasoningConfig);
 assert.deepEqual(customReasoningRuntime.forModel("custom-deepseek").model.reasoning?.efforts, ["high", "max"]);
 assert.deepEqual(customReasoningRuntime.forModel("custom-deepseek").model.thinkingLevelMap, {
   off: "none",
+  minimal: "high",
+  low: "high",
+  medium: "high",
   high: "high",
+  xhigh: "max",
   max: "max"
 });
 assert.deepEqual(customReasoningRuntime.forModel("custom-kimi").model.reasoning?.efforts, ["low", "high", "max"]);
@@ -128,6 +151,7 @@ const profiledGatewayConfig = configSchema.parse({
         "deepseek-v4-flash": {
           contextWindow: 512_000,
           maxInputTokens: 480_000,
+          maxOutputTokens: 96_000,
           thinkingLevelMap: { off: "none", high: "gateway-high" }
         }
       }
@@ -158,6 +182,7 @@ const profiledGatewayModel = new ProviderRegistry(profiledGatewayConfig, [[
 ]]).forModel("custom-deepseek").model;
 assert.equal(profiledGatewayModel.contextWindow, 512_000);
 assert.equal(profiledGatewayModel.maxInputTokens, 480_000);
+assert.equal(profiledGatewayModel.maxOutputTokens, 96_000);
 assert.deepEqual(modelThinkingLevelMap(profiledGatewayModel), { off: "none", high: "gateway-high" });
 assert.deepEqual(modelReasoningConfig(profiledGatewayModel)?.efforts, ["high"]);
 
@@ -221,14 +246,30 @@ const customRelayFalseModel = new ProviderRegistry(customRelayFalseConfig, [[
 assert.equal(modelCapabilities(customRelayFalseModel).reasoning, true);
 // 普通 relay 没有该 ID 的生成快照条目，按 ID 推断出 high/max（与无目录的同 ID 行为一致）。
 assert.deepEqual(modelReasoningConfig(customRelayFalseModel)?.efforts, ["high", "max"]);
-assert.deepEqual(modelThinkingLevelMap(customRelayFalseModel), { off: "none", high: "high", max: "max" });
+assert.deepEqual(modelThinkingLevelMap(customRelayFalseModel), {
+  off: "none",
+  minimal: "high",
+  low: "high",
+  medium: "high",
+  high: "high",
+  xhigh: "max",
+  max: "max"
+});
 const listedCustomRelayFalse = new ProviderRegistry(customRelayFalseConfig, [[
   "relay",
   [customRelayFalseEntry]
 ]]).require("relay").getModels().find((entry) => entry.id === "deepseek-v4-flash");
 assert.equal(listedCustomRelayFalse?.capabilities.reasoning, true);
 assert.deepEqual(listedCustomRelayFalse?.reasoningEfforts, ["high", "max"]);
-assert.deepEqual(listedCustomRelayFalse?.thinkingLevelMap, { off: "none", high: "high", max: "max" });
+assert.deepEqual(listedCustomRelayFalse?.thinkingLevelMap, {
+  off: "none",
+  minimal: "high",
+  low: "high",
+  medium: "high",
+  high: "high",
+  xhigh: "max",
+  max: "max"
+});
 
 // 未知模型即便被目录误报 reasoning:false 也保持保守关闭，不凭空推断档位。
 const unknownFalseModel = new ProviderRegistry(configSchema.parse({
@@ -302,7 +343,15 @@ for (const modelId of ["minimax-m3", "gpt-5.6-luna", "qwen3-coder-plus"]) {
   const normalizedOpenCodeGo = new ProviderRegistry(openCodeGoConfig).forModel("opencode-go").model;
   assert.equal(modelCapabilities(normalizedOpenCodeGo).reasoning, true);
   assert.deepEqual(modelReasoningConfig(normalizedOpenCodeGo)?.efforts, ["high", "max"]);
-  assert.deepEqual(modelThinkingLevelMap(normalizedOpenCodeGo), { off: "none", high: "high", max: "max" });
+  assert.deepEqual(modelThinkingLevelMap(normalizedOpenCodeGo), {
+    off: "none",
+    minimal: "high",
+    low: "high",
+    medium: "high",
+    high: "high",
+    xhigh: "max",
+    max: "max"
+  });
 
   const listedOpenCodeGo = new ProviderRegistry(openCodeGoConfig, [[
     "opencode-ai",
@@ -317,7 +366,15 @@ for (const modelId of ["minimax-m3", "gpt-5.6-luna", "qwen3-coder-plus"]) {
   ]]).require("opencode-ai").getModels().find((entry) => entry.id === modelId);
   assert.equal(listedOpenCodeGo?.capabilities.reasoning, true);
   assert.deepEqual(listedOpenCodeGo?.reasoningEfforts, ["high", "max"]);
-  assert.deepEqual(listedOpenCodeGo?.thinkingLevelMap, { off: "none", high: "high", max: "max" });
+  assert.deepEqual(listedOpenCodeGo?.thinkingLevelMap, {
+    off: "none",
+    minimal: "high",
+    low: "high",
+    medium: "high",
+    high: "high",
+    xhigh: "max",
+    max: "max"
+  });
 }
 
 const openCodeZenConfig = configSchema.parse({
@@ -347,8 +404,16 @@ const listedOpenCodeZen = new ProviderRegistry(openCodeZenConfig, [[
 ]]).require("opencode-ai").getModels().find((entry) => entry.id === "minimax-m3");
 assert.equal(listedOpenCodeZen?.capabilities.reasoning, true);
 assert.deepEqual(listedOpenCodeZen?.reasoningEfforts, ["high", "max"]);
-assert.deepEqual(listedOpenCodeZen?.thinkingLevelMap, { off: "none", high: "high", max: "max" });
-assert.equal(listedOpenCodeZen?.contextWindow, 1_000_000);
+assert.deepEqual(listedOpenCodeZen?.thinkingLevelMap, {
+  off: "none",
+  minimal: "high",
+  low: "high",
+  medium: "high",
+  high: "high",
+  xhigh: "max",
+  max: "max"
+});
+assert.equal(listedOpenCodeZen?.contextWindow, 1_048_576);
 
 const geminiFlashConfig = configSchema.parse({
   ...defaultConfig,
@@ -445,11 +510,81 @@ const unknownModel = unknownRuntime.forModel("unknown").model;
 assert.equal(modelCapabilities(unknownModel).reasoning, false);
 assert.equal(unknownRuntime.createModelSettings().providerOptions, undefined);
 
-assert.deepEqual(modelThinkingLevelMap(defaultConfig.models["deepseek-v4-flash"]!), { off: "none", high: "high", max: "max" });
-assert.deepEqual(modelThinkingLevelMap(defaultConfig.models["deepseek-v4-pro"]!), { off: "none", high: "high", max: "max" });
-assert.deepEqual(thinkingLevelMapForModel("deepseek-v4-pro"), { off: "none", high: "high", max: "max" });
-assert.deepEqual(thinkingLevelMapForModel("deepseek-v4-flash"), { off: "none", high: "high", max: "max" });
-assert.deepEqual(thinkingLevelMapForModel("kimi-k3"), { low: "low", high: "high", max: "max" });
+// 默认配置只声明模型真实支持的原生档位，不再携带六档网格别名。
+assert.deepEqual(modelThinkingLevelMap(defaultConfig.models["deepseek-v4-flash"]!), {
+  off: "none",
+  low: "low",
+  high: "high",
+  max: "max"
+});
+assert.deepEqual(modelThinkingLevelMap(defaultConfig.models["deepseek-v4-pro"]!), {
+  off: "none",
+  high: "high",
+  max: "max"
+});
+assert.deepEqual(thinkingLevelMapForModel("deepseek-v4-pro"), {
+  off: "none",
+  minimal: "high",
+  low: "high",
+  medium: "high",
+  high: "high",
+  xhigh: "max",
+  max: "max"
+});
+assert.deepEqual(thinkingLevelMapForModel("deepseek-v4-flash"), {
+  off: "none",
+  minimal: "high",
+  low: "high",
+  medium: "high",
+  high: "high",
+  xhigh: "max",
+  max: "max"
+});
+assert.deepEqual(thinkingLevelMapForModel("kimi-k3"), {
+  minimal: "low",
+  low: "low",
+  medium: "high",
+  high: "high",
+  xhigh: "max",
+  max: "max"
+});
+assert.deepEqual(projectThinkingLevelMap(["low", "high", "max"], false), {
+  minimal: "low",
+  low: "low",
+  medium: "high",
+  high: "high",
+  xhigh: "max",
+  max: "max"
+});
+assert.deepEqual(thinkingLevelMapForModel("kimi-k2.7-code", true), {
+  minimal: "enabled",
+  low: "enabled",
+  medium: "enabled",
+  high: "enabled",
+  xhigh: "enabled",
+  max: "enabled"
+});
+
+const kimiNativeConfig = configSchema.parse({
+  ...defaultConfig,
+  defaultModel: "kimi",
+  providers: { kimi: { type: "kimi", apiKey: "test-key" } },
+  models: { kimi: { provider: "kimi", model: "kimi-k3" } },
+  thinking: { enabled: true, effort: "medium" }
+});
+assert.deepEqual(new ProviderRegistry(kimiNativeConfig).createModelSettings().providerOptions, {
+  moonshotai: { reasoningEffort: "high" }
+});
+const kimiRelayConfig = configSchema.parse({
+  ...defaultConfig,
+  defaultModel: "kimi",
+  providers: { relay: { type: "openai-compatible", baseUrl: "https://relay.example/v1", apiKey: "test-key" } },
+  models: { kimi: { provider: "relay", model: "kimi-k3" } },
+  thinking: { enabled: true, effort: "medium" }
+});
+assert.deepEqual(new ProviderRegistry(kimiRelayConfig).createModelSettings().providerOptions, {
+  openai: { reasoningEffort: "high" }
+});
 
 const registry = new ModelRegistry(structuredClone(defaultConfig));
 registry.registerCatalog("deepseek", [{

@@ -7,8 +7,6 @@
 import type { ModelProvider, ProviderConfig } from "../config/schema.js";
 import { builtinProviderModels } from "./builtinModels.js";
 import type { ModelCatalogEntry, ProviderDefinition, ProviderModelDefaults } from "./types.js";
-import { createRetryFetch } from "./retry.js";
-import { createProxyAwareFetch } from "../network/proxyFetch.js";
 
 export interface ProviderRegistration {
   definition: ProviderDefinition;
@@ -48,54 +46,34 @@ export class ProviderDefinitionRegistry {
   }
 }
 
+/**
+ * 内置 provider 只保留主流厂商与访问路径；其余服务商一律走 `openai-compatible`
+ * 自定义端点，不再为长尾厂商维护内置定义。
+ */
 const definitions: ProviderDefinition[] = [
-  definition("deepseek", "https://api.deepseek.com", "DEEPSEEK_API_KEY", { reasoningProtocol: "deepseek", modelDefaults: reasoningProviderDefaults() }),
+  definition("anthropic", "https://api.anthropic.com", "ANTHROPIC_API_KEY", { protocol: "anthropic", api: "anthropic_messages", reasoningProtocol: "anthropic", modelDefaults: reasoningProviderDefaults() }),
+  definition("claude-subscription", "https://api.anthropic.com", undefined, { protocol: "anthropic", api: "anthropic_messages", authModes: ["oauth-bearer"], reasoningProtocol: "anthropic", modelDefaults: reasoningProviderDefaults() }),
+  definition("openai-codex", "https://chatgpt.com/backend-api/codex", undefined, { api: "responses", authModes: ["oauth-bearer"], reasoningProtocol: "openai", modelDefaults: responseReasoningProviderDefaults() }),
   definition("openai", "https://api.openai.com/v1", "OPENAI_API_KEY", {
     reasoningProtocol: "openai",
     embedding: openAiEmbeddingDefinition(),
     modelDefaults: reasoningProviderDefaults()
   }),
-  definition("anthropic", "https://api.anthropic.com", "ANTHROPIC_API_KEY", { protocol: "anthropic", api: "anthropic_messages", reasoningProtocol: "anthropic", modelDefaults: reasoningProviderDefaults() }),
-  definition("claude-subscription", "https://api.anthropic.com", undefined, { protocol: "anthropic", api: "anthropic_messages", authModes: ["oauth-bearer"], reasoningProtocol: "anthropic", modelDefaults: reasoningProviderDefaults() }),
-  definition("openai-codex", "https://chatgpt.com/backend-api/codex", undefined, { api: "responses", authModes: ["oauth-bearer"], reasoningProtocol: "openai", modelDefaults: responseReasoningProviderDefaults() }),
   definition("gemini", "https://generativelanguage.googleapis.com/v1beta/openai", "GEMINI_API_KEY", {
     reasoningProtocol: "google",
     embedding: geminiOpenAiEmbeddingDefinition(),
     modelDefaults: reasoningProviderDefaults()
   }),
-  definition("google-native", "https://generativelanguage.googleapis.com/v1beta", "GEMINI_API_KEY", {
-    api: "google_generative_ai",
-    embedding: googleEmbeddingDefinition(),
-    fetchModels: fetchGoogleModels,
-    reasoningProtocol: "google",
-    modelDefaults: reasoningProviderDefaults()
-  }),
+  definition("deepseek", "https://api.deepseek.com", "DEEPSEEK_API_KEY", { reasoningProtocol: "deepseek", modelDefaults: reasoningProviderDefaults() }),
   definition("kimi", "https://api.moonshot.ai/v1", "MOONSHOT_API_KEY", { reasoningProtocol: "moonshotai", modelDefaults: reasoningProviderDefaults() }),
   definition("qwen", "https://dashscope.aliyuncs.com/compatible-mode/v1", "DASHSCOPE_API_KEY", { reasoningProtocol: "alibaba", modelDefaults: reasoningProviderDefaults() }),
+  definition("zai", "https://api.z.ai/api/paas/v4", "ZAI_API_KEY", { modelDefaults: reasoningProviderDefaults() }),
+  definition("openrouter", "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
   definition("ollama", "http://127.0.0.1:11434/v1", undefined, { requiresApiKey: false }),
   definition("openai-compatible", undefined, undefined, {
     embedding: { wire: "openai-compatible", models: [] },
     modelDefaults: reasoningProviderDefaults()
-  }),
-  definition("xai", "https://api.x.ai/v1", "XAI_API_KEY", { reasoningProtocol: "openai", modelDefaults: reasoningProviderDefaults() }),
-  definition("mistral", "https://api.mistral.ai/v1", "MISTRAL_API_KEY"),
-  definition("groq", "https://api.groq.com/openai/v1", "GROQ_API_KEY"),
-  definition("openrouter", "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
-  definition("cerebras", "https://api.cerebras.ai/v1", "CEREBRAS_API_KEY"),
-  definition("togetherai", "https://api.together.xyz/v1", "TOGETHER_API_KEY"),
-  definition("fireworks-ai", "https://api.fireworks.ai/inference/v1", "FIREWORKS_API_KEY"),
-  definition("nvidia", "https://integrate.api.nvidia.com/v1", "NVIDIA_API_KEY"),
-  definition("deepinfra", "https://api.deepinfra.com/v1/openai", "DEEPINFRA_API_KEY"),
-  definition("siliconflow", "https://api.siliconflow.cn/v1", "SILICONFLOW_API_KEY"),
-  definition("zai", "https://api.z.ai/api/paas/v4", "ZAI_API_KEY", { modelDefaults: reasoningProviderDefaults() }),
-  definition("minimax", "https://api.minimax.io/v1", "MINIMAX_API_KEY", { modelDefaults: reasoningProviderDefaults() }),
-  definition("minimax-cn", "https://api.minimaxi.com/v1", "MINIMAX_API_KEY", { modelDefaults: reasoningProviderDefaults() }),
-  definition("stepfun", "https://api.stepfun.com/v1", "STEPFUN_API_KEY", { modelDefaults: reasoningProviderDefaults() }),
-  definition("volcengine", "https://ark.cn-beijing.volces.com/api/v3", "ARK_API_KEY"),
-  definition("cohere", "https://api.cohere.com/compatibility/v1", "COHERE_API_KEY"),
-  definition("huggingface", "https://router.huggingface.co/v1", "HF_TOKEN"),
-  definition("lm-studio", "http://127.0.0.1:1234/v1", undefined, { requiresApiKey: false }),
-  definition("localai", "http://127.0.0.1:8080/v1", undefined, { requiresApiKey: false })
+  })
 ];
 
 export function createBuiltinProviderRegistry(): ProviderDefinitionRegistry {
@@ -129,6 +107,7 @@ function definition(
     baseUrl,
     apiKeyEnv,
     requiresApiKey: overrides.requiresApiKey ?? true,
+    modelsRequiresApiKey: overrides.modelsRequiresApiKey,
     authModes: overrides.authModes ?? ["api-key"],
     reasoningProtocol: overrides.reasoningProtocol,
     embedding: overrides.embedding,
@@ -171,18 +150,6 @@ function openAiEmbeddingDefinition(): NonNullable<ProviderDefinition["embedding"
   };
 }
 
-function googleEmbeddingDefinition(): NonNullable<ProviderDefinition["embedding"]> {
-  return {
-    wire: "google-generative-ai",
-    models: [{
-      id: "gemini-embedding-001",
-      displayName: "Gemini Embedding 001",
-      dimensions: 3_072,
-      recommendedThresholds: { currentWorkspace: 0.35, crossWorkspace: 0.55 }
-    }]
-  };
-}
-
 function geminiOpenAiEmbeddingDefinition(): NonNullable<ProviderDefinition["embedding"]> {
   return {
     wire: "openai-compatible",
@@ -193,65 +160,6 @@ function geminiOpenAiEmbeddingDefinition(): NonNullable<ProviderDefinition["embe
       recommendedThresholds: { currentWorkspace: 0.35, crossWorkspace: 0.55 }
     }]
   };
-}
-
-async function fetchGoogleModels(context: {
-  providerAlias: string;
-  config: ProviderConfig;
-  signal?: AbortSignal;
-  fetcher?: typeof globalThis.fetch;
-}): Promise<ModelCatalogEntry[]> {
-  const baseUrl = context.config.baseUrl ?? "https://generativelanguage.googleapis.com/v1beta";
-  const endpoint = context.config.modelsEndpoint ?? `${baseUrl.replace(/\/+$/u, "")}/models`;
-  const envName = context.config.apiKeyEnv ?? "GEMINI_API_KEY";
-  const apiKey = context.config.apiKey ?? process.env[envName];
-  if (!apiKey) throw new Error(`No credentials available for provider ${context.providerAlias}.`);
-  const timeout = AbortSignal.timeout(15_000);
-  const retry = context.config.retry ?? { maxAttempts: 1, initialDelayMs: 0, maxDelayMs: 0 };
-  const response = await createRetryFetch(retry, context.fetcher ?? createProxyAwareFetch())(endpoint, {
-    headers: { "x-goog-api-key": apiKey, ...context.config.headers },
-    signal: context.signal ? AbortSignal.any([context.signal, timeout]) : timeout
-  });
-  if (!response.ok) throw new Error(`Model catalog request failed (${String(response.status)}).`);
-  const payload = await response.json() as unknown;
-  const items = payload && typeof payload === "object" && Array.isArray((payload as { models?: unknown }).models)
-    ? (payload as { models: unknown[] }).models
-    : [];
-  return items.flatMap((item) => {
-    if (!item || typeof item !== "object") return [];
-    const value = item as Record<string, unknown>;
-    const methods = Array.isArray(value.supportedGenerationMethods) ? value.supportedGenerationMethods : [];
-    if (methods.length && !methods.includes("generateContent")) return [];
-    const rawName = typeof value.name === "string" ? value.name : undefined;
-    const id = rawName?.replace(/^models\//u, "");
-    if (!id) return [];
-    const thinking = typeof value.thinking === "boolean"
-      ? value.thinking
-      : value.thinking !== undefined && value.thinking !== null;
-    const declaredThinking = typeof value.supportsThinking === "boolean"
-      ? value.supportsThinking
-      : typeof value.supportsReasoning === "boolean"
-        ? value.supportsReasoning
-        : value.thinking === undefined ? undefined : thinking;
-    return [{
-      id,
-      displayName: typeof value.displayName === "string" ? value.displayName : id,
-      provider: context.providerAlias,
-      contextWindow: positiveInteger(value.inputTokenLimit),
-      maxOutputTokens: positiveInteger(value.outputTokenLimit),
-      maxInputTokens: positiveInteger(value.inputTokenLimit),
-      capabilities: {
-        tools: true,
-        reasoning: declaredThinking,
-        reasoningStream: declaredThinking,
-        vision: typeof value.supportsVision === "boolean" ? value.supportsVision : undefined,
-        audio: typeof value.supportsAudio === "boolean" ? value.supportsAudio : undefined,
-        streaming: methods.length === 0 || methods.includes("streamGenerateContent")
-      },
-      reasoningEfforts: [],
-      apiBackend: "google_generative_ai"
-    }];
-  });
 }
 
 function reasoningProviderDefaults(): ProviderModelDefaults {
@@ -273,8 +181,4 @@ function responseReasoningProviderDefaults(): ProviderModelDefaults {
       reasoningSummary: true
     }
   };
-}
-
-function positiveInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
 }

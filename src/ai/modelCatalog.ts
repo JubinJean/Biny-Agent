@@ -29,6 +29,21 @@ export interface ModelCatalogFetchResult {
   lastModified?: number;
 }
 
+/** `/models` 非 2xx 时保留服务商的 HTTP 状态、地址和错误正文，供桌面端给出可行动提示。 */
+export class ModelCatalogRequestError extends Error {
+  readonly statusCode: number;
+  readonly url: string;
+  readonly responseBody?: string;
+
+  constructor(message: string, details: { statusCode: number; url: string; responseBody?: string }) {
+    super(message);
+    this.name = "ModelCatalogRequestError";
+    this.statusCode = details.statusCode;
+    this.url = details.url;
+    this.responseBody = details.responseBody;
+  }
+}
+
 /** 拉取服务商的实时模型列表；只读，不写入任何凭据或配置。 */
 export async function fetchModelCatalog(request: CatalogProviderRequest, signal?: AbortSignal): Promise<ModelCatalogEntry[]> {
   return (await fetchModelCatalogSnapshot(request, signal)).models ?? [];
@@ -52,7 +67,7 @@ export async function fetchModelCatalogSnapshot(
   const apiKey = request.config.apiKey
     ?? (request.config.apiKeyEnv ? process.env[request.config.apiKeyEnv] : undefined)
     ?? (request.definition.apiKeyEnv ? process.env[request.definition.apiKeyEnv] : undefined);
-  if ((request.config.requiresApiKey ?? request.definition.requiresApiKey) && !apiKey) {
+  if (requiresModelCatalogApiKey(request, catalogEndpoint) && !apiKey) {
     throw new Error(`No credentials available for provider ${request.alias}.`);
   }
   // Anthropic 原生协议用 x-api-key，Gemini 原生协议用 x-goog-api-key，
@@ -85,7 +100,14 @@ export async function fetchModelCatalogSnapshot(
     lastModified: httpTimestamp(response.headers.get("last-modified")) ?? validators.lastModified
   };
   if (response.status === 304) return { notModified: true, ...responseValidators };
-  if (!response.ok) throw new Error(`Model catalog request failed (${String(response.status)}).`);
+  if (!response.ok) {
+    const responseBody = (await response.text().catch(() => "")).slice(0, 8_192) || undefined;
+    throw new ModelCatalogRequestError(`Model catalog request failed (${String(response.status)}).`, {
+      statusCode: response.status,
+      url: catalogEndpoint,
+      responseBody
+    });
+  }
   const body = await response.json() as unknown;
   return {
     models: parseModelCatalog(body, request.alias, protocol, request.definition.modelDefaults?.inferReasoningFromId === true),
@@ -121,7 +143,9 @@ export function parseModelCatalog(
     // Google 风格的目录只给资源名（name: "models/gemini-x"）；从 name 取 id 时剥掉资源段，
     // 让模型 id 保持可直接用于请求的形状。
     const resourceName = stringValue(item.name)?.replace(/^models\//u, "");
-    const id = firstString(sources, ["id", "model", "name", "slug"])?.replace(/^models\//u, "") ?? resourceName ?? slug;
+    // 显式 id/model 是服务商真正用于请求的 ID，不能像 Google 的 resource name 一样
+    // 无条件剥掉 `models/`；只有从 name 取出的资源名才做归一化。
+    const id = firstString(sources, ["id", "model"]) ?? resourceName ?? slug;
     if (!id) return [];
     const contextWindow = firstNumber(sources, [
       "context_window", "contextWindow", "context_length", "contextLength", "max_context_tokens", "maxContextTokens",
@@ -197,6 +221,23 @@ function defaultModelsEndpoint(baseUrl: string | undefined, protocol: "anthropic
     : `${normalized}/models`;
 }
 
+function requiresModelCatalogApiKey(request: CatalogProviderRequest, endpoint: string): boolean {
+  if (request.config.modelsRequiresApiKey !== undefined) return request.config.modelsRequiresApiKey;
+  if (request.definition.modelsRequiresApiKey !== undefined) return request.definition.modelsRequiresApiKey;
+  // OpenCode 的两个 Zen /models 端点是公开目录，聊天接口仍然可以继续要求 Key。
+  if (isPublicOpenCodeCatalogEndpoint(endpoint)) return false;
+  return request.config.requiresApiKey ?? request.definition.requiresApiKey;
+}
+
+function isPublicOpenCodeCatalogEndpoint(endpoint: string): boolean {
+  try {
+    const url = new URL(endpoint);
+    return url.hostname === "opencode.ai" && /^\/zen(?:\/go)?\/v1\/models$/u.test(url.pathname);
+  } catch {
+    return false;
+  }
+}
+
 // 以下取值函数统一策略：类型不对或明显无意义（空串、非正整数）就返回 undefined，
 // 交给上层的 `??` 链继续尝试下一个字段名。
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -213,11 +254,13 @@ function formatCodexModelName(modelId: string): string {
 }
 
 function numberValue(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isSafeInteger(value) && value > 0 ? value : undefined;
+  const numeric = typeof value === "string" && /^\d+$/u.test(value.trim()) ? Number(value) : value;
+  return typeof numeric === "number" && Number.isSafeInteger(numeric) && numeric > 0 ? numeric : undefined;
 }
 
 function nonNegativeInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+  const numeric = typeof value === "string" && /^\d+$/u.test(value.trim()) ? Number(value) : value;
+  return typeof numeric === "number" && Number.isSafeInteger(numeric) && numeric >= 0 ? numeric : undefined;
 }
 
 function booleanValue(value: unknown): boolean | undefined {

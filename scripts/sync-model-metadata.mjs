@@ -19,25 +19,10 @@ export const PROVIDERS = {
   "claude-subscription": { source: "anthropic", aliasOf: "anthropic", catalog: false },
   "openai-codex": { source: "openai", aliasOf: "openai", catalog: false },
   gemini: { source: "google", catalog: true },
-  "google-native": { source: "google", aliasOf: "gemini", catalog: true },
   kimi: { source: "moonshotai", catalog: true },
   qwen: { source: "alibaba", catalog: true },
-  xai: { source: "xai", catalog: true },
-  mistral: { source: "mistral", catalog: true },
-  groq: { source: "groq", catalog: true },
-  openrouter: { source: "openrouter", catalog: true },
-  cerebras: { source: "cerebras", catalog: true },
-  togetherai: { source: "togetherai", catalog: true },
-  "fireworks-ai": { source: "fireworks-ai", catalog: true },
-  nvidia: { source: "nvidia", catalog: true },
-  deepinfra: { source: "deepinfra", catalog: true },
-  siliconflow: { source: "siliconflow-cn", catalog: true },
   zai: { source: "zai", catalog: true },
-  minimax: { source: "minimax", catalog: true },
-  "minimax-cn": { source: "minimax-cn", catalog: true },
-  stepfun: { source: "stepfun", catalog: true },
-  cohere: { source: "cohere", catalog: true },
-  huggingface: { source: "huggingface", catalog: true }
+  openrouter: { source: "openrouter", catalog: true }
 };
 
 const supportedEfforts = new Set(["minimal", "low", "medium", "high", "xhigh", "max"]);

@@ -1,6 +1,7 @@
 /**
  * chatModel 纯函数测试：工具行模型（变体/状态）、轮次级错误呈现（标题/语义色/人话映射）、
- * 指标格式化（token/时长/时钟/吞吐）、轮次指标派生，以及 sessionTimeline 的 TTFT/解码指标与压缩标记。
+ * 状态行活动派生（currentTurnActivity）、指标格式化（token/时长/时钟/吞吐）、轮次指标派生，
+ * 以及 sessionTimeline 的 TTFT/解码指标与压缩标记。
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -9,6 +10,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import {
   buildUsageDetailRows,
   classifyTool,
+  currentTurnActivity,
   finishReasonTone,
   firstLine,
   formatDuration,
@@ -31,20 +33,22 @@ import {
   buildSessionTimeline,
   createSessionTimelineProjector,
   type TimelineTool,
+  type TimelineTurn,
 } from "../src/desktop/renderer/src/sessionTimeline.js";
 import { MarkdownContent } from "../src/desktop/renderer/src/components/MarkdownContent.js";
 
 test("classifyTool 把已知工具分类到对应变体", () => {
-  assert.equal(classifyTool("run_command"), "bash");
-  assert.equal(classifyTool("read_file"), "read");
-  assert.equal(classifyTool("web_fetch"), "read");
-  assert.equal(classifyTool("web_search"), "search");
-  assert.equal(classifyTool("grep_search"), "search");
-  assert.equal(classifyTool("write_file"), "write");
+  assert.equal(classifyTool("Bash"), "bash");
+  assert.equal(classifyTool("Read"), "read");
+  assert.equal(classifyTool("WebFetch"), "read");
+  assert.equal(classifyTool("WebSearch"), "search");
+  assert.equal(classifyTool("Grep"), "search");
+  assert.equal(classifyTool("mcp_zvec_grep_zvec_grep_search"), "search");
+  assert.equal(classifyTool("Write"), "write");
   assert.equal(classifyTool("edit_file"), "edit");
   assert.equal(classifyTool("git_diff"), "git");
   assert.equal(classifyTool("start_process"), "process");
-  assert.equal(classifyTool("invoke_skill"), "skill");
+  assert.equal(classifyTool("Skill"), "skill");
   assert.equal(classifyTool("unknown_tool"), "others");
 });
 test("VARIANT_TITLES 使用 DSH figma 字面量", () => {
@@ -55,7 +59,7 @@ test("VARIANT_TITLES 使用 DSH figma 字面量", () => {
 });
 
 test("toolRowState 从时间线状态派生行状态语义", () => {
-  const base: TimelineTool = { id: "t1", tool: "run_command", args: {}, status: "waiting", updates: [] };
+  const base: TimelineTool = { id: "t1", tool: "Bash", args: {}, status: "waiting", updates: [] };
   assert.equal(toolRowState({ ...base, status: "running" }), "running");
   assert.equal(toolRowState({ ...base, status: "success" }), "ok");
   assert.equal(toolRowState({ ...base, status: "skipped" }), "ok");
@@ -198,12 +202,12 @@ test("增量投影：追加实时事件时历史轮次与未触及工具引用�
   const liveStart = [
     { ...base, type: "message.user", messageId: "m1", content: "实时问题" },
     { ...base, type: "run.started", messageId: "m1", input: "实时问题", mode: "normal", model: { alias: "a", provider: "p", label: "p/m", reasoning: "" }, skills: [] },
-    { ...base, type: "tool.started", toolCallId: "tool-a", tool: "run_command", args: { command: "ls" }, display: { kind: "command", command: "ls", cwd: "/w" } },
+    { ...base, type: "tool.started", toolCallId: "tool-a", tool: "Bash", args: { command: "ls" }, display: { kind: "command", command: "ls", cwd: "/w" } },
   ];
   // 追加的 assistant.delta 只触及实时轮次正文，不触及工具。
   const assistantDelta = { ...base, type: "assistant.delta", timestamp: "2026-05-15T10:00:01.000Z", content: "你好" };
   // 追加的 tool.progress 触及 tool-a。
-  const toolProgress = { ...base, type: "tool.progress", toolCallId: "tool-a", tool: "run_command", update: { kind: "stdout", text: "out\n" } };
+  const toolProgress = { ...base, type: "tool.progress", toolCallId: "tool-a", tool: "Bash", update: { kind: "stdout", text: "out\n" } };
 
   const projector = createSessionTimelineProjector();
   const first = projector.update({ sessionId: "s1", events, liveEvents: liveStart });
@@ -389,4 +393,86 @@ test("实时 run.completed 的 finishReason 进轮次", () => {
     { ...base, type: "run.completed", timestamp: "2026-05-15T10:00:02.000Z", durationMs: 2_000, stopReason: "stop", finishReason: "stop" },
   ]);
   assert.equal(timeline[0]?.finishReason, "stop");
+});
+
+test("currentTurnActivity 无轮次或已落定时回到「思考中」", () => {
+  assert.deepEqual(currentTurnActivity(undefined), { label: "思考中", orbState: "solving" });
+  const timeline = buildSessionTimeline([], [
+    { sessionId: "s1", runId: "r1", type: "message.user", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", content: "你好" },
+    { sessionId: "s1", runId: "r1", type: "run.completed", timestamp: "2026-05-15T10:00:02.000Z", durationMs: 2_000 },
+  ]);
+  assert.deepEqual(currentTurnActivity(timeline[0]), { label: "思考中", orbState: "solving" });
+});
+
+test("currentTurnActivity 无输出且无运行中工具时是「思考中」", () => {
+  const timeline = buildSessionTimeline([], [
+    { sessionId: "s1", runId: "r1", type: "message.user", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", content: "你好" },
+    { sessionId: "s1", runId: "r1", type: "run.started", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", input: "你好", mode: "normal", model: { alias: "a", provider: "p", label: "p/m", reasoning: "" }, skills: [] },
+  ]);
+  assert.deepEqual(currentTurnActivity(timeline[0]), { label: "思考中", orbState: "solving" });
+});
+
+test("currentTurnActivity 从运行中的工具派生真实活动标签与 orb 动画", () => {
+  const build = (tool: TimelineTool["tool"], args: unknown, display: TimelineTool["display"]): TimelineTurn | undefined => buildSessionTimeline([], [
+    { sessionId: "s1", runId: "r1", type: "message.user", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", content: "你好" },
+    { sessionId: "s1", runId: "r1", type: "tool.started", timestamp: "2026-05-15T10:00:01.000Z", toolCallId: "t1", tool, args, display },
+  ])[0];
+  assert.deepEqual(
+    currentTurnActivity(build("Bash", { command: "ls" }, { kind: "command", command: "ls", cwd: "/w" })),
+    { label: "正在运行命令", orbState: "working" },
+  );
+  assert.deepEqual(
+    currentTurnActivity(build("Read", { path: "a.ts" }, { kind: "file_io", operation: "read", path: "a.ts" })),
+    { label: "正在读取文件", orbState: "searching" },
+  );
+  assert.deepEqual(
+    currentTurnActivity(build("edit_file", { path: "a.ts" }, { kind: "file_io", operation: "edit", path: "a.ts" })),
+    { label: "正在修改文件", orbState: "composing" },
+  );
+  assert.deepEqual(
+    currentTurnActivity(build("Grep", { query: "foo" }, { kind: "file_io", operation: "grep", path: "." })),
+    { label: "正在搜索项目", orbState: "searching" },
+  );
+  assert.deepEqual(
+    currentTurnActivity(build("WebSearch", { query: "biny" }, undefined)),
+    { label: "正在搜索网页", orbState: "searching" },
+  );
+});
+
+test("currentTurnActivity 技能调用展示技能名，未知工具回退描述或工具名", () => {
+  const skillTurn = buildSessionTimeline([], [
+    { sessionId: "s1", runId: "r1", type: "message.user", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", content: "你好" },
+    { sessionId: "s1", runId: "r1", type: "tool.started", timestamp: "2026-05-15T10:00:01.000Z", toolCallId: "t1", tool: "Skill", args: { skill: "write-tui" } },
+  ])[0];
+  assert.deepEqual(currentTurnActivity(skillTurn), { label: "正在使用技能 write-tui", orbState: "shaping" });
+
+  const described = buildSessionTimeline([], [
+    { sessionId: "s1", runId: "r1", type: "message.user", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", content: "你好" },
+    { sessionId: "s1", runId: "r1", type: "tool.started", timestamp: "2026-05-15T10:00:01.000Z", toolCallId: "t2", tool: "mcp__x__y", args: {}, description: "查询依赖版本" },
+  ])[0];
+  assert.deepEqual(currentTurnActivity(described), { label: "查询依赖版本", orbState: "connecting" });
+
+  const bare = buildSessionTimeline([], [
+    { sessionId: "s1", runId: "r1", type: "message.user", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", content: "你好" },
+    { sessionId: "s1", runId: "r1", type: "tool.started", timestamp: "2026-05-15T10:00:01.000Z", toolCallId: "t3", tool: "mcp__x__y", args: {} },
+  ])[0];
+  assert.deepEqual(currentTurnActivity(bare), { label: "正在执行 mcp__x__y", orbState: "connecting" });
+});
+
+test("currentTurnActivity 等待授权时展示待授权工具", () => {
+  const timeline = buildSessionTimeline([], [
+    { sessionId: "s1", runId: "r1", type: "message.user", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", content: "你好" },
+    { sessionId: "s1", runId: "r1", type: "tool.started", timestamp: "2026-05-15T10:00:01.000Z", toolCallId: "t1", tool: "Bash", args: { command: "rm -rf /" } },
+    {
+      sessionId: "s1",
+      runId: "r1",
+      type: "permission.requested",
+      timestamp: "2026-05-15T10:00:02.000Z",
+      requestId: "p1",
+      toolCallId: "t1",
+      request: { toolCallId: "t1", tool: "Bash", title: "允许执行命令", details: "", requireFullYes: false, actionType: "command", riskLevel: "high" },
+    },
+  ]);
+  assert.equal(timeline[0]?.status, "waiting_permission");
+  assert.deepEqual(currentTurnActivity(timeline[0]), { label: "等待授权：Bash", orbState: "listening" });
 });

@@ -5,64 +5,6 @@ import type { ModelMetadata } from "./modelMetadata.js";
 export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelMetadata>> =
 {
   "deepseek": {
-    "deepseek-chat": {
-      "displayName": "DeepSeek Chat",
-      "description": "DeepSeek chat model for instruction following, coding, and analysis",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 384000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-09",
-      "lastUpdated": "2026-02-28",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.28,
-        "cacheReadPerMillionTokens": 0.0028
-      }
-    },
-    "deepseek-reasoner": {
-      "displayName": "DeepSeek Reasoner",
-      "description": "DeepSeek reasoning model for multi-step analysis, math, coding, and tools",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 384000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-09",
-      "lastUpdated": "2026-02-28",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.28,
-        "cacheReadPerMillionTokens": 0.0028
-      }
-    },
     "deepseek-v4-flash": {
       "displayName": "DeepSeek V4 Flash",
       "description": "Official DeepSeek V4 Flash release with enhanced agentic capabilities and integrated DSpark speculative decoding",
@@ -80,6 +22,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
       "knowledgeCutoff": "2025-05",
       "structuredOutput": true,
       "lastUpdated": "2026-07-31",
@@ -97,9 +44,48 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "cacheReadPerMillionTokens": 0.0028
       }
     },
+    "deepseek-v4-flash-vision-exp": {
+      "displayName": "DeepSeek V4 Flash Vision Exp",
+      "description": "Experimental multimodal DeepSeek V4 Flash model for image understanding, coding, and agentic work",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 384000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-21",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.14,
+        "outputPerMillionTokens": 0.28,
+        "cacheReadPerMillionTokens": 0.0028
+      }
+    },
     "deepseek-v4-pro": {
       "displayName": "DeepSeek V4 Pro",
-      "description": "Open MoE flagship with million-token context for coding and long agent runs",
+      "description": "DeepSeek V4 Pro snapshot with million-token context and support for thinking and non-thinking modes",
       "contextWindow": 1000000,
       "maxOutputTokens": 384000,
       "capabilities": {
@@ -113,9 +99,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "max"
       ],
-      "knowledgeCutoff": "2025-05",
+      "thinkingLevelMap": {
+        "high": "high",
+        "max": "max"
+      },
       "structuredOutput": true,
-      "lastUpdated": "2026-04-24",
+      "lastUpdated": "2026-08-22",
       "modalities": {
         "input": [
           "text"
@@ -491,6 +480,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-09-30",
       "structuredOutput": true,
       "lastUpdated": "2025-08-07",
@@ -528,6 +523,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-05-30",
       "structuredOutput": true,
       "lastUpdated": "2025-08-07",
@@ -565,6 +566,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-05-30",
       "structuredOutput": true,
       "lastUpdated": "2025-08-07",
@@ -599,6 +606,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "reasoningEfforts": [
         "high"
       ],
+      "thinkingLevelMap": {
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-09-30",
       "structuredOutput": true,
       "lastUpdated": "2025-10-06",
@@ -634,6 +644,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-09-30",
       "structuredOutput": true,
       "lastUpdated": "2025-11-13",
@@ -671,6 +687,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2025-12-11",
@@ -704,6 +727,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "reasoningEfforts": [
         "medium"
       ],
+      "thinkingLevelMap": {
+        "medium": "medium"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2025-12-11",
@@ -740,6 +766,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": false,
       "lastUpdated": "2025-12-11",
@@ -807,6 +838,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2026-02-05",
@@ -845,6 +883,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2026-02-05",
@@ -883,6 +928,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2026-03-05",
@@ -921,6 +973,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2026-03-17",
@@ -958,6 +1017,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2026-03-17",
@@ -994,6 +1060,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": false,
       "lastUpdated": "2026-03-05",
@@ -1030,6 +1101,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-12-01",
       "structuredOutput": true,
       "lastUpdated": "2026-04-23",
@@ -1067,6 +1145,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-12-01",
       "structuredOutput": true,
       "lastUpdated": "2026-04-23",
@@ -1105,6 +1188,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-02-16",
       "structuredOutput": true,
       "lastUpdated": "2026-07-09",
@@ -1119,10 +1210,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 5,
-        "outputPerMillionTokens": 30,
-        "cacheReadPerMillionTokens": 0.5,
-        "cacheWritePerMillionTokens": 6.25
+        "inputPerMillionTokens": 4,
+        "outputPerMillionTokens": 20,
+        "cacheReadPerMillionTokens": 0.4,
+        "cacheWritePerMillionTokens": 5
       }
     },
     "gpt-5.6-luna": {
@@ -1145,6 +1236,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-02-16",
       "structuredOutput": true,
       "lastUpdated": "2026-07-09",
@@ -1185,6 +1284,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-02-16",
       "structuredOutput": true,
       "lastUpdated": "2026-07-09",
@@ -1199,10 +1306,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 5,
-        "outputPerMillionTokens": 30,
-        "cacheReadPerMillionTokens": 0.5,
-        "cacheWritePerMillionTokens": 6.25
+        "inputPerMillionTokens": 4,
+        "outputPerMillionTokens": 20,
+        "cacheReadPerMillionTokens": 0.4,
+        "cacheWritePerMillionTokens": 5
       }
     },
     "gpt-5.6-terra": {
@@ -1225,6 +1332,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-02-16",
       "structuredOutput": true,
       "lastUpdated": "2026-07-09",
@@ -1243,6 +1358,53 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 12,
         "cacheReadPerMillionTokens": 0.2,
         "cacheWritePerMillionTokens": 2.5
+      }
+    },
+    "gpt-6-astra": {
+      "displayName": "GPT-6 Astra",
+      "description": "GPT-6 Astra is OpenAI's most capable model for complex reasoning, coding, computer use, research, and document creation.",
+      "contextWindow": 1050000,
+      "maxInputTokens": 922000,
+      "maxOutputTokens": 128000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "knowledgeCutoff": "2026-04-30",
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-04",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 10,
+        "outputPerMillionTokens": 50,
+        "cacheReadPerMillionTokens": 1,
+        "cacheWritePerMillionTokens": 12.5
       }
     },
     "gpt-realtime-2.1": {
@@ -1265,6 +1427,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2024-09-30",
       "structuredOutput": false,
       "lastUpdated": "2026-07-06",
@@ -1302,6 +1471,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2023-09",
       "structuredOutput": true,
       "lastUpdated": "2024-12-05",
@@ -1338,6 +1512,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2023-09",
       "structuredOutput": true,
       "lastUpdated": "2025-03-19",
@@ -1372,6 +1551,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-05",
       "structuredOutput": true,
       "lastUpdated": "2025-04-16",
@@ -1408,6 +1592,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-05",
       "structuredOutput": true,
       "lastUpdated": "2025-01-29",
@@ -1442,6 +1631,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-05",
       "structuredOutput": true,
       "lastUpdated": "2025-06-10",
@@ -1476,6 +1670,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-05",
       "structuredOutput": true,
       "lastUpdated": "2025-04-16",
@@ -1599,6 +1798,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-06-09",
       "modalities": {
@@ -1615,6 +1821,52 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "inputPerMillionTokens": 10,
         "outputPerMillionTokens": 50,
         "cacheReadPerMillionTokens": 1,
+        "cacheWritePerMillionTokens": 12.5
+      }
+    },
+    "claude-fable-5-1": {
+      "displayName": "Claude Fable 5.1",
+      "description": "Claude model for demanding reasoning and long-horizon agentic work",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "knowledgeCutoff": "2026-06",
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-01",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 10,
+        "outputPerMillionTokens": 50,
+        "cacheReadPerMillionTokens": 0.25,
         "cacheWritePerMillionTokens": 12.5
       }
     },
@@ -1701,6 +1953,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-05",
       "structuredOutput": true,
       "lastUpdated": "2025-11-24",
@@ -1738,6 +1995,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-05",
       "structuredOutput": true,
       "lastUpdated": "2025-11-01",
@@ -1776,6 +2038,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "max": "max"
+      },
       "knowledgeCutoff": "2025-05-31",
       "structuredOutput": true,
       "lastUpdated": "2026-03-13",
@@ -1815,6 +2083,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-01-31",
       "structuredOutput": true,
       "lastUpdated": "2026-04-16",
@@ -1854,6 +2129,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-01",
       "structuredOutput": true,
       "lastUpdated": "2026-05-28",
@@ -1893,6 +2175,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-05",
       "structuredOutput": true,
       "lastUpdated": "2026-07-24",
@@ -1997,6 +2286,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "max": "max"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2026-03-13",
@@ -2036,6 +2331,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-01-31",
       "structuredOutput": true,
       "lastUpdated": "2026-06-30",
@@ -2124,73 +2426,6 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "inputPerMillionTokens": 2,
         "outputPerMillionTokens": 12,
         "cacheReadPerMillionTokens": 0.2
-      }
-    },
-    "gemini-2.0-flash": {
-      "displayName": "Gemini 2.0 Flash",
-      "description": "Earlier Gemini Flash workhorse for responsive multimodal apps and tool use",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06",
-      "structuredOutput": true,
-      "lastUpdated": "2024-12-11",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "audio",
-          "video",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.4,
-        "cacheReadPerMillionTokens": 0.025
-      }
-    },
-    "gemini-2.0-flash-lite": {
-      "displayName": "Gemini 2.0 Flash-Lite",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06",
-      "structuredOutput": true,
-      "lastUpdated": "2024-12-11",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "audio",
-          "video",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.075,
-        "outputPerMillionTokens": 0.3
       }
     },
     "gemini-2.5-computer-use-preview-10-2025": {
@@ -2373,6 +2608,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2025-12-17",
@@ -2410,6 +2651,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "low",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "lastUpdated": "2026-05-28",
       "modalities": {
@@ -2457,43 +2702,6 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 120
       }
     },
-    "gemini-3-pro-preview": {
-      "displayName": "Gemini 3 Pro Preview",
-      "description": "Preview Gemini flagship for complex reasoning, coding, and rich multimodal prompts",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [
-        "low",
-        "high"
-      ],
-      "knowledgeCutoff": "2025-01",
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-18",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video",
-          "audio",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2,
-        "outputPerMillionTokens": 12,
-        "cacheReadPerMillionTokens": 0.2
-      }
-    },
     "gemini-3.1-flash-image": {
       "displayName": "Nano Banana 2",
       "description": "Image model for prompt-driven generation, editing, and visual design workflows",
@@ -2510,6 +2718,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "minimal",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "lastUpdated": "2026-05-28",
       "modalities": {
@@ -2545,6 +2757,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "minimal",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "lastUpdated": "2026-02-26",
       "modalities": {
@@ -2581,6 +2797,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2026-05-07",
@@ -2618,6 +2840,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "minimal",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": false,
       "lastUpdated": "2026-06-30",
@@ -2654,6 +2880,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2026-03-03",
@@ -2693,6 +2925,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": false,
       "lastUpdated": "2026-03-26",
@@ -2730,6 +2968,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2026-02-19",
@@ -2768,6 +3011,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2026-02-19",
@@ -2807,6 +3055,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2026-05-19",
@@ -2846,6 +3100,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2026-03",
       "structuredOutput": true,
       "lastUpdated": "2026-07-21",
@@ -2914,6 +3174,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2026-03",
       "structuredOutput": true,
       "lastUpdated": "2026-07-21",
@@ -2930,9 +3196,94 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 1.5,
-        "outputPerMillionTokens": 7.5,
-        "cacheReadPerMillionTokens": 0.15
+        "inputPerMillionTokens": 0.75,
+        "outputPerMillionTokens": 3.75,
+        "cacheReadPerMillionTokens": 0.075
+      }
+    },
+    "gemini-3.7-flash": {
+      "displayName": "Gemini 3.7 Flash",
+      "description": "High-efficiency Gemini model for agentic workflows, coding, and multimodal reasoning",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
+      "knowledgeCutoff": "2026-03",
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-13",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.75,
+        "outputPerMillionTokens": 3.75,
+        "cacheReadPerMillionTokens": 0.075
+      }
+    },
+    "gemini-3.8-flash": {
+      "displayName": "Gemini 3.8 Flash",
+      "description": "Google's most intelligent Flash model, engineered for long-horizon software engineering, autonomous agents, and complex enterprise workflows",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-02",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.75,
+        "outputPerMillionTokens": 3.75,
+        "cacheReadPerMillionTokens": 0.075
       }
     },
     "gemini-embedding-001": {
@@ -2997,6 +3348,49 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     },
     "gemini-flash-latest": {
       "displayName": "Gemini Flash Latest",
+      "description": "High-efficiency Gemini model for agentic workflows, coding, and multimodal reasoning",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
+      "knowledgeCutoff": "2026-03",
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-13",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.75,
+        "outputPerMillionTokens": 3.75,
+        "cacheReadPerMillionTokens": 0.075
+      }
+    },
+    "gemini-flash-lite-latest": {
+      "displayName": "Gemini Flash-Lite Latest",
       "description": "Fast Gemini model balancing multimodal reasoning, tool use, and cost",
       "contextWindow": 1048576,
       "maxOutputTokens": 65536,
@@ -3013,9 +3407,15 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
-      "knowledgeCutoff": "2025-01",
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
+      "knowledgeCutoff": "2026-03",
       "structuredOutput": true,
-      "lastUpdated": "2026-05-19",
+      "lastUpdated": "2026-07-21",
       "modalities": {
         "input": [
           "text",
@@ -3029,80 +3429,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 1.5,
-        "outputPerMillionTokens": 9,
-        "cacheReadPerMillionTokens": 0.15
-      }
-    },
-    "gemini-flash-lite-latest": {
-      "displayName": "Gemini Flash-Lite Latest",
-      "description": "Low-latency Gemini model for high-volume multimodal and agent workloads",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [
-        "minimal",
-        "low",
-        "medium",
-        "high"
-      ],
-      "knowledgeCutoff": "2025-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-05-07",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video",
-          "audio",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.25,
-        "outputPerMillionTokens": 1.5,
-        "cacheReadPerMillionTokens": 0.025
-      }
-    },
-    "gemini-robotics-er-1.6-preview": {
-      "displayName": "Gemini Robotics-ER 1.6 Preview",
-      "description": "Vision-language model for embodied reasoning: spatial understanding, task planning, and physical-world agentic robotics",
-      "contextWindow": 131072,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-14",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 5
+        "inputPerMillionTokens": 0.3,
+        "outputPerMillionTokens": 2.5,
+        "cacheReadPerMillionTokens": 0.03
       }
     },
     "gemma-4-26b-a4b-it": {
@@ -3217,183 +3546,6 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     }
   },
   "kimi": {
-    "kimi-k2-0711-preview": {
-      "displayName": "Kimi K2 0711",
-      "description": "Kimi model for long-context chat, coding, and agentic reasoning",
-      "contextWindow": 131072,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-10",
-      "lastUpdated": "2025-07-14",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.5,
-        "cacheReadPerMillionTokens": 0.15
-      }
-    },
-    "kimi-k2-0905-preview": {
-      "displayName": "Kimi K2 0905",
-      "description": "Kimi model for long-context chat, coding, and agentic reasoning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-10",
-      "lastUpdated": "2025-09-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.5,
-        "cacheReadPerMillionTokens": 0.15
-      }
-    },
-    "kimi-k2-thinking": {
-      "displayName": "Kimi K2 Thinking",
-      "description": "Thinking Kimi model for slower research passes, planning, and hard technical questions",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-08",
-      "lastUpdated": "2025-11-06",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.5,
-        "cacheReadPerMillionTokens": 0.15
-      }
-    },
-    "kimi-k2-thinking-turbo": {
-      "displayName": "Kimi K2 Thinking Turbo",
-      "description": "Kimi reasoning model for long-horizon research, planning, and tool use",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-08",
-      "lastUpdated": "2025-11-06",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.15,
-        "outputPerMillionTokens": 8,
-        "cacheReadPerMillionTokens": 0.15
-      }
-    },
-    "kimi-k2-turbo-preview": {
-      "displayName": "Kimi K2 Turbo",
-      "description": "Fast Kimi model for responsive chat, coding help, and agent loops",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-10",
-      "lastUpdated": "2025-09-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2.4,
-        "outputPerMillionTokens": 10,
-        "cacheReadPerMillionTokens": 0.6
-      }
-    },
-    "kimi-k2.5": {
-      "displayName": "Kimi K2.5",
-      "description": "Earlier Kimi frontier model for long-context agents, coding, and multimodal work",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-01",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 3,
-        "cacheReadPerMillionTokens": 0.1
-      }
-    },
     "kimi-k2.6": {
       "displayName": "Kimi K2.6",
       "description": "Multimodal Kimi workhorse for agent loops, coding tasks, and visual context",
@@ -3507,6 +3659,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-07-16",
       "modalities": {
@@ -3527,6 +3684,89 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     }
   },
   "qwen": {
+    "deepseek-v4-flash-0731": {
+      "displayName": "DeepSeek V4 Flash 0731",
+      "description": "Official DeepSeek V4 Flash release with enhanced agentic capabilities and integrated DSpark speculative decoding",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 384000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "max": "max"
+      },
+      "knowledgeCutoff": "2025-05",
+      "structuredOutput": true,
+      "lastUpdated": "2026-07-31",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.2,
+        "outputPerMillionTokens": 0.4,
+        "cacheReadPerMillionTokens": 0.04
+      }
+    },
+    "glm-5.2": {
+      "displayName": "GLM-5.2",
+      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-06-13",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.4,
+        "outputPerMillionTokens": 4.4,
+        "cacheReadPerMillionTokens": 0.28,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
     "qvq-max": {
       "displayName": "QVQ Max",
       "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
@@ -4993,6 +5233,47 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "cacheWritePerMillionTokens": 0.625
       }
     },
+    "qwen3.8-flash": {
+      "displayName": "Qwen3.8 Flash",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "xhigh"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "xhigh": "xhigh"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-26",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.15,
+        "outputPerMillionTokens": 0.47,
+        "cacheReadPerMillionTokens": 0.016,
+        "cacheWritePerMillionTokens": 0.2
+      }
+    },
     "qwen3.8-max": {
       "displayName": "Qwen3.8 Max",
       "description": "2.4-trillion-parameter MoE flagship for coding, professional work, multimodal understanding, and long-horizon agentic workflows",
@@ -5010,6 +5291,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "xhigh": "xhigh"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-08-03",
       "modalities": {
@@ -5059,226 +5345,177 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     }
   },
-  "xai": {
-    "grok-4.20-0309-non-reasoning": {
-      "displayName": "Grok 4.20 (Non-Reasoning)",
-      "description": "Grok model for agentic tool use, reasoning, coding, and live assistance",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 30000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-03-09",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.25,
-        "outputPerMillionTokens": 2.5,
-        "cacheReadPerMillionTokens": 0.2
-      }
-    },
-    "grok-4.20-0309-reasoning": {
-      "displayName": "Grok 4.20 (Reasoning)",
-      "description": "Reasoning Grok for document-heavy analysis and long-horizon tool use",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 30000,
+  "zai": {
+    "glm-4.5": {
+      "displayName": "GLM-4.5",
+      "description": "Hybrid-reasoning GLM release that made the 4.5 line broadly useful",
+      "contextWindow": 131072,
+      "maxOutputTokens": 98304,
       "capabilities": {
         "tools": true,
         "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-03-09",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.25,
-        "outputPerMillionTokens": 2.5,
-        "cacheReadPerMillionTokens": 0.2
-      }
-    },
-    "grok-4.20-multi-agent-0309": {
-      "displayName": "Grok 4.20 Multi-Agent",
-      "description": "Grok model for agentic tool use, reasoning, coding, and live assistance",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 30000,
-      "capabilities": {
-        "tools": false,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high",
-        "xhigh"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-03-09",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.25,
-        "outputPerMillionTokens": 2.5,
-        "cacheReadPerMillionTokens": 0.2
-      }
-    },
-    "grok-4.3": {
-      "displayName": "Grok 4.3",
-      "description": "xAI's Grok for chat, coding, agentic tools, and lower hallucination risk",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 30000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-17",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.25,
-        "outputPerMillionTokens": 2.5,
-        "cacheReadPerMillionTokens": 0.2
-      }
-    },
-    "grok-4.5": {
-      "displayName": "Grok 4.5",
-      "description": "xAI's latest Grok for chat, coding, agentic tools, and lower hallucination risk",
-      "contextWindow": 500000,
-      "maxOutputTokens": 500000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-08",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2,
-        "outputPerMillionTokens": 6,
-        "cacheReadPerMillionTokens": 0.3
-      }
-    },
-    "grok-build-0.1": {
-      "displayName": "Grok Build 0.1",
-      "description": "Fast Grok coding model tuned for agentic engineering and iterative edits",
-      "contextWindow": 256000,
-      "maxOutputTokens": 256000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-16",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 2,
-        "cacheReadPerMillionTokens": 0.2
-      }
-    }
-  },
-  "mistral": {
-    "codestral-latest": {
-      "displayName": "Codestral (latest)",
-      "description": "Mistral code model for completions, refactors, and developer IDE workflows",
-      "contextWindow": 256000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
         "streaming": true,
         "vision": false,
         "audio": false
       },
       "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-10",
-      "lastUpdated": "2025-01-04",
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-07-28",
       "modalities": {
         "input": [
           "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.6,
+        "outputPerMillionTokens": 2.2,
+        "cacheReadPerMillionTokens": 0.11,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-4.5-air": {
+      "displayName": "GLM-4.5-Air",
+      "description": "Lighter GLM-4.5 variant for fast coding assistance and cheaper agents",
+      "contextWindow": 131072,
+      "maxOutputTokens": 98304,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-07-28",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.2,
+        "outputPerMillionTokens": 1.1,
+        "cacheReadPerMillionTokens": 0.03,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-4.5-flash": {
+      "displayName": "GLM-4.5-Flash",
+      "description": "Efficient GLM model for fast reasoning, coding, and agent workflows",
+      "contextWindow": 131072,
+      "maxOutputTokens": 98304,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-07-28",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-4.5v": {
+      "displayName": "GLM-4.5V",
+      "description": "GLM vision model for visual reasoning, documents, and multimodal agents",
+      "contextWindow": 64000,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-08-11",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.6,
+        "outputPerMillionTokens": 1.8
+      }
+    },
+    "glm-4.6": {
+      "displayName": "GLM-4.6",
+      "description": "Late GLM-4 workhorse for coding agents, reasoning, and structured tasks",
+      "contextWindow": 204800,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-09-30",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.6,
+        "outputPerMillionTokens": 2.2,
+        "cacheReadPerMillionTokens": 0.11,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-4.6v": {
+      "displayName": "GLM-4.6V",
+      "description": "GLM vision model for visual reasoning, documents, and multimodal agents",
+      "contextWindow": 128000,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-12-08",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
         ],
         "output": [
           "text"
@@ -5289,1167 +5526,24 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 0.9
       }
     },
-    "devstral-2512": {
-      "displayName": "Devstral 2",
-      "description": "Mistral's coding-agent model for repository work, terminal tasks, and software fixes",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-12",
-      "lastUpdated": "2025-12-09",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 2
-      }
-    },
-    "devstral-latest": {
-      "displayName": "Devstral 2",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-12",
-      "lastUpdated": "2025-12-09",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 2
-      }
-    },
-    "devstral-medium-2507": {
-      "displayName": "Devstral Medium",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-05",
-      "lastUpdated": "2025-07-10",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 2
-      }
-    },
-    "devstral-medium-latest": {
-      "displayName": "Devstral 2 (latest)",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-12",
-      "lastUpdated": "2025-12-02",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 2
-      }
-    },
-    "devstral-small-2505": {
-      "displayName": "Devstral Small 2505",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-05",
-      "lastUpdated": "2025-05-07",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.3
-      }
-    },
-    "devstral-small-2507": {
-      "displayName": "Devstral Small",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-05",
-      "lastUpdated": "2025-07-10",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.3
-      }
-    },
-    "labs-devstral-small-2512": {
-      "displayName": "Devstral Small 2",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 256000,
-      "maxOutputTokens": 256000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-12",
-      "lastUpdated": "2025-12-09",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "magistral-medium-latest": {
-      "displayName": "Magistral Medium (latest)",
-      "description": "Mistral reasoning model for transparent analysis, math, and complex decisions",
-      "contextWindow": 128000,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-06",
-      "lastUpdated": "2025-03-20",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2,
-        "outputPerMillionTokens": 5
-      }
-    },
-    "magistral-small": {
-      "displayName": "Magistral Small",
-      "description": "Mistral reasoning model for transparent analysis, math, and complex decisions",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-06",
-      "lastUpdated": "2025-03-17",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.5,
-        "outputPerMillionTokens": 1.5
-      }
-    },
-    "ministral-3b-latest": {
-      "displayName": "Ministral 3B (latest)",
-      "description": "Compact Mistral model for edge, latency-sensitive, and cost-efficient workloads",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-10",
-      "lastUpdated": "2024-10-04",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.04,
-        "outputPerMillionTokens": 0.04
-      }
-    },
-    "ministral-8b-latest": {
-      "displayName": "Ministral 8B (latest)",
-      "description": "Compact Mistral model for edge, latency-sensitive, and cost-efficient workloads",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-10",
-      "lastUpdated": "2024-10-04",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.1
-      }
-    },
-    "mistral-embed": {
-      "displayName": "Mistral Embed",
-      "description": "Embedding model for semantic search, retrieval, clustering, and ranking pipelines",
-      "contextWindow": 8000,
-      "maxOutputTokens": 3072,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2023-12-11",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "mistral-large-2411": {
-      "displayName": "Mistral Large 2.1",
-      "description": "Flagship Mistral model for advanced reasoning, coding, and multilingual work",
-      "contextWindow": 131072,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-11",
-      "lastUpdated": "2024-11-18",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2,
-        "outputPerMillionTokens": 6
-      }
-    },
-    "mistral-large-2512": {
-      "displayName": "Mistral Large 3",
-      "description": "Mistral's largest general model for enterprise agents, coding, and multilingual reasoning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-11",
-      "lastUpdated": "2025-12-02",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.5,
-        "outputPerMillionTokens": 1.5
-      }
-    },
-    "mistral-large-latest": {
-      "displayName": "Mistral Large (latest)",
-      "description": "Flagship Mistral model for advanced reasoning, coding, and multilingual work",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-11",
-      "lastUpdated": "2025-12-02",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.5,
-        "outputPerMillionTokens": 1.5
-      }
-    },
-    "mistral-medium-2505": {
-      "displayName": "Mistral Medium 3",
-      "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
-      "contextWindow": 131072,
+    "glm-4.7": {
+      "displayName": "GLM-4.7",
+      "description": "Mature GLM model for dependable coding, reasoning, and structured agent tasks",
+      "contextWindow": 204800,
       "maxOutputTokens": 131072,
       "capabilities": {
         "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-05",
-      "lastUpdated": "2025-05-07",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 2
-      }
-    },
-    "mistral-medium-2508": {
-      "displayName": "Mistral Medium 3.1",
-      "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-05",
-      "lastUpdated": "2025-08-12",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 2
-      }
-    },
-    "mistral-medium-2604": {
-      "displayName": "Mistral Medium 3.5",
-      "description": "Balanced Mistral model for enterprise assistants, multilingual work, and tools",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-29",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.5,
-        "outputPerMillionTokens": 7.5
-      }
-    },
-    "mistral-medium-latest": {
-      "displayName": "Mistral Medium (latest)",
-      "description": "Balanced Mistral model for enterprise assistants, multilingual work, and tools",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-29",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.5,
-        "outputPerMillionTokens": 7.5
-      }
-    },
-    "mistral-nemo": {
-      "displayName": "Mistral Nemo",
-      "description": "Efficient Mistral-NVIDIA open model for multilingual chat and local deployment",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-07",
-      "lastUpdated": "2024-07-01",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 0.15
-      }
-    },
-    "mistral-small-2506": {
-      "displayName": "Mistral Small 3.2",
-      "description": "Efficient Mistral model for fast chat, extraction, and production assistants",
-      "contextWindow": 128000,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-03",
-      "lastUpdated": "2025-06-20",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.3
-      }
-    },
-    "mistral-small-2603": {
-      "displayName": "Mistral Small 4",
-      "description": "Fast Mistral production model for chat, extraction, and cost-sensitive agents",
-      "contextWindow": 256000,
-      "maxOutputTokens": 256000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high"
-      ],
-      "knowledgeCutoff": "2025-06",
-      "lastUpdated": "2026-03-16",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 0.6
-      }
-    },
-    "mistral-small-latest": {
-      "displayName": "Mistral Small (latest)",
-      "description": "Efficient Mistral model for fast chat, extraction, and production assistants",
-      "contextWindow": 256000,
-      "maxOutputTokens": 256000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high"
-      ],
-      "knowledgeCutoff": "2025-06",
-      "lastUpdated": "2026-03-16",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 0.6
-      }
-    },
-    "open-mistral-7b": {
-      "displayName": "Mistral 7B",
-      "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
-      "contextWindow": 8000,
-      "maxOutputTokens": 8000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2023-12",
-      "lastUpdated": "2023-09-27",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.25,
-        "outputPerMillionTokens": 0.25
-      }
-    },
-    "open-mistral-nemo": {
-      "displayName": "Open Mistral Nemo",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-07",
-      "lastUpdated": "2024-07-01",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 0.15
-      }
-    },
-    "open-mixtral-8x22b": {
-      "displayName": "Mixtral 8x22B",
-      "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
-      "contextWindow": 64000,
-      "maxOutputTokens": 64000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-04",
-      "lastUpdated": "2024-04-17",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2,
-        "outputPerMillionTokens": 6
-      }
-    },
-    "open-mixtral-8x7b": {
-      "displayName": "Mixtral 8x7B",
-      "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
-      "contextWindow": 32000,
-      "maxOutputTokens": 32000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-01",
-      "lastUpdated": "2023-12-11",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.7,
-        "outputPerMillionTokens": 0.7
-      }
-    },
-    "pixtral-12b": {
-      "displayName": "Pixtral 12B",
-      "description": "Mistral vision-language model for image understanding and multimodal chat",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-09",
-      "lastUpdated": "2024-09-01",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 0.15
-      }
-    },
-    "pixtral-large-latest": {
-      "displayName": "Pixtral Large (latest)",
-      "description": "Mistral's larger vision model for document-heavy image understanding and chat",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-11",
-      "lastUpdated": "2024-11-04",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2,
-        "outputPerMillionTokens": 6
-      }
-    },
-    "voxtral-small-latest": {
-      "displayName": "Voxtral Small (latest)",
-      "description": "Instruct model with native audio input for speech understanding and tool use",
-      "contextWindow": 32000,
-      "maxOutputTokens": 32000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-07-15",
-      "modalities": {
-        "input": [
-          "text",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.3
-      }
-    }
-  },
-  "groq": {
-    "allam-2-7b": {
-      "displayName": "ALLaM-2-7b",
-      "description": "ALLaM-2-7b instruction tuned model by SDAIA",
-      "contextWindow": 4096,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-01-23",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "groq/compound": {
-      "displayName": "Compound",
-      "description": "General-purpose chat model for instruction following, writing, and analysis",
-      "contextWindow": 131072,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-09-04",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      }
-    },
-    "groq/compound-mini": {
-      "displayName": "Compound Mini",
-      "description": "Efficient model for low-latency assistance, extraction, and routine automation",
-      "contextWindow": 131072,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-09-04",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      }
-    },
-    "llama-3.1-8b-instant": {
-      "displayName": "Llama 3.1 8B",
-      "description": "Compact Llama instruction model for fast chat and local deployment",
-      "contextWindow": 131072,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2023-12",
-      "lastUpdated": "2024-07-23",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.05,
-        "outputPerMillionTokens": 0.08
-      }
-    },
-    "llama-3.3-70b-versatile": {
-      "displayName": "Llama 3.3 70B",
-      "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
-      "contextWindow": 131072,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2023-12",
-      "lastUpdated": "2024-12-06",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.59,
-        "outputPerMillionTokens": 0.79
-      }
-    },
-    "meta-llama/llama-prompt-guard-2-22m": {
-      "displayName": "Llama Prompt Guard 2 22M",
-      "description": "Safety model for policy screening, moderation, and risk-aware routing workflows",
-      "contextWindow": 512,
-      "maxOutputTokens": 512,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-05-29",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.03,
-        "outputPerMillionTokens": 0.03
-      }
-    },
-    "meta-llama/llama-prompt-guard-2-86m": {
-      "displayName": "Prompt Guard 2 86M",
-      "description": "Safety model for policy screening, moderation, and risk-aware routing workflows",
-      "contextWindow": 512,
-      "maxOutputTokens": 512,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-05-29",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.04,
-        "outputPerMillionTokens": 0.04
-      }
-    },
-    "openai/gpt-oss-120b": {
-      "displayName": "GPT OSS 120B",
-      "description": "Open GPT reasoning model for self-hosted agents and controllable deployments",
-      "contextWindow": 131072,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
         "reasoning": true,
         "streaming": true,
         "vision": false,
         "audio": false
       },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2025-10-21",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 0.6,
-        "cacheReadPerMillionTokens": 0.075
-      }
-    },
-    "openai/gpt-oss-20b": {
-      "displayName": "GPT OSS 20B",
-      "description": "Open-weight GPT model for self-hosted reasoning and instruction-following workloads",
-      "contextWindow": 131072,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2025-09-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.075,
-        "outputPerMillionTokens": 0.3,
-        "cacheReadPerMillionTokens": 0.0375
-      }
-    },
-    "openai/gpt-oss-safeguard-20b": {
-      "displayName": "Safety GPT OSS 20B",
-      "description": "Safety model for policy screening, moderation, and risk-aware routing workflows",
-      "contextWindow": 131072,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-29",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.075,
-        "outputPerMillionTokens": 0.3
-      }
-    },
-    "qwen/qwen3.6-27b": {
-      "displayName": "Qwen3.6 27B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 131072,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
       "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-22",
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-12-22",
       "modalities": {
         "input": [
-          "text",
-          "image"
+          "text"
         ],
         "output": [
           "text"
@@ -6457,8 +5551,308 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       },
       "pricing": {
         "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 3,
-        "cacheReadPerMillionTokens": 0.3
+        "outputPerMillionTokens": 2.2,
+        "cacheReadPerMillionTokens": 0.11,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-4.7-flash": {
+      "displayName": "GLM-4.7-Flash",
+      "description": "Budget GLM lane for fast coding help, routing, and everyday automation",
+      "contextWindow": 200000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2026-01-19",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-4.7-flashx": {
+      "displayName": "GLM-4.7-FlashX",
+      "description": "Efficient GLM model for fast reasoning, coding, and agent workflows",
+      "contextWindow": 200000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2026-01-19",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.07,
+        "outputPerMillionTokens": 0.4,
+        "cacheReadPerMillionTokens": 0.01,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5": {
+      "displayName": "GLM-5",
+      "description": "General GLM flagship for coding, analysis, and tool-heavy engineering workflows",
+      "contextWindow": 204800,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2026-02-12",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1,
+        "outputPerMillionTokens": 3.2,
+        "cacheReadPerMillionTokens": 0.2,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5-turbo": {
+      "displayName": "GLM-5-Turbo",
+      "description": "Faster GLM-5 lane for coding agents that need lower latency",
+      "contextWindow": 200000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-03-16",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.2,
+        "outputPerMillionTokens": 4,
+        "cacheReadPerMillionTokens": 0.24,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.1": {
+      "displayName": "GLM-5.1",
+      "description": "Strong GLM coding model for agentic engineering, terminals, and repository generation",
+      "contextWindow": 200000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-04-07",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.4,
+        "outputPerMillionTokens": 4.4,
+        "cacheReadPerMillionTokens": 0.26,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.2": {
+      "displayName": "GLM-5.2",
+      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-06-13",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.4,
+        "outputPerMillionTokens": 4.4,
+        "cacheReadPerMillionTokens": 0.26,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.3": {
+      "displayName": "GLM-5.3",
+      "description": "Flagship GLM model for long-horizon coding, agents, and complex project delivery",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-14",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.4,
+        "outputPerMillionTokens": 4.4,
+        "cacheReadPerMillionTokens": 0.26,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.3-flash": {
+      "displayName": "GLM-5.3-Flash",
+      "description": "Native multimodal GLM model for efficient coding and long-horizon agent tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-26",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.075,
+        "outputPerMillionTokens": 0.25,
+        "cacheReadPerMillionTokens": 0.015,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5v-turbo": {
+      "displayName": "GLM-5V-Turbo",
+      "description": "Fast GLM vision model for screenshots, documents, and multimodal agent tasks",
+      "contextWindow": 200000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2026-04-01",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.2,
+        "outputPerMillionTokens": 4,
+        "cacheReadPerMillionTokens": 0.24,
+        "cacheWritePerMillionTokens": 0
       }
     }
   },
@@ -6482,6 +5876,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-06-09",
       "modalities": {
@@ -6497,7 +5898,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "pricing": {
         "inputPerMillionTokens": 10,
         "outputPerMillionTokens": 50,
-        "cacheReadPerMillionTokens": 1,
+        "cacheReadPerMillionTokens": 0.25,
         "cacheWritePerMillionTokens": 12.5
       }
     },
@@ -6552,6 +5953,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-04-21",
       "modalities": {
@@ -6590,6 +5998,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-01-31",
       "structuredOutput": true,
       "lastUpdated": "2026-04-27",
@@ -6613,8 +6028,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "~deepseek/deepseek-v4-flash-latest": {
       "displayName": "DeepSeek V4 Flash Latest",
       "description": "Fast DeepSeek model for efficient chat, coding help, and agent loops",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 65536,
+      "contextWindow": 1310720,
+      "maxOutputTokens": 393216,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -6627,6 +6042,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-08-01",
       "modalities": {
@@ -6638,9 +6058,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.09,
-        "outputPerMillionTokens": 0.18,
-        "cacheReadPerMillionTokens": 0.018
+        "inputPerMillionTokens": 0.05,
+        "outputPerMillionTokens": 0.16,
+        "cacheReadPerMillionTokens": 0.013
       }
     },
     "~google/gemini-flash-latest": {
@@ -6656,11 +6076,15 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "audio": true
       },
       "reasoningEfforts": [
-        "minimal",
         "low",
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01-01",
       "structuredOutput": true,
       "lastUpdated": "2026-04-27",
@@ -6677,10 +6101,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 1.5,
-        "outputPerMillionTokens": 7.5,
-        "cacheReadPerMillionTokens": 0.15,
-        "cacheWritePerMillionTokens": 0.083333
+        "inputPerMillionTokens": 0.75,
+        "outputPerMillionTokens": 3.75,
+        "cacheReadPerMillionTokens": 0.075,
+        "cacheWritePerMillionTokens": 0.041667
       }
     },
     "~google/gemini-pro-latest": {
@@ -6700,6 +6124,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2026-04-27",
@@ -6726,7 +6155,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "MoonshotAI Kimi Latest",
       "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
       "contextWindow": 1048576,
-      "maxOutputTokens": 1048576,
+      "maxOutputTokens": 943718,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -6739,21 +6168,27 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-04-27",
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "video"
         ],
         "output": [
           "text"
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 2.5,
-        "outputPerMillionTokens": 14,
-        "cacheReadPerMillionTokens": 0.29
+        "inputPerMillionTokens": 2.4,
+        "outputPerMillionTokens": 12,
+        "cacheReadPerMillionTokens": 0.24
       }
     },
     "~openai/gpt-latest": {
@@ -6775,6 +6210,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-02-16",
       "structuredOutput": true,
       "lastUpdated": "2026-04-27",
@@ -6789,10 +6232,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 5,
-        "outputPerMillionTokens": 30,
-        "cacheReadPerMillionTokens": 0.5,
-        "cacheWritePerMillionTokens": 6.25
+        "inputPerMillionTokens": 2,
+        "outputPerMillionTokens": 10,
+        "cacheReadPerMillionTokens": 0.2,
+        "cacheWritePerMillionTokens": 2.5
       }
     },
     "~openai/gpt-mini-latest": {
@@ -6813,6 +6256,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2026-04-27",
@@ -6836,7 +6286,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Grok Latest",
       "description": "Grok model for agentic tool use, reasoning, coding, and live assistance",
       "contextWindow": 500000,
-      "maxOutputTokens": 1000000,
+      "maxOutputTokens": 450000,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -6847,8 +6297,15 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "reasoningEfforts": [
         "low",
         "medium",
-        "high"
+        "high",
+        "xhigh"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-07-08",
       "modalities": {
@@ -6864,25 +6321,73 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "pricing": {
         "inputPerMillionTokens": 2,
         "outputPerMillionTokens": 6,
-        "cacheReadPerMillionTokens": 0.3
+        "cacheReadPerMillionTokens": 0.5
       }
     },
-    "ai21/jamba-large-1.7": {
-      "displayName": "Jamba Large 1.7",
-      "description": "Flagship model for demanding analysis, coding, and production agent workflows",
-      "contextWindow": 256000,
-      "maxOutputTokens": 4096,
+    "~z-ai/glm-flash-latest": {
+      "displayName": "GLM Flash Latest",
+      "description": "GLM vision model for visual reasoning, documents, and multimodal agents",
+      "contextWindow": 1310720,
+      "maxOutputTokens": 943718,
       "capabilities": {
         "tools": true,
-        "reasoning": false,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-27",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.075,
+        "outputPerMillionTokens": 0.25,
+        "cacheReadPerMillionTokens": 0.015
+      }
+    },
+    "~z-ai/glm-latest": {
+      "displayName": "GLM Latest",
+      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 128000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
         "streaming": true,
         "vision": false,
         "audio": false
       },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-08-31",
-      "structuredOutput": false,
-      "lastUpdated": "2025-08-08",
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-19",
       "modalities": {
         "input": [
           "text"
@@ -6892,8 +6397,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 2,
-        "outputPerMillionTokens": 8
+        "inputPerMillionTokens": 1.113,
+        "outputPerMillionTokens": 3.498,
+        "cacheReadPerMillionTokens": 0.2067
       }
     },
     "aion-labs/aion-2.0": {
@@ -6987,7 +6493,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Aion-RP 1.0 (8B)",
       "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
       "contextWindow": 32768,
-      "maxOutputTokens": 32768,
+      "maxOutputTokens": 29491,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -7010,34 +6516,6 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "pricing": {
         "inputPerMillionTokens": 0.8,
         "outputPerMillionTokens": 1.6
-      }
-    },
-    "allenai/olmo-3-32b-think": {
-      "displayName": "Olmo 3 32B Think",
-      "description": "Reasoning model for deliberate analysis, multi-step problem solving, and tool use",
-      "contextWindow": 65536,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": false,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-21",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 0.5
       }
     },
     "amazon/nova-2-lite-v1": {
@@ -7193,8 +6671,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "anthracite-org/magnum-v4-72b": {
       "displayName": "Magnum v4 72B",
       "description": "Open-weight instruction model for adaptable chat and self-hosted production workloads",
-      "contextWindow": 16384,
-      "maxOutputTokens": 2048,
+      "contextWindow": 32768,
+      "maxOutputTokens": 4096,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -7215,7 +6693,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 3,
+        "inputPerMillionTokens": 2.5,
         "outputPerMillionTokens": 5
       }
     },
@@ -7270,6 +6748,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-01-31",
       "structuredOutput": true,
       "lastUpdated": "2026-06-09",
@@ -7287,6 +6772,52 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "inputPerMillionTokens": 10,
         "outputPerMillionTokens": 50,
         "cacheReadPerMillionTokens": 1,
+        "cacheWritePerMillionTokens": 12.5
+      }
+    },
+    "anthropic/claude-fable-5.1": {
+      "displayName": "Claude Fable 5.1",
+      "description": "Claude model for creative writing, analysis, and controlled agent workflows",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "knowledgeCutoff": "2026-06",
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-01",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 10,
+        "outputPerMillionTokens": 50,
+        "cacheReadPerMillionTokens": 0.25,
         "cacheWritePerMillionTokens": 12.5
       }
     },
@@ -7401,11 +6932,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "vision": true,
         "audio": false
       },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
+      "reasoningEfforts": [],
       "knowledgeCutoff": "2025-05",
       "structuredOutput": true,
       "lastUpdated": "2025-11-24",
@@ -7444,6 +6971,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "max": "max"
+      },
       "knowledgeCutoff": "2025-05-31",
       "structuredOutput": true,
       "lastUpdated": "2026-03-13",
@@ -7483,6 +7016,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-01-31",
       "structuredOutput": true,
       "lastUpdated": "2026-04-16",
@@ -7501,45 +7041,6 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 25,
         "cacheReadPerMillionTokens": 0.5,
         "cacheWritePerMillionTokens": 6.25
-      }
-    },
-    "anthropic/claude-opus-4.7-fast": {
-      "displayName": "Claude Opus 4.7 (Fast)",
-      "description": "Flagship Claude model for deep reasoning, coding, and long-horizon agents",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "knowledgeCutoff": "2026-01-31",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-16",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 30,
-        "outputPerMillionTokens": 150,
-        "cacheReadPerMillionTokens": 3,
-        "cacheWritePerMillionTokens": 37.5
       }
     },
     "anthropic/claude-opus-4.8": {
@@ -7561,6 +7062,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-01",
       "structuredOutput": true,
       "lastUpdated": "2026-05-28",
@@ -7579,45 +7087,6 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 25,
         "cacheReadPerMillionTokens": 0.5,
         "cacheWritePerMillionTokens": 6.25
-      }
-    },
-    "anthropic/claude-opus-4.8-fast": {
-      "displayName": "Claude Opus 4.8 (Fast)",
-      "description": "Flagship Claude model for deep reasoning, coding, and long-horizon agents",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "knowledgeCutoff": "2026-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-05-28",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 10,
-        "outputPerMillionTokens": 50,
-        "cacheReadPerMillionTokens": 1,
-        "cacheWritePerMillionTokens": 12.5
       }
     },
     "anthropic/claude-opus-5": {
@@ -7639,6 +7108,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-05",
       "structuredOutput": true,
       "lastUpdated": "2026-07-24",
@@ -7657,45 +7133,6 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 25,
         "cacheReadPerMillionTokens": 0.5,
         "cacheWritePerMillionTokens": 6.25
-      }
-    },
-    "anthropic/claude-opus-5-fast": {
-      "displayName": "Claude Opus 5 (Fast)",
-      "description": "Flagship Claude model for deep reasoning, coding, and long-horizon agents",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "knowledgeCutoff": "2026-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-24",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 10,
-        "outputPerMillionTokens": 50,
-        "cacheReadPerMillionTokens": 1,
-        "cacheWritePerMillionTokens": 12.5
       }
     },
     "anthropic/claude-sonnet-4": {
@@ -7782,6 +7219,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "max": "max"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2026-03-13",
@@ -7821,6 +7264,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-01-31",
       "structuredOutput": true,
       "lastUpdated": "2026-06-30",
@@ -7843,9 +7293,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     },
     "arcee-ai/trinity-large-thinking": {
       "displayName": "Trinity Large Thinking",
-      "description": "Flagship model for demanding analysis, coding, and production agent workflows",
+      "description": "Reasoning-optimized 398B MoE agent model with extended thinking for long-horizon and multi-turn tool use",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 80000,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -7854,38 +7304,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "audio": false
       },
       "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-01",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.22,
-        "outputPerMillionTokens": 0.85,
-        "cacheReadPerMillionTokens": 0.06
-      }
-    },
-    "arcee-ai/virtuoso-large": {
-      "displayName": "Virtuoso Large",
-      "description": "Flagship model for demanding analysis, coding, and production agent workflows",
-      "contextWindow": 131072,
-      "maxOutputTokens": 64000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-03-31",
       "structuredOutput": false,
-      "lastUpdated": "2025-05-05",
+      "lastUpdated": "2026-05-28",
       "modalities": {
         "input": [
           "text"
@@ -7895,8 +7315,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.75,
-        "outputPerMillionTokens": 1.2
+        "inputPerMillionTokens": 0.25,
+        "outputPerMillionTokens": 0.8,
+        "cacheReadPerMillionTokens": 0.06
       }
     },
     "baidu/ernie-4.5-vl-424b-a47b": {
@@ -7989,8 +7410,77 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 0.3
       }
     },
+    "bytedance-seed/seed-2-1-turbo": {
+      "displayName": "Seed 2.1 Turbo",
+      "description": "Multimodal reasoning model for visual analysis, planning, and tool use",
+      "contextWindow": 262144,
+      "maxOutputTokens": 235929,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-12",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.5,
+        "outputPerMillionTokens": 2.5
+      }
+    },
+    "bytedance-seed/seed-2.0-code": {
+      "displayName": "Seed 2.0 Code",
+      "description": "Coding model for repository understanding, refactors, and agentic engineering tasks",
+      "contextWindow": 262144,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-02-14",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.5,
+        "outputPerMillionTokens": 3
+      }
+    },
     "bytedance-seed/seed-2.0-lite": {
-      "displayName": "Seed-2.0-Lite",
+      "displayName": "Seed 2.0 Lite",
       "description": "Multimodal reasoning model for visual analysis, planning, and tool use",
       "contextWindow": 262144,
       "maxOutputTokens": 131072,
@@ -8007,8 +7497,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "structuredOutput": true,
-      "lastUpdated": "2026-03-10",
+      "lastUpdated": "2026-02-14",
       "modalities": {
         "input": [
           "text",
@@ -8025,7 +7521,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "bytedance-seed/seed-2.0-mini": {
-      "displayName": "Seed-2.0-Mini",
+      "displayName": "Seed 2.0 Mini",
       "description": "Multimodal reasoning model for visual analysis, planning, and tool use",
       "contextWindow": 262144,
       "maxOutputTokens": 131072,
@@ -8042,8 +7538,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "structuredOutput": true,
-      "lastUpdated": "2026-02-26",
+      "lastUpdated": "2026-02-14",
       "modalities": {
         "input": [
           "text",
@@ -8263,39 +7765,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 0
       }
     },
-    "deepcogito/cogito-v2.1-671b": {
-      "displayName": "Cogito v2.1 671B",
-      "description": "Reasoning model for deliberate analysis, multi-step problem solving, and tool use",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": false,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.25,
-        "outputPerMillionTokens": 1.25
-      }
-    },
     "deepseek/deepseek-chat": {
       "displayName": "DeepSeek Chat",
       "description": "DeepSeek chat model for instruction following, coding, and analysis",
       "contextWindow": 163840,
-      "maxOutputTokens": 16000,
+      "maxOutputTokens": 16384,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -8316,15 +7790,15 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.2574,
-        "outputPerMillionTokens": 1.0287
+        "inputPerMillionTokens": 0.32,
+        "outputPerMillionTokens": 0.89
       }
     },
     "deepseek/deepseek-chat-v3-0324": {
       "displayName": "DeepSeek V3 0324",
       "description": "DeepSeek chat model for instruction following, coding, and analysis",
       "contextWindow": 163840,
-      "maxOutputTokens": 65536,
+      "maxOutputTokens": 147456,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -8345,9 +7819,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.27,
-        "outputPerMillionTokens": 1.12,
-        "cacheReadPerMillionTokens": 0.135
+        "inputPerMillionTokens": 0.29,
+        "outputPerMillionTokens": 1.14,
+        "cacheReadPerMillionTokens": 0.11
       }
     },
     "deepseek/deepseek-chat-v3.1": {
@@ -8383,7 +7857,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "deepseek/deepseek-r1": {
       "displayName": "DeepSeek-R1",
       "description": "Classic open reasoning model for transparent math, coding, and deliberate problem solving",
-      "contextWindow": 163840,
+      "contextWindow": 64000,
       "maxOutputTokens": 16000,
       "capabilities": {
         "tools": true,
@@ -8443,7 +7917,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "R1 Distill Llama 70B",
       "description": "DeepSeek reasoning model for multi-step analysis, math, coding, and tools",
       "contextWindow": 8192,
-      "maxOutputTokens": 8192,
+      "maxOutputTokens": 7372,
       "capabilities": {
         "tools": false,
         "reasoning": true,
@@ -8561,7 +8035,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "DeepSeek V4 Flash",
       "description": "Fast DeepSeek V4 lane for economical reasoning, coding, and long-context work",
       "contextWindow": 1048576,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 384000,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -8573,6 +8047,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-05",
       "structuredOutput": true,
       "lastUpdated": "2026-04-24",
@@ -8585,16 +8063,16 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.0882,
-        "outputPerMillionTokens": 0.1764,
-        "cacheReadPerMillionTokens": 0.01764
+        "inputPerMillionTokens": 0.08554,
+        "outputPerMillionTokens": 0.17108,
+        "cacheReadPerMillionTokens": 0.017108
       }
     },
     "deepseek/deepseek-v4-flash-0731": {
       "displayName": "DeepSeek V4 Flash 0731",
       "description": "Official DeepSeek V4 Flash release with enhanced agentic capabilities and integrated DSpark speculative decoding",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 65536,
+      "contextWindow": 1310720,
+      "maxOutputTokens": 943718,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -8607,6 +8085,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
       "knowledgeCutoff": "2025-05",
       "structuredOutput": true,
       "lastUpdated": "2026-07-31",
@@ -8619,9 +8102,48 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.09,
+        "inputPerMillionTokens": 0.065,
         "outputPerMillionTokens": 0.18,
-        "cacheReadPerMillionTokens": 0.018
+        "cacheReadPerMillionTokens": 0.016
+      }
+    },
+    "deepseek/deepseek-v4-flash-vision-exp": {
+      "displayName": "DeepSeek V4 Flash Vision Exp",
+      "description": "Fast DeepSeek model for efficient chat, coding help, and agent loops",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 943718,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-21",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.22,
+        "outputPerMillionTokens": 0.66,
+        "cacheReadPerMillionTokens": 0.007
       }
     },
     "deepseek/deepseek-v4-pro": {
@@ -8640,6 +8162,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-05",
       "structuredOutput": true,
       "lastUpdated": "2026-04-24",
@@ -8652,9 +8178,76 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.435,
-        "outputPerMillionTokens": 0.87,
-        "cacheReadPerMillionTokens": 0.003625
+        "inputPerMillionTokens": 0.87,
+        "outputPerMillionTokens": 1.74,
+        "cacheReadPerMillionTokens": 0.0725
+      }
+    },
+    "deepseek/deepseek-v4-pro-0813": {
+      "displayName": "DeepSeek V4 Pro 0813",
+      "description": "DeepSeek V4 Pro snapshot with million-token context and support for thinking and non-thinking modes",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 393216,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-22",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.57948,
+        "outputPerMillionTokens": 1.73844,
+        "cacheReadPerMillionTokens": 0.018438
+      }
+    },
+    "dots-studio/dots-3-note-preview:free": {
+      "displayName": "Dots3-Note Preview (free)",
+      "description": "Multimodal reasoning model for visual analysis, planning, and tool use",
+      "contextWindow": 512000,
+      "maxOutputTokens": 460800,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-14",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0
       }
     },
     "google/gemini-2.5-flash": {
@@ -8882,6 +8475,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2025-12-17",
@@ -8938,7 +8537,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "google/gemini-3-pro-image-preview": {
-      "displayName": "Nano Banana Pro",
+      "displayName": "Nano Banana Pro Preview",
       "description": "Nano Banana Pro for higher-fidelity image generation and design-heavy edits",
       "contextWindow": 65536,
       "maxOutputTokens": 32768,
@@ -8986,13 +8585,17 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "minimal",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2026-05-28",
       "modalities": {
         "input": [
-          "text",
-          "image"
+          "image",
+          "text"
         ],
         "output": [
           "text",
@@ -9005,10 +8608,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "google/gemini-3.1-flash-image-preview": {
-      "displayName": "Nano Banana 2",
+      "displayName": "Nano Banana 2 Preview",
       "description": "Image model for prompt-driven generation, editing, and visual design workflows",
       "contextWindow": 65536,
-      "maxOutputTokens": 65536,
+      "maxOutputTokens": 58982,
       "capabilities": {
         "tools": false,
         "reasoning": true,
@@ -9020,6 +8623,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "minimal",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2026-02-26",
@@ -9056,6 +8663,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2026-05-07",
@@ -9082,7 +8695,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Nano Banana 2 Lite",
       "description": "Image model for prompt-driven generation, editing, and visual design workflows",
       "contextWindow": 65536,
-      "maxOutputTokens": 65536,
+      "maxOutputTokens": 58982,
       "capabilities": {
         "tools": false,
         "reasoning": true,
@@ -9094,6 +8707,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "minimal",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": false,
       "lastUpdated": "2026-06-30",
@@ -9130,6 +8747,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2026-03-03",
@@ -9169,6 +8792,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2026-02-19",
@@ -9208,6 +8836,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2026-02-19",
@@ -9248,6 +8881,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-01",
       "structuredOutput": true,
       "lastUpdated": "2026-05-19",
@@ -9288,6 +8927,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2026-03",
       "structuredOutput": true,
       "lastUpdated": "2026-07-21",
@@ -9328,6 +8973,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2026-03",
       "structuredOutput": true,
       "lastUpdated": "2026-07-21",
@@ -9344,10 +8995,97 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 1.5,
-        "outputPerMillionTokens": 7.5,
-        "cacheReadPerMillionTokens": 0.15,
-        "cacheWritePerMillionTokens": 0.083333
+        "inputPerMillionTokens": 0.75,
+        "outputPerMillionTokens": 3.75,
+        "cacheReadPerMillionTokens": 0.075,
+        "cacheWritePerMillionTokens": 0.041667
+      }
+    },
+    "google/gemini-3.7-flash": {
+      "displayName": "Gemini 3.7 Flash",
+      "description": "Fast Gemini model balancing multimodal reasoning, tool use, and cost",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
+      "knowledgeCutoff": "2026-03",
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-13",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.75,
+        "outputPerMillionTokens": 3.75,
+        "cacheReadPerMillionTokens": 0.075,
+        "cacheWritePerMillionTokens": 0.041667
+      }
+    },
+    "google/gemini-3.8-flash": {
+      "displayName": "Gemini 3.8 Flash",
+      "description": "Fast Gemini model balancing multimodal reasoning, tool use, and cost",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-02",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "audio",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.75,
+        "outputPerMillionTokens": 3.75,
+        "cacheReadPerMillionTokens": 0.075,
+        "cacheWritePerMillionTokens": 0.041667
       }
     },
     "google/gemma-2-27b-it": {
@@ -9412,8 +9150,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "google/gemma-3-27b-it": {
       "displayName": "Gemma 3 27B",
       "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 262144,
-      "maxOutputTokens": 131072,
+      "contextWindow": 131072,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -9470,35 +9208,6 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 0.1
       }
     },
-    "google/gemma-3n-e4b-it": {
-      "displayName": "Gemma 3n 4B",
-      "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 32768,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-08-31",
-      "structuredOutput": true,
-      "lastUpdated": "2025-05-20",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.06,
-        "outputPerMillionTokens": 0.12
-      }
-    },
     "google/gemma-4-26b-a4b-it": {
       "displayName": "Gemma 4 26B A4B IT",
       "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
@@ -9542,7 +9251,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "audio": false
       },
       "reasoningEfforts": [],
-      "structuredOutput": true,
+      "structuredOutput": false,
       "lastUpdated": "2026-04-02",
       "modalities": {
         "input": [
@@ -9563,7 +9272,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Gemma 4 31B IT",
       "description": "Largest Gemma 4 instruction model for open, self-hosted chat and reasoning",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 16384,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -9585,9 +9294,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.1,
+        "inputPerMillionTokens": 0.09,
         "outputPerMillionTokens": 0.34,
-        "cacheReadPerMillionTokens": 0.1
+        "cacheReadPerMillionTokens": 0.05
       }
     },
     "google/gemma-4-31b-it:free": {
@@ -9684,7 +9393,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "MythoMax 13B",
       "description": "Open-weight instruction model for adaptable chat and self-hosted production workloads",
       "contextWindow": 8192,
-      "maxOutputTokens": 4096,
+      "maxOutputTokens": 3686,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -9705,15 +9414,15 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.08,
-        "outputPerMillionTokens": 0.11
+        "inputPerMillionTokens": 0.06,
+        "outputPerMillionTokens": 0.06
       }
     },
     "ibm-granite/granite-4.0-h-micro": {
       "displayName": "Granite 4.0 Micro",
       "description": "Efficient model for low-latency assistance, extraction, and routine automation",
       "contextWindow": 131000,
-      "maxOutputTokens": 131000,
+      "maxOutputTokens": 117900,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -9737,21 +9446,29 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 0.112
       }
     },
-    "ibm-granite/granite-4.1-8b": {
-      "displayName": "Granite 4.1 8B",
-      "description": "Open-weight instruction model for adaptable chat and self-hosted production workloads",
+    "ibm-granite/granite-4.2-8b": {
+      "displayName": "Granite 4.2 8B",
+      "description": "Reasoning model for deliberate analysis, multi-step problem solving, and tool use",
       "contextWindow": 131072,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "tools": true,
-        "reasoning": false,
+        "reasoning": true,
         "streaming": true,
         "vision": false,
         "audio": false
       },
-      "reasoningEfforts": [],
+      "reasoningEfforts": [
+        "low",
+        "high"
+      ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "high": "high"
+      },
       "structuredOutput": true,
-      "lastUpdated": "2026-04-30",
+      "lastUpdated": "2026-08-31",
       "modalities": {
         "input": [
           "text"
@@ -9761,9 +9478,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.05,
-        "outputPerMillionTokens": 0.1,
-        "cacheReadPerMillionTokens": 0.05
+        "inputPerMillionTokens": 0.06,
+        "outputPerMillionTokens": 0.25,
+        "cacheReadPerMillionTokens": 0.015
       }
     },
     "inception/mercury-2": {
@@ -9783,6 +9500,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-03-04",
       "modalities": {
@@ -9799,21 +9522,31 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "cacheReadPerMillionTokens": 0.025
       }
     },
-    "inclusionai/ling-2.6-1t": {
-      "displayName": "Ling-2.6-1T",
-      "description": "Tool-capable chat model for instruction following and agentic application workflows",
-      "contextWindow": 262144,
-      "maxOutputTokens": 32768,
+    "inception/mercury-2.5": {
+      "displayName": "Mercury 2.5",
+      "description": "Reasoning model for deliberate analysis, multi-step problem solving, and tool use",
+      "contextWindow": 260000,
+      "maxOutputTokens": 65536,
       "capabilities": {
         "tools": true,
-        "reasoning": false,
+        "reasoning": true,
         "streaming": true,
         "vision": false,
         "audio": false
       },
-      "reasoningEfforts": [],
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "structuredOutput": true,
-      "lastUpdated": "2026-04-23",
+      "lastUpdated": "2026-09-08",
       "modalities": {
         "input": [
           "text"
@@ -9823,42 +9556,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.075,
-        "outputPerMillionTokens": 0.625,
-        "cacheReadPerMillionTokens": 0.015
-      }
-    },
-    "inclusionai/ling-2.6-flash": {
-      "displayName": "Ling-2.6-flash",
-      "description": "Efficient model for low-latency assistance, extraction, and routine automation",
-      "contextWindow": 262144,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-21",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.01,
-        "outputPerMillionTokens": 0.03,
-        "cacheReadPerMillionTokens": 0.002
+        "inputPerMillionTokens": 0.04,
+        "outputPerMillionTokens": 0.15,
+        "cacheReadPerMillionTokens": 0.004
       }
     },
     "inclusionai/ling-3.0-flash": {
-      "displayName": "Ling-3.0-flash",
+      "displayName": "Ling 3.0 Flash",
       "description": "Efficient model for low-latency assistance, extraction, and routine automation",
       "contextWindow": 262144,
       "maxOutputTokens": 32768,
@@ -9886,9 +9590,38 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "cacheReadPerMillionTokens": 0.0042
       }
     },
-    "inclusionai/ling-3.0-tiny:free": {
-      "displayName": "Ling 3.0 Tiny (free)",
-      "description": "Free provider route for experiments, demos, and cost-sensitive chat workloads",
+    "inclusionai/ling-3.0-flash-fin": {
+      "displayName": "Ling 3.0 Flash Fin",
+      "description": "Efficient model for low-latency assistance, extraction, and routine automation",
+      "contextWindow": 262144,
+      "maxOutputTokens": 235929,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-27",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.06,
+        "outputPerMillionTokens": 0.18,
+        "cacheReadPerMillionTokens": 0.012
+      }
+    },
+    "inclusionai/ling-3.0-flash-fin:free": {
+      "displayName": "Ling 3.0 Flash Fin (free)",
+      "description": "Efficient model for low-latency assistance, extraction, and routine automation",
       "contextWindow": 262144,
       "maxOutputTokens": 32768,
       "capabilities": {
@@ -9900,7 +9633,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       },
       "reasoningEfforts": [],
       "structuredOutput": false,
-      "lastUpdated": "2026-08-06",
+      "lastUpdated": "2026-08-27",
       "modalities": {
         "input": [
           "text"
@@ -9914,11 +9647,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 0
       }
     },
-    "inclusionai/ring-2.6-1t": {
-      "displayName": "Ring-2.6-1T",
-      "description": "Reasoning model for deliberate analysis, multi-step problem solving, and tool use",
+    "inclusionai/ling-3.0-flash-sante:free": {
+      "displayName": "Ling 3.0 Flash Sante (free)",
+      "description": "Efficient model for low-latency assistance, extraction, and routine automation",
       "contextWindow": 262144,
-      "maxOutputTokens": 65536,
+      "maxOutputTokens": 32768,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -9926,41 +9659,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "vision": false,
         "audio": false
       },
-      "reasoningEfforts": [
-        "high",
-        "xhigh"
-      ],
-      "structuredOutput": false,
-      "lastUpdated": "2026-05-08",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.075,
-        "outputPerMillionTokens": 0.625,
-        "cacheReadPerMillionTokens": 0.015
-      }
-    },
-    "kwaipilot/kat-coder-air-v2.5": {
-      "displayName": "KAT-Coder-Air V2.5",
-      "description": "Coding model for repository understanding, refactors, and agentic engineering tasks",
-      "contextWindow": 256000,
-      "maxOutputTokens": 80000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
       "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-10",
+      "structuredOutput": false,
+      "lastUpdated": "2026-09-04",
       "modalities": {
         "input": [
           "text"
@@ -9970,16 +9671,15 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 0.6,
-        "cacheReadPerMillionTokens": 0.03
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0
       }
     },
     "kwaipilot/kat-coder-pro-v2": {
       "displayName": "KAT-Coder-Pro V2",
       "description": "Coding model for repository understanding, refactors, and agentic engineering tasks",
       "contextWindow": 262144,
-      "maxOutputTokens": 80000,
+      "maxOutputTokens": 144000,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -10007,8 +9707,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "kwaipilot/kat-coder-pro-v2.5": {
       "displayName": "KAT-Coder-Pro V2.5",
       "description": "Coding model for repository understanding, refactors, and agentic engineering tasks",
-      "contextWindow": 256000,
-      "maxOutputTokens": 80000,
+      "contextWindow": 262144,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -10033,11 +9733,39 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "cacheReadPerMillionTokens": 0.15
       }
     },
+    "liquid/lfm-2.5-2.6b:free": {
+      "displayName": "LFM2.5-2.6B (free)",
+      "description": "Free provider route for experiments, demos, and cost-sensitive chat workloads",
+      "contextWindow": 65536,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-11",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0
+      }
+    },
     "mancer/weaver": {
       "displayName": "Weaver (alpha)",
       "description": "General-purpose chat model for instruction following, writing, and analysis",
       "contextWindow": 8000,
-      "maxOutputTokens": 2000,
+      "maxOutputTokens": 6000,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -10047,7 +9775,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       },
       "reasoningEfforts": [],
       "knowledgeCutoff": "2023-06-30",
-      "structuredOutput": true,
+      "structuredOutput": false,
       "lastUpdated": "2023-08-02",
       "modalities": {
         "input": [
@@ -10058,7 +9786,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.5,
+        "inputPerMillionTokens": 0.4,
         "outputPerMillionTokens": 0.75
       }
     },
@@ -10092,7 +9820,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "meta-llama/llama-3.1-70b-instruct": {
-      "displayName": "Llama 3.1 70B Instruct",
+      "displayName": "Llama-3.1-70B-Instruct",
       "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
       "contextWindow": 131072,
       "maxOutputTokens": 16384,
@@ -10104,7 +9832,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "audio": false
       },
       "reasoningEfforts": [],
-      "knowledgeCutoff": "2023-12-31",
+      "knowledgeCutoff": "2023-12",
       "structuredOutput": true,
       "lastUpdated": "2024-07-23",
       "modalities": {
@@ -10121,10 +9849,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "meta-llama/llama-3.1-8b-instruct": {
-      "displayName": "Llama 3.1 8B Instruct",
+      "displayName": "Llama-3.1-8B-Instruct",
       "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
       "contextWindow": 131072,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -10133,7 +9861,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "audio": false
       },
       "reasoningEfforts": [],
-      "knowledgeCutoff": "2023-12-31",
+      "knowledgeCutoff": "2023-12",
       "structuredOutput": true,
       "lastUpdated": "2024-07-23",
       "modalities": {
@@ -10154,7 +9882,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Llama 3.2 1B Instruct",
       "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
       "contextWindow": 60000,
-      "maxOutputTokens": 60000,
+      "maxOutputTokens": 54000,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -10183,7 +9911,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Llama 3.2 3B Instruct",
       "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
       "contextWindow": 131072,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -10241,7 +9969,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Llama 4 Maverick",
       "description": "Open multimodal Llama model for strong reasoning and fast responses",
       "contextWindow": 1048576,
-      "maxOutputTokens": 16384,
+      "maxOutputTokens": 115200,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -10264,7 +9992,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       },
       "pricing": {
         "inputPerMillionTokens": 0.2,
-        "outputPerMillionTokens": 0.8
+        "outputPerMillionTokens": 0.696
       }
     },
     "meta-llama/llama-4-scout": {
@@ -10300,7 +10028,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "meta-llama/llama-guard-4-12b": {
       "displayName": "Llama Guard 4 12B",
       "description": "Safety model for policy screening, moderation, and risk-aware routing workflows",
-      "contextWindow": 1048576,
+      "contextWindow": 163840,
       "maxOutputTokens": 16384,
       "capabilities": {
         "tools": false,
@@ -10327,11 +10055,53 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 0.18
       }
     },
+    "meta/muse-glimmer-30b": {
+      "displayName": "Muse Glimmer 30B",
+      "description": "Muse Glimmer is a 30-billion-parameter open-weight multimodal model from Meta Superintelligence Labs, distilled from Muse Spark for always-on local agents, tool use, coding, and image understanding.",
+      "contextWindow": 131072,
+      "maxOutputTokens": 117964,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
+      "knowledgeCutoff": "2026-01-04",
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-10",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.3,
+        "outputPerMillionTokens": 1.1,
+        "cacheReadPerMillionTokens": 0.04
+      }
+    },
     "meta/muse-spark-1.1": {
       "displayName": "Muse Spark 1.1",
       "description": "Open Llama multimodal model for image understanding and text reasoning",
       "contextWindow": 1048576,
-      "maxOutputTokens": 1048576,
+      "maxOutputTokens": 943718,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -10346,6 +10116,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-07-09",
       "modalities": {
@@ -10370,7 +10147,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Muse Spark 1.2",
       "description": "Muse Spark 1.2 is a coding-focused update to Muse Spark 1.1 with improvements in code generation, complex debugging, codebase understanding, and end-to-end developer workflows.",
       "contextWindow": 1048576,
-      "maxOutputTokens": 1048576,
+      "maxOutputTokens": 943718,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -10385,6 +10162,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-08-05",
       "modalities": {
@@ -10405,11 +10189,153 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "cacheReadPerMillionTokens": 0.15
       }
     },
+    "meta/muse-spark-1.2-contributor": {
+      "displayName": "Muse Spark 1.2 Contributor",
+      "description": "Open Llama multimodal model for image understanding and text reasoning",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 943718,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-21",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.1,
+        "outputPerMillionTokens": 0.2,
+        "cacheReadPerMillionTokens": 0.002
+      }
+    },
+    "meta/muse-spark-1.3": {
+      "displayName": "Muse Spark 1.3",
+      "description": "Open Llama multimodal model for image understanding and text reasoning",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 943718,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-02",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.25,
+        "outputPerMillionTokens": 4.25,
+        "cacheReadPerMillionTokens": 0.15
+      }
+    },
+    "meta/muse-spark-1.3-contributor": {
+      "displayName": "Muse Spark 1.3 Contributor",
+      "description": "Open Llama multimodal model for image understanding and text reasoning",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 943718,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-02",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.1,
+        "outputPerMillionTokens": 0.2,
+        "cacheReadPerMillionTokens": 0.002
+      }
+    },
     "microsoft/phi-4": {
       "displayName": "Phi 4",
       "description": "Open-weight instruction model for adaptable chat and self-hosted production workloads",
       "contextWindow": 16384,
-      "maxOutputTokens": 16384,
+      "maxOutputTokens": 14745,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -10467,7 +10393,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "MiniMax-01",
       "description": "MiniMax multimodal coding model for long-context reasoning and agent tasks",
       "contextWindow": 1000192,
-      "maxOutputTokens": 1000192,
+      "maxOutputTokens": 900172,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -10551,7 +10477,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "minimax/minimax-m2-her": {
-      "displayName": "MiniMax M2-her",
+      "displayName": "MiniMax-M2 Her",
       "description": "MiniMax model for chat, coding, office work, and agentic tasks",
       "contextWindow": 65536,
       "maxOutputTokens": 2048,
@@ -10612,7 +10538,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "MiniMax-M2.5",
       "description": "Prior MiniMax coding model for agent workflows, office edits, and automation",
       "contextWindow": 204800,
-      "maxOutputTokens": 196608,
+      "maxOutputTokens": 128000,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -10632,9 +10558,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.22,
-        "outputPerMillionTokens": 0.9,
-        "cacheReadPerMillionTokens": 0.05
+        "inputPerMillionTokens": 0.27,
+        "outputPerMillionTokens": 1.08,
+        "cacheReadPerMillionTokens": 0.027
       }
     },
     "minimax/minimax-m2.7": {
@@ -10661,9 +10587,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.27,
-        "outputPerMillionTokens": 1.08,
-        "cacheReadPerMillionTokens": 0.054
+        "inputPerMillionTokens": 0.3,
+        "outputPerMillionTokens": 1.2,
+        "cacheReadPerMillionTokens": 0.06
       }
     },
     "minimax/minimax-m3": {
@@ -10701,7 +10627,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Codestral 2508",
       "description": "Mistral coding model for code completion, generation, and developer workflows",
       "contextWindow": 256000,
-      "maxOutputTokens": 256000,
+      "maxOutputTokens": 204800,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -10728,11 +10654,42 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "cacheReadPerMillionTokens": 0.03
       }
     },
+    "mistralai/devstral-2512": {
+      "displayName": "Devstral 2",
+      "description": "Mistral coding agent model for repository tasks and software engineering workflows",
+      "contextWindow": 262144,
+      "maxOutputTokens": 209715,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-12",
+      "structuredOutput": true,
+      "lastUpdated": "2025-12-09",
+      "modalities": {
+        "input": [
+          "text",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.4,
+        "outputPerMillionTokens": 2,
+        "cacheReadPerMillionTokens": 0.04
+      }
+    },
     "mistralai/ministral-14b-2512": {
       "displayName": "Ministral 3 14B 2512",
       "description": "Compact Mistral model for edge, latency-sensitive, and cost-efficient workloads",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 209715,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -10762,7 +10719,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Ministral 3 3B 2512",
       "description": "Compact Mistral model for edge, latency-sensitive, and cost-efficient workloads",
       "contextWindow": 131072,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 104857,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -10792,7 +10749,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Ministral 3 8B 2512",
       "description": "Compact Mistral model for edge, latency-sensitive, and cost-efficient workloads",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 209715,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -10822,7 +10779,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Mistral Large",
       "description": "Flagship Mistral model for advanced reasoning, coding, and multilingual work",
       "contextWindow": 128000,
-      "maxOutputTokens": 128000,
+      "maxOutputTokens": 102400,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -10853,7 +10810,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Mistral Large 2407",
       "description": "Flagship Mistral model for advanced reasoning, coding, and multilingual work",
       "contextWindow": 131072,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 104857,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -10884,7 +10841,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Mistral Large 3",
       "description": "Mistral's largest general model for enterprise agents, coding, and multilingual reasoning",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 209715,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -10916,7 +10873,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Mistral Medium 3",
       "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
       "contextWindow": 131072,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 104857,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -10948,7 +10905,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Mistral Medium 3.5",
       "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 209715,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -10959,6 +10916,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "reasoningEfforts": [
         "high"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "high": "high"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-04-30",
       "modalities": {
@@ -10980,7 +10941,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Mistral Medium 3.1",
       "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
       "contextWindow": 131072,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 104857,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -11041,7 +11002,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Saba",
       "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
       "contextWindow": 32768,
-      "maxOutputTokens": 32768,
+      "maxOutputTokens": 26214,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -11101,7 +11062,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Mistral Small 4",
       "description": "Fast Mistral production model for chat, extraction, and cost-sensitive agents",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 209715,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -11112,6 +11073,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "reasoningEfforts": [
         "high"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "high": "high"
+      },
       "knowledgeCutoff": "2025-06",
       "structuredOutput": true,
       "lastUpdated": "2026-03-16",
@@ -11134,7 +11099,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Mistral Small 3.1 24B",
       "description": "Efficient Mistral model for fast chat, extraction, and production assistants",
       "contextWindow": 128000,
-      "maxOutputTokens": 128000,
+      "maxOutputTokens": 102400,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -11163,7 +11128,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "mistralai/mistral-small-3.2-24b-instruct": {
       "displayName": "Mistral Small 3.2 24B",
       "description": "Efficient Mistral model for fast chat, extraction, and production assistants",
-      "contextWindow": 256000,
+      "contextWindow": 131072,
       "maxOutputTokens": 16384,
       "capabilities": {
         "tools": true,
@@ -11186,15 +11151,15 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.09375,
-        "outputPerMillionTokens": 0.25
+        "inputPerMillionTokens": 0.075,
+        "outputPerMillionTokens": 0.2
       }
     },
     "mistralai/mixtral-8x22b-instruct": {
       "displayName": "Mixtral 8x22B Instruct",
       "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
       "contextWindow": 65536,
-      "maxOutputTokens": 65536,
+      "maxOutputTokens": 52428,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -11224,8 +11189,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "mistralai/voxtral-small-24b-2507": {
       "displayName": "Voxtral Small 24B 2507",
       "description": "Efficient Mistral model for fast chat, extraction, and production assistants",
-      "contextWindow": 32000,
-      "maxOutputTokens": 32000,
+      "contextWindow": 32768,
+      "maxOutputTokens": 26214,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -11314,7 +11279,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Kimi K2 Thinking",
       "description": "Thinking Kimi model for slower research passes, planning, and hard technical questions",
       "contextWindow": 262144,
-      "maxOutputTokens": 100352,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -11336,15 +11301,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       },
       "pricing": {
         "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.5,
-        "cacheReadPerMillionTokens": 0.15
+        "outputPerMillionTokens": 2.5
       }
     },
     "moonshotai/kimi-k2.5": {
       "displayName": "Kimi K2.5",
       "description": "Earlier Kimi frontier model for long-context agents, coding, and multimodal work",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -11366,16 +11330,16 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.57,
-        "outputPerMillionTokens": 2.85,
-        "cacheReadPerMillionTokens": 0.095
+        "inputPerMillionTokens": 0.45,
+        "outputPerMillionTokens": 2.25,
+        "cacheReadPerMillionTokens": 0.07
       }
     },
     "moonshotai/kimi-k2.6": {
       "displayName": "Kimi K2.6",
       "description": "Multimodal Kimi workhorse for agent loops, coding tasks, and visual context",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -11397,16 +11361,16 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.589,
-        "outputPerMillionTokens": 2.48,
-        "cacheReadPerMillionTokens": 0.0992
+        "inputPerMillionTokens": 0.95,
+        "outputPerMillionTokens": 4,
+        "cacheReadPerMillionTokens": 0.16
       }
     },
     "moonshotai/kimi-k2.7-code": {
       "displayName": "Kimi K2.7 Code",
       "description": "Coding-focused Kimi model, stronger on long-horizon repo work with less overthinking",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -11428,7 +11392,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.7,
+        "inputPerMillionTokens": 0.71,
         "outputPerMillionTokens": 3.5,
         "cacheReadPerMillionTokens": 0.15
       }
@@ -11437,7 +11401,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Kimi K3",
       "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
       "contextWindow": 1048576,
-      "maxOutputTokens": 1048576,
+      "maxOutputTokens": 943718,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -11450,12 +11414,18 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "max"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-07-16",
       "modalities": {
         "input": [
           "text",
-          "image"
+          "image",
+          "video"
         ],
         "output": [
           "text"
@@ -11523,41 +11493,47 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 1.9
       }
     },
-    "nex-agi/nex-n2-mini": {
-      "displayName": "Nex-N2-Mini",
-      "description": "Multimodal reasoning model for visual analysis, planning, and tool use",
+    "nex-agi/nex-n2.5-mini:free": {
+      "displayName": "Nex-N2.5-Mini (free)",
+      "description": "Efficient model for low-latency assistance, extraction, and routine automation",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": true,
         "streaming": true,
-        "vision": true,
+        "vision": false,
         "audio": false
       },
-      "reasoningEfforts": [],
+      "reasoningEfforts": [
+        "medium",
+        "high"
+      ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "medium": "medium",
+        "high": "high"
+      },
       "structuredOutput": true,
-      "lastUpdated": "2026-06-24",
+      "lastUpdated": "2026-09-08",
       "modalities": {
         "input": [
-          "text",
-          "image"
+          "text"
         ],
         "output": [
           "text"
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.025,
-        "outputPerMillionTokens": 0.1,
-        "cacheReadPerMillionTokens": 0.0025
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0
       }
     },
-    "nex-agi/nex-n2-pro": {
-      "displayName": "Nex-N2-Pro",
+    "nex-agi/nex-n2.5-pro:free": {
+      "displayName": "Nex-N2.5-Pro (free)",
       "description": "Multimodal reasoning model for visual analysis, planning, and tool use",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -11565,9 +11541,17 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "vision": true,
         "audio": false
       },
-      "reasoningEfforts": [],
-      "structuredOutput": false,
-      "lastUpdated": "2026-06-08",
+      "reasoningEfforts": [
+        "medium",
+        "high"
+      ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "medium": "medium",
+        "high": "high"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-08",
       "modalities": {
         "input": [
           "text",
@@ -11578,9 +11562,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.25,
-        "outputPerMillionTokens": 1,
-        "cacheReadPerMillionTokens": 0.025
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0
       }
     },
     "nousresearch/hermes-3-llama-3.1-405b": {
@@ -11645,7 +11628,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Hermes 4 405B",
       "description": "Reasoning model for deliberate analysis, multi-step problem solving, and tool use",
       "contextWindow": 131072,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "tools": false,
         "reasoning": true,
@@ -11674,7 +11657,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Hermes 4 70B",
       "description": "Reasoning model for deliberate analysis, multi-step problem solving, and tool use",
       "contextWindow": 131072,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "tools": false,
         "reasoning": true,
@@ -11703,7 +11686,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Nemotron 3 Nano 30B A3B",
       "description": "Small Nemotron 3 MoE for efficient coding, math, and long-context agents",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -11726,34 +11709,6 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "inputPerMillionTokens": 0.05,
         "outputPerMillionTokens": 0.2,
         "cacheReadPerMillionTokens": 0.03
-      }
-    },
-    "nvidia/nemotron-3-nano-30b-a3b:free": {
-      "displayName": "Nemotron 3 Nano 30B A3B (free)",
-      "description": "Small Nemotron 3 MoE for efficient coding, math, and long-context agents",
-      "contextWindow": 256000,
-      "maxOutputTokens": 256000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": false,
-      "lastUpdated": "2025-12-15",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
       }
     },
     "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {
@@ -11790,7 +11745,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "nvidia/nemotron-3-super-120b-a12b": {
       "displayName": "Nemotron 3 Super 120B A12B",
       "description": "Nemotron middle tier for collaborative agents and high-volume reasoning workloads",
-      "contextWindow": 1000000,
+      "contextWindow": 262144,
       "maxOutputTokens": 16384,
       "capabilities": {
         "tools": true,
@@ -11803,7 +11758,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "low",
         "medium"
       ],
-      "structuredOutput": true,
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium"
+      },
+      "structuredOutput": false,
       "lastUpdated": "2026-03-11",
       "modalities": {
         "input": [
@@ -11814,15 +11773,15 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 0.9
+        "inputPerMillionTokens": 0.085,
+        "outputPerMillionTokens": 0.4
       }
     },
     "nvidia/nemotron-3-super-120b-a12b:free": {
       "displayName": "Nemotron 3 Super (free)",
       "description": "Nemotron middle tier for collaborative agents and high-volume reasoning workloads",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -11834,6 +11793,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "low",
         "medium"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-03-11",
       "modalities": {
@@ -11852,8 +11815,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "nvidia/nemotron-3-ultra-550b-a55b": {
       "displayName": "Nemotron 3 Ultra 550B A55B",
       "description": "Largest Nemotron 3 model for maximum open-weight reasoning and agent accuracy",
-      "contextWindow": 512288,
-      "maxOutputTokens": 16384,
+      "contextWindow": 262144,
+      "maxOutputTokens": 32768,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -11865,6 +11828,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "medium": "medium",
+        "high": "high"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-06-04",
       "modalities": {
@@ -11876,9 +11843,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 3.6,
-        "cacheReadPerMillionTokens": 0.2
+        "inputPerMillionTokens": 0.625,
+        "outputPerMillionTokens": 3.125,
+        "cacheReadPerMillionTokens": 0.1875
       }
     },
     "nvidia/nemotron-3-ultra-550b-a55b:free": {
@@ -11897,6 +11864,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "medium": "medium",
+        "high": "high"
+      },
       "structuredOutput": false,
       "lastUpdated": "2026-06-04",
       "modalities": {
@@ -11910,6 +11881,35 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "pricing": {
         "inputPerMillionTokens": 0,
         "outputPerMillionTokens": 0
+      }
+    },
+    "nvidia/nemotron-3.5-content-safety": {
+      "displayName": "Nemotron 3.5 Content Safety",
+      "description": "Safety model for policy screening, moderation, and risk-aware routing workflows",
+      "contextWindow": 131072,
+      "maxOutputTokens": 117964,
+      "capabilities": {
+        "tools": false,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": false,
+      "lastUpdated": "2026-06-04",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.2,
+        "outputPerMillionTokens": 0.2
       }
     },
     "nvidia/nemotron-3.5-content-safety:free": {
@@ -11941,41 +11941,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 0
       }
     },
-    "nvidia/nemotron-nano-12b-v2-vl:free": {
-      "displayName": "Nemotron Nano 12B 2 VL (free)",
-      "description": "Nemotron multimodal model for visual reasoning and agentic AI workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": false,
-      "lastUpdated": "2025-10-28",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/nemotron-nano-9b-v2:free": {
-      "displayName": "Nemotron Nano 9B V2 (free)",
-      "description": "Compact Nemotron model for efficient reasoning and deployable AI agents",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
+    "nvidia/nemotron-3.5-lightning": {
+      "displayName": "Nemotron 3.5 Lightning 30B A3B",
+      "description": "Nemotron model for efficient reasoning, coding, and specialized AI agents",
+      "contextWindow": 262144,
+      "maxOutputTokens": 131072,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -11985,7 +11955,36 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       },
       "reasoningEfforts": [],
       "structuredOutput": true,
-      "lastUpdated": "2025-08-18",
+      "lastUpdated": "2026-08-11",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.08,
+        "outputPerMillionTokens": 0.2,
+        "cacheReadPerMillionTokens": 0.04
+      }
+    },
+    "nvidia/nemotron-3.5-lightning:free": {
+      "displayName": "Nemotron 3.5 Lightning (free)",
+      "description": "Nemotron model for efficient reasoning, coding, and specialized AI agents",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": false,
+      "lastUpdated": "2026-08-11",
       "modalities": {
         "input": [
           "text"
@@ -12032,7 +12031,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "GPT-3.5 Turbo (older v0613)",
       "description": "Compact GPT model for low-latency assistance and high-volume workloads",
       "contextWindow": 4095,
-      "maxOutputTokens": 4096,
+      "maxOutputTokens": 3685,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -12090,7 +12089,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "GPT-3.5 Turbo Instruct",
       "description": "Compact GPT model for low-latency assistance and high-volume workloads",
       "contextWindow": 4095,
-      "maxOutputTokens": 4096,
+      "maxOutputTokens": 3685,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -12509,6 +12508,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-09-30",
       "structuredOutput": true,
       "lastUpdated": "2025-08-07",
@@ -12612,6 +12617,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-05-30",
       "structuredOutput": true,
       "lastUpdated": "2025-08-07",
@@ -12650,6 +12661,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-05-30",
       "structuredOutput": true,
       "lastUpdated": "2025-08-07",
@@ -12685,6 +12702,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "reasoningEfforts": [
         "high"
       ],
+      "thinkingLevelMap": {
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-09-30",
       "structuredOutput": true,
       "lastUpdated": "2025-10-06",
@@ -12721,6 +12741,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-09-30",
       "structuredOutput": true,
       "lastUpdated": "2025-11-13",
@@ -12758,6 +12784,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-09-30",
       "structuredOutput": true,
       "lastUpdated": "2025-11-13",
@@ -12795,6 +12826,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2024-09-30",
       "structuredOutput": true,
       "lastUpdated": "2025-11-13",
@@ -12831,6 +12868,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-09-30",
       "structuredOutput": true,
       "lastUpdated": "2025-11-13",
@@ -12868,6 +12910,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2025-12-11",
@@ -12891,7 +12940,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "GPT-5.2 Chat",
       "description": "Chat-tuned GPT model for conversational assistance, writing, and tool workflows",
       "contextWindow": 128000,
-      "maxOutputTokens": 16384,
+      "maxOutputTokens": 32000,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -12938,6 +12987,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2025-12-11",
@@ -12974,6 +13029,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2025-12-11",
@@ -12990,37 +13050,6 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "pricing": {
         "inputPerMillionTokens": 21,
         "outputPerMillionTokens": 168
-      }
-    },
-    "openai/gpt-5.3-chat": {
-      "displayName": "GPT-5.3 Chat",
-      "description": "Chat-tuned GPT model for conversational assistance, writing, and tool workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-03-03",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.75,
-        "outputPerMillionTokens": 14,
-        "cacheReadPerMillionTokens": 0.175
       }
     },
     "openai/gpt-5.3-codex": {
@@ -13042,6 +13071,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2026-02-05",
@@ -13080,6 +13116,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2026-03-05",
@@ -13117,6 +13160,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-04-21",
       "modalities": {
@@ -13155,6 +13205,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2026-03-17",
@@ -13193,6 +13250,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2026-03-17",
@@ -13230,6 +13294,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-08-31",
       "structuredOutput": true,
       "lastUpdated": "2026-03-05",
@@ -13267,6 +13336,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-12-01",
       "structuredOutput": true,
       "lastUpdated": "2026-04-23",
@@ -13304,6 +13380,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-12-01",
       "structuredOutput": true,
       "lastUpdated": "2026-04-23",
@@ -13342,6 +13423,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-02-16",
       "structuredOutput": true,
       "lastUpdated": "2026-07-09",
@@ -13356,10 +13445,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.6,
-        "cacheReadPerMillionTokens": 0.01,
-        "cacheWritePerMillionTokens": 0.125
+        "inputPerMillionTokens": 0.2,
+        "outputPerMillionTokens": 1.2,
+        "cacheReadPerMillionTokens": 0.02,
+        "cacheWritePerMillionTokens": 0.25
       }
     },
     "openai/gpt-5.6-luna-pro": {
@@ -13382,6 +13471,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-02-16",
       "structuredOutput": true,
       "lastUpdated": "2026-07-09",
@@ -13396,10 +13493,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.6,
-        "cacheReadPerMillionTokens": 0.01,
-        "cacheWritePerMillionTokens": 0.125
+        "inputPerMillionTokens": 0.2,
+        "outputPerMillionTokens": 1.2,
+        "cacheReadPerMillionTokens": 0.02,
+        "cacheWritePerMillionTokens": 0.25
       }
     },
     "openai/gpt-5.6-sol": {
@@ -13422,6 +13519,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-02-16",
       "structuredOutput": true,
       "lastUpdated": "2026-07-09",
@@ -13436,10 +13541,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 5,
-        "outputPerMillionTokens": 30,
-        "cacheReadPerMillionTokens": 0.5,
-        "cacheWritePerMillionTokens": 6.25
+        "inputPerMillionTokens": 2,
+        "outputPerMillionTokens": 10,
+        "cacheReadPerMillionTokens": 0.2,
+        "cacheWritePerMillionTokens": 2.5
       }
     },
     "openai/gpt-5.6-sol-pro": {
@@ -13462,6 +13567,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-02-16",
       "structuredOutput": true,
       "lastUpdated": "2026-07-09",
@@ -13476,10 +13589,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 5,
-        "outputPerMillionTokens": 30,
-        "cacheReadPerMillionTokens": 0.5,
-        "cacheWritePerMillionTokens": 6.25
+        "inputPerMillionTokens": 2,
+        "outputPerMillionTokens": 10,
+        "cacheReadPerMillionTokens": 0.2,
+        "cacheWritePerMillionTokens": 2.5
       }
     },
     "openai/gpt-5.6-terra": {
@@ -13502,6 +13615,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-02-16",
       "structuredOutput": true,
       "lastUpdated": "2026-07-09",
@@ -13516,10 +13637,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 6,
-        "cacheReadPerMillionTokens": 0.1,
-        "cacheWritePerMillionTokens": 1.25
+        "inputPerMillionTokens": 2,
+        "outputPerMillionTokens": 12,
+        "cacheReadPerMillionTokens": 0.2,
+        "cacheWritePerMillionTokens": 2.5
       }
     },
     "openai/gpt-5.6-terra-pro": {
@@ -13542,6 +13663,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "knowledgeCutoff": "2026-02-16",
       "structuredOutput": true,
       "lastUpdated": "2026-07-09",
@@ -13556,10 +13685,102 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 6,
-        "cacheReadPerMillionTokens": 0.1,
-        "cacheWritePerMillionTokens": 1.25
+        "inputPerMillionTokens": 2,
+        "outputPerMillionTokens": 12,
+        "cacheReadPerMillionTokens": 0.2,
+        "cacheWritePerMillionTokens": 2.5
+      }
+    },
+    "openai/gpt-6-astra": {
+      "displayName": "GPT-6 Astra",
+      "description": "GPT model for general reasoning, writing, coding, and tool-assisted tasks",
+      "contextWindow": 1050000,
+      "maxInputTokens": 922000,
+      "maxOutputTokens": 128000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "knowledgeCutoff": "2026-04-30",
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-04",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 10,
+        "outputPerMillionTokens": 50,
+        "cacheReadPerMillionTokens": 1,
+        "cacheWritePerMillionTokens": 12.5
+      }
+    },
+    "openai/gpt-6-astra-pro": {
+      "displayName": "GPT-6 Astra Pro",
+      "description": "Frontier GPT model for professional reasoning, coding, and multimodal work",
+      "contextWindow": 1050000,
+      "maxOutputTokens": 128000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-04",
+      "modalities": {
+        "input": [
+          "pdf",
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 10,
+        "outputPerMillionTokens": 50,
+        "cacheReadPerMillionTokens": 1,
+        "cacheWritePerMillionTokens": 12.5
       }
     },
     "openai/gpt-audio": {
@@ -13657,7 +13878,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "GPT OSS 120B",
       "description": "Open GPT reasoning model for self-hosted agents and controllable deployments",
       "contextWindow": 131072,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -13670,6 +13891,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "structuredOutput": true,
       "lastUpdated": "2025-08-05",
       "modalities": {
@@ -13689,7 +13915,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "GPT OSS 20B",
       "description": "Open-weight GPT model for self-hosted reasoning and instruction-following workloads",
       "contextWindow": 131072,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -13702,6 +13928,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "structuredOutput": true,
       "lastUpdated": "2025-08-05",
       "modalities": {
@@ -13716,38 +13947,6 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "inputPerMillionTokens": 0.03,
         "outputPerMillionTokens": 0.13,
         "cacheReadPerMillionTokens": 0.03
-      }
-    },
-    "openai/gpt-oss-20b:free": {
-      "displayName": "gpt-oss-20b (free)",
-      "description": "Open-weight GPT model for self-hosted reasoning and instruction-following workloads",
-      "contextWindow": 131072,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2025-08-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
       }
     },
     "openai/gpt-oss-safeguard-20b": {
@@ -13767,6 +13966,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "structuredOutput": true,
       "lastUpdated": "2025-10-29",
       "modalities": {
@@ -13795,11 +13999,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "vision": true,
         "audio": false
       },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
+      "reasoningEfforts": [],
       "knowledgeCutoff": "2023-09",
       "structuredOutput": true,
       "lastUpdated": "2024-12-05",
@@ -13862,11 +14062,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "vision": true,
         "audio": false
       },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
+      "reasoningEfforts": [],
       "knowledgeCutoff": "2024-05",
       "structuredOutput": true,
       "lastUpdated": "2025-04-16",
@@ -13898,11 +14094,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "vision": true,
         "audio": false
       },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
+      "reasoningEfforts": [],
       "knowledgeCutoff": "2024-05",
       "structuredOutput": true,
       "lastUpdated": "2025-01-29",
@@ -13936,6 +14128,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "reasoningEfforts": [
         "high"
       ],
+      "thinkingLevelMap": {
+        "high": "high"
+      },
       "knowledgeCutoff": "2023-10-31",
       "structuredOutput": true,
       "lastUpdated": "2025-02-12",
@@ -13966,11 +14161,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "vision": true,
         "audio": false
       },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
+      "reasoningEfforts": [],
       "knowledgeCutoff": "2024-05",
       "structuredOutput": true,
       "lastUpdated": "2025-06-10",
@@ -14001,11 +14192,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "vision": true,
         "audio": false
       },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
+      "reasoningEfforts": [],
       "knowledgeCutoff": "2024-05",
       "structuredOutput": true,
       "lastUpdated": "2025-04-16",
@@ -14040,6 +14227,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "reasoningEfforts": [
         "high"
       ],
+      "thinkingLevelMap": {
+        "high": "high"
+      },
       "knowledgeCutoff": "2024-06-30",
       "structuredOutput": true,
       "lastUpdated": "2025-04-16",
@@ -14224,7 +14414,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Sonar",
       "description": "Sonar search model for current answers, retrieval, and citation-backed chat",
       "contextWindow": 127072,
-      "maxOutputTokens": 127072,
+      "maxOutputTokens": 114364,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -14253,7 +14443,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Sonar Deep Research",
       "description": "Sonar search model for current answers, retrieval, and citation-backed chat",
       "contextWindow": 128000,
-      "maxOutputTokens": 128000,
+      "maxOutputTokens": 115200,
       "capabilities": {
         "tools": false,
         "reasoning": true,
@@ -14339,7 +14529,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Sonar Reasoning Pro",
       "description": "Web-grounded reasoning model for multi-step research and cited answers",
       "contextWindow": 128000,
-      "maxOutputTokens": 128000,
+      "maxOutputTokens": 115200,
       "capabilities": {
         "tools": false,
         "reasoning": true,
@@ -14511,7 +14701,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Qwen2.5 7B Instruct",
       "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
       "contextWindow": 32768,
-      "maxOutputTokens": 32768,
+      "maxOutputTokens": 29491,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -14540,7 +14730,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Qwen2.5 Coder 32B Instruct",
       "description": "Qwen coding model for software agents, repository edits, and code reasoning",
       "contextWindow": 32768,
-      "maxOutputTokens": 32768,
+      "maxOutputTokens": 29491,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -14625,41 +14815,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 0.78
       }
     },
-    "qwen/qwen-plus-2025-07-28:thinking": {
-      "displayName": "Qwen Plus 0728 (thinking)",
-      "description": "Qwen reasoning model for deliberate problem solving, math, and coding",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-03-31",
-      "structuredOutput": true,
-      "lastUpdated": "2025-09-08",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 1.2,
-        "cacheWritePerMillionTokens": 0.5
-      }
-    },
     "qwen/qwen2.5-vl-72b-instruct": {
       "displayName": "Qwen2.5 VL 72B Instruct",
       "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
       "contextWindow": 128000,
-      "maxOutputTokens": 128000,
+      "maxOutputTokens": 115200,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -14681,8 +14841,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.25,
-        "outputPerMillionTokens": 0.75
+        "inputPerMillionTokens": 0.8,
+        "outputPerMillionTokens": 1,
+        "cacheReadPerMillionTokens": 0.4
       }
     },
     "qwen/qwen3-14b": {
@@ -14768,15 +14929,15 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.09,
-        "outputPerMillionTokens": 0.55
+        "inputPerMillionTokens": 0.22,
+        "outputPerMillionTokens": 0.88
       }
     },
     "qwen/qwen3-235b-a22b-thinking-2507": {
       "displayName": "Qwen3 235B A22B Thinking 2507",
       "description": "Qwen reasoning model for deliberate problem solving, math, and coding",
-      "contextWindow": 262144,
-      "maxOutputTokens": 32768,
+      "contextWindow": 131072,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -14814,8 +14975,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "audio": false
       },
       "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-03-31",
-      "structuredOutput": false,
+      "structuredOutput": true,
       "lastUpdated": "2025-04-28",
       "modalities": {
         "input": [
@@ -14980,7 +15140,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Qwen3-Coder 30B-A3B Instruct",
       "description": "Smaller Qwen coder for efficient local agents and repo-level fixes",
       "contextWindow": 262144,
-      "maxOutputTokens": 32768,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -15002,7 +15162,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       },
       "pricing": {
         "inputPerMillionTokens": 0.07,
-        "outputPerMillionTokens": 0.27
+        "outputPerMillionTokens": 0.28
       }
     },
     "qwen/qwen3-coder-flash": {
@@ -15040,7 +15200,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Qwen3 Coder Next",
       "description": "Qwen coding model for software agents, repository edits, and code reasoning",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -15189,7 +15349,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Qwen3-Next 80B-A3B (Thinking)",
       "description": "Efficient Qwen thinking model for local reasoning, math, and coding agents",
       "contextWindow": 262144,
-      "maxOutputTokens": 32768,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -15486,7 +15646,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Qwen3.5 35B-A3B",
       "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 16384,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -15508,15 +15668,16 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 1
+        "inputPerMillionTokens": 0.3125,
+        "outputPerMillionTokens": 1.25,
+        "cacheReadPerMillionTokens": 0.15625
       }
     },
     "qwen/qwen3.5-397b-a17b": {
       "displayName": "Qwen3.5 397B-A17B",
       "description": "Large open Qwen multimodal MoE for visual agents and long technical tasks",
       "contextWindow": 262144,
-      "maxOutputTokens": 65536,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -15538,15 +15699,16 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.39,
-        "outputPerMillionTokens": 2.34
+        "inputPerMillionTokens": 0.55,
+        "outputPerMillionTokens": 3.5,
+        "cacheReadPerMillionTokens": 0.225
       }
     },
     "qwen/qwen3.5-9b": {
       "displayName": "Qwen3.5 9B",
       "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -15668,7 +15830,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Qwen3.6 27B",
       "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 65536,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -15690,16 +15852,16 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 3.6,
-        "cacheReadPerMillionTokens": 0.12
+        "inputPerMillionTokens": 0.3,
+        "outputPerMillionTokens": 2,
+        "cacheReadPerMillionTokens": 0.03
       }
     },
     "qwen/qwen3.6-35b-a3b": {
       "displayName": "Qwen3.6 35B-A3B",
       "description": "Open multimodal Qwen MoE for local agents that need vision, audio, and code",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -15721,8 +15883,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 1,
+        "inputPerMillionTokens": 0.1,
+        "outputPerMillionTokens": 0.9,
         "cacheReadPerMillionTokens": 0.05
       }
     },
@@ -15914,8 +16076,118 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "cacheWritePerMillionTokens": 0.4
       }
     },
-    "qwen/qwen3.8-max": {
-      "displayName": "Qwen3.8 Max",
+    "qwen/qwen3.8-2.4t-a95b": {
+      "displayName": "Qwen3.8 2.4T A95B",
+      "description": "Open-weight sparse MoE (2.4T total, 95B active), the open-weight twin of Qwen3.8 Max for coding, research, complex reasoning, and agentic workflows",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "xhigh"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "xhigh": "xhigh"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-12",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 2,
+        "outputPerMillionTokens": 6,
+        "cacheReadPerMillionTokens": 0.25
+      }
+    },
+    "qwen/qwen3.8-27b": {
+      "displayName": "Qwen3.8 27B",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "xhigh"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "xhigh": "xhigh"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-14",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.42,
+        "outputPerMillionTokens": 3,
+        "cacheReadPerMillionTokens": 0.085
+      }
+    },
+    "qwen/qwen3.8-flash": {
+      "displayName": "Qwen3.8 Flash",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-26",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.15,
+        "outputPerMillionTokens": 0.47,
+        "cacheReadPerMillionTokens": 0.016,
+        "cacheWritePerMillionTokens": 0.2
+      }
+    },
+    "qwen/qwen3.8-max-0902": {
+      "displayName": "Qwen3.8 Max 0902",
       "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
       "contextWindow": 1000000,
       "maxOutputTokens": 131072,
@@ -15933,8 +16205,15 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "structuredOutput": true,
-      "lastUpdated": "2026-08-03",
+      "lastUpdated": "2026-09-02",
       "modalities": {
         "input": [
           "text",
@@ -15956,7 +16235,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Reka Edge",
       "description": "Multimodal model for analyzing text, images, documents, and rich media",
       "contextWindow": 16384,
-      "maxOutputTokens": 16384,
+      "maxOutputTokens": 14745,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -15986,7 +16265,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Reka Flash 3",
       "description": "Efficient model for low-latency assistance, extraction, and routine automation",
       "contextWindow": 65536,
-      "maxOutputTokens": 65536,
+      "maxOutputTokens": 58982,
       "capabilities": {
         "tools": false,
         "reasoning": true,
@@ -16084,6 +16363,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "xhigh",
         "max"
       ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-06-15",
       "modalities": {
@@ -16101,11 +16385,48 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "cacheReadPerMillionTokens": 0.5
       }
     },
+    "sakana/sakana-namazu": {
+      "displayName": "Sakana Namazu",
+      "description": "Multi-agent model for routing expert agents across complex analytical tasks",
+      "contextWindow": 262144,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "high"
+      ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "high": "high"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-03",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.95,
+        "outputPerMillionTokens": 4,
+        "cacheReadPerMillionTokens": 0.15
+      }
+    },
     "sao10k/l3-lunaris-8b": {
       "displayName": "Llama 3 8B Lunaris",
       "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
       "contextWindow": 8192,
-      "maxOutputTokens": 16384,
+      "maxOutputTokens": 7372,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -16222,7 +16543,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "description": "Newer StepFun flash model for faster agents, coding, and multimodal prompts",
       "contextWindow": 262144,
       "maxInputTokens": 256000,
-      "maxOutputTokens": 256000,
+      "maxOutputTokens": 230400,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -16235,6 +16556,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "knowledgeCutoff": "2026-03-01",
       "structuredOutput": true,
       "lastUpdated": "2026-05-29",
@@ -16258,7 +16584,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Hunyuan A13B Instruct",
       "description": "Tencent Hy reasoning model for coding, instruction following, and agent tasks",
       "contextWindow": 131072,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "tools": false,
         "reasoning": true,
@@ -16283,10 +16609,95 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 0.57
       }
     },
+    "tencent/hy-mt2-1.8b": {
+      "displayName": "Hy-MT2-1.8B",
+      "description": "Tencent Hy reasoning model for coding, instruction following, and agent tasks",
+      "contextWindow": 8192,
+      "maxOutputTokens": 4096,
+      "capabilities": {
+        "tools": false,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": false,
+      "lastUpdated": "2026-08-20",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.044,
+        "outputPerMillionTokens": 0.177
+      }
+    },
+    "tencent/hy-mt2-30b-a3b": {
+      "displayName": "Hy-MT2-30B-A3B",
+      "description": "Tencent Hy reasoning model for coding, instruction following, and agent tasks",
+      "contextWindow": 8192,
+      "maxOutputTokens": 4096,
+      "capabilities": {
+        "tools": false,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-20",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.074,
+        "outputPerMillionTokens": 0.295
+      }
+    },
+    "tencent/hy-mt2-7b": {
+      "displayName": "Hy-MT2-7B",
+      "description": "Tencent Hy reasoning model for coding, instruction following, and agent tasks",
+      "contextWindow": 8192,
+      "maxOutputTokens": 4096,
+      "capabilities": {
+        "tools": false,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-19",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.074,
+        "outputPerMillionTokens": 0.295
+      }
+    },
     "tencent/hy3": {
       "displayName": "Hy3",
       "description": "Tencent Hy reasoning model for coding, instruction following, and agent tasks",
       "contextWindow": 262144,
+      "maxInputTokens": 192000,
       "maxOutputTokens": 128000,
       "capabilities": {
         "tools": true,
@@ -16299,6 +16710,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "low",
         "high"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "high": "high"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-07-06",
       "modalities": {
@@ -16319,7 +16735,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Hy3 preview",
       "description": "Tencent Hy reasoning model for coding, instruction following, and agent tasks",
       "contextWindow": 262144,
-      "maxOutputTokens": 262144,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -16331,6 +16747,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "low",
         "high"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "high": "high"
+      },
       "structuredOutput": false,
       "lastUpdated": "2026-04-20",
       "modalities": {
@@ -16342,16 +16763,53 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.063,
-        "outputPerMillionTokens": 0.21,
-        "cacheReadPerMillionTokens": 0.021
+        "inputPerMillionTokens": 0.18,
+        "outputPerMillionTokens": 0.6,
+        "cacheReadPerMillionTokens": 0.06
+      }
+    },
+    "tencent/hy4-preview": {
+      "displayName": "Hy4 preview",
+      "description": "Tencent Hy reasoning model for coding, instruction following, and agent tasks",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 64000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high"
+      ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "high": "high"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-28",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.834,
+        "outputPerMillionTokens": 2.501,
+        "cacheReadPerMillionTokens": 0.042
       }
     },
     "thedrummer/cydonia-24b-v4.1": {
       "displayName": "Cydonia 24B V4.1",
       "description": "Open-weight instruction model for adaptable chat and self-hosted production workloads",
       "contextWindow": 131072,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -16377,40 +16835,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "cacheReadPerMillionTokens": 0.15
       }
     },
-    "thedrummer/rocinante-12b": {
-      "displayName": "Rocinante 12B",
-      "description": "Open-weight instruction model for adaptable chat and self-hosted production workloads",
-      "contextWindow": 65536,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-04-30",
-      "structuredOutput": true,
-      "lastUpdated": "2024-09-30",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.25,
-        "outputPerMillionTokens": 0.5
-      }
-    },
     "thedrummer/skyfall-36b-v2": {
       "displayName": "Skyfall 36B V2",
       "description": "Open-weight instruction model for adaptable chat and self-hosted production workloads",
       "contextWindow": 32768,
-      "maxOutputTokens": 32768,
+      "maxOutputTokens": 29491,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -16440,7 +16869,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "UnslopNemo 12B",
       "description": "Open-weight instruction model for adaptable chat and self-hosted production workloads",
       "contextWindow": 1024000,
-      "maxOutputTokens": 1024000,
+      "maxOutputTokens": 819200,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -16469,7 +16898,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Inkling",
       "description": "Multimodal reasoning model for visual analysis, planning, and tool use",
       "contextWindow": 1048576,
-      "maxOutputTokens": 1048576,
+      "maxOutputTokens": 471859,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -16484,6 +16913,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "max"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "max": "max"
+      },
       "structuredOutput": false,
       "lastUpdated": "2026-07-15",
       "modalities": {
@@ -16505,7 +16942,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "thinkingmachines/inkling-small": {
       "displayName": "Inkling Small",
       "description": "Multimodal reasoning model for visual analysis, planning, and tool use",
-      "contextWindow": 524288,
+      "contextWindow": 1048576,
       "maxOutputTokens": 262144,
       "capabilities": {
         "tools": true,
@@ -16521,6 +16958,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "max"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "max": "max"
+      },
       "structuredOutput": false,
       "lastUpdated": "2026-07-30",
       "modalities": {
@@ -16539,11 +16984,99 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "cacheReadPerMillionTokens": 0.1
       }
     },
+    "thinkingmachines/inkling-small:free": {
+      "displayName": "Inkling Small (free)",
+      "description": "Multimodal reasoning model for visual analysis, planning, and tool use",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 262144,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": false,
+      "lastUpdated": "2026-07-30",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0
+      }
+    },
+    "thinkingmachines/inkling:free": {
+      "displayName": "Inkling (free)",
+      "description": "Multimodal reasoning model for visual analysis, planning, and tool use",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 262144,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [
+        "minimal",
+        "low",
+        "medium",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "minimal": "minimal",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": false,
+      "lastUpdated": "2026-07-15",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0
+      }
+    },
     "undi95/remm-slerp-l2-13b": {
       "displayName": "ReMM SLERP 13B",
       "description": "Open-weight instruction model for adaptable chat and self-hosted production workloads",
       "contextWindow": 6144,
-      "maxOutputTokens": 2048,
+      "maxOutputTokens": 5529,
       "capabilities": {
         "tools": false,
         "reasoning": false,
@@ -16564,7 +17097,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.45,
+        "inputPerMillionTokens": 0.35,
         "outputPerMillionTokens": 0.65
       }
     },
@@ -16572,7 +17105,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Solar Pro 3",
       "description": "Flagship model for demanding analysis, coding, and production agent workflows",
       "contextWindow": 131072,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -16595,6 +17128,35 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "inputPerMillionTokens": 0.15,
         "outputPerMillionTokens": 0.6,
         "cacheReadPerMillionTokens": 0.015
+      }
+    },
+    "upstage/solar-pro4": {
+      "displayName": "Solar Pro 4",
+      "description": "Flagship model for demanding analysis, coding, and production agent workflows",
+      "contextWindow": 524288,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-10",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.03,
+        "outputPerMillionTokens": 0.12,
+        "cacheReadPerMillionTokens": 0.006
       }
     },
     "writer/palmyra-x5": {
@@ -16629,7 +17191,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Grok 4.20",
       "description": "Grok model for agentic tool use, reasoning, coding, and live assistance",
       "contextWindow": 2000000,
-      "maxOutputTokens": 2000000,
+      "maxOutputTokens": 1800000,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -16661,7 +17223,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Grok 4.20 Multi-Agent",
       "description": "Grok model for agentic tool use, reasoning, coding, and live assistance",
       "contextWindow": 2000000,
-      "maxOutputTokens": 2000000,
+      "maxOutputTokens": 1800000,
       "capabilities": {
         "tools": false,
         "reasoning": true,
@@ -16675,6 +17237,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "knowledgeCutoff": "2025-09-01",
       "structuredOutput": true,
       "lastUpdated": "2026-03-31",
@@ -16698,7 +17266,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Grok 4.3",
       "description": "xAI's default Grok for chat, coding, agentic tools, and lower hallucination risk",
       "contextWindow": 1000000,
-      "maxOutputTokens": 1000000,
+      "maxOutputTokens": 900000,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -16711,6 +17279,12 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-04-17",
       "modalities": {
@@ -16731,9 +17305,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     },
     "x-ai/grok-4.5": {
       "displayName": "Grok 4.5",
-      "description": "xAI's latest Grok for chat, coding, agentic tools, and lower hallucination risk",
+      "description": "xAI's Grok model for chat, coding, agentic tools, and lower hallucination risk",
       "contextWindow": 500000,
-      "maxOutputTokens": 500000,
+      "maxOutputTokens": 450000,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -16746,6 +17320,11 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "medium",
         "high"
       ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-07-08",
       "modalities": {
@@ -16764,11 +17343,54 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "cacheReadPerMillionTokens": 0.3
       }
     },
+    "x-ai/grok-4.6": {
+      "displayName": "Grok 4.6",
+      "description": "Grok model for agentic tool use, reasoning, coding, and live assistance",
+      "contextWindow": 500000,
+      "maxOutputTokens": 450000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh"
+      },
+      "knowledgeCutoff": "2026-02-01",
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-12",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 2,
+        "outputPerMillionTokens": 6,
+        "cacheReadPerMillionTokens": 0.5
+      }
+    },
     "x-ai/grok-build-0.1": {
       "displayName": "Grok Build 0.1",
       "description": "Fast Grok coding model tuned for agentic engineering and iterative edits",
       "contextWindow": 256000,
-      "maxOutputTokens": 256000,
+      "maxOutputTokens": 230400,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -16953,7 +17575,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "GLM-4.6",
       "description": "Late GLM-4 workhorse for coding agents, reasoning, and structured tasks",
       "contextWindow": 204800,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 16384,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -16974,9 +17596,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.5,
-        "outputPerMillionTokens": 2,
-        "cacheReadPerMillionTokens": 0.1
+        "inputPerMillionTokens": 0.43,
+        "outputPerMillionTokens": 1.75,
+        "cacheReadPerMillionTokens": 0.08
       }
     },
     "z-ai/glm-4.6v": {
@@ -17045,7 +17667,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "GLM-4.7-Flash",
       "description": "Budget GLM lane for fast coding help, routing, and everyday automation",
       "contextWindow": 202752,
-      "maxOutputTokens": 16384,
+      "maxOutputTokens": 117964,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -17066,16 +17688,15 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.06,
-        "outputPerMillionTokens": 0.4,
-        "cacheReadPerMillionTokens": 0.01
+        "inputPerMillionTokens": 0.0605,
+        "outputPerMillionTokens": 0.4
       }
     },
     "z-ai/glm-5": {
       "displayName": "GLM-5",
       "description": "General GLM flagship for coding, analysis, and tool-heavy engineering workflows",
       "contextWindow": 204800,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 128000,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -17095,9 +17716,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.95,
-        "outputPerMillionTokens": 2.55,
-        "cacheReadPerMillionTokens": 0.2
+        "inputPerMillionTokens": 0.6,
+        "outputPerMillionTokens": 1.92,
+        "cacheReadPerMillionTokens": 0.12
       }
     },
     "z-ai/glm-5-turbo": {
@@ -17133,7 +17754,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "GLM-5.1",
       "description": "Strong GLM coding model for agentic engineering, terminals, and repository generation",
       "contextWindow": 204800,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 128000,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -17153,16 +17774,16 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.952,
-        "outputPerMillionTokens": 2.992,
-        "cacheReadPerMillionTokens": 0.1768
+        "inputPerMillionTokens": 0.966,
+        "outputPerMillionTokens": 3.036,
+        "cacheReadPerMillionTokens": 0.1794
       }
     },
     "z-ai/glm-5.2": {
       "displayName": "GLM-5.2",
       "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
       "contextWindow": 1048576,
-      "maxOutputTokens": 128000,
+      "maxOutputTokens": 131072,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -17174,6 +17795,10 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high",
         "xhigh"
       ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "xhigh": "xhigh"
+      },
       "structuredOutput": true,
       "lastUpdated": "2026-06-13",
       "modalities": {
@@ -17185,9 +17810,87 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.6776,
-        "outputPerMillionTokens": 2.1296,
-        "cacheReadPerMillionTokens": 0.12584
+        "inputPerMillionTokens": 0.966,
+        "outputPerMillionTokens": 3.036,
+        "cacheReadPerMillionTokens": 0.1932
+      }
+    },
+    "z-ai/glm-5.3": {
+      "displayName": "GLM-5.3",
+      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 943718,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-14",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.4,
+        "outputPerMillionTokens": 4.4,
+        "cacheReadPerMillionTokens": 0.26
+      }
+    },
+    "z-ai/glm-5.3-flash": {
+      "displayName": "GLM-5.3-Flash",
+      "description": "GLM vision model for visual reasoning, documents, and multimodal agents",
+      "contextWindow": 1310720,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-26",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.075,
+        "outputPerMillionTokens": 0.25,
+        "cacheReadPerMillionTokens": 0.015
       }
     },
     "z-ai/glm-5v-turbo": {
@@ -17221,10123 +17924,6 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "cacheReadPerMillionTokens": 0.24
       }
     }
-  },
-  "cerebras": {
-    "gemma-4-31b": {
-      "displayName": "Gemma 4 31B IT",
-      "description": "Largest Gemma 4 instruction model for open, self-hosted chat and reasoning",
-      "contextWindow": 131072,
-      "maxOutputTokens": 40960,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-01",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.99,
-        "outputPerMillionTokens": 1.49
-      }
-    },
-    "gpt-oss-120b": {
-      "displayName": "GPT OSS 120B",
-      "description": "Open GPT reasoning model for self-hosted agents and controllable deployments",
-      "contextWindow": 131072,
-      "maxOutputTokens": 40960,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-10",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.35,
-        "outputPerMillionTokens": 0.75
-      }
-    },
-    "zai-glm-4.7": {
-      "displayName": "Z.AI GLM-4.7",
-      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 131072,
-      "maxOutputTokens": 40960,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-10",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2.25,
-        "outputPerMillionTokens": 2.75,
-        "cacheReadPerMillionTokens": 2.25,
-        "cacheWritePerMillionTokens": 0
-      }
-    }
-  },
-  "togetherai": {
-    "deepcogito/cogito-v2-1-671b": {
-      "displayName": "Cogito v2.1 671B",
-      "description": "Reasoning model for deliberate analysis, multi-step problem solving, and tool use",
-      "contextWindow": 163840,
-      "maxOutputTokens": 163840,
-      "capabilities": {
-        "tools": false,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-11-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.25,
-        "outputPerMillionTokens": 1.25
-      }
-    },
-    "deepseek-ai/DeepSeek-R1": {
-      "displayName": "DeepSeek-R1",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 163839,
-      "maxOutputTokens": 163839,
-      "capabilities": {
-        "tools": false,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-07",
-      "lastUpdated": "2025-03-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 3,
-        "outputPerMillionTokens": 7
-      }
-    },
-    "deepseek-ai/DeepSeek-V3": {
-      "displayName": "DeepSeek-V3",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 131072,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-07",
-      "lastUpdated": "2025-05-29",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.25,
-        "outputPerMillionTokens": 1.25
-      }
-    },
-    "deepseek-ai/DeepSeek-V3-1": {
-      "displayName": "DeepSeek V3.1",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 131072,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-08",
-      "lastUpdated": "2025-08-21",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 1.7
-      }
-    },
-    "deepseek-ai/DeepSeek-V4-Flash-0731": {
-      "displayName": "DeepSeek V4 Flash 0731",
-      "description": "Official DeepSeek V4 Flash release with enhanced agentic capabilities and integrated DSpark speculative decoding",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 384000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high",
-        "max"
-      ],
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-31",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.28,
-        "cacheReadPerMillionTokens": 0.03
-      }
-    },
-    "deepseek-ai/DeepSeek-V4-Pro": {
-      "displayName": "DeepSeek V4 Pro",
-      "description": "Flagship DeepSeek model for coding, reasoning, and agentic work",
-      "contextWindow": 512000,
-      "maxOutputTokens": 384000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high",
-        "max"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.74,
-        "outputPerMillionTokens": 3.48,
-        "cacheReadPerMillionTokens": 0.2
-      }
-    },
-    "essentialai/Rnj-1-Instruct": {
-      "displayName": "Rnj-1 Instruct",
-      "description": "Open-weight instruction model for adaptable chat and self-hosted production workloads",
-      "contextWindow": 32768,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-10",
-      "lastUpdated": "2025-12-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 0.15
-      }
-    },
-    "google/gemma-3n-E4B-it": {
-      "displayName": "Gemma 3N E4B Instruct",
-      "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 32768,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-05-20",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.06,
-        "outputPerMillionTokens": 0.12
-      }
-    },
-    "google/gemma-4-31B-it": {
-      "displayName": "Gemma 4 31B Instruct",
-      "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 262144,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-07",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.39,
-        "outputPerMillionTokens": 0.97
-      }
-    },
-    "LiquidAI/LFM2-24B-A2B": {
-      "displayName": "LFM2-24B-A2B",
-      "description": "Open-weight instruction model for adaptable chat and self-hosted production workloads",
-      "contextWindow": 32768,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-02-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.03,
-        "outputPerMillionTokens": 0.12
-      }
-    },
-    "meta-llama/Llama-3.3-70B-Instruct-Turbo": {
-      "displayName": "Llama 3.3 70B",
-      "description": "Compact Llama instruction model for fast chat and local deployment",
-      "contextWindow": 131072,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2023-12",
-      "lastUpdated": "2026-07-02",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.04,
-        "outputPerMillionTokens": 1.04
-      }
-    },
-    "meta-llama/Meta-Llama-3-8B-Instruct-Lite": {
-      "displayName": "Meta Llama 3 8B Instruct Lite",
-      "description": "Compact Llama instruction model for fast chat and local deployment",
-      "contextWindow": 8192,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2024-04-18",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.14
-      }
-    },
-    "MiniMaxAI/MiniMax-M2.5": {
-      "displayName": "MiniMax-M2.5",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-02-12",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.06
-      }
-    },
-    "MiniMaxAI/MiniMax-M2.7": {
-      "displayName": "MiniMax-M2.7",
-      "description": "MiniMax model for chat, coding, office work, and agentic tasks",
-      "contextWindow": 202752,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-03-18",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.06
-      }
-    },
-    "MiniMaxAI/MiniMax-M3": {
-      "displayName": "MiniMax-M3",
-      "description": "MiniMax multimodal coding model for long-context reasoning and agent tasks",
-      "contextWindow": 524288,
-      "maxOutputTokens": 250000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-12",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.06
-      }
-    },
-    "moonshotai/Kimi-K2.5": {
-      "displayName": "Kimi K2.5",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2026-01",
-      "lastUpdated": "2026-01-27",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.5,
-        "outputPerMillionTokens": 2.8
-      }
-    },
-    "moonshotai/Kimi-K2.6": {
-      "displayName": "Kimi K2.6",
-      "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 131000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-21",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.2,
-        "outputPerMillionTokens": 4.5,
-        "cacheReadPerMillionTokens": 0.2
-      }
-    },
-    "moonshotai/Kimi-K2.7-Code": {
-      "displayName": "Kimi K2.7 Code",
-      "description": "Kimi coding model for software agents, refactors, and repository reasoning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-14",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.95,
-        "outputPerMillionTokens": 4,
-        "cacheReadPerMillionTokens": 0.19
-      }
-    },
-    "moonshotai/Kimi-K3": {
-      "displayName": "Kimi K3",
-      "description": "Multimodal Kimi model with 1M context and toggleable max-effort thinking for long-horizon agent work",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "high",
-        "max"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-16",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 3,
-        "outputPerMillionTokens": 15,
-        "cacheReadPerMillionTokens": 0.3
-      }
-    },
-    "nvidia/nemotron-3-ultra-550b-a55b": {
-      "displayName": "Nemotron 3 Ultra 550B A55B",
-      "description": "Largest Nemotron 3 model for maximum open-weight reasoning and agent accuracy",
-      "contextWindow": 512300,
-      "maxOutputTokens": 512300,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-04",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 3.6,
-        "cacheReadPerMillionTokens": 0.2
-      }
-    },
-    "openai/gpt-oss-120b": {
-      "displayName": "GPT OSS 120B",
-      "description": "Open-weight GPT model for self-hosted reasoning and instruction-following workloads",
-      "contextWindow": 131072,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "knowledgeCutoff": "2025-08",
-      "lastUpdated": "2025-08-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 0.6
-      }
-    },
-    "openai/gpt-oss-20b": {
-      "displayName": "GPT OSS 20B",
-      "description": "Open-weight GPT model for self-hosted reasoning and instruction-following workloads",
-      "contextWindow": 131072,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2025-08-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.05,
-        "outputPerMillionTokens": 0.2
-      }
-    },
-    "pearl-ai/gemma-4-31b-it": {
-      "displayName": "Pearl AI Gemma 4 31B Instruct",
-      "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 32000,
-      "maxOutputTokens": 32000,
-      "capabilities": {
-        "tools": false,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-04-07",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.28,
-        "outputPerMillionTokens": 0.86
-      }
-    },
-    "Qwen/Qwen2.5-7B-Instruct-Turbo": {
-      "displayName": "Qwen 2.5 7B Instruct Turbo",
-      "description": "Efficient Qwen model for fast chat, extraction, and high-volume workloads",
-      "contextWindow": 32768,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2024-09-19",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 0.3
-      }
-    },
-    "Qwen/Qwen3-235B-A22B-Instruct-2507-tput": {
-      "displayName": "Qwen3 235B A22B Instruct 2507 FP8",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-07",
-      "lastUpdated": "2025-07-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.2,
-        "outputPerMillionTokens": 0.6
-      }
-    },
-    "Qwen/Qwen3-Coder-480B-A35B-Instruct-FP8": {
-      "displayName": "Qwen3 Coder 480B A35B Instruct",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-07-23",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2,
-        "outputPerMillionTokens": 2
-      }
-    },
-    "Qwen/Qwen3-Coder-Next-FP8": {
-      "displayName": "Qwen3 Coder Next FP8",
-      "description": "Legacy model retained for compatibility with older integrations",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2026-02-03",
-      "lastUpdated": "2026-02-03",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.5,
-        "outputPerMillionTokens": 1.2
-      }
-    },
-    "Qwen/Qwen3.5-397B-A17B": {
-      "displayName": "Qwen3.5 397B A17B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 130000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-06-15",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 3.6,
-        "cacheReadPerMillionTokens": 0.35
-      }
-    },
-    "Qwen/Qwen3.5-9B": {
-      "displayName": "Qwen3.5 9B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-03-03",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.17,
-        "outputPerMillionTokens": 0.25
-      }
-    },
-    "Qwen/Qwen3.6-Plus": {
-      "displayName": "Qwen3.6 Plus",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 500000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-04-30",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.5,
-        "outputPerMillionTokens": 3
-      }
-    },
-    "Qwen/Qwen3.7-Max": {
-      "displayName": "Qwen3.7 Max",
-      "description": "Flagship Qwen model for complex reasoning, coding, and agentic workflows",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 500000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-07-02",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.25,
-        "outputPerMillionTokens": 3.75,
-        "cacheReadPerMillionTokens": 0.125
-      }
-    },
-    "thinkingmachines/Inkling": {
-      "displayName": "Inkling",
-      "description": "Multimodal MoE reasoning model (975B total, 41B active) for text, image, and audio",
-      "contextWindow": 524288,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [
-        "max",
-        "xhigh",
-        "high",
-        "medium",
-        "low"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-15",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 4.05,
-        "cacheReadPerMillionTokens": 0.17
-      }
-    },
-    "zai-org/GLM-5": {
-      "displayName": "GLM-5",
-      "description": "General GLM flagship for coding, analysis, and tool-heavy engineering workflows",
-      "contextWindow": 202752,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-11",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 3.2
-      }
-    },
-    "zai-org/GLM-5.1": {
-      "displayName": "GLM-5.1",
-      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 202752,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-11",
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-02",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.4,
-        "outputPerMillionTokens": 4.4,
-        "cacheReadPerMillionTokens": 0.26
-      }
-    },
-    "zai-org/GLM-5.2": {
-      "displayName": "GLM-5.2",
-      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
-      "contextWindow": 262144,
-      "maxOutputTokens": 164000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high",
-        "max"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-16",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.4,
-        "outputPerMillionTokens": 4.4,
-        "cacheReadPerMillionTokens": 0.26
-      }
-    }
-  },
-  "fireworks-ai": {
-    "accounts/fireworks/models/deepseek-v4-flash": {
-      "displayName": "DeepSeek V4 Flash",
-      "description": "Fast DeepSeek V4 lane for economical reasoning, coding, and long-context work",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 384000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high",
-        "max"
-      ],
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-16",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.28,
-        "cacheReadPerMillionTokens": 0.028
-      }
-    },
-    "accounts/fireworks/models/deepseek-v4-flash-0731": {
-      "displayName": "DeepSeek V4 Flash 0731",
-      "description": "Official DeepSeek V4 Flash release with enhanced agentic capabilities and integrated DSpark speculative decoding",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 384000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "high",
-        "max"
-      ],
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-31",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.28,
-        "cacheReadPerMillionTokens": 0.028
-      }
-    },
-    "accounts/fireworks/models/deepseek-v4-pro": {
-      "displayName": "DeepSeek V4 Pro",
-      "description": "Open MoE flagship with million-token context for coding and long agent runs",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 384000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high",
-        "max"
-      ],
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.74,
-        "outputPerMillionTokens": 3.48,
-        "cacheReadPerMillionTokens": 0.145
-      }
-    },
-    "accounts/fireworks/models/glm-5p2": {
-      "displayName": "GLM 5.2",
-      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 1048575,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high",
-        "max"
-      ],
-      "lastUpdated": "2026-06-16",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.4,
-        "outputPerMillionTokens": 4.4,
-        "cacheReadPerMillionTokens": 0.14
-      }
-    },
-    "accounts/fireworks/models/gpt-oss-120b": {
-      "displayName": "GPT OSS 120B",
-      "description": "Open-weight GPT model for self-hosted reasoning and instruction-following workloads",
-      "contextWindow": 131072,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "lastUpdated": "2026-06-16",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 0.6,
-        "cacheReadPerMillionTokens": 0.015
-      }
-    },
-    "accounts/fireworks/models/gpt-oss-20b": {
-      "displayName": "GPT OSS 20B",
-      "description": "Open-weight GPT model for self-hosted reasoning and instruction-following workloads",
-      "contextWindow": 131072,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "lastUpdated": "2025-08-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.07,
-        "outputPerMillionTokens": 0.3,
-        "cacheReadPerMillionTokens": 0.035
-      }
-    },
-    "accounts/fireworks/models/kimi-k2p6": {
-      "displayName": "Kimi K2.6",
-      "description": "Kimi reasoning model for long-horizon research, planning, and tool use",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-04-17",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.95,
-        "outputPerMillionTokens": 4,
-        "cacheReadPerMillionTokens": 0.16
-      }
-    },
-    "accounts/fireworks/models/kimi-k2p7-code": {
-      "displayName": "Kimi K2.7 Code",
-      "description": "Kimi coding model for software agents, refactors, and repository reasoning",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-06-16",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.95,
-        "outputPerMillionTokens": 4,
-        "cacheReadPerMillionTokens": 0.19
-      }
-    },
-    "accounts/fireworks/models/kimi-k3": {
-      "displayName": "Kimi K3",
-      "description": "Multimodal Kimi model with 1M context and toggleable max-effort thinking for long-horizon agent work",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high",
-        "max"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-27",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 3,
-        "outputPerMillionTokens": 15,
-        "cacheReadPerMillionTokens": 0.3
-      }
-    },
-    "accounts/fireworks/models/minimax-m2p7": {
-      "displayName": "MiniMax-M2.7",
-      "description": "MiniMax model for chat, coding, office work, and agentic tasks",
-      "contextWindow": 196608,
-      "maxOutputTokens": 196608,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "lastUpdated": "2026-04-12",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.06
-      }
-    },
-    "accounts/fireworks/models/minimax-m3": {
-      "displayName": "MiniMax-M3",
-      "description": "MiniMax multimodal coding model for long-context reasoning and agent tasks",
-      "contextWindow": 512000,
-      "maxOutputTokens": 512000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "lastUpdated": "2026-06-12",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.06
-      }
-    },
-    "accounts/fireworks/models/qwen3p7-plus": {
-      "displayName": "Qwen 3.7 Plus",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "lastUpdated": "2026-06-12",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 1.6,
-        "cacheReadPerMillionTokens": 0.08
-      }
-    },
-    "accounts/fireworks/routers/glm-5p2-fast": {
-      "displayName": "GLM 5.2 Fast",
-      "description": "Efficient GLM model for fast reasoning, coding, and agent workflows",
-      "contextWindow": 1048575,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high",
-        "max"
-      ],
-      "lastUpdated": "2026-06-26",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2.1,
-        "outputPerMillionTokens": 6.6,
-        "cacheReadPerMillionTokens": 0.21
-      }
-    },
-    "accounts/fireworks/routers/kimi-k2p6-fast": {
-      "displayName": "Kimi K2.6 Fast",
-      "description": "Kimi reasoning model for long-horizon research, planning, and tool use",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-06-05",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2,
-        "outputPerMillionTokens": 8,
-        "cacheReadPerMillionTokens": 0.3
-      }
-    },
-    "accounts/fireworks/routers/kimi-k2p6-turbo": {
-      "displayName": "Kimi K2.6 Turbo",
-      "description": "Kimi reasoning model for long-horizon research, planning, and tool use",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-04-17",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2,
-        "outputPerMillionTokens": 8,
-        "cacheReadPerMillionTokens": 0.3
-      }
-    },
-    "accounts/fireworks/routers/kimi-k2p7-code-fast": {
-      "displayName": "Kimi K2.7 Code Fast",
-      "description": "Kimi coding model for software agents, refactors, and repository reasoning",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-06-16",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.9,
-        "outputPerMillionTokens": 8,
-        "cacheReadPerMillionTokens": 0.38
-      }
-    },
-    "accounts/fireworks/routers/kimi-k3-fast": {
-      "displayName": "Kimi K3 Fast",
-      "description": "Multimodal Kimi model with 1M context and toggleable max-effort thinking for long-horizon agent work",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high",
-        "max"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-27",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 4.5,
-        "outputPerMillionTokens": 22.5,
-        "cacheReadPerMillionTokens": 0.45
-      }
-    }
-  },
-  "nvidia": {
-    "abacusai/dracarys-llama-3.1-70b-instruct": {
-      "displayName": "dracarys-llama-3.1-70b-instruct",
-      "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-05-22",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "baai/bge-m3": {
-      "displayName": "BGE M3",
-      "description": "Flagship model for demanding analysis, coding, and production agent workflows",
-      "contextWindow": 8192,
-      "maxOutputTokens": 1024,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-04-30",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "bytedance/seed-oss-36b-instruct": {
-      "displayName": "ByteDance-Seed/Seed-OSS-36B-Instruct",
-      "description": "Tool-capable chat model for instruction following and agentic application workflows",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "deepseek-ai/deepseek-v4-flash": {
-      "displayName": "DeepSeek V4 Flash",
-      "description": "Fast DeepSeek V4 lane for economical reasoning, coding, and long-context work",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 393216,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high",
-        "max"
-      ],
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.28,
-        "cacheReadPerMillionTokens": 0.0028
-      }
-    },
-    "deepseek-ai/deepseek-v4-pro": {
-      "displayName": "DeepSeek V4 Pro",
-      "description": "Open MoE flagship with million-token context for coding and long agent runs",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 393216,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high",
-        "max"
-      ],
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.435,
-        "outputPerMillionTokens": 0.87,
-        "cacheReadPerMillionTokens": 0.003625
-      }
-    },
-    "google/gemma-2-2b-it": {
-      "displayName": "Gemma 2 2b It",
-      "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2024-07-16",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "google/gemma-3-12b-it": {
-      "displayName": "Gemma 3 12B IT",
-      "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 131072,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-03-12",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "google/gemma-3-4b-it": {
-      "displayName": "Gemma 3 4B IT",
-      "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 131072,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-03-12",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "google/gemma-3n-e2b-it": {
-      "displayName": "Gemma 3n E2b It",
-      "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06",
-      "structuredOutput": true,
-      "lastUpdated": "2025-06-12",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "google/gemma-3n-e4b-it": {
-      "displayName": "Gemma 3n E4b It",
-      "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06",
-      "structuredOutput": true,
-      "lastUpdated": "2025-06-03",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "google/gemma-4-31b-it": {
-      "displayName": "Gemma-4-31B-IT",
-      "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 256000,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "lastUpdated": "2026-04-02",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "google/google-paligemma": {
-      "displayName": "paligemma",
-      "description": "Gemini multimodal model for text, image, audio, video, and document tasks",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2024-08-26",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "meta/esm2-650m": {
-      "displayName": "esm2-650m",
-      "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-03-10",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "meta/esmfold": {
-      "displayName": "esmfold",
-      "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-06-12",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "meta/llama-3.1-70b-instruct": {
-      "displayName": "Llama 3.1 70b Instruct",
-      "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2024-07-16",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "meta/llama-3.1-8b-instruct": {
-      "displayName": "Llama 3.1 8B Instruct",
-      "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
-      "contextWindow": 16000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2023-12",
-      "lastUpdated": "2025-01-01",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "meta/llama-3.2-11b-vision-instruct": {
-      "displayName": "Llama 3.2 11b Vision Instruct",
-      "description": "Open Llama multimodal model for image understanding and text reasoning",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2023-12",
-      "structuredOutput": true,
-      "lastUpdated": "2024-09-18",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "meta/llama-3.2-1b-instruct": {
-      "displayName": "Llama 3.2 1b Instruct",
-      "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2023-12",
-      "structuredOutput": true,
-      "lastUpdated": "2024-09-18",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "meta/llama-3.2-3b-instruct": {
-      "displayName": "Llama 3.2 3B Instruct",
-      "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
-      "contextWindow": 32768,
-      "maxOutputTokens": 32000,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2024-09-18",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "meta/llama-3.2-90b-vision-instruct": {
-      "displayName": "Llama-3.2-90B-Vision-Instruct",
-      "description": "Open Llama multimodal model for image understanding and text reasoning",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2023-12",
-      "lastUpdated": "2024-09-25",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "meta/llama-3.3-70b-instruct": {
-      "displayName": "Llama 3.3 70b Instruct",
-      "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2024-11-26",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "meta/llama-4-maverick-17b-128e-instruct": {
-      "displayName": "Llama 4 Maverick 17b 128e Instruct",
-      "description": "Open multimodal Llama model for strong reasoning and fast responses",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-02",
-      "structuredOutput": true,
-      "lastUpdated": "2025-04-01",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "meta/llama-guard-4-12b": {
-      "displayName": "Llama Guard 4 12B",
-      "description": "Safety model for policy screening, moderation, and risk-aware routing workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-04-30",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "microsoft/phi-4-mini-instruct": {
-      "displayName": "Phi-4-Mini",
-      "description": "Efficient model for low-latency assistance, extraction, and routine automation",
-      "contextWindow": 131072,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-12",
-      "lastUpdated": "2025-09-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "microsoft/phi-4-multimodal-instruct": {
-      "displayName": "Phi 4 Multimodal",
-      "description": "General-purpose chat model for instruction following, writing, and analysis",
-      "contextWindow": 128000,
-      "maxInputTokens": 128000,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": false,
-      "lastUpdated": "2025-07-26",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "minimaxai/minimax-m2.7": {
-      "displayName": "MiniMax-M2.7",
-      "description": "MiniMax model for chat, coding, office work, and agentic tasks",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-04-11",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "minimaxai/minimax-m3": {
-      "displayName": "MiniMax-M3",
-      "description": "MiniMax multimodal model for long-context coding, perception, and agent planning",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-06-01",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "mistralai/magistral-small-2506": {
-      "displayName": "Magistral Small 2506",
-      "description": "Mistral reasoning model for transparent analysis, math, and complex decisions",
-      "contextWindow": 32768,
-      "maxInputTokens": 32768,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": false,
-      "lastUpdated": "2025-09-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "mistralai/ministral-14b-instruct-2512": {
-      "displayName": "Ministral 3 14B Instruct 2512",
-      "description": "Compact Mistral VLM for chat and instruction-based workloads",
-      "contextWindow": 262144,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-12-02",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "mistralai/mistral-7b-instruct-v0.3": {
-      "displayName": "Mistral-7B-Instruct-v0.3",
-      "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
-      "contextWindow": 65536,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-04-01",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "mistralai/mistral-large-3-675b-instruct-2512": {
-      "displayName": "Mistral Large 3 675B Instruct 2512",
-      "description": "Flagship Mistral model for advanced reasoning, coding, and multilingual work",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "structuredOutput": true,
-      "lastUpdated": "2025-12-02",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "mistralai/mistral-medium-3-instruct": {
-      "displayName": "Mistral Medium 3",
-      "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
-      "contextWindow": 131072,
-      "maxInputTokens": 131072,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": false,
-      "lastUpdated": "2025-09-25",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "mistralai/mistral-medium-3.5-128b": {
-      "displayName": "Mistral Medium 3.5",
-      "description": "Balanced Mistral model for enterprise assistants, multilingual work, and tools",
-      "contextWindow": 262144,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-29",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "mistralai/mistral-nemotron": {
-      "displayName": "mistral-nemotron",
-      "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-06-12",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "mistralai/mistral-small-4-119b-2603": {
-      "displayName": "mistral-small-4-119b-2603",
-      "description": "Efficient Mistral model for fast chat, extraction, and production assistants",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-03-16",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "mistralai/mixtral-8x22b-instruct": {
-      "displayName": "Mistral: Mixtral 8x22B Instruct",
-      "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
-      "contextWindow": 65536,
-      "maxOutputTokens": 13108,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2024-04-17",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "mistralai/mixtral-8x7b-instruct": {
-      "displayName": "Mistral: Mixtral 8x7B Instruct",
-      "description": "Mistral model for multilingual chat, reasoning, and tool-assisted workflows",
-      "contextWindow": 32768,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-03-15",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "moonshotai/kimi-k2-instruct-0905": {
-      "displayName": "Kimi K2 0905",
-      "description": "Kimi model for long-context chat, coding, and agentic reasoning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-10",
-      "lastUpdated": "2025-09-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "moonshotai/kimi-k2.6": {
-      "displayName": "Kimi K2.6",
-      "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "minimal",
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "knowledgeCutoff": "2025-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-21",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/bevformer": {
-      "displayName": "bevformer",
-      "description": "Nemotron multimodal model for visual reasoning and agentic AI workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-07-20",
-      "modalities": {
-        "input": [
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/cosmos-reason2-8b": {
-      "displayName": "Cosmos Reason2 8B",
-      "description": "Vision language model for physical-world understanding with structured reasoning on video and images",
-      "contextWindow": 131072,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-12-01",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/gliner-pii": {
-      "displayName": "gliner-pii",
-      "description": "Nemotron model for efficient reasoning, coding, and specialized AI agents",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-03-03",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/llama-3_2-nemoretriever-300m-embed-v1": {
-      "displayName": "llama-3_2-nemoretriever-300m-embed-v1",
-      "description": "Embedding model for semantic search, retrieval, clustering, and ranking pipelines",
-      "contextWindow": 32768,
-      "maxOutputTokens": 2048,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-07-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/llama-3.1-nemotron-70b-instruct": {
-      "displayName": "Llama 3.1 Nemotron 70B Instruct",
-      "description": "Nemotron model for efficient reasoning, coding, and specialized AI agents",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-04-15",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/llama-3.1-nemotron-nano-8b-v1": {
-      "displayName": "Llama 3.1 Nemotron Nano 8B v1",
-      "description": "Nemotron model for efficient reasoning, coding, and specialized AI agents",
-      "contextWindow": 131072,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-03-18",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/llama-3.1-nemotron-nano-vl-8b-v1": {
-      "displayName": "Llama 3.1 Nemotron Nano VL 8B v1",
-      "description": "Nemotron multimodal model for visual reasoning and agentic AI workflows",
-      "contextWindow": 32768,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-04-10",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/llama-3.1-nemotron-safety-guard-8b-v3": {
-      "displayName": "llama-3.1-nemotron-safety-guard-8b-v3",
-      "description": "Safety model for policy screening, moderation, and risk-aware routing workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-10-28",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/llama-3.1-nemotron-ultra-253b-v1": {
-      "displayName": "Llama 3.1 Nemotron Ultra 253B",
-      "description": "Flagship Nemotron model for high-throughput reasoning and complex agents",
-      "contextWindow": 128000,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-04-07",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/llama-3.3-nemotron-super-49b-v1": {
-      "displayName": "Llama 3.3 Nemotron Super 49B v1",
-      "description": "Nemotron model for efficient reasoning, coding, and specialized AI agents",
-      "contextWindow": 131072,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-04-07",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/llama-3.3-nemotron-super-49b-v1.5": {
-      "displayName": "Llama 3.3 Nemotron Super 49B v1.5",
-      "description": "Nemotron model for efficient reasoning, coding, and specialized AI agents",
-      "contextWindow": 131072,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-07-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/llama-nemotron-embed-vl-1b-v2": {
-      "displayName": "llama-nemotron-embed-vl-1b-v2",
-      "description": "Embedding model for semantic search, retrieval, clustering, and ranking pipelines",
-      "contextWindow": 32768,
-      "maxOutputTokens": 2048,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-02-10",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/llama-nemotron-rerank-vl-1b-v2": {
-      "displayName": "llama-nemotron-rerank-vl-1b-v2",
-      "description": "Reranking model for improving retrieval quality in search and recommendation systems",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-03-31",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/nemotron-3-content-safety": {
-      "displayName": "nemotron-3-content-safety",
-      "description": "Safety model for policy screening, moderation, and risk-aware routing workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-04-16",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/nemotron-3-nano-30b-a3b": {
-      "displayName": "nemotron-3-nano-30b-a3b",
-      "description": "Small Nemotron 3 MoE for efficient coding, math, and long-context agents",
-      "contextWindow": 131072,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-09",
-      "lastUpdated": "2024-12",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning": {
-      "displayName": "Nemotron 3 Nano Omni",
-      "description": "Open Nemotron omni model combining reasoning with text, vision, and audio",
-      "contextWindow": 256000,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-28",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/nemotron-3-super-120b-a12b": {
-      "displayName": "Nemotron 3 Super",
-      "description": "Nemotron middle tier for collaborative agents and high-volume reasoning workloads",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-04",
-      "lastUpdated": "2026-03-11",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.2,
-        "outputPerMillionTokens": 0.8
-      }
-    },
-    "nvidia/nemotron-3-ultra-550b-a55b": {
-      "displayName": "Nemotron 3 Ultra 550B A55B",
-      "description": "Largest Nemotron 3 model for maximum open-weight reasoning and agent accuracy",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-04",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.5,
-        "outputPerMillionTokens": 2.5,
-        "cacheReadPerMillionTokens": 0.15
-      }
-    },
-    "nvidia/nemotron-content-safety-reasoning-4b": {
-      "displayName": "nemotron-content-safety-reasoning-4b",
-      "description": "Safety model for policy screening, moderation, and risk-aware routing workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": false,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-01-22",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/nemotron-mini-4b-instruct": {
-      "displayName": "nemotron-mini-4b-instruct",
-      "description": "Compact Nemotron model for efficient reasoning and deployable AI agents",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2024-08-26",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/nemotron-nano-12b-v2-vl": {
-      "displayName": "Nemotron Nano 12B v2 VL",
-      "description": "Nemotron multimodal model for visual reasoning and agentic AI workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-10-28",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/nemotron-voicechat": {
-      "displayName": "nemotron-voicechat",
-      "description": "Nemotron multimodal model for visual reasoning and agentic AI workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-03-16",
-      "modalities": {
-        "input": [
-          "text",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/nv-embed-v1": {
-      "displayName": "nv-embed-v1",
-      "description": "Embedding model for semantic search, retrieval, clustering, and ranking pipelines",
-      "contextWindow": 32768,
-      "maxOutputTokens": 2048,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-07-22",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/nv-embedcode-7b-v1": {
-      "displayName": "nv-embedcode-7b-v1",
-      "description": "Nemotron model for efficient reasoning, coding, and specialized AI agents",
-      "contextWindow": 32768,
-      "maxOutputTokens": 2048,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-05-29",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/nvidia-nemotron-nano-9b-v2": {
-      "displayName": "nvidia-nemotron-nano-9b-v2",
-      "description": "Compact Nemotron model for efficient reasoning and deployable AI agents",
-      "contextWindow": 131072,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-09",
-      "lastUpdated": "2025-08-18",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/rerank-qa-mistral-4b": {
-      "displayName": "rerank-qa-mistral-4b",
-      "description": "Reranking model for improving retrieval quality in search and recommendation systems",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-01-17",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/riva-translate-4b-instruct-v1.1": {
-      "displayName": "riva-translate-4b-instruct-v1_1",
-      "description": "Translation model for multilingual conversion, localization, and cross-language workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-12-12",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/sparsedrive": {
-      "displayName": "sparsedrive",
-      "description": "Nemotron multimodal model for visual reasoning and agentic AI workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-07-20",
-      "modalities": {
-        "input": [
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/streampetr": {
-      "displayName": "streampetr",
-      "description": "Nemotron multimodal model for visual reasoning and agentic AI workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-11-13",
-      "modalities": {
-        "input": [
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/studiovoice": {
-      "displayName": "studiovoice",
-      "description": "Nemotron model for efficient reasoning, coding, and specialized AI agents",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-06-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "nvidia/usdcode": {
-      "displayName": "usdcode",
-      "description": "Nemotron model for efficient reasoning, coding, and specialized AI agents",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-01-01",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "openai/gpt-oss-120b": {
-      "displayName": "GPT-OSS-120B",
-      "description": "Open GPT reasoning model for self-hosted agents and controllable deployments",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "knowledgeCutoff": "2025-08",
-      "structuredOutput": true,
-      "lastUpdated": "2025-08-14",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "openai/gpt-oss-20b": {
-      "displayName": "GPT OSS 20B",
-      "description": "Open-weight GPT model for self-hosted reasoning and instruction-following workloads",
-      "contextWindow": 131072,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2025-08-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "poolside/laguna-xs-2.1": {
-      "displayName": "Laguna XS 2.1",
-      "description": "Agentic coding model from Poolside in the XS size class for local deployment",
-      "contextWindow": 262144,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": false,
-      "lastUpdated": "2026-07-02",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "qwen/qwen2.5-coder-32b-instruct": {
-      "displayName": "Qwen2.5 Coder 32b Instruct",
-      "description": "Qwen coding model for software agents, repository edits, and code reasoning",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2024-11-06",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "qwen/qwen3-coder-480b-a35b-instruct": {
-      "displayName": "Qwen3 Coder 480B A35B Instruct",
-      "description": "Qwen coding model for software agents, repository edits, and code reasoning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 66536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-07-23",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "qwen/qwen3-next-80b-a3b-instruct": {
-      "displayName": "Qwen3-Next-80B-A3B-Instruct",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 262144,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-12",
-      "lastUpdated": "2025-09-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "qwen/qwen3.5-122b-a10b": {
-      "displayName": "Qwen3.5 122B-A10B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-23",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "qwen/qwen3.5-397b-a17b": {
-      "displayName": "Qwen3.5-397B-A17B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2026-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-16",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "sarvamai/sarvam-m": {
-      "displayName": "sarvam-m",
-      "description": "Efficient Indian-language reasoning model for chat, coding, and multilingual work",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-07-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "stepfun-ai/step-3.5-flash": {
-      "displayName": "Step 3.5 Flash",
-      "description": "StepFun flash model for efficient multimodal reasoning, coding, and tool use",
-      "contextWindow": 256000,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "lastUpdated": "2026-02-02",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "stepfun-ai/step-3.7-flash": {
-      "displayName": "Step 3.7 Flash",
-      "description": "StepFun flash model for efficient multimodal reasoning, coding, and tool use",
-      "contextWindow": 256000,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "minimal",
-        "low",
-        "medium",
-        "high",
-        "xhigh",
-        "max"
-      ],
-      "lastUpdated": "2026-05-28",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "thinkingmachines/inkling": {
-      "displayName": "Inkling",
-      "description": "Multimodal MoE reasoning model (975B total, 41B active) for text, image, and audio",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-07-15",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "upstage/solar-10.7b-instruct": {
-      "displayName": "solar-10.7b-instruct",
-      "description": "Open-weight instruction model for adaptable chat and self-hosted production workloads",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-04-10",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "z-ai/glm-5.2": {
-      "displayName": "GLM-5.2",
-      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    }
-  },
-  "deepinfra": {
-    "deepseek-ai/DeepSeek-R1-0528": {
-      "displayName": "DeepSeek-R1-0528",
-      "description": "DeepSeek reasoning model for multi-step analysis, math, coding, and tools",
-      "contextWindow": 163840,
-      "maxOutputTokens": 64000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-07",
-      "structuredOutput": true,
-      "lastUpdated": "2025-05-28",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.5,
-        "outputPerMillionTokens": 2.15,
-        "cacheReadPerMillionTokens": 0.35
-      }
-    },
-    "deepseek-ai/DeepSeek-V3": {
-      "displayName": "DeepSeek-V3",
-      "description": "Open DeepSeek MoE chat model for coding, math, and general reasoning",
-      "contextWindow": 163840,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2024-12-26",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.32,
-        "outputPerMillionTokens": 0.89
-      }
-    },
-    "deepseek-ai/DeepSeek-V3.1": {
-      "displayName": "DeepSeek-V3.1",
-      "description": "Hybrid-reasoning DeepSeek model with thinking and non-thinking modes",
-      "contextWindow": 163840,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-08-21",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.25,
-        "outputPerMillionTokens": 0.95,
-        "cacheReadPerMillionTokens": 0.13
-      }
-    },
-    "deepseek-ai/DeepSeek-V3.2": {
-      "displayName": "DeepSeek-V3.2",
-      "description": "DeepSeek chat model for instruction following, coding, and analysis",
-      "contextWindow": 163840,
-      "maxOutputTokens": 64000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-12",
-      "structuredOutput": true,
-      "lastUpdated": "2025-12-02",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.26,
-        "outputPerMillionTokens": 0.38,
-        "cacheReadPerMillionTokens": 0.13
-      }
-    },
-    "deepseek-ai/DeepSeek-V4-Flash": {
-      "displayName": "DeepSeek V4 Flash",
-      "description": "Fast DeepSeek V4 lane for economical reasoning, coding, and long-context work",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high",
-        "xhigh"
-      ],
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.09,
-        "outputPerMillionTokens": 0.18,
-        "cacheReadPerMillionTokens": 0.018
-      }
-    },
-    "deepseek-ai/DeepSeek-V4-Flash-0731": {
-      "displayName": "DeepSeek V4 Flash 0731",
-      "description": "Official DeepSeek V4 Flash release with enhanced agentic capabilities and integrated DSpark speculative decoding",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 384000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-31",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.09,
-        "outputPerMillionTokens": 0.18,
-        "cacheReadPerMillionTokens": 0.018
-      }
-    },
-    "deepseek-ai/DeepSeek-V4-Pro": {
-      "displayName": "DeepSeek V4 Pro",
-      "description": "Open MoE flagship with million-token context for coding and long agent runs",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high",
-        "xhigh"
-      ],
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.3,
-        "outputPerMillionTokens": 2.6,
-        "cacheReadPerMillionTokens": 0.1
-      }
-    },
-    "google/gemma-4-26B-A4B-it": {
-      "displayName": "Gemma 4 26B A4B IT",
-      "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 262144,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-02",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.07,
-        "outputPerMillionTokens": 0.34
-      }
-    },
-    "google/gemma-4-31B-it": {
-      "displayName": "Gemma 4 31B IT",
-      "description": "Largest Gemma 4 instruction model for open, self-hosted chat and reasoning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-02",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.13,
-        "outputPerMillionTokens": 0.38
-      }
-    },
-    "google/gemma-4-E4B-it": {
-      "displayName": "Gemma 4 E4B IT",
-      "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 131072,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-02",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.02,
-        "outputPerMillionTokens": 0.1
-      }
-    },
-    "meta-llama/Llama-3.3-70B-Instruct-Turbo": {
-      "displayName": "Llama 3.3 70B Turbo",
-      "description": "Compact Llama instruction model for fast chat and local deployment",
-      "contextWindow": 131072,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2024-12-06",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.32
-      }
-    },
-    "meta-llama/Llama-4-Maverick-17B-128E-Instruct-FP8": {
-      "displayName": "Llama 4 Maverick 17B FP8",
-      "description": "Open multimodal Llama model for strong reasoning and fast responses",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-04-05",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.2,
-        "outputPerMillionTokens": 0.8
-      }
-    },
-    "meta-llama/Llama-4-Scout-17B-16E-Instruct": {
-      "displayName": "Llama 4 Scout 17B",
-      "description": "Open multimodal Llama model for long-context analysis and efficient agents",
-      "contextWindow": 327680,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-04-05",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.3
-      }
-    },
-    "MiniMaxAI/MiniMax-M2.5": {
-      "displayName": "MiniMax M2.5",
-      "description": "MiniMax model for chat, coding, office work, and agentic tasks",
-      "contextWindow": 196608,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-06",
-      "lastUpdated": "2026-02-12",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 1.15,
-        "cacheReadPerMillionTokens": 0.03
-      }
-    },
-    "MiniMaxAI/MiniMax-M2.7": {
-      "displayName": "MiniMax-M2.7",
-      "description": "Open MiniMax flagship for coding agents, office automation, and complex environments",
-      "contextWindow": 196608,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-03-18",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.25,
-        "outputPerMillionTokens": 1,
-        "cacheReadPerMillionTokens": 0.05
-      }
-    },
-    "MiniMaxAI/MiniMax-M3": {
-      "displayName": "MiniMax-M3",
-      "description": "MiniMax multimodal model for long-context coding, perception, and agent planning",
-      "contextWindow": 524288,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-01",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.28,
-        "outputPerMillionTokens": 1.1,
-        "cacheReadPerMillionTokens": 0.056
-      }
-    },
-    "moonshotai/Kimi-K2.5": {
-      "displayName": "Kimi K2.5",
-      "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-01-27",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.45,
-        "outputPerMillionTokens": 2.25,
-        "cacheReadPerMillionTokens": 0.07
-      }
-    },
-    "moonshotai/Kimi-K2.6": {
-      "displayName": "Kimi K2.6",
-      "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-04",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-21",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.75,
-        "outputPerMillionTokens": 3.5,
-        "cacheReadPerMillionTokens": 0.15
-      }
-    },
-    "moonshotai/Kimi-K2.7-Code": {
-      "displayName": "Kimi K2.7 Code",
-      "description": "Coding-focused Kimi model, stronger on long-horizon repo work with less overthinking",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-12",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.68,
-        "outputPerMillionTokens": 3.4,
-        "cacheReadPerMillionTokens": 0.136
-      }
-    },
-    "moonshotai/Kimi-K3": {
-      "displayName": "Kimi K3",
-      "description": "Multimodal Kimi model with 1M context and toggleable max-effort thinking for long-horizon agent work",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "high",
-        "max"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-16",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2.7,
-        "outputPerMillionTokens": 13.5,
-        "cacheReadPerMillionTokens": 0.27
-      }
-    },
-    "nvidia/Llama-3.3-Nemotron-Super-49B-v1.5": {
-      "displayName": "Llama 3.3 Nemotron Super 49B v1.5",
-      "description": "Nemotron model for efficient reasoning, coding, and specialized AI agents",
-      "contextWindow": 131072,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-07-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 0.4
-      }
-    },
-    "nvidia/Nemotron-3-Nano-30B-A3B": {
-      "displayName": "Nemotron 3 Nano 30B A3B",
-      "description": "Small Nemotron 3 MoE for efficient coding, math, and long-context agents",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-12-15",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.05,
-        "outputPerMillionTokens": 0.2,
-        "cacheReadPerMillionTokens": 0.025
-      }
-    },
-    "nvidia/Nemotron-3-Nano-Omni-30B-A3B-Reasoning": {
-      "displayName": "Nemotron 3 Nano Omni 30B A3B Reasoning",
-      "description": "Open Nemotron omni model combining reasoning with text, vision, and audio",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-28",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.2,
-        "outputPerMillionTokens": 0.8
-      }
-    },
-    "openai/gpt-oss-120b": {
-      "displayName": "GPT OSS 120B",
-      "description": "Open-weight GPT model for self-hosted reasoning and instruction-following workloads",
-      "contextWindow": 131072,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2025-08-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.037,
-        "outputPerMillionTokens": 0.17
-      }
-    },
-    "openai/gpt-oss-20b": {
-      "displayName": "GPT OSS 20B",
-      "description": "Open-weight GPT model for self-hosted reasoning and instruction-following workloads",
-      "contextWindow": 131072,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2025-08-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.03,
-        "outputPerMillionTokens": 0.14
-      }
-    },
-    "Qwen/Qwen3-235B-A22B-Instruct-2507": {
-      "displayName": "Qwen3 235B-A22B Instruct 2507",
-      "description": "Updated large open Qwen3 MoE instruct model for multilingual chat, coding, and tool use",
-      "contextWindow": 262144,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-07-21",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.09,
-        "outputPerMillionTokens": 0.55
-      }
-    },
-    "Qwen/Qwen3-32B": {
-      "displayName": "Qwen3 32B",
-      "description": "Dense open Qwen model for self-hosted chat, reasoning, and coding",
-      "contextWindow": 40960,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "structuredOutput": true,
-      "lastUpdated": "2025-04",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.08,
-        "outputPerMillionTokens": 0.28
-      }
-    },
-    "Qwen/Qwen3-Coder-480B-A35B-Instruct-Turbo": {
-      "displayName": "Qwen3 Coder 480B A35B Instruct Turbo",
-      "description": "Qwen coding model for software agents, repository edits, and code reasoning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 66536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "structuredOutput": true,
-      "lastUpdated": "2025-07-23",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1,
-        "cacheReadPerMillionTokens": 0.1
-      }
-    },
-    "Qwen/Qwen3-Max": {
-      "displayName": "Qwen3 Max",
-      "description": "Flagship Qwen3 model for coding agents, complex reasoning, and tool use",
-      "contextWindow": 256000,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "structuredOutput": true,
-      "lastUpdated": "2025-09-23",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.2,
-        "outputPerMillionTokens": 6,
-        "cacheReadPerMillionTokens": 0.24
-      }
-    },
-    "Qwen/Qwen3-Next-80B-A3B-Instruct": {
-      "displayName": "Qwen3-Next 80B-A3B Instruct",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 262144,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "structuredOutput": true,
-      "lastUpdated": "2025-09",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.09,
-        "outputPerMillionTokens": 1.1
-      }
-    },
-    "Qwen/Qwen3.5-122B-A10B": {
-      "displayName": "Qwen3.5 122B-A10B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-23",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.29,
-        "outputPerMillionTokens": 2.4
-      }
-    },
-    "Qwen/Qwen3.5-27B": {
-      "displayName": "Qwen3.5 27B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-23",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.26,
-        "outputPerMillionTokens": 2.6
-      }
-    },
-    "Qwen/Qwen3.5-35B-A3B": {
-      "displayName": "Qwen 3.5 35B A3B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 81920,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-20",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 1,
-        "cacheReadPerMillionTokens": 0.05
-      }
-    },
-    "Qwen/Qwen3.5-397B-A17B": {
-      "displayName": "Qwen 3.5 397B A17B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 81920,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-20",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.45,
-        "outputPerMillionTokens": 3,
-        "cacheReadPerMillionTokens": 0.22
-      }
-    },
-    "Qwen/Qwen3.5-9B": {
-      "displayName": "Qwen3.5 9B",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-23",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.15
-      }
-    },
-    "Qwen/Qwen3.6-27B": {
-      "displayName": "Qwen3.6 27B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-22",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.32,
-        "outputPerMillionTokens": 3.2
-      }
-    },
-    "Qwen/Qwen3.6-35B-A3B": {
-      "displayName": "Qwen3.6 35B A3B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 81920,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-01",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.95
-      }
-    },
-    "Qwen/Qwen3.7-Max": {
-      "displayName": "Qwen3.7 Max",
-      "description": "Qwen frontier model tuned for agent frameworks, coding assistants, and long tasks",
-      "contextWindow": 256000,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-05-21",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2.5,
-        "outputPerMillionTokens": 7.5,
-        "cacheReadPerMillionTokens": 0.5
-      }
-    },
-    "Qwen/Qwen3.8-Max": {
-      "displayName": "Qwen3.8 Max",
-      "description": "2.4-trillion-parameter MoE flagship for coding, professional work, multimodal understanding, and long-horizon agentic workflows",
-      "contextWindow": 256000,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-08-03",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.65,
-        "outputPerMillionTokens": 4.951,
-        "cacheReadPerMillionTokens": 0.206
-      }
-    },
-    "stepfun-ai/Step-3.7-Flash": {
-      "displayName": "Step 3.7 Flash",
-      "description": "Newer StepFun flash model for faster agents, coding, and multimodal prompts",
-      "contextWindow": 262144,
-      "maxOutputTokens": 256000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2026-03-01",
-      "lastUpdated": "2026-05-29",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.2,
-        "outputPerMillionTokens": 1.15,
-        "cacheReadPerMillionTokens": 0.04
-      }
-    },
-    "tencent/Hy3": {
-      "displayName": "Hy3",
-      "description": "Tencent Hy reasoning model for coding, instruction following, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 64000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-06",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.58,
-        "cacheReadPerMillionTokens": 0.035
-      }
-    },
-    "thinkingmachines/Inkling": {
-      "displayName": "Inkling",
-      "description": "Multimodal MoE reasoning model (975B total, 41B active) for text, image, and audio",
-      "contextWindow": 524288,
-      "maxOutputTokens": 1048576,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-07-15",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.95,
-        "outputPerMillionTokens": 4.05,
-        "cacheReadPerMillionTokens": 0.16
-      }
-    },
-    "thinkingmachines/Inkling-Small": {
-      "displayName": "Inkling Small",
-      "description": "Multimodal MoE reasoning model (276B total, 12B active) for text, image, and audio",
-      "contextWindow": 524288,
-      "maxOutputTokens": 1048576,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-07-30",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.45,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.1
-      }
-    },
-    "XiaomiMiMo/MiMo-V2.5": {
-      "displayName": "MiMo-V2.5",
-      "description": "Open MiMo model for multimodal coding agents and long-context automation",
-      "contextWindow": 262144,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-12",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-22",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "audio",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 2,
-        "cacheReadPerMillionTokens": 0.08
-      }
-    },
-    "XiaomiMiMo/MiMo-V2.5-Pro": {
-      "displayName": "MiMo-V2.5-Pro",
-      "description": "Stronger MiMo Pro tier for multimodal reasoning and coding-agent execution",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": true
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-12",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-22",
-      "modalities": {
-        "input": [
-          "text",
-          "audio"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 3,
-        "cacheReadPerMillionTokens": 0.2
-      }
-    },
-    "zai-org/GLM-4.6": {
-      "displayName": "GLM-4.6",
-      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 202752,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "structuredOutput": true,
-      "lastUpdated": "2025-09-30",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.5,
-        "outputPerMillionTokens": 2,
-        "cacheReadPerMillionTokens": 0.1
-      }
-    },
-    "zai-org/GLM-4.7": {
-      "displayName": "GLM-4.7",
-      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 202752,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "structuredOutput": true,
-      "lastUpdated": "2025-12-22",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 1.75,
-        "cacheReadPerMillionTokens": 0.08
-      }
-    },
-    "zai-org/GLM-4.7-Flash": {
-      "displayName": "GLM-4.7-Flash",
-      "description": "Efficient GLM model for fast reasoning, coding, and agent workflows",
-      "contextWindow": 202752,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "structuredOutput": true,
-      "lastUpdated": "2026-01-19",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.06,
-        "outputPerMillionTokens": 0.4,
-        "cacheReadPerMillionTokens": 0.01
-      }
-    },
-    "zai-org/GLM-5": {
-      "displayName": "GLM-5",
-      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 202752,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-12",
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-12",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.08,
-        "cacheReadPerMillionTokens": 0.12
-      }
-    },
-    "zai-org/GLM-5.1": {
-      "displayName": "GLM-5.1",
-      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 202752,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-07",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.05,
-        "outputPerMillionTokens": 3.5,
-        "cacheReadPerMillionTokens": 0.205
-      }
-    },
-    "zai-org/GLM-5.2": {
-      "displayName": "GLM-5.2",
-      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high",
-        "xhigh"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.75,
-        "outputPerMillionTokens": 2.4,
-        "cacheReadPerMillionTokens": 0.14
-      }
-    }
-  },
-  "siliconflow": {
-    "baidu/ERNIE-4.5-300B-A47B": {
-      "displayName": "baidu/ERNIE-4.5-300B-A47B",
-      "description": "Tool-capable chat model for instruction following and agentic application workflows",
-      "contextWindow": 131000,
-      "maxOutputTokens": 131000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.28,
-        "outputPerMillionTokens": 1.1
-      }
-    },
-    "ByteDance-Seed/Seed-OSS-36B-Instruct": {
-      "displayName": "ByteDance-Seed/Seed-OSS-36B-Instruct",
-      "description": "Tool-capable chat model for instruction following and agentic application workflows",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.21,
-        "outputPerMillionTokens": 0.57
-      }
-    },
-    "deepseek-ai/DeepSeek-OCR": {
-      "displayName": "deepseek-ai/DeepSeek-OCR",
-      "description": "OCR model for extracting structured text from documents and screenshots",
-      "contextWindow": 8192,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-10-20",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "deepseek-ai/DeepSeek-R1": {
-      "displayName": "deepseek-ai/DeepSeek-R1",
-      "description": "DeepSeek reasoning model for multi-step analysis, math, coding, and tools",
-      "contextWindow": 164000,
-      "maxOutputTokens": 164000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.5,
-        "outputPerMillionTokens": 2.18
-      }
-    },
-    "deepseek-ai/DeepSeek-V3": {
-      "displayName": "deepseek-ai/DeepSeek-V3",
-      "description": "DeepSeek chat model for instruction following, coding, and analysis",
-      "contextWindow": 164000,
-      "maxOutputTokens": 164000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.25,
-        "outputPerMillionTokens": 1
-      }
-    },
-    "deepseek-ai/DeepSeek-V3.1-Terminus": {
-      "displayName": "deepseek-ai/DeepSeek-V3.1-Terminus",
-      "description": "DeepSeek chat model for instruction following, coding, and analysis",
-      "contextWindow": 164000,
-      "maxOutputTokens": 164000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.27,
-        "outputPerMillionTokens": 1
-      }
-    },
-    "deepseek-ai/DeepSeek-V3.2": {
-      "displayName": "deepseek-ai/DeepSeek-V3.2",
-      "description": "DeepSeek chat model for instruction following, coding, and analysis",
-      "contextWindow": 164000,
-      "maxOutputTokens": 164000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-12-03",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.27,
-        "outputPerMillionTokens": 0.42
-      }
-    },
-    "deepseek-ai/DeepSeek-V4-Flash": {
-      "displayName": "DeepSeek V4 Flash",
-      "description": "Fast DeepSeek V4 lane for economical reasoning, coding, and long-context work",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 384000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.28,
-        "cacheReadPerMillionTokens": 0.003
-      }
-    },
-    "deepseek-ai/DeepSeek-V4-Pro": {
-      "displayName": "deepseek-ai/DeepSeek-V4-Pro",
-      "description": "Flagship DeepSeek model for coding, reasoning, and agentic work",
-      "contextWindow": 1049000,
-      "maxOutputTokens": 393000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": false,
-      "lastUpdated": "2026-04-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.74,
-        "outputPerMillionTokens": 3.48,
-        "cacheReadPerMillionTokens": 0.145
-      }
-    },
-    "inclusionAI/Ling-flash-2.0": {
-      "displayName": "inclusionAI/Ling-flash-2.0",
-      "description": "Efficient model for low-latency assistance, extraction, and routine automation",
-      "contextWindow": 131000,
-      "maxOutputTokens": 131000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.57
-      }
-    },
-    "PaddlePaddle/PaddleOCR-VL-1.5": {
-      "displayName": "PaddlePaddle/PaddleOCR-VL-1.5",
-      "description": "Multimodal model for analyzing text, images, documents, and rich media",
-      "contextWindow": 16384,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-01-29",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "Pro/deepseek-ai/DeepSeek-R1": {
-      "displayName": "Pro/deepseek-ai/DeepSeek-R1",
-      "description": "DeepSeek reasoning model for multi-step analysis, math, coding, and tools",
-      "contextWindow": 164000,
-      "maxOutputTokens": 164000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.5,
-        "outputPerMillionTokens": 2.18
-      }
-    },
-    "Pro/deepseek-ai/DeepSeek-V3": {
-      "displayName": "Pro/deepseek-ai/DeepSeek-V3",
-      "description": "Flagship DeepSeek model for coding, reasoning, and agentic work",
-      "contextWindow": 164000,
-      "maxOutputTokens": 164000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.25,
-        "outputPerMillionTokens": 1
-      }
-    },
-    "Pro/deepseek-ai/DeepSeek-V3.1-Terminus": {
-      "displayName": "Pro/deepseek-ai/DeepSeek-V3.1-Terminus",
-      "description": "Flagship DeepSeek model for coding, reasoning, and agentic work",
-      "contextWindow": 164000,
-      "maxOutputTokens": 164000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.27,
-        "outputPerMillionTokens": 1
-      }
-    },
-    "Pro/deepseek-ai/DeepSeek-V3.2": {
-      "displayName": "Pro/deepseek-ai/DeepSeek-V3.2",
-      "description": "Flagship DeepSeek model for coding, reasoning, and agentic work",
-      "contextWindow": 164000,
-      "maxOutputTokens": 164000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-12-03",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.27,
-        "outputPerMillionTokens": 0.42
-      }
-    },
-    "Pro/MiniMaxAI/MiniMax-M2.5": {
-      "displayName": "Pro/MiniMaxAI/MiniMax-M2.5",
-      "description": "Frontier MiniMax model for engineering, office tasks, and agentic reasoning",
-      "contextWindow": 192000,
-      "maxOutputTokens": 131000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.22
-      }
-    },
-    "Pro/moonshotai/Kimi-K2.5": {
-      "displayName": "Pro/moonshotai/Kimi-K2.5",
-      "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-01-27",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.45,
-        "outputPerMillionTokens": 2.25,
-        "cacheReadPerMillionTokens": 0.07
-      }
-    },
-    "Pro/moonshotai/Kimi-K2.6": {
-      "displayName": "Pro/moonshotai/Kimi-K2.6",
-      "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-21",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.95,
-        "outputPerMillionTokens": 4,
-        "cacheReadPerMillionTokens": 0.16
-      }
-    },
-    "Pro/zai-org/GLM-5": {
-      "displayName": "Pro/zai-org/GLM-5",
-      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 205000,
-      "maxOutputTokens": 205000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-12",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 3.2
-      }
-    },
-    "Pro/zai-org/GLM-5.1": {
-      "displayName": "Pro/zai-org/GLM-5.1",
-      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 205000,
-      "maxOutputTokens": 205000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-08",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.4,
-        "outputPerMillionTokens": 4.4,
-        "cacheReadPerMillionTokens": 0.26,
-        "cacheWritePerMillionTokens": 0
-      }
-    },
-    "Qwen/Qwen2.5-72B-Instruct": {
-      "displayName": "Qwen/Qwen2.5-72B-Instruct",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 33000,
-      "maxOutputTokens": 4000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.59,
-        "outputPerMillionTokens": 0.59
-      }
-    },
-    "Qwen/Qwen2.5-7B-Instruct": {
-      "displayName": "Qwen/Qwen2.5-7B-Instruct",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 33000,
-      "maxOutputTokens": 4000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.05,
-        "outputPerMillionTokens": 0.05
-      }
-    },
-    "Qwen/Qwen3-14B": {
-      "displayName": "Qwen/Qwen3-14B",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 131000,
-      "maxOutputTokens": 131000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.07,
-        "outputPerMillionTokens": 0.28
-      }
-    },
-    "Qwen/Qwen3-235B-A22B-Thinking-2507": {
-      "displayName": "Qwen/Qwen3-235B-A22B-Thinking-2507",
-      "description": "Qwen reasoning model for deliberate problem solving, math, and coding",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.13,
-        "outputPerMillionTokens": 0.6
-      }
-    },
-    "Qwen/Qwen3-30B-A3B-Instruct-2507": {
-      "displayName": "Qwen/Qwen3-30B-A3B-Instruct-2507",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.09,
-        "outputPerMillionTokens": 0.3
-      }
-    },
-    "Qwen/Qwen3-32B": {
-      "displayName": "Qwen/Qwen3-32B",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 131000,
-      "maxOutputTokens": 131000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.57
-      }
-    },
-    "Qwen/Qwen3-8B": {
-      "displayName": "Qwen/Qwen3-8B",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 131000,
-      "maxOutputTokens": 131000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.06,
-        "outputPerMillionTokens": 0.06
-      }
-    },
-    "Qwen/Qwen3-Coder-30B-A3B-Instruct": {
-      "displayName": "Qwen/Qwen3-Coder-30B-A3B-Instruct",
-      "description": "Qwen coding model for software agents, repository edits, and code reasoning",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.07,
-        "outputPerMillionTokens": 0.28
-      }
-    },
-    "Qwen/Qwen3-Coder-480B-A35B-Instruct": {
-      "displayName": "Qwen/Qwen3-Coder-480B-A35B-Instruct",
-      "description": "Qwen coding model for software agents, repository edits, and code reasoning",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.25,
-        "outputPerMillionTokens": 1
-      }
-    },
-    "Qwen/Qwen3-VL-235B-A22B-Instruct": {
-      "displayName": "Qwen/Qwen3-VL-235B-A22B-Instruct",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.5
-      }
-    },
-    "Qwen/Qwen3-VL-235B-A22B-Thinking": {
-      "displayName": "Qwen/Qwen3-VL-235B-A22B-Thinking",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.45,
-        "outputPerMillionTokens": 3.5
-      }
-    },
-    "Qwen/Qwen3-VL-30B-A3B-Instruct": {
-      "displayName": "Qwen/Qwen3-VL-30B-A3B-Instruct",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.29,
-        "outputPerMillionTokens": 1
-      }
-    },
-    "Qwen/Qwen3-VL-30B-A3B-Thinking": {
-      "displayName": "Qwen/Qwen3-VL-30B-A3B-Thinking",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.29,
-        "outputPerMillionTokens": 1
-      }
-    },
-    "Qwen/Qwen3-VL-32B-Instruct": {
-      "displayName": "Qwen/Qwen3-VL-32B-Instruct",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.2,
-        "outputPerMillionTokens": 0.6
-      }
-    },
-    "Qwen/Qwen3-VL-32B-Thinking": {
-      "displayName": "Qwen/Qwen3-VL-32B-Thinking",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.2,
-        "outputPerMillionTokens": 1.5
-      }
-    },
-    "Qwen/Qwen3-VL-8B-Instruct": {
-      "displayName": "Qwen/Qwen3-VL-8B-Instruct",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.18,
-        "outputPerMillionTokens": 0.68
-      }
-    },
-    "Qwen/Qwen3.5-122B-A10B": {
-      "displayName": "Qwen/Qwen3.5-122B-A10B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2026-02-26",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.29,
-        "outputPerMillionTokens": 2.32
-      }
-    },
-    "Qwen/Qwen3.5-27B": {
-      "displayName": "Qwen/Qwen3.5-27B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2026-02-25",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.26,
-        "outputPerMillionTokens": 2.09
-      }
-    },
-    "Qwen/Qwen3.5-35B-A3B": {
-      "displayName": "Qwen/Qwen3.5-35B-A3B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2026-02-25",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.23,
-        "outputPerMillionTokens": 1.86
-      }
-    },
-    "Qwen/Qwen3.5-397B-A17B": {
-      "displayName": "Qwen/Qwen3.5-397B-A17B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2026-02-16",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.29,
-        "outputPerMillionTokens": 1.74
-      }
-    },
-    "Qwen/Qwen3.5-4B": {
-      "displayName": "Qwen/Qwen3.5-4B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2026-03-03",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "Qwen/Qwen3.5-9B": {
-      "displayName": "Qwen/Qwen3.5-9B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2026-03-03",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.22,
-        "outputPerMillionTokens": 1.74
-      }
-    },
-    "Qwen/Qwen3.6-35B-A3B": {
-      "displayName": "Qwen/Qwen3.6-35B-A3B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2026-04-17",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.23,
-        "outputPerMillionTokens": 1.86
-      }
-    },
-    "stepfun-ai/Step-3.5-Flash": {
-      "displayName": "stepfun-ai/Step-3.5-Flash",
-      "description": "StepFun flash model for efficient multimodal reasoning, coding, and tool use",
-      "contextWindow": 262000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-11",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.3
-      }
-    },
-    "tencent/Hunyuan-A13B-Instruct": {
-      "displayName": "tencent/Hunyuan-A13B-Instruct",
-      "description": "Tencent Hy reasoning model for coding, instruction following, and agent tasks",
-      "contextWindow": 131000,
-      "maxOutputTokens": 131000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.57
-      }
-    },
-    "zai-org/GLM-4.5-Air": {
-      "displayName": "zai-org/GLM-4.5-Air",
-      "description": "Efficient GLM model for fast reasoning, coding, and agent workflows",
-      "contextWindow": 131000,
-      "maxOutputTokens": 131000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-11-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.86
-      }
-    },
-    "zai-org/GLM-5.2": {
-      "displayName": "GLM-5.2",
-      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
-      "contextWindow": 1049000,
-      "maxOutputTokens": 262000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high",
-        "max"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.4,
-        "outputPerMillionTokens": 4.4,
-        "cacheReadPerMillionTokens": 0.26,
-        "cacheWritePerMillionTokens": 0
-      }
-    }
-  },
-  "zai": {
-    "glm-4.5": {
-      "displayName": "GLM-4.5",
-      "description": "Hybrid-reasoning GLM release that made the 4.5 line broadly useful",
-      "contextWindow": 131072,
-      "maxOutputTokens": 98304,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-07-28",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.2,
-        "cacheReadPerMillionTokens": 0.11,
-        "cacheWritePerMillionTokens": 0
-      }
-    },
-    "glm-4.5-air": {
-      "displayName": "GLM-4.5-Air",
-      "description": "Lighter GLM-4.5 variant for fast coding assistance and cheaper agents",
-      "contextWindow": 131072,
-      "maxOutputTokens": 98304,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-07-28",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.2,
-        "outputPerMillionTokens": 1.1,
-        "cacheReadPerMillionTokens": 0.03,
-        "cacheWritePerMillionTokens": 0
-      }
-    },
-    "glm-4.5-flash": {
-      "displayName": "GLM-4.5-Flash",
-      "description": "Efficient GLM model for fast reasoning, coding, and agent workflows",
-      "contextWindow": 131072,
-      "maxOutputTokens": 98304,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-07-28",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0,
-        "cacheReadPerMillionTokens": 0,
-        "cacheWritePerMillionTokens": 0
-      }
-    },
-    "glm-4.5v": {
-      "displayName": "GLM-4.5V",
-      "description": "GLM vision model for visual reasoning, documents, and multimodal agents",
-      "contextWindow": 64000,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-08-11",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 1.8
-      }
-    },
-    "glm-4.6": {
-      "displayName": "GLM-4.6",
-      "description": "Late GLM-4 workhorse for coding agents, reasoning, and structured tasks",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-09-30",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.2,
-        "cacheReadPerMillionTokens": 0.11,
-        "cacheWritePerMillionTokens": 0
-      }
-    },
-    "glm-4.6v": {
-      "displayName": "GLM-4.6V",
-      "description": "GLM vision model for visual reasoning, documents, and multimodal agents",
-      "contextWindow": 128000,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-12-08",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 0.9
-      }
-    },
-    "glm-4.7": {
-      "displayName": "GLM-4.7",
-      "description": "Mature GLM model for dependable coding, reasoning, and structured agent tasks",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-12-22",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.2,
-        "cacheReadPerMillionTokens": 0.11,
-        "cacheWritePerMillionTokens": 0
-      }
-    },
-    "glm-4.7-flash": {
-      "displayName": "GLM-4.7-Flash",
-      "description": "Budget GLM lane for fast coding help, routing, and everyday automation",
-      "contextWindow": 200000,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2026-01-19",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0,
-        "cacheReadPerMillionTokens": 0,
-        "cacheWritePerMillionTokens": 0
-      }
-    },
-    "glm-4.7-flashx": {
-      "displayName": "GLM-4.7-FlashX",
-      "description": "Efficient GLM model for fast reasoning, coding, and agent workflows",
-      "contextWindow": 200000,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2026-01-19",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.07,
-        "outputPerMillionTokens": 0.4,
-        "cacheReadPerMillionTokens": 0.01,
-        "cacheWritePerMillionTokens": 0
-      }
-    },
-    "glm-5": {
-      "displayName": "GLM-5",
-      "description": "General GLM flagship for coding, analysis, and tool-heavy engineering workflows",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-02-12",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 3.2,
-        "cacheReadPerMillionTokens": 0.2,
-        "cacheWritePerMillionTokens": 0
-      }
-    },
-    "glm-5-turbo": {
-      "displayName": "GLM-5-Turbo",
-      "description": "Faster GLM-5 lane for coding agents that need lower latency",
-      "contextWindow": 200000,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-03-16",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.2,
-        "outputPerMillionTokens": 4,
-        "cacheReadPerMillionTokens": 0.24,
-        "cacheWritePerMillionTokens": 0
-      }
-    },
-    "glm-5.1": {
-      "displayName": "GLM-5.1",
-      "description": "Strong GLM coding model for agentic engineering, terminals, and repository generation",
-      "contextWindow": 200000,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-07",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.4,
-        "outputPerMillionTokens": 4.4,
-        "cacheReadPerMillionTokens": 0.26,
-        "cacheWritePerMillionTokens": 0
-      }
-    },
-    "glm-5.2": {
-      "displayName": "GLM-5.2",
-      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high",
-        "max"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.4,
-        "outputPerMillionTokens": 4.4,
-        "cacheReadPerMillionTokens": 0.26,
-        "cacheWritePerMillionTokens": 0
-      }
-    },
-    "glm-5v-turbo": {
-      "displayName": "GLM-5V-Turbo",
-      "description": "Fast GLM vision model for screenshots, documents, and multimodal agent tasks",
-      "contextWindow": 200000,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-04-01",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video",
-          "pdf"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.2,
-        "outputPerMillionTokens": 4,
-        "cacheReadPerMillionTokens": 0.24,
-        "cacheWritePerMillionTokens": 0
-      }
-    }
-  },
-  "minimax": {
-    "MiniMax-M2": {
-      "displayName": "MiniMax-M2",
-      "description": "Efficient open MiniMax model built for coding agents and tool-heavy workflows",
-      "contextWindow": 196608,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-10-27",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2
-      }
-    },
-    "MiniMax-M2.1": {
-      "displayName": "MiniMax-M2.1",
-      "description": "Earlier MiniMax agent model for practical coding and productivity tasks",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-12-23",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.03,
-        "cacheWritePerMillionTokens": 0.375
-      }
-    },
-    "MiniMax-M2.5": {
-      "displayName": "MiniMax-M2.5",
-      "description": "Prior MiniMax coding model for agent workflows, office edits, and automation",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-02-12",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.03,
-        "cacheWritePerMillionTokens": 0.375
-      }
-    },
-    "MiniMax-M2.5-highspeed": {
-      "displayName": "MiniMax-M2.5-highspeed",
-      "description": "High-speed MiniMax model for low-latency coding and agent workflows",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-02-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.4,
-        "cacheReadPerMillionTokens": 0.06,
-        "cacheWritePerMillionTokens": 0.375
-      }
-    },
-    "MiniMax-M2.7": {
-      "displayName": "MiniMax-M2.7",
-      "description": "Open MiniMax flagship for coding agents, office automation, and complex environments",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-03-18",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.06,
-        "cacheWritePerMillionTokens": 0.375
-      }
-    },
-    "MiniMax-M2.7-highspeed": {
-      "displayName": "MiniMax-M2.7-highspeed",
-      "description": "Low-latency M2.7 variant for interactive coding plans and agent loops",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-03-18",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.4,
-        "cacheReadPerMillionTokens": 0.06,
-        "cacheWritePerMillionTokens": 0.375
-      }
-    },
-    "MiniMax-M3": {
-      "displayName": "MiniMax-M3",
-      "description": "MiniMax multimodal model for long-context coding, perception, and agent planning",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-06-25",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.06
-      }
-    }
-  },
-  "minimax-cn": {
-    "MiniMax-M2": {
-      "displayName": "MiniMax-M2",
-      "description": "MiniMax model for chat, coding, office work, and agentic tasks",
-      "contextWindow": 196608,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-10-27",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2
-      }
-    },
-    "MiniMax-M2.1": {
-      "displayName": "MiniMax-M2.1",
-      "description": "MiniMax model for chat, coding, office work, and agentic tasks",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-12-23",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.03,
-        "cacheWritePerMillionTokens": 0.375
-      }
-    },
-    "MiniMax-M2.5": {
-      "displayName": "MiniMax-M2.5",
-      "description": "MiniMax model for chat, coding, office work, and agentic tasks",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-02-12",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.03,
-        "cacheWritePerMillionTokens": 0.375
-      }
-    },
-    "MiniMax-M2.5-highspeed": {
-      "displayName": "MiniMax-M2.5-highspeed",
-      "description": "High-speed MiniMax model for low-latency coding and agent workflows",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-02-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.4,
-        "cacheReadPerMillionTokens": 0.06,
-        "cacheWritePerMillionTokens": 0.375
-      }
-    },
-    "MiniMax-M2.7": {
-      "displayName": "MiniMax-M2.7",
-      "description": "MiniMax model for chat, coding, office work, and agentic tasks",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-03-18",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.06,
-        "cacheWritePerMillionTokens": 0.375
-      }
-    },
-    "MiniMax-M2.7-highspeed": {
-      "displayName": "MiniMax-M2.7-highspeed",
-      "description": "High-speed MiniMax model for low-latency coding and agent workflows",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-03-18",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.4,
-        "cacheReadPerMillionTokens": 0.06,
-        "cacheWritePerMillionTokens": 0.375
-      }
-    },
-    "MiniMax-M3": {
-      "displayName": "MiniMax-M3",
-      "description": "MiniMax multimodal coding model for long-context reasoning and agent tasks",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-06-25",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.06
-      }
-    }
-  },
-  "stepfun": {
-    "step-1-32k": {
-      "displayName": "Step 1 (32K)",
-      "description": "StepFun flash model for efficient multimodal reasoning, coding, and tool use",
-      "contextWindow": 32768,
-      "maxInputTokens": 32768,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06",
-      "lastUpdated": "2026-02-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2.05,
-        "outputPerMillionTokens": 9.59,
-        "cacheReadPerMillionTokens": 0.41
-      }
-    },
-    "step-2-16k": {
-      "displayName": "Step 2 (16K)",
-      "description": "StepFun flash model for efficient multimodal reasoning, coding, and tool use",
-      "contextWindow": 16384,
-      "maxInputTokens": 16384,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06",
-      "lastUpdated": "2026-02-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 5.21,
-        "outputPerMillionTokens": 16.44,
-        "cacheReadPerMillionTokens": 1.04
-      }
-    },
-    "step-3.5-flash": {
-      "displayName": "Step 3.5 Flash",
-      "description": "StepFun flash lane for quick multimodal reasoning and coding assistance",
-      "contextWindow": 256000,
-      "maxInputTokens": 256000,
-      "maxOutputTokens": 256000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "high"
-      ],
-      "knowledgeCutoff": "2025-01",
-      "lastUpdated": "2026-06-15",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.3,
-        "cacheReadPerMillionTokens": 0.02
-      }
-    },
-    "step-3.5-flash-2603": {
-      "displayName": "Step 3.5 Flash 2603",
-      "description": "StepFun flash model for efficient multimodal reasoning, coding, and tool use",
-      "contextWindow": 256000,
-      "maxInputTokens": 256000,
-      "maxOutputTokens": 256000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "high"
-      ],
-      "knowledgeCutoff": "2025-01",
-      "lastUpdated": "2026-04-02",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.3,
-        "cacheReadPerMillionTokens": 0.02
-      }
-    },
-    "step-3.7-flash": {
-      "displayName": "Step 3.7 Flash",
-      "description": "Newer StepFun flash model for faster agents, coding, and multimodal prompts",
-      "contextWindow": 256000,
-      "maxInputTokens": 256000,
-      "maxOutputTokens": 256000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "knowledgeCutoff": "2026-03-01",
-      "lastUpdated": "2026-06-29",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.185,
-        "outputPerMillionTokens": 1.11,
-        "cacheReadPerMillionTokens": 0.037
-      }
-    }
-  },
-  "cohere": {
-    "c4ai-aya-expanse-32b": {
-      "displayName": "Aya Expanse 32B",
-      "description": "Open multilingual model optimized for generation across 23 languages",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4000,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2024-10-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      }
-    },
-    "c4ai-aya-expanse-8b": {
-      "displayName": "Aya Expanse 8B",
-      "description": "Compact open multilingual model optimized for generation across 23 languages",
-      "contextWindow": 8000,
-      "maxOutputTokens": 4000,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2024-10-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      }
-    },
-    "c4ai-aya-vision-32b": {
-      "displayName": "Aya Vision 32B",
-      "description": "Open multilingual vision model for OCR, visual reasoning, and image question answering",
-      "contextWindow": 16000,
-      "maxOutputTokens": 4000,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-05-14",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      }
-    },
-    "c4ai-aya-vision-8b": {
-      "displayName": "Aya Vision 8B",
-      "description": "Compact open multilingual vision model for OCR and visual question answering",
-      "contextWindow": 16000,
-      "maxOutputTokens": 4000,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-05-14",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      }
-    },
-    "command-a-03-2025": {
-      "displayName": "Command A",
-      "description": "Cohere command model for multilingual enterprise agents, tools, and chat",
-      "contextWindow": 256000,
-      "maxOutputTokens": 8000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06-01",
-      "lastUpdated": "2025-03-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2.5,
-        "outputPerMillionTokens": 10
-      }
-    },
-    "command-a-plus-05-2026": {
-      "displayName": "Command A Plus",
-      "description": "Cohere's stronger command model for multilingual agents and enterprise workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 64000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-09",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2.5,
-        "outputPerMillionTokens": 10
-      }
-    },
-    "command-a-reasoning-08-2025": {
-      "displayName": "Command A Reasoning",
-      "description": "Cohere reasoning model for multilingual enterprise agents, tools, and complex workflows",
-      "contextWindow": 256000,
-      "maxOutputTokens": 32000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06-01",
-      "lastUpdated": "2025-08-21",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2.5,
-        "outputPerMillionTokens": 10
-      }
-    },
-    "command-a-translate-08-2025": {
-      "displayName": "Command A Translate",
-      "description": "Translation model for multilingual conversion, localization, and cross-language workflows",
-      "contextWindow": 8000,
-      "maxOutputTokens": 8000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06-01",
-      "lastUpdated": "2025-08-28",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2.5,
-        "outputPerMillionTokens": 10
-      }
-    },
-    "command-a-vision-07-2025": {
-      "displayName": "Command A Vision",
-      "description": "Cohere vision model for multilingual document analysis, OCR, and image understanding",
-      "contextWindow": 128000,
-      "maxOutputTokens": 8000,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06-01",
-      "lastUpdated": "2025-07-31",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2.5,
-        "outputPerMillionTokens": 10
-      }
-    },
-    "command-r-08-2024": {
-      "displayName": "Command R",
-      "description": "Cohere retrieval model for long-context chat and enterprise RAG workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06-01",
-      "lastUpdated": "2024-08-30",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 0.6
-      }
-    },
-    "command-r-plus-08-2024": {
-      "displayName": "Command R+",
-      "description": "Cohere's RAG workhorse for long-context enterprise search and tool use",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06-01",
-      "lastUpdated": "2024-08-30",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2.5,
-        "outputPerMillionTokens": 10
-      }
-    },
-    "command-r7b-12-2024": {
-      "displayName": "Command R7B",
-      "description": "Cohere retrieval model for long-context chat and enterprise RAG workflows",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06-01",
-      "lastUpdated": "2024-12-02",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.0375,
-        "outputPerMillionTokens": 0.15
-      }
-    },
-    "command-r7b-arabic-02-2025": {
-      "displayName": "Command R7B Arabic",
-      "description": "Open Command R model optimized for Arabic enterprise chat, RAG, and cultural knowledge",
-      "contextWindow": 128000,
-      "maxOutputTokens": 4000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-06-01",
-      "lastUpdated": "2025-02-27",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.0375,
-        "outputPerMillionTokens": 0.15
-      }
-    },
-    "north-mini-code-1-0": {
-      "displayName": "North Mini Code",
-      "description": "Cohere coding model for practical software engineering and agentic edits",
-      "contextWindow": 256000,
-      "maxOutputTokens": 64000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high"
-      ],
-      "knowledgeCutoff": "2025-09-23",
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-09",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    }
-  },
-  "huggingface": {
-    "deepseek-ai/DeepSeek-R1": {
-      "displayName": "DeepSeek-R1",
-      "description": "Classic open reasoning model for transparent math, coding, and deliberate problem solving",
-      "contextWindow": 64000,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-07",
-      "structuredOutput": true,
-      "lastUpdated": "2025-05-29",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.7,
-        "outputPerMillionTokens": 2.5
-      }
-    },
-    "deepseek-ai/DeepSeek-R1-0528": {
-      "displayName": "DeepSeek-R1-0528",
-      "description": "DeepSeek reasoning model for multi-step analysis, math, coding, and tools",
-      "contextWindow": 163840,
-      "maxOutputTokens": 163840,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-05",
-      "lastUpdated": "2025-05-28",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 3,
-        "outputPerMillionTokens": 5
-      }
-    },
-    "deepseek-ai/DeepSeek-V3": {
-      "displayName": "DeepSeek-V3",
-      "description": "DeepSeek chat model for instruction following, coding, and analysis",
-      "contextWindow": 64000,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2024-12-26",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 1.3
-      }
-    },
-    "deepseek-ai/DeepSeek-V3.1": {
-      "displayName": "DeepSeek-V3.1",
-      "description": "DeepSeek chat model for instruction following, coding, and analysis",
-      "contextWindow": 131072,
-      "maxOutputTokens": 8192,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-08-21",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.27,
-        "outputPerMillionTokens": 1
-      }
-    },
-    "deepseek-ai/DeepSeek-V3.2": {
-      "displayName": "DeepSeek-V3.2",
-      "description": "DeepSeek chat model for instruction following, coding, and analysis",
-      "contextWindow": 163840,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-07",
-      "lastUpdated": "2025-12-01",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.28,
-        "outputPerMillionTokens": 0.4
-      }
-    },
-    "deepseek-ai/DeepSeek-V4-Flash": {
-      "displayName": "DeepSeek V4 Flash",
-      "description": "Fast DeepSeek V4 lane for economical reasoning, coding, and long-context work",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 384000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.28
-      }
-    },
-    "deepseek-ai/DeepSeek-V4-Flash-0731": {
-      "displayName": "DeepSeek V4 Flash 0731",
-      "description": "Official DeepSeek V4 Flash release with enhanced agentic capabilities and integrated DSpark speculative decoding",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 384000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high",
-        "max"
-      ],
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-31",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.28
-      }
-    },
-    "deepseek-ai/DeepSeek-V4-Pro": {
-      "displayName": "DeepSeek V4 Pro",
-      "description": "Open MoE flagship with million-token context for coding and long agent runs",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 393216,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "high"
-      ],
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-24",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.435,
-        "outputPerMillionTokens": 0.87,
-        "cacheReadPerMillionTokens": 0.003625
-      }
-    },
-    "google/gemma-4-26B-A4B-it": {
-      "displayName": "Gemma 4 26B A4B IT",
-      "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
-      "contextWindow": 262144,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-02",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.13,
-        "outputPerMillionTokens": 0.4
-      }
-    },
-    "google/gemma-4-31B-it": {
-      "displayName": "Gemma 4 31B IT",
-      "description": "Largest Gemma 4 instruction model for open, self-hosted chat and reasoning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-02",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.4
-      }
-    },
-    "meta-llama/Llama-3.3-70B-Instruct": {
-      "displayName": "Llama-3.3-70B-Instruct",
-      "description": "Popular open Llama workhorse for multilingual chat, coding, and self-hosting",
-      "contextWindow": 131072,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2023-12",
-      "structuredOutput": true,
-      "lastUpdated": "2024-12-06",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.59,
-        "outputPerMillionTokens": 0.79
-      }
-    },
-    "MiniMaxAI/MiniMax-M2": {
-      "displayName": "MiniMax-M2",
-      "description": "Efficient open MiniMax model built for coding agents and tool-heavy workflows",
-      "contextWindow": 204800,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2025-10-27",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2
-      }
-    },
-    "MiniMaxAI/MiniMax-M2.1": {
-      "displayName": "MiniMax-M2.1",
-      "description": "MiniMax model for chat, coding, office work, and agentic tasks",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-10",
-      "lastUpdated": "2025-12-23",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2
-      }
-    },
-    "MiniMaxAI/MiniMax-M2.5": {
-      "displayName": "MiniMax-M2.5",
-      "description": "MiniMax model for chat, coding, office work, and agentic tasks",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-02-12",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.03
-      }
-    },
-    "MiniMaxAI/MiniMax-M2.7": {
-      "displayName": "MiniMax-M2.7",
-      "description": "MiniMax model for chat, coding, office work, and agentic tasks",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-03-18",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2,
-        "cacheReadPerMillionTokens": 0.06
-      }
-    },
-    "MiniMaxAI/MiniMax-M3": {
-      "displayName": "MiniMax-M3",
-      "description": "MiniMax multimodal model for long-context coding, perception, and agent planning",
-      "contextWindow": 524288,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-01",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 1.2
-      }
-    },
-    "moonshotai/Kimi-K2-Instruct": {
-      "displayName": "Kimi-K2-Instruct",
-      "description": "Kimi model for long-context chat, coding, and agentic reasoning",
-      "contextWindow": 131072,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-10",
-      "lastUpdated": "2025-07-14",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 3
-      }
-    },
-    "moonshotai/Kimi-K2-Instruct-0905": {
-      "displayName": "Kimi-K2-Instruct-0905",
-      "description": "Kimi model for long-context chat, coding, and agentic reasoning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-10",
-      "lastUpdated": "2025-09-04",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 3
-      }
-    },
-    "moonshotai/Kimi-K2-Thinking": {
-      "displayName": "Kimi-K2-Thinking",
-      "description": "Kimi reasoning model for long-horizon research, planning, and tool use",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-08",
-      "lastUpdated": "2025-11-06",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.5,
-        "cacheReadPerMillionTokens": 0.15
-      }
-    },
-    "moonshotai/Kimi-K2.5": {
-      "displayName": "Kimi-K2.5",
-      "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "lastUpdated": "2026-01-01",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 3,
-        "cacheReadPerMillionTokens": 0.1
-      }
-    },
-    "moonshotai/Kimi-K2.6": {
-      "displayName": "Kimi-K2.6",
-      "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "lastUpdated": "2026-04-20",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.95,
-        "outputPerMillionTokens": 4,
-        "cacheReadPerMillionTokens": 0.16
-      }
-    },
-    "moonshotai/Kimi-K2.7-Code": {
-      "displayName": "Kimi K2.7 Code",
-      "description": "Coding-focused Kimi model, stronger on long-horizon repo work with less overthinking",
-      "contextWindow": 262144,
-      "maxOutputTokens": 262144,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-12",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.95,
-        "outputPerMillionTokens": 4
-      }
-    },
-    "moonshotai/Kimi-K3": {
-      "displayName": "Kimi K3",
-      "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "high",
-        "max"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-16",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 3,
-        "outputPerMillionTokens": 15
-      }
-    },
-    "openai/gpt-oss-120b": {
-      "displayName": "GPT OSS 120B",
-      "description": "Open GPT reasoning model for self-hosted agents and controllable deployments",
-      "contextWindow": 131072,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2025-08-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.25,
-        "outputPerMillionTokens": 0.69
-      }
-    },
-    "openai/gpt-oss-20b": {
-      "displayName": "GPT OSS 20B",
-      "description": "Open-weight GPT model for self-hosted reasoning and instruction-following workloads",
-      "contextWindow": 131072,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2025-08-05",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.5
-      }
-    },
-    "Qwen/Qwen3-235B-A22B": {
-      "displayName": "Qwen3 235B-A22B",
-      "description": "Large open Qwen MoE for multilingual reasoning, coding, and tool use",
-      "contextWindow": 40960,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "structuredOutput": true,
-      "lastUpdated": "2025-04",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.2,
-        "outputPerMillionTokens": 0.8
-      }
-    },
-    "Qwen/Qwen3-235B-A22B-Instruct-2507": {
-      "displayName": "Qwen3 235B-A22B Instruct 2507",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 262144,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2025-07-21",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.855,
-        "outputPerMillionTokens": 2.565
-      }
-    },
-    "Qwen/Qwen3-235B-A22B-Thinking-2507": {
-      "displayName": "Qwen3-235B-A22B-Thinking-2507",
-      "description": "Qwen reasoning model for deliberate problem solving, math, and coding",
-      "contextWindow": 262144,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-07-25",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 3
-      }
-    },
-    "Qwen/Qwen3-32B": {
-      "displayName": "Qwen3 32B",
-      "description": "Dense open Qwen model for self-hosted chat, reasoning, and coding",
-      "contextWindow": 131072,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "structuredOutput": true,
-      "lastUpdated": "2025-04",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.29,
-        "outputPerMillionTokens": 0.59
-      }
-    },
-    "Qwen/Qwen3-Coder-30B-A3B-Instruct": {
-      "displayName": "Qwen3-Coder 30B-A3B Instruct",
-      "description": "Smaller Qwen coder for efficient local agents and repo-level fixes",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "structuredOutput": true,
-      "lastUpdated": "2025-04",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.07,
-        "outputPerMillionTokens": 0.26
-      }
-    },
-    "Qwen/Qwen3-Coder-480B-A35B-Instruct": {
-      "displayName": "Qwen3-Coder-480B-A35B-Instruct",
-      "description": "Qwen coding model for software agents, repository edits, and code reasoning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 66536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-07-23",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 2,
-        "outputPerMillionTokens": 2
-      }
-    },
-    "Qwen/Qwen3-Coder-Next": {
-      "displayName": "Qwen3-Coder-Next",
-      "description": "Qwen coding model for software agents, repository edits, and code reasoning",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2026-02-03",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.2,
-        "outputPerMillionTokens": 1.5
-      }
-    },
-    "Qwen/Qwen3-Embedding-4B": {
-      "displayName": "Qwen 3 Embedding 4B",
-      "description": "Embedding model for semantic search, retrieval, clustering, and ranking pipelines",
-      "contextWindow": 32000,
-      "maxOutputTokens": 2048,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-12",
-      "lastUpdated": "2025-01-01",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.01,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "Qwen/Qwen3-Embedding-8B": {
-      "displayName": "Qwen 3 Embedding 8B",
-      "description": "Embedding model for semantic search, retrieval, clustering, and ranking pipelines",
-      "contextWindow": 32000,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": false,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-12",
-      "lastUpdated": "2025-01-01",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.01,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "Qwen/Qwen3-Next-80B-A3B-Instruct": {
-      "displayName": "Qwen3-Next-80B-A3B-Instruct",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 262144,
-      "maxOutputTokens": 66536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-09-11",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.25,
-        "outputPerMillionTokens": 1
-      }
-    },
-    "Qwen/Qwen3-Next-80B-A3B-Thinking": {
-      "displayName": "Qwen3-Next-80B-A3B-Thinking",
-      "description": "Qwen reasoning model for deliberate problem solving, math, and coding",
-      "contextWindow": 262144,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": false,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-09-11",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 2
-      }
-    },
-    "Qwen/Qwen3.5-122B-A10B": {
-      "displayName": "Qwen3.5 122B-A10B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-23",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 3.2
-      }
-    },
-    "Qwen/Qwen3.5-27B": {
-      "displayName": "Qwen3.5 27B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-23",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.3,
-        "outputPerMillionTokens": 2.4
-      }
-    },
-    "Qwen/Qwen3.5-35B-A3B": {
-      "displayName": "Qwen3.5 35B-A3B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-23",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.25,
-        "outputPerMillionTokens": 2
-      }
-    },
-    "Qwen/Qwen3.5-397B-A17B": {
-      "displayName": "Qwen3.5-397B-A17B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 32768,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2026-02-01",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 3.6
-      }
-    },
-    "Qwen/Qwen3.5-9B": {
-      "displayName": "Qwen3.5 9B",
-      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-02-23",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.17,
-        "outputPerMillionTokens": 0.25
-      }
-    },
-    "Qwen/Qwen3.6-27B": {
-      "displayName": "Qwen3.6 27B",
-      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-22",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.47,
-        "outputPerMillionTokens": 3.19
-      }
-    },
-    "Qwen/Qwen3.6-35B-A3B": {
-      "displayName": "Qwen3.6 35B-A3B",
-      "description": "Open multimodal Qwen MoE for local agents that need vision, audio, and code",
-      "contextWindow": 262144,
-      "maxOutputTokens": 65536,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-17",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.15,
-        "outputPerMillionTokens": 0.95
-      }
-    },
-    "stepfun-ai/Step-3.5-Flash": {
-      "displayName": "Step 3.5 Flash",
-      "description": "StepFun flash lane for quick multimodal reasoning and coding assistance",
-      "contextWindow": 262144,
-      "maxOutputTokens": 256000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-01",
-      "lastUpdated": "2026-02-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.3
-      }
-    },
-    "stepfun-ai/Step-3.7-Flash": {
-      "displayName": "Step 3.7 Flash",
-      "description": "Newer StepFun flash model for faster agents, coding, and multimodal prompts",
-      "contextWindow": 262144,
-      "maxOutputTokens": 256000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "knowledgeCutoff": "2026-03-01",
-      "lastUpdated": "2026-05-29",
-      "modalities": {
-        "input": [
-          "text",
-          "image",
-          "video"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.2,
-        "outputPerMillionTokens": 1.15
-      }
-    },
-    "tencent/Hy3": {
-      "displayName": "Hy3",
-      "description": "Tencent Hy reasoning model for coding, instruction following, and agent tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 64000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-06",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.58
-      }
-    },
-    "thinkingmachines/Inkling": {
-      "displayName": "Inkling",
-      "description": "Multimodal model for analyzing text, images, documents, and rich media",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 1048576,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high"
-      ],
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-15",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 4.05
-      }
-    },
-    "thinkingmachines/Inkling-Small": {
-      "displayName": "Inkling Small",
-      "description": "Efficient model for low-latency assistance, extraction, and routine automation",
-      "contextWindow": 524288,
-      "maxOutputTokens": 1048576,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-07-30",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.5,
-        "outputPerMillionTokens": 1.2
-      }
-    },
-    "XiaomiMiMo/MiMo-V2-Flash": {
-      "displayName": "MiMo-V2-Flash",
-      "description": "MiMo flash model for fast multimodal assistance and agent workflows",
-      "contextWindow": 262144,
-      "maxOutputTokens": 4096,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-12",
-      "lastUpdated": "2025-12-16",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.1,
-        "outputPerMillionTokens": 0.3
-      }
-    },
-    "XiaomiMiMo/MiMo-V2.5": {
-      "displayName": "MiMo-V2.5",
-      "description": "MiMo model for long-context reasoning, perception, and agentic tasks",
-      "contextWindow": 262144,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high",
-        "xhigh"
-      ],
-      "knowledgeCutoff": "2024-12",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-22",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 2
-      }
-    },
-    "XiaomiMiMo/MiMo-V2.5-Pro": {
-      "displayName": "MiMo-V2.5-Pro",
-      "description": "Stronger MiMo Pro tier for multimodal reasoning and coding-agent execution",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "medium",
-        "high",
-        "xhigh"
-      ],
-      "knowledgeCutoff": "2024-12",
-      "structuredOutput": true,
-      "lastUpdated": "2026-04-22",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 3
-      }
-    },
-    "zai-org/GLM-4.5": {
-      "displayName": "GLM-4.5",
-      "description": "Hybrid-reasoning GLM release that made the 4.5 line broadly useful",
-      "contextWindow": 131072,
-      "maxOutputTokens": 98304,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-07-28",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.2
-      }
-    },
-    "zai-org/GLM-4.5-Air": {
-      "displayName": "GLM-4.5-Air",
-      "description": "Lighter GLM-4.5 variant for fast coding assistance and cheaper agents",
-      "contextWindow": 131072,
-      "maxOutputTokens": 98304,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-07-28",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.13,
-        "outputPerMillionTokens": 0.85
-      }
-    },
-    "zai-org/GLM-4.5V": {
-      "displayName": "GLM-4.5V",
-      "description": "GLM vision model for visual reasoning, documents, and multimodal agents",
-      "contextWindow": 65536,
-      "maxOutputTokens": 16384,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": true,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-08-11",
-      "modalities": {
-        "input": [
-          "text",
-          "image"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 1.8
-      }
-    },
-    "zai-org/GLM-4.6": {
-      "displayName": "GLM-4.6",
-      "description": "Late GLM-4 workhorse for coding agents, reasoning, and structured tasks",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-09-30",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.55,
-        "outputPerMillionTokens": 2.2
-      }
-    },
-    "zai-org/GLM-4.7": {
-      "displayName": "GLM-4.7",
-      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 204800,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-12-22",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.6,
-        "outputPerMillionTokens": 2.2,
-        "cacheReadPerMillionTokens": 0.11
-      }
-    },
-    "zai-org/GLM-4.7-Flash": {
-      "displayName": "GLM-4.7-Flash",
-      "description": "Efficient GLM model for fast reasoning, coding, and agent workflows",
-      "contextWindow": 200000,
-      "maxOutputTokens": 128000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2025-04",
-      "lastUpdated": "2025-08-08",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0,
-        "outputPerMillionTokens": 0
-      }
-    },
-    "zai-org/GLM-5": {
-      "displayName": "GLM-5",
-      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 202752,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-02-11",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 3.2,
-        "cacheReadPerMillionTokens": 0.2
-      }
-    },
-    "zai-org/GLM-5.1": {
-      "displayName": "GLM-5.1",
-      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 202752,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "lastUpdated": "2026-04-03",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1,
-        "outputPerMillionTokens": 3.2,
-        "cacheReadPerMillionTokens": 0.2
-      }
-    },
-    "zai-org/GLM-5.2": {
-      "displayName": "GLM-5.2",
-      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
-      "contextWindow": 262144,
-      "maxOutputTokens": 131072,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "structuredOutput": true,
-      "lastUpdated": "2026-06-13",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 1.4,
-        "outputPerMillionTokens": 4.4
-      }
-    }
   }
 }
 ;
@@ -27345,8 +17931,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
 export const GENERATED_MODELS_DEV_PROVIDER_ALIASES: Record<string, string> =
 {
   "claude-subscription": "anthropic",
-  "openai-codex": "openai",
-  "google-native": "gemini"
+  "openai-codex": "openai"
 }
 ;
 
@@ -27356,24 +17941,9 @@ export const GENERATED_MODELS_DEV_CATALOG_PROVIDERS: readonly string[] =
   "openai",
   "anthropic",
   "gemini",
-  "google-native",
   "kimi",
   "qwen",
-  "xai",
-  "mistral",
-  "groq",
-  "openrouter",
-  "cerebras",
-  "togetherai",
-  "fireworks-ai",
-  "nvidia",
-  "deepinfra",
-  "siliconflow",
   "zai",
-  "minimax",
-  "minimax-cn",
-  "stepfun",
-  "cohere",
-  "huggingface"
+  "openrouter"
 ]
 ;

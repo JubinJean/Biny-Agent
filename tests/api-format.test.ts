@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { fetchModelCatalogSnapshot, parseModelCatalog } from "../src/ai/modelCatalog.js";
+import { fetchModelCatalogSnapshot, ModelCatalogRequestError, parseModelCatalog } from "../src/ai/modelCatalog.js";
 import { providerDefinition } from "../src/ai/provider.js";
 import type { CatalogProviderRequest } from "../src/ai/types.js";
 import { apiFormatForConnection, apiFormatOption, apiFormatOptions } from "../src/desktop/renderer/src/providerCatalog.js";
@@ -14,6 +14,7 @@ import { DesktopAgentManager } from "../src/desktop/electron/main/DesktopAgentMa
 import { DesktopProjectService } from "../src/desktop/electron/main/DesktopProjectService.js";
 import { DesktopStateStore } from "../src/desktop/electron/main/DesktopStateStore.js";
 import { DesktopUserDataStore } from "../src/desktop/electron/main/DesktopUserDataStore.js";
+import { modelCatalogCacheKey } from "../src/llm/ModelsStore.js";
 
 // ---------- 渲染层：格式选项与回显折回 ----------
 
@@ -97,6 +98,56 @@ test("fetchModelCatalogSnapshot: google_generative_ai 用 x-goog-api-key，默�
   await fetchModelCatalogSnapshot(catalogRequest(), undefined, {}, fetcher);
   assert.equal(seen[0]?.auth, "Bearer test-key");
   assert.equal(seen[0]?.goog, undefined);
+});
+
+test("fetchModelCatalogSnapshot: 公开 OpenCode 目录不要求聊天 API Key", async () => {
+  let called = false;
+  const fetcher = (async () => {
+    called = true;
+    return Response.json({ data: [{ id: "glm-5.3-flash" }] });
+  }) as typeof fetch;
+  const result = await fetchModelCatalogSnapshot({
+    alias: "opencode-go",
+    config: {
+      type: "openai-compatible",
+      baseUrl: "https://opencode.ai/zen/go/v1",
+      requiresApiKey: true
+    },
+    definition: providerDefinition("openai-compatible")
+  }, undefined, {}, fetcher);
+  assert.equal(called, true);
+  assert.deepEqual(result.models?.map((model) => model.id), ["glm-5.3-flash"]);
+});
+
+test("fetchModelCatalogSnapshot: 保留 HTTP 状态、请求地址和服务商错误正文", async () => {
+  const fetcher = (async () => Response.json({ error: { message: "Insufficient balance" } }, { status: 402 })) as typeof fetch;
+  await assert.rejects(
+    fetchModelCatalogSnapshot(catalogRequest(), undefined, {}, fetcher),
+    (error: unknown) => error instanceof ModelCatalogRequestError
+      && error.statusCode === 402
+      && error.url === "https://gateway.example/v1beta/models"
+      && error.responseBody?.includes("Insufficient balance") === true
+  );
+});
+
+test("parseModelCatalog: 接受服务商常见的数字字符串元数据", () => {
+  const [model] = parseModelCatalog({
+    data: [{ id: "gateway-model", context_window: "131072", max_input_tokens: "120000" }]
+  }, "gateway", "openai-compatible");
+  assert.equal(model?.contextWindow, 131_072);
+  assert.equal(model?.maxInputTokens, 120_000);
+});
+
+test("modelCatalogCacheKey: 同一主机的不同模型目录路径使用不同缓存键", () => {
+  const zen = modelCatalogCacheKey("opencode", {
+    type: "openai-compatible",
+    baseUrl: "https://opencode.ai/zen/v1"
+  });
+  const go = modelCatalogCacheKey("opencode", {
+    type: "openai-compatible",
+    baseUrl: "https://opencode.ai/zen/go/v1"
+  });
+  assert.notEqual(zen, go);
 });
 
 // ---------- 桌面端：连接回显携带 apiBackend ----------

@@ -9,6 +9,8 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
 import type { ModelCatalogEntry } from "../ai/types.js";
+import type { ProviderConfig } from "../config/schema.js";
+import { migrateLegacyGlobalState } from "../config/globalStateMigration.js";
 import { globalModelsStorePath } from "../config/paths.js";
 
 export interface ModelsStoreEntry {
@@ -22,6 +24,32 @@ export interface ModelsStore {
   read(providerId: string): Promise<ModelsStoreEntry | undefined>;
   write(providerId: string, entry: ModelsStoreEntry): Promise<void>;
   delete(providerId: string): Promise<void>;
+}
+
+/**
+ * 同一主机可以挂多个不同网关路径，缓存必须按实际目录地址隔离；否则一个连接刷新后会
+ * 把另一个连接的模型列表覆盖掉。哈希只用于文件键，不保存地址或凭据本身。
+ */
+export function modelCatalogCacheKey(providerId: string, config: ProviderConfig): string {
+  const endpoint = (config.modelsEndpoint ?? config.baseUrl ?? "").trim().replace(/\/+$/u, "").toLowerCase();
+  if (!endpoint) return providerId;
+  let hash = 2166136261;
+  for (const character of `${config.type}\u0000${endpoint}`) {
+    hash ^= character.codePointAt(0) ?? 0;
+    hash = Math.imul(hash, 16777619);
+  }
+  return `${providerId}::${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+export async function readProviderCatalog(
+  providerId: string,
+  config: ProviderConfig,
+  store: ModelsStore
+): Promise<ModelsStoreEntry | undefined> {
+  const scoped = await store.read(modelCatalogCacheKey(providerId, config)).catch(() => undefined);
+  if (scoped) return scoped;
+  // 仅兼容旧版无 endpoint scope 的缓存；成功刷新后会写入新的隔离键。
+  return await store.read(providerId).catch(() => undefined);
 }
 
 const modelSchema = z.object({
@@ -97,19 +125,23 @@ export class InMemoryModelsStore implements ModelsStore {
 
 export class FileModelsStore implements ModelsStore {
   readonly filePath: string;
+  private readonly migrateDefaultState: boolean;
   private pending: Promise<void> = Promise.resolve();
 
-  constructor(filePath = globalModelsStorePath()) {
-    this.filePath = path.resolve(filePath);
+  constructor(filePath?: string) {
+    this.migrateDefaultState = filePath === undefined;
+    this.filePath = path.resolve(filePath ?? globalModelsStorePath());
   }
 
   async read(providerId: string): Promise<ModelsStoreEntry | undefined> {
+    await this.migrateIfDefault();
     const data = await readStoreFile(this.filePath);
     const entry = data.providers[providerId];
     return entry ? structuredClone(entry) as ModelsStoreEntry : undefined;
   }
 
   async write(providerId: string, entry: ModelsStoreEntry): Promise<void> {
+    await this.migrateIfDefault();
     await this.serialize(async () => {
       await withStoreLock(this.filePath, async () => {
         const data = await readStoreFile(this.filePath);
@@ -120,6 +152,7 @@ export class FileModelsStore implements ModelsStore {
   }
 
   async delete(providerId: string): Promise<void> {
+    await this.migrateIfDefault();
     await this.serialize(async () => {
       await withStoreLock(this.filePath, async () => {
         const data = await readStoreFile(this.filePath);
@@ -134,14 +167,22 @@ export class FileModelsStore implements ModelsStore {
     this.pending = running.catch(() => undefined);
     await running;
   }
+
+  private async migrateIfDefault(): Promise<void> {
+    if (this.migrateDefaultState) await migrateLegacyGlobalState();
+  }
 }
 
 export async function restoreProviderCatalogs(
   providerIds: readonly string[],
-  store: ModelsStore
+  store: ModelsStore,
+  providers?: Readonly<Record<string, ProviderConfig>>
 ): Promise<Array<[string, ModelCatalogEntry[]]>> {
   const restored = await Promise.all(providerIds.map(async (providerId) => {
-    const entry = await store.read(providerId).catch(() => undefined);
+    const provider = providers?.[providerId];
+    const entry = provider
+      ? await readProviderCatalog(providerId, provider, store)
+      : await store.read(providerId).catch(() => undefined);
     return entry?.models.length ? [providerId, entry.models] as [string, ModelCatalogEntry[]] : undefined;
   }));
   return restored.filter((item): item is [string, ModelCatalogEntry[]] => item !== undefined);

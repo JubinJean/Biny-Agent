@@ -17,27 +17,27 @@ const defaultToolSchemaReserveTokens = 1_024;
 const defaultSystemPromptReserveTokens = 1_024;
 const defaultProtocolSafetyMarginTokens = 512;
 const minimumUsableInputTokens = 2_048;
+const canonicalReasoningEfforts: readonly ReasoningEffort[] = ["minimal", "low", "medium", "high", "xhigh", "max"];
 
 /**
  * 模型级 canonical map。它表达的是 provider 可接受的参数，而不是模型真实“思考程度”。
  * `reasoning` 未显式声明时，再按模型能力推导可用档位。
  */
 export function modelThinkingLevelMap(model: ModelAliasConfig): ThinkingLevelMap {
-  if (model.thinkingLevelMap) return { ...model.thinkingLevelMap };
+  if (model.thinkingLevelMap) return snapCanonicalNatives({ ...model.thinkingLevelMap });
   const reasoning = model.reasoning;
   if (!reasoning) return {};
-  const map: ThinkingLevelMap = { off: "none" };
+  if (isKimiK27CodeModel(model.model)) return projectThinkingLevelMap(["enabled"], false);
+  const map: ThinkingLevelMap = isKimiAlwaysThinkingModel(model.model) ? {} : { off: "none" };
   for (const effort of reasoning.efforts) map[effort] = reasoning.mapping?.[effort] ?? effort;
-  return map;
+  return completeThinkingLevelMap(map, !isKimiAlwaysThinkingModel(model.model));
 }
 
 /** 从 canonical `reasoning` 配置推导 UI 和 provider 使用的档位。 */
 export function modelReasoningConfig(model: ModelAliasConfig): ModelThinkingConfig | undefined {
   if (model.capabilities?.reasoning === false || model.compatibility?.supportsReasoning === false) return undefined;
   const map = modelThinkingLevelMap(model);
-  const efforts = Object.entries(map)
-    .filter(([level, native]) => level !== "off" && native !== null)
-    .map(([level]) => level as ReasoningEffort);
+  const efforts = distinctReasoningEfforts(map);
   if (!efforts.length) return undefined;
 
   const reasoning = model.reasoning;
@@ -57,6 +57,7 @@ export function modelReasoningConfig(model: ModelAliasConfig): ModelThinkingConf
 /**
  * 把跨模型保存的思考偏好投影成当前模型真正可执行的档位。
  * 不支持关闭的模型遇到旧的 `enabled: false` 配置时使用默认档位，避免状态与请求分裂。
+ * 旧偏好落在未声明的档位上时按原生值/位置投影到代表档位，而不是直接关闭。
  */
 export function effectiveThinkingSelection(
   model: ModelAliasConfig,
@@ -65,6 +66,10 @@ export function effectiveThinkingSelection(
   const reasoning = modelReasoningConfig(model);
   if (!reasoning) return "off";
   if (thinking.enabled && reasoning.efforts.includes(thinking.effort)) return thinking.effort;
+  if (thinking.enabled) {
+    const equivalent = projectThinkingSelectionToModel(modelThinkingLevelMap(model), reasoning.efforts, thinking.effort);
+    if (equivalent) return equivalent;
+  }
   const off = modelThinkingLevelMap(model).off;
   return off !== undefined && off !== null ? "off" : reasoning.defaultEffort;
 }
@@ -110,6 +115,16 @@ export function isKimiK3Model(modelId: string): boolean {
   return /^kimi-k3(?:$|[-.])/iu.test(modelIdentifier(modelId));
 }
 
+/** Kimi K3/K2.7 Code 没有可关闭的思考开关；两者的原生参数形状不同。 */
+export function isKimiAlwaysThinkingModel(modelId: string): boolean {
+  const identifier = modelIdentifier(modelId);
+  return isKimiK3Model(identifier) || isKimiK27CodeModel(identifier);
+}
+
+function isKimiK27CodeModel(modelId: string): boolean {
+  return /^kimi-k2\.7-code(?:$|[-.])/iu.test(modelIdentifier(modelId));
+}
+
 /**
  * 服务商没有声明推理档位时，按模型 ID 推断。返回空数组表示按不支持处理。
  */
@@ -118,6 +133,7 @@ export function inferReasoningEfforts(modelId: string): ReasoningEffort[] {
   if (!identifier) return [];
   if (/^deepseek-v4-(?:flash|pro)$/iu.test(identifier)) return ["high", "max"];
   if (isKimiK3Model(identifier)) return ["low", "high", "max"];
+  if (isKimiK27CodeModel(identifier)) return ["high"];
   return reasoningModelPatterns.some((pattern) => pattern.test(identifier)) ? ["high", "max"] : [];
 }
 
@@ -131,14 +147,103 @@ export function thinkingLevelMapForModel(
     return { off: "none" };
   }
   if (isKimiK3Model(modelId)) {
-    return { low: "low", high: "high", max: "max" };
+    return projectThinkingLevelMap(["low", "high", "max"], false);
+  }
+  if (isKimiK27CodeModel(modelId)) {
+    return projectThinkingLevelMap(["enabled"], false);
   }
   const efforts = declaredEfforts.length ? declaredEfforts : inferReasoningEfforts(modelId);
   const resolved = efforts.length ? efforts : ["high", "max"] as ReasoningEffort[];
-  return {
-    off: "none",
-    ...Object.fromEntries(resolved.map((effort) => [effort, effort]))
-  };
+  return projectThinkingLevelMap(resolved, true);
+}
+
+/**
+ * 把服务商的原生档位按顺序投影到 Biny 的六个本地档位。
+ * 服务商只有三档时，相邻本地档位共享一个原生档位，永远不会下发服务商不认识的值。
+ */
+export function projectThinkingLevelMap(nativeValues: readonly string[], supportsOff = true): ThinkingLevelMap {
+  const uniqueValues = [...new Set(nativeValues.filter((value) => value.trim().length > 0))];
+  const map: ThinkingLevelMap = supportsOff ? { off: "none" } : {};
+  if (!uniqueValues.length) return map;
+  for (const [index, level] of canonicalReasoningEfforts.entries()) {
+    const nativeIndex = uniqueValues.length === 1
+      ? 0
+      : Math.round((index * (uniqueValues.length - 1)) / (canonicalReasoningEfforts.length - 1));
+    map[level] = uniqueValues[nativeIndex]!;
+  }
+  return snapCanonicalNatives(map);
+}
+
+/**
+ * 不变式：原生值与 canonical 档位同名时必须同名映射。纯位置投影会把声明档位错位
+ * （如 [high,max] 模型的 high 档被投影成 max），展示与请求就和模型声明对不上。
+ */
+function snapCanonicalNatives(map: ThinkingLevelMap): ThinkingLevelMap {
+  const natives = new Set(Object.values(map).filter((value): value is string => typeof value === "string"));
+  for (const level of canonicalReasoningEfforts) {
+    if (natives.has(level)) map[level] = level;
+  }
+  return map;
+}
+
+/**
+ * 把任意档位选择投影到模型声明的档位集合：原生值等价优先，未声明的档位按 canonical
+ * 位置取最近代表（与六档网格投影到该模型的结果一致）。显式 null 表示模型不支持，
+ * 不参与投影，返回 undefined 交给调用方回退。
+ */
+export function projectThinkingSelectionToModel(
+  levelMap: ThinkingLevelMap,
+  efforts: readonly ReasoningEffort[],
+  level: ReasoningEffort
+): ReasoningEffort | undefined {
+  const native = levelMap[level];
+  if (typeof native === "string") {
+    const equivalent = efforts.find((candidate) => levelMap[candidate] === native);
+    if (equivalent) return equivalent;
+    return undefined;
+  }
+  if (native !== undefined && native !== null) return undefined;
+  const natives = [...new Set(efforts.map((candidate) => levelMap[candidate]))]
+    .filter((value): value is string => typeof value === "string");
+  if (!natives.length) return undefined;
+  const index = canonicalReasoningEfforts.indexOf(level);
+  const nativeIndex = natives.length === 1
+    ? 0
+    : Math.round((index * (natives.length - 1)) / (canonicalReasoningEfforts.length - 1));
+  const target = natives[Math.max(0, Math.min(natives.length - 1, nativeIndex))]!;
+  return efforts.find((candidate) => levelMap[candidate] === target);
+}
+
+/** 补全目录或缓存中的部分映射；显式写过的 level/null 保持原意。 */
+export function completeThinkingLevelMap(source: ThinkingLevelMap, supportsOff = true): ThinkingLevelMap {
+  const nativeValues = canonicalReasoningEfforts
+    .map((level) => source[level])
+    .filter((value): value is string => typeof value === "string" && value.trim().length > 0);
+  const map = projectThinkingLevelMap(nativeValues, supportsOff);
+  for (const level of canonicalReasoningEfforts) {
+    if (source[level] !== undefined) map[level] = source[level];
+  }
+  if (source.off !== undefined) map.off = source.off;
+  return map;
+}
+
+/**
+ * 每个不同的原生值只保留一个 canonical 档位，优先保留与原生值同名的档位。
+ * 六档 UI 网格投影到档位更少的模型后必然出现重复原生值；不去重的话客户端会展示
+ * 多个实际等价的思考深度，用户只能逐档试探。返回值保持 canonical 顺序。
+ */
+function distinctReasoningEfforts(map: ThinkingLevelMap): ReasoningEffort[] {
+  const representative = new Map<string, ReasoningEffort>();
+  for (const level of canonicalReasoningEfforts) {
+    const native = map[level];
+    if (native === undefined || native === null) continue;
+    const current = representative.get(native);
+    if (current === undefined || (level === native && current !== native)) representative.set(native, level);
+  }
+  return canonicalReasoningEfforts.filter((level) => {
+    const native = map[level];
+    return native !== undefined && native !== null && representative.get(native) === level;
+  });
 }
 
 /**
@@ -185,9 +290,18 @@ export function normalizeModelMetadata(
       : explicitCapabilities.reasoning === true
         ? defaultEfforts.length ? defaultEfforts : fallbackEfforts
         : [];
-  const reasoning = reasoningDisabled
+  const baseReasoning = reasoningDisabled
     ? undefined
     : model.reasoning ?? createReasoningConfig(reasoningEfforts, defaults.thinkingLevelMap);
+  const limits = mergeLimits(defaults.limits, model.limits);
+  const thinkingLevelMap = reasoningDisabled
+    ? { off: "none" }
+    : model.thinkingLevelMap
+      ? snapCanonicalNatives({ ...model.thinkingLevelMap })
+      : (baseReasoning ? reasoningConfigToMap(baseReasoning, model.model) : defaults.thinkingLevelMap);
+  const reasoning = reasoningDisabled
+    ? undefined
+    : reasoningConfigFromMap(thinkingLevelMap, baseReasoning);
   const hasReasoning = !reasoningDisabled && (reasoning !== undefined || explicitCapabilities.reasoning === true);
   const capabilities: ModelCapabilities = {
     tools: explicitCapabilities.tools ?? model.supportsTools ?? defaults.capabilities.tools ?? true,
@@ -203,11 +317,6 @@ export function normalizeModelMetadata(
     audio: explicitCapabilities.audio ?? defaults.capabilities.audio ?? false,
     streaming: explicitCapabilities.streaming ?? defaults.capabilities.streaming ?? true
   };
-  const limits = mergeLimits(defaults.limits, model.limits);
-  const thinkingLevelMap = reasoningDisabled
-    ? { off: "none" }
-    : model.thinkingLevelMap
-      ?? (reasoning ? reasoningConfigToMap(reasoning, model.model) : defaults.thinkingLevelMap);
   return {
     ...model,
     capabilities,
@@ -328,10 +437,7 @@ export function reasoningBudgetTokens(
 
 function modelReasoningConfigWithoutCapabilityGate(model: ModelAliasConfig): ModelThinkingConfig | undefined {
   const map = model.thinkingLevelMap ?? (model.reasoning ? modelThinkingLevelMap(model) : {});
-  const efforts = Object.entries(map)
-    .filter(([level, native]) => level !== "off" && native !== null)
-    .map(([level]) => level)
-    .filter(isReasoningEffort);
+  const efforts = distinctReasoningEfforts(map);
   if (!efforts.length && !model.reasoning) return undefined;
   const defaultEffort = model.reasoning?.defaultEffort && efforts.includes(model.reasoning.defaultEffort)
     ? model.reasoning.defaultEffort
@@ -358,10 +464,31 @@ function createReasoningConfig(
   return { efforts, defaultEffort, mapping, budgetTokens: undefined };
 }
 
+function reasoningConfigFromMap(
+  map: ThinkingLevelMap | undefined,
+  source: ModelThinkingConfig | undefined
+): ModelThinkingConfig | undefined {
+  if (!map) return source;
+  const efforts = distinctReasoningEfforts(map);
+  if (!efforts.length) return undefined;
+  const defaultEffort = source?.defaultEffort && efforts.includes(source.defaultEffort)
+    ? source.defaultEffort
+    : efforts.includes("high") ? "high" : efforts[0]!;
+  const mapping: Partial<Record<ReasoningEffort, string>> = {};
+  for (const effort of efforts) mapping[effort] = map[effort] ?? effort;
+  return {
+    efforts,
+    defaultEffort,
+    mapping,
+    budgetTokens: source?.budgetTokens
+  };
+}
+
 function reasoningConfigToMap(reasoning: ModelThinkingConfig, modelId: string): ThinkingLevelMap {
-  const map: ThinkingLevelMap = isKimiK3Model(modelId) ? {} : { off: "none" };
+  if (isKimiK27CodeModel(modelId)) return projectThinkingLevelMap(["enabled"], false);
+  const map: ThinkingLevelMap = {};
   for (const effort of reasoning.efforts) map[effort] = reasoning.mapping?.[effort] ?? effort;
-  return map;
+  return completeThinkingLevelMap(map, !isKimiAlwaysThinkingModel(modelId));
 }
 
 function mergeLimits(base: ModelLimits | undefined, override: ModelLimits | undefined): ModelLimits | undefined {
@@ -373,8 +500,4 @@ function mergeLimits(base: ModelLimits | undefined, override: ModelLimits | unde
     systemPromptReserveTokens: override?.systemPromptReserveTokens ?? base?.systemPromptReserveTokens,
     protocolSafetyMarginTokens: override?.protocolSafetyMarginTokens ?? base?.protocolSafetyMarginTokens
   };
-}
-
-function isReasoningEffort(value: string): value is ReasoningEffort {
-  return value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "max";
 }

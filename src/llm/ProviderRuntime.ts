@@ -6,9 +6,9 @@
  */
 import type { AgentModel, ModelStreamContext, ModelStreamEvent, ModelStreamOptions } from "../agent/core/types.js";
 import type { LanguageModelV4 } from "@ai-sdk/provider";
-import { effectiveThinkingSelection, modelCapabilities, modelReasoningConfig, modelThinkingLevelMap, nativeReasoningEffort, normalizeModelMetadata, reasoningBudgetTokens } from "../ai/capabilities.js";
+import { completeThinkingLevelMap, effectiveThinkingSelection, isKimiAlwaysThinkingModel, isKimiK3Model, modelCapabilities, modelReasoningConfig, modelThinkingLevelMap, nativeReasoningEffort, normalizeModelMetadata, reasoningBudgetTokens, thinkingLevelMapForModel } from "../ai/capabilities.js";
 import { fetchModelCatalogSnapshot } from "../ai/modelCatalog.js";
-import { accessPathThinkingLevelMap, inferThinkingLevelMap, lookupModelMetadata, thinkingLevelMapForEfforts, type ModelMetadata } from "../ai/modelMetadata.js";
+import { accessPathThinkingLevelMap, inferThinkingLevelMap, lookupModelMetadata, type ModelMetadata } from "../ai/modelMetadata.js";
 import { providerDefinition, providerProtocol } from "../ai/provider.js";
 import type { ModelCatalogEntry, ProviderDefinition } from "../ai/types.js";
 import type { AgentConfig, ModelAliasConfig, ModelApiBackend, ModelCompatibility, ModelProfile, ProviderConfig, ThinkingLevelMap } from "../config/schema.js";
@@ -16,7 +16,7 @@ import { createNativeModel } from "./nativeModel.js";
 import { createVercelLanguageModel } from "./vercelModel.js";
 import { openAiCodexHeaders, refreshSubscriptionOAuthTokens } from "./subscriptionAuth.js";
 import { AiRegistry } from "./AiRegistry.js";
-import type { ModelsStore } from "./ModelsStore.js";
+import { modelCatalogCacheKey, readProviderCatalog, type ModelsStore } from "./ModelsStore.js";
 import { createProxyAwareFetch } from "../network/proxyFetch.js";
 import {
   listProviderEmbeddingModels,
@@ -109,7 +109,9 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
 
   async refreshModels(signal?: AbortSignal, force = false): Promise<ModelCatalogEntry[]> {
     signal?.throwIfAborted();
-    const cached = await this.modelsStore?.read(this.id).catch(() => undefined);
+    const cached = this.modelsStore === undefined
+      ? undefined
+      : await readProviderCatalog(this.id, this.config, this.modelsStore);
     let models: readonly ModelCatalogEntry[];
     let etag = cached?.etag;
     let lastModified = cached?.lastModified;
@@ -134,12 +136,17 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
     if (models.length === 0) throw new Error(`Provider ${this.id} returned an empty model catalog.`);
     signal?.throwIfAborted();
     this.restoreModels(models);
-    await this.modelsStore?.write(this.id, {
+    const entry = {
       models: this.liveModels.map((model) => this.normalizeCatalogEntry(model)),
       checkedAt: Date.now(),
       etag,
       lastModified
-    }).catch(() => undefined);
+    };
+    const cacheKey = modelCatalogCacheKey(this.id, this.config);
+    await this.modelsStore?.write(cacheKey, entry).catch(() => undefined);
+    // 旧版 CLI/测试可能仍按 provider alias 读取；运行时优先使用上面的隔离键，
+    // 这里保留一份无凭据的镜像，避免升级后旧入口突然看不到刚刷新的目录。
+    if (cacheKey !== this.id) await this.modelsStore?.write(this.id, entry).catch(() => undefined);
     return this.getModels();
   }
 
@@ -155,14 +162,26 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
     const generated = lookupModelMetadata(this.config.type, model.model, this.config.baseUrl);
     const generatedModel = generated ? metadataToModel(this.id, this.config.type, model.model, generated) : undefined;
     const catalogModel = catalog
-      ? catalogEntryToModel(catalog, generated !== undefined)
+      ? catalogEntryToModel(catalog, generated !== undefined || catalog.reasoningEffortsSource === "inferred")
       : undefined;
     const catalogBase = catalogModel && generatedModel
       ? mergeModelMetadata(generatedModel, catalogModel)
       : catalogModel ?? generatedModel;
     const merged = catalogBase ? mergeModelMetadata(catalogBase, model) : model;
+    // 旧默认配置把完整能力压缩成 off/high/max，并同时保存了两档 reasoning；只修复这
+    // 个可识别的旧形状。profile 是用户显式覆盖，后续仍按原样保留，不能被自动补全覆盖。
+    const compactReasoning = merged.reasoning?.efforts.length === 2
+      && merged.reasoning.efforts[0] === "high"
+      && merged.reasoning.efforts[1] === "max"
+      && Object.keys(merged.thinkingLevelMap ?? {}).filter((level) => level !== "off").sort().join(",") === "high,max";
+    const healed = compactReasoning && merged.thinkingLevelMap
+      ? {
+        ...merged,
+        thinkingLevelMap: completeThinkingLevelMap(merged.thinkingLevelMap, !isKimiAlwaysThinkingModel(merged.model))
+      }
+      : merged;
     const profile = this.config.modelProfiles?.[model.model];
-    const profiled = profile === undefined ? merged : applyModelProfile(merged, profile);
+    const profiled = profile === undefined ? healed : applyModelProfile(healed, profile);
     const accessPathModel = recoverKnownReasoningModel(profiled, generatedModel, profile?.thinkingLevelMap !== undefined);
     return normalizeModelMetadata(
       { ...accessPathModel, compatibility: mergeCompatibility(this.config.compatibility, accessPathModel.compatibility) },
@@ -325,9 +344,9 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
   }
 
   private normalizeCatalogEntry(entry: ModelCatalogEntry): ModelCatalogEntry {
-    const model = catalogEntryToModel(entry);
-    const generated = lookupModelMetadata(this.config.type, model.model, this.config.baseUrl);
-    const generatedModel = generated ? metadataToModel(this.id, this.config.type, model.model, generated) : undefined;
+    const generated = lookupModelMetadata(this.config.type, entry.id, this.config.baseUrl);
+    const model = catalogEntryToModel(entry, generated !== undefined || entry.reasoningEffortsSource === "inferred");
+    const generatedModel = generated ? metadataToModel(this.id, this.config.type, entry.id, generated) : undefined;
     const metadataModel = generatedModel ? mergeModelMetadata(generatedModel, model) : model;
     const profile = this.config.modelProfiles?.[model.model];
     const profiled = profile === undefined ? metadataModel : applyModelProfile(metadataModel, profile);
@@ -483,6 +502,9 @@ function createProviderOptions(
   }
   if (reasoningProtocol === "alibaba") return { alibaba: { enableThinking: enabled, thinkingBudget: enabled ? budgetTokens : undefined } };
   if (reasoningProtocol === "moonshotai") {
+    if (isKimiAlwaysThinkingModel(model.model) && !isKimiK3Model(model.model)) {
+      return { moonshotai: { thinking: { type: "enabled" } } };
+    }
     if (modelThinkingLevelMap(model).off === undefined) {
       return { moonshotai: { reasoningEffort: enabled ? nativeEffort ?? "high" : "low" } };
     }
@@ -563,6 +585,7 @@ function applyModelProfile(model: ModelAliasConfig, profile: ModelProfile): Mode
     model: model.model,
     contextWindow: profile.contextWindow,
     maxInputTokens: profile.maxInputTokens,
+    maxOutputTokens: profile.maxOutputTokens,
     thinkingLevelMap,
     // profile 是最低层目录和旧 alias 之后的最终用户声明；有可用档位时必须解除
     // 低优先级来源的 reasoning:false，否则 map 虽然保存了，实际请求仍永远不会带思考参数。
@@ -578,7 +601,8 @@ function catalogEntryToModel(entry: ModelCatalogEntry, preferGeneratedReasoning 
   const thinkingLevelMap = preferGeneratedReasoning && entry.reasoningEffortsSource === "inferred"
     ? undefined
     : entry.thinkingLevelMap
-      ?? (entry.reasoningEfforts.length ? thinkingLevelMapForEfforts(entry.reasoningEfforts) : undefined);
+      ? completeThinkingLevelMap(entry.thinkingLevelMap, !isKimiAlwaysThinkingModel(entry.id))
+      : entry.reasoningEfforts.length ? thinkingLevelMapForModel(entry.id, true, entry.reasoningEfforts) : undefined;
   return {
     provider: entry.provider,
     model: entry.id,
@@ -601,8 +625,8 @@ function catalogEntryToModel(entry: ModelCatalogEntry, preferGeneratedReasoning 
 function metadataToModel(provider: string, providerType: string, modelId: string, metadata: ModelMetadata): ModelAliasConfig {
   const thinkingLevelMap = accessPathThinkingLevelMap(providerType, modelId)
     ?? (metadata.thinkingLevelMap
-    ? { ...metadata.thinkingLevelMap }
-    : metadata.reasoningEfforts.length ? thinkingLevelMapForEfforts(metadata.reasoningEfforts) : undefined);
+    ? completeThinkingLevelMap(metadata.thinkingLevelMap, !isKimiAlwaysThinkingModel(modelId))
+    : metadata.reasoningEfforts.length ? thinkingLevelMapForModel(modelId, true, metadata.reasoningEfforts) : undefined);
   return {
     provider,
     model: modelId,
