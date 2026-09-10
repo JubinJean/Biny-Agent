@@ -1293,15 +1293,13 @@ private final class ActivityRecorder {
         let bundleId = application?.bundleIdentifier
         let appName = application?.localizedName
         let capturedInputEventCount = inputEventCount
-        Task { [weak self] in
+        Task { @MainActor [weak self] in
             guard let self else { return }
-            defer {
-                DispatchQueue.main.async {
-                    self.captureInFlight = false
-                }
-            }
+            defer { self.captureInFlight = false }
             do {
-                guard DispatchQueue.main.sync(execute: { self.fallbackCaptureAllowed() }) else { return }
+                // Task 从 @MainActor 的 beginCapture 继承主队列；这里直接访问状态，不能再
+                // DispatchQueue.main.sync，否则第一次截图时会触发 libdispatch 自同步 SIGTRAP。
+                guard self.fallbackCaptureAllowed() else { return }
                 let image: CGImage
                 let jpeg: Data
                 let signature: FrameSignature
@@ -1310,59 +1308,54 @@ private final class ActivityRecorder {
                     // compare-only 路径先以 JPEG quality 40 抓最多 160px 宽的图，
                     // 再从编码后的 JPEG 生成 160×90 指纹；不能直接对原始 CGImage 去重。
                     let thumbnailCapture = try await self.captureScreenJPEG(maxWidth: 160, quality: 40)
-                    DispatchQueue.main.sync { self.recordCaptureSuccess() }
+                    self.recordCaptureSuccess()
                     guard let thumbnailSignature = self.frameSignature(image: thumbnailCapture.image) else {
-                        DispatchQueue.main.async { self.lastStatusError = "无法生成屏幕画面指纹。" }
+                        self.lastStatusError = "无法生成屏幕画面指纹。"
                         return
                     }
-                    let thumbnailAcceptance = DispatchQueue.main.sync {
-                        self.compareFrame(thumbnailSignature, trigger: reason, settings: settings)
-                    }
+                    let thumbnailAcceptance = self.compareFrame(thumbnailSignature, trigger: reason, settings: settings)
                     guard thumbnailAcceptance.accepted else { return }
                     signature = thumbnailSignature
                     acceptance = thumbnailAcceptance
                     let fullCapture = try await self.captureScreenJPEG(maxWidth: 2_560, quality: settings.jpegQuality)
                     image = fullCapture.image
                     jpeg = fullCapture.jpeg
-                    DispatchQueue.main.sync { self.recordCaptureSuccess() }
+                    self.recordCaptureSuccess()
                 } else {
                     // 事件触发和 heartbeat 直接取整屏 JPEG；指纹也基于同一份编码结果。
                     let fullCapture = try await self.captureScreenJPEG(maxWidth: 2_560, quality: settings.jpegQuality)
                     image = fullCapture.image
                     jpeg = fullCapture.jpeg
-                    DispatchQueue.main.sync { self.recordCaptureSuccess() }
+                    self.recordCaptureSuccess()
                     guard let fullSignature = self.frameSignature(image: image) else {
-                        DispatchQueue.main.async { self.lastStatusError = "无法生成屏幕画面指纹。" }
+                        self.lastStatusError = "无法生成屏幕画面指纹。"
                         return
                     }
                     signature = fullSignature
-                    acceptance = DispatchQueue.main.sync {
-                        self.compareFrame(fullSignature, trigger: reason, settings: settings)
-                    }
+                    acceptance = self.compareFrame(fullSignature, trigger: reason, settings: settings)
                     guard acceptance.accepted else { return }
                 }
-                guard DispatchQueue.main.sync(execute: { self.fallbackCaptureAllowed() }) else { return }
+                guard self.fallbackCaptureAllowed() else { return }
                 let shouldRunOcr: Bool
                 if settings.ocrEnabled {
                     // OCR 关闭时仍保留已接受帧的计数；重新打开后，如果已经
                     // 跨过 N 帧，下一张新快照立即进入 OCR，而不是重新从 1 开始等。
-                    shouldRunOcr = DispatchQueue.main.sync {
-                        self.snapshotsSinceLastOcr += 1
-                        let every = max(1, settings.ocrEveryNFrames)
-                        guard self.snapshotsSinceLastOcr >= every else { return false }
+                    self.snapshotsSinceLastOcr += 1
+                    let every = max(1, settings.ocrEveryNFrames)
+                    if self.snapshotsSinceLastOcr >= every {
                         self.snapshotsSinceLastOcr = 0
-                        return true
+                        shouldRunOcr = true
+                    } else {
+                        shouldRunOcr = false
                     }
                 } else {
-                    DispatchQueue.main.sync { self.snapshotsSinceLastOcr += 1 }
+                    self.snapshotsSinceLastOcr += 1
                     shouldRunOcr = false
                 }
-                guard DispatchQueue.main.sync(execute: { self.fallbackCaptureAllowed() }) else { return }
+                guard self.fallbackCaptureAllowed() else { return }
                 // 先提交并发送完整 JPEG；OCR 是后续投影，不能阻塞截图本身的持久化。
                 // 缩略图变化但整屏捕获或编码失败时，下一次 visual poll 仍会重新尝试。
-                DispatchQueue.main.sync {
-                    self.commitFrame(signature)
-                }
+                self.commitFrame(signature)
                 let captureId = settings.ocrEnabled && shouldRunOcr ? UUID().uuidString : nil
                 self.output.write(SidecarCapture(
                     occurredAt: capturedAt,
@@ -1391,10 +1384,8 @@ private final class ActivityRecorder {
                     self.output.write(SidecarOcr(captureId: captureId, ocrText: ocrText))
                 }
             } catch {
-                DispatchQueue.main.async {
-                    self.recordCaptureFailure()
-                    self.lastStatusError = "无法读取当前屏幕画面。"
-                }
+                self.recordCaptureFailure()
+                self.lastStatusError = "无法读取当前屏幕画面。"
             }
         }
     }

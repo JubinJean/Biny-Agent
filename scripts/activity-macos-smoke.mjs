@@ -54,6 +54,7 @@ const settings = {
   ocrEveryNFrames: 1,
 };
 
+let cleanupError;
 try {
   send({ type: "start", settings });
   const status = await waitFor((message) => message.type === "status", 5_000);
@@ -87,9 +88,14 @@ try {
 } finally {
   send({ type: "stop" });
   if (!child.stdin.destroyed) child.stdin.end();
-  await waitForExit(child, 5_000);
+  const exit = await waitForExit(child, 5_000);
+  if (exit.timedOut) cleanupError = new Error("Activity sidecar did not exit after stop.");
+  else if (exit.signal !== null || exit.code !== 0) {
+    cleanupError = new Error(`Activity sidecar exited unexpectedly after stop (code=${exit.code ?? "-"}, signal=${exit.signal ?? "-"}).`);
+  }
   if (stderr.trim()) console.error(stderr.trim());
 }
+if (cleanupError) throw cleanupError;
 
 function send(command) {
   if (!child.stdin.destroyed && child.stdin.writable) child.stdin.write(`${JSON.stringify(command)}\n`);
@@ -106,15 +112,17 @@ async function waitFor(predicate, timeoutMs) {
 }
 
 async function waitForExit(processHandle, timeoutMs) {
-  if (processHandle.exitCode !== null) return;
-  await new Promise((resolve) => {
+  if (processHandle.exitCode !== null || processHandle.signalCode !== null) {
+    return { code: processHandle.exitCode, signal: processHandle.signalCode, timedOut: false };
+  }
+  return await new Promise((resolve) => {
     const timer = setTimeout(() => {
       processHandle.kill("SIGTERM");
-      resolve();
+      resolve({ code: null, signal: "SIGTERM", timedOut: true });
     }, timeoutMs);
-    processHandle.once("exit", () => {
+    processHandle.once("exit", (code, signal) => {
       clearTimeout(timer);
-      resolve();
+      resolve({ code, signal, timedOut: false });
     });
   });
 }

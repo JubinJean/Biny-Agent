@@ -109,6 +109,13 @@ interface SidecarErrorMessage {
 type SidecarMessage = SidecarEventMessage | SidecarCaptureMessage | SidecarOcrMessage | SidecarStatusMessage | SidecarErrorMessage;
 type PersistableSidecarMessage = SidecarEventMessage | SidecarCaptureMessage | SidecarOcrMessage;
 
+/**
+ * 全库聚合快照（COUNT/SUM/三表 JOIN）的复用时长。它随活动库增长变慢，而 sidecar 事件
+ * 是逐条到达的：事件路径的 publish 若每次都真查库，主进程事件循环会被查询切成碎片，
+ * 表现为整个窗口的 tooltip/光标/IPC 间歇性卡顿。计数允许一个 TTL 的陈旧。
+ */
+const STORE_SNAPSHOT_TTL_MS = 30_000;
+
 export interface ActivityRecorderServiceOptions {
   configStore: AgentConfigStore;
   sidecarPath: string | undefined;
@@ -171,6 +178,11 @@ export class ActivityRecorderService {
   private bufferedSidecarMessages: PersistableSidecarMessage[] = [];
   /** capture 先落库，OCR 完成后通过 captureId 更新同一张 snapshot。 */
   private pendingOcrCaptures = new Map<string, string>();
+  /** store.snapshot() 的 TTL 缓存；session 边界、清空、重开库、容量轮转时主动失效。 */
+  private storeSnapshotCache?: {
+    at: number;
+    data: ReturnType<ActivityStore["snapshot"]>;
+  };
 
   constructor(options: ActivityRecorderServiceOptions) {
     this.configStore = options.configStore;
@@ -226,7 +238,8 @@ export class ActivityRecorderService {
   }
 
   snapshot(): ActivityRuntimeSnapshot {
-    return structuredClone(this.createSnapshot());
+    // IPC 按需读取（设置页打开/刷新、清空后回显）：低频且用户可见，强制绕过 TTL 取最新值。
+    return structuredClone(this.createSnapshot(true));
   }
 
   /** 读取全局活动设置；QuickChat 不应借用需要 projectId 的设置事务快照。 */
@@ -377,6 +390,7 @@ export class ActivityRecorderService {
     await this.enqueue(async () => {
       await this.stopInternal();
       await this.store.clear();
+      this.invalidateStoreSnapshot();
       if (shouldRestart && this.settings) {
         this.resetAbortControllerIfNeeded();
         this.analysisScheduler.start();
@@ -393,6 +407,8 @@ export class ActivityRecorderService {
     // sidecar 的截图去重、输入聚合和浏览器状态，不能在当前 session 内原地 update。
     await this.stopInternal();
     this.settings = nextSettings;
+    // 库可能被重开到新目录，closeOpenSessions 也会改写 session；旧缓存一律作废。
+    this.invalidateStoreSnapshot();
     try {
       await this.store.open(nextSettings.outputDirectory);
       // 启动采集器时先关闭上次异常退出留下的 open session。
@@ -668,6 +684,7 @@ export class ActivityRecorderService {
   private ensureSession(occurredAt: string): string {
     if (!this.sessionId) {
       this.sessionId = this.store.startSession(occurredAt);
+      this.invalidateStoreSnapshot();
       this.send({ type: "reset_browser_state" });
       this.scheduleSessionIdleClose();
     }
@@ -701,6 +718,7 @@ export class ActivityRecorderService {
     const sessionId = this.sessionId;
     if (sessionId) {
       this.store.endSession(sessionId, endedAt);
+      this.invalidateStoreSnapshot();
       // Session 已经有明确结束边界，立即把摘要落库；周期 sweep 仍负责进程退出、
       // OCR 延迟或模型暂不可用时的补偿。
       this.analysisScheduler.runNow();
@@ -729,6 +747,8 @@ export class ActivityRecorderService {
     void this.enqueue(async () => {
       try {
         await this.store.rotateSnapshots(maxStorageMb);
+        // 轮转删除会改变 storageBytes/fallbackCaptures；反正最多 30 分钟一次，直接作废缓存。
+        this.invalidateStoreSnapshot();
       } catch {
         // 轮转失败不应中断实时采集；下一次检查会再次尝试。
       }
@@ -832,8 +852,8 @@ export class ActivityRecorderService {
     this.emit?.(structuredClone(this.createSnapshot()));
   }
 
-  private createSnapshot(): ActivityRuntimeSnapshot {
-    const storeSnapshot = this.storeSnapshot();
+  private createSnapshot(forceStoreSnapshot = false): ActivityRuntimeSnapshot {
+    const storeSnapshot = this.storeSnapshot(forceStoreSnapshot);
     return {
       state: this.state,
       collectorAvailable: this.sidecarPath !== undefined,
@@ -853,12 +873,22 @@ export class ActivityRecorderService {
     };
   }
 
-  private storeSnapshot(): ReturnType<ActivityStore["snapshot"]> {
+  private storeSnapshot(force = false): ReturnType<ActivityStore["snapshot"]> {
+    const cached = this.storeSnapshotCache;
+    if (!force && cached && Date.now() - cached.at < STORE_SNAPSHOT_TTL_MS) return cached.data;
     try {
-      return this.store.snapshot();
+      const data = this.store.snapshot();
+      this.storeSnapshotCache = { at: Date.now(), data };
+      return data;
     } catch {
-      return { sessions: 0, events: 0, fallbackCaptures: 0, storageBytes: 0, recentSessions: [] };
+      // 查询失败时退回上一个快照，避免状态广播因为瞬时错误清零。
+      return cached?.data ?? { sessions: 0, events: 0, fallbackCaptures: 0, storageBytes: 0, recentSessions: [] };
     }
+  }
+
+  /** 库内容发生跨越 TTL 粒度的变化（session 边界、清空、重开、轮转）后调用。 */
+  private invalidateStoreSnapshot(): void {
+    this.storeSnapshotCache = undefined;
   }
 
   private async enqueue<T>(operation: () => Promise<T>): Promise<T> {
