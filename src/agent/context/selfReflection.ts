@@ -43,7 +43,7 @@ export interface SelfReflectionActionCandidate {
 }
 
 export interface SelfReflectionOptions {
-  agentDir?: string;
+  configDir?: string;
   model?: AgentModel;
   memoryContext?: string;
   activityContext?: string;
@@ -72,7 +72,7 @@ export async function refreshSelfReflection(
   dateKey: string,
   options: SelfReflectionOptions = {}
 ): Promise<SelfReflectionResult> {
-  const note = await readDailyMemoryNote(dateKey, { agentDir: options.agentDir });
+  const note = await readDailyMemoryNote(dateKey, { configDir: options.configDir });
   const chat = note ? readDailyMemorySection(note, "聊天摘要") : undefined;
   const activity = note ? readDailyMemorySection(note, "活动记录") : undefined;
   const source = [chat, activity, options.activityContext, options.memoryContext]
@@ -159,7 +159,7 @@ export async function refreshSelfReflection(
     dateKey,
     "自我反思",
     [marker, promotionComplete ? promotionMarker : undefined, reflection].filter((value): value is string => value !== undefined).join("\n"),
-    { agentDir: options.agentDir }
+    { configDir: options.configDir }
   );
   return { dateKey, written: true, model: options.model.modelId, memoriesCreated, tasksCreated };
 }

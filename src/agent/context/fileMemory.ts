@@ -7,7 +7,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { globalAgentDir } from "../../config/paths.js";
+import { globalConfigDir } from "../../config/paths.js";
 import { readDailyMemoryNote } from "../../activity/dailyNotes.js";
 
 const longTermFileName = "MEMORY.md";
@@ -16,16 +16,16 @@ const lockPollMs = 25;
 const maxLongTermChars = 32_000;
 
 export interface FileMemoryOptions {
-  agentDir?: string;
+  configDir?: string;
 }
 
 export class FileMemoryStorage {
-  readonly agentDir: string;
+  readonly configDir: string;
   readonly longTermPath: string;
 
   constructor(options: FileMemoryOptions = {}) {
-    this.agentDir = path.resolve(options.agentDir ?? globalAgentDir());
-    this.longTermPath = path.join(this.agentDir, longTermFileName);
+    this.configDir = path.resolve(options.configDir ?? globalConfigDir());
+    this.longTermPath = path.join(this.configDir, longTermFileName);
   }
 
   async readLongTerm(): Promise<string | undefined> {
@@ -42,7 +42,7 @@ export class FileMemoryStorage {
   async writeLongTerm(content: string): Promise<string> {
     const normalized = content.replace(/\r\n?/gu, "\n").trim();
     if (!normalized) throw new Error("Long-term memory cannot be empty.");
-    await ensureDirectory(this.agentDir);
+    await ensureDirectory(this.configDir);
     return await withFileLock(this.longTermPath, async () => {
       await atomicWrite(this.longTermPath, normalized.endsWith("\n") ? normalized : `${normalized}\n`);
       return this.longTermPath;
@@ -52,7 +52,7 @@ export class FileMemoryStorage {
   async append(content: string, options: { section?: string; entryKey?: string } = {}): Promise<string> {
     const normalized = content.replace(/\r\n?/gu, "\n").trim();
     if (!normalized) throw new Error("Long-term memory entry cannot be empty.");
-    await ensureDirectory(this.agentDir);
+    await ensureDirectory(this.configDir);
     return await withFileLock(this.longTermPath, async () => {
       const existing = await readOptional(this.longTermPath) ?? "# MEMORY.md\n";
       const marker = options.entryKey === undefined

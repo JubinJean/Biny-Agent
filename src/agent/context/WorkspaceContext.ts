@@ -1,6 +1,7 @@
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { globalConfigDir } from "../../config/paths.js";
 import type { AgentMessage } from "../core/types.js";
 import { messageText } from "../modelMessages.js";
 import { collectProjectContext } from "../../project/ProjectContext.js";
@@ -43,8 +44,8 @@ export class WorkspaceContext {
     private readonly workspaceRoot: string,
     private readonly ignore: string[],
     private readonly instructionMaxBytes: number,
-    /** 全局指令文件；传 undefined 关闭，默认 ~/.biny/AGENTS.md。 */
-    private readonly globalInstructionFile: string | undefined = path.join(os.homedir(), ".biny", "AGENTS.md")
+    /** 全局指令文件；传 undefined 关闭，默认 ~/.config/biny/AGENTS.md。 */
+    private readonly globalInstructionFile: string | undefined = path.join(globalConfigDir(), "AGENTS.md")
   ) {
     this.canonicalWorkspaceRoot = resolveWorkspaceDirectory(workspaceRoot, ".", []);
   }
@@ -87,9 +88,9 @@ export class WorkspaceContext {
     for (const filePath of paths) addUnique(this.activePaths, filePath, 24);
     addUnique(this.recentSummaries, summarizeToolResult(tool, paths, result), 12);
     if (
-      tool === "run_command"
+      tool === "Bash"
       || tool === "start_process"
-      || (["write_file", "edit_file", "multi_edit", "delete_file", "apply_patch", "move_file"].includes(tool) && !isFailure(result))
+      || (["Write", "edit_file", "multi_edit", "delete_file", "apply_patch", "move_file"].includes(tool) && !isFailure(result))
     ) {
       this.snapshotDirty = true;
       this.repoMapDirty = true;

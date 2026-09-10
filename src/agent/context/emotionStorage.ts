@@ -7,14 +7,14 @@
 import { promises as fs } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { globalAgentDir } from "../../config/paths.js";
+import { globalConfigDir } from "../../config/paths.js";
 import { blendEmotion, DEFAULT_EMOTION_STATE, type BlendedEmotion, type EmotionState } from "./emotionTypes.js";
 
 const baseFileName = "base.md";
 const contextDirectoryName = "context";
 
 export interface EmotionStorageOptions {
-  agentDir?: string;
+  configDir?: string;
   now?: () => Date;
 }
 
@@ -23,7 +23,7 @@ export class EmotionStorage {
   private readonly now: () => Date;
 
   constructor(options: EmotionStorageOptions = {}) {
-    this.root = path.join(path.resolve(options.agentDir ?? globalAgentDir()), "emotions");
+    this.root = path.join(path.resolve(options.configDir ?? globalConfigDir()), "emotions");
     this.now = options.now ?? (() => new Date());
   }
 

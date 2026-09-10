@@ -37,6 +37,7 @@ export interface CompletedChatDiaryEntry {
 }
 
 export interface ChatDiaryRefreshOptions {
+  configDir?: string;
   agentDir?: string;
   model?: AgentModel;
   signal?: AbortSignal;
@@ -57,7 +58,7 @@ export interface ChatDiaryRefreshResult {
 /** 已完成回合结束后的即时旁路写入；失败不能改变聊天回合终态。 */
 export async function appendCompletedChatDiaryEntry(
   entry: CompletedChatDiaryEntry,
-  options: { agentDir?: string } = {}
+  options: { configDir?: string } = {}
 ): Promise<string> {
   const occurredAt = entry.occurredAt ?? new Date();
   const dateKey = formatLocalDate(occurredAt);
@@ -72,7 +73,7 @@ export async function appendCompletedChatDiaryEntry(
     "聊天摘要",
     `${entry.sessionId}\0${entry.turnId}`,
     content,
-    { agentDir: options.agentDir }
+    { configDir: options.configDir }
   );
 }
 
@@ -82,7 +83,7 @@ export async function appendCompletedChatDiaryEntry(
  */
 export async function backfillDailyChatDiaryEntries(
   dateKey: string,
-  options: { agentDir?: string } = {}
+  options: { configDir?: string; agentDir?: string } = {}
 ): Promise<number> {
   const files = await listAllSessionFiles(options.agentDir);
   let backfilled = 0;
@@ -106,7 +107,7 @@ export async function backfillDailyChatDiaryEntries(
         userMessage: turn.userMessage,
         assistantMessage: turn.assistantMessage,
         occurredAt: turn.occurredAt
-      }, options);
+      }, { configDir: options.configDir });
       backfilled += 1;
     }
   }
@@ -121,8 +122,8 @@ export async function refreshChatDailyDiary(
   dateKey: string,
   options: ChatDiaryRefreshOptions = {}
 ): Promise<ChatDiaryRefreshResult> {
-  const backfilled = await backfillDailyChatDiaryEntries(dateKey, { agentDir: options.agentDir });
-  const note = await readDailyMemoryNote(dateKey, { agentDir: options.agentDir });
+  const backfilled = await backfillDailyChatDiaryEntries(dateKey, { agentDir: options.agentDir, configDir: options.configDir });
+  const note = await readDailyMemoryNote(dateKey, { configDir: options.configDir });
   if (!note) return { dateKey, written: false, backfilled, reason: "empty" };
 
   const source = [
@@ -178,7 +179,7 @@ export async function refreshChatDailyDiary(
     dateKey,
     "每日总结",
     [marker, `<!-- biny-daily-model:${modelId ? modelKey : "fallback"} -->`, summary].join("\n"),
-    { agentDir: options.agentDir }
+    { configDir: options.configDir }
   );
   return { dateKey, written: true, backfilled, model: modelId };
 }

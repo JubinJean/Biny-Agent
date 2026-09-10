@@ -1,8 +1,8 @@
 /**
  * Biny 配置与全局 agent 数据的路径解析。
  *
- * 模型配置、项目会话和项目记忆都脱离工作区存放。默认配置文件在 `~/.biny/config.json`，
- * session/memory 等 Agent 运行数据在 `~/.biny/agent/`；BINY_AGENT_DIR 会把两者统一
+ * 用户配置与持久化上下文放在 `~/.config/biny/`，session/memory 等 Agent 运行数据在
+ * `~/.biny/agent/`；BINY_AGENT_DIR 会把两者统一
  * 重定向到指定目录，便于测试隔离和便携部署。每个工作区的运行状态也放在该全局根目录
  * 下的独立分区中，不因启动项目而创建项目目录下的 `.biny`。
  * 项目 `.biny` 只承载设置、扩展覆盖以及明确要求项目本地保存的内容。
@@ -18,9 +18,11 @@ import path from "node:path";
 
 export const BINY_AGENT_DIR_ENV = "BINY_AGENT_DIR";
 export const DEFAULT_AGENT_DIR = path.join(".biny", "agent");
+export const DEFAULT_CONFIG_DIR = path.join(".config", "biny");
 export const GLOBAL_CONFIG_FILE = "config.json";
 export const PROJECT_SETTINGS_FILE = "settings.json";
 export const MODELS_STORE_FILE = "models-store.json";
+export const GLOBAL_PLUGIN_DIR = "plugins";
 
 export interface PathEnvironment {
   env?: NodeJS.ProcessEnv;
@@ -40,12 +42,16 @@ export function globalConfigPath(options: PathEnvironment = {}): string {
 export function globalConfigDir(options: PathEnvironment = {}): string {
   const configured = (options.env ?? process.env)[BINY_AGENT_DIR_ENV];
   if (configured?.trim()) return path.resolve(configured.trim());
-  return path.dirname(globalAgentDir(options));
+  return path.resolve(options.homeDir ?? os.homedir(), DEFAULT_CONFIG_DIR);
 }
 
 /** 动态 Provider 模型目录属于全局模型配置，不按工作区重复保存。 */
 export function globalModelsStorePath(options: PathEnvironment = {}): string {
-  return path.join(globalAgentDir(options), MODELS_STORE_FILE);
+  return path.join(globalConfigDir(options), MODELS_STORE_FILE);
+}
+
+export function globalPluginRoot(options: PathEnvironment = {}): string {
+  return path.join(globalConfigDir(options), GLOBAL_PLUGIN_DIR);
 }
 
 /** 项目会话按规范化绝对路径隔离，避免不同工作区的 latest、id 前缀和锁互相干扰。 */

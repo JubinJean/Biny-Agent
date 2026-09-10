@@ -8,7 +8,7 @@ import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { z } from "zod";
 import type { AgentMessage, AgentModel, ModelRequestContext, ModelRequestObserver } from "../core/types.js";
-import { globalAgentDir } from "../../config/paths.js";
+import { globalConfigDir } from "../../config/paths.js";
 import { generateNativeText } from "../../llm/nativeJson.js";
 import type { ModelUsageObserver } from "../../observability/usage.js";
 import { redactSecrets } from "../../utils/secrets.js";
@@ -1156,7 +1156,7 @@ export class LocalMemory {
     signal?.throwIfAborted();
     const safeName = sanitizePersonFileName(name);
     if (!safeName) return;
-    const peopleRoot = path.join(globalAgentDir(), "people");
+    const peopleRoot = path.join(globalConfigDir(), "people");
     await mkdir(peopleRoot, { recursive: true, mode: 0o700 });
     await appendFile(
       path.join(peopleRoot, `${safeName}.md`),

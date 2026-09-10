@@ -10,6 +10,7 @@ import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
 import { configSchema, defaultConfig, type AgentConfig } from "./schema.js";
 import { migrateGlobalConfigDocument } from "./migrations.js";
+import { migrateLegacyGlobalState } from "./globalStateMigration.js";
 import { globalConfigDir } from "./paths.js";
 import { loadProjectSettings, type ProjectSettings } from "./projectSettings.js";
 
@@ -42,6 +43,7 @@ export async function loadConfig(workspaceRoot: string, options: ConfigPathOptio
 
 /** 只读取全局配置，不读取项目覆盖；供保存配置时保持全局字段的原始值。 */
 export async function loadGlobalConfig(options: ConfigPathOptions = {}): Promise<AgentConfig> {
+  if (options.globalDir === undefined) await migrateLegacyGlobalState();
   try {
     return await loadConfigFile(options.globalDir ?? globalConfigDir());
   } catch (error) {
@@ -126,6 +128,7 @@ async function writeConfigDocumentFile(root: string, settings: AgentConfig): Pro
 
 export async function ensureConfig(workspaceRoot: string, options: ConfigPathOptions = {}): Promise<void> {
   void workspaceRoot;
+  if (options.globalDir === undefined) await migrateLegacyGlobalState();
   const root = options.globalDir ?? globalConfigDir();
   await fs.mkdir(root, { recursive: true, mode: 0o700 });
   const location = await resolveConfigLocation(root);

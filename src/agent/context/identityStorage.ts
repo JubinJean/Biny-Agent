@@ -7,7 +7,7 @@
 import { promises as fs } from "node:fs";
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { globalAgentDir } from "../../config/paths.js";
+import { globalConfigDir } from "../../config/paths.js";
 import {
   identityDocument,
   identityDocumentFileNames,
@@ -41,7 +41,7 @@ interface IdentityState {
 }
 
 interface IdentityStorageOptions {
-  agentDir?: string;
+  configDir?: string;
   now?: () => Date;
 }
 
@@ -74,12 +74,10 @@ const documentStateSchema = {
 
 export class IdentityStorage {
   private readonly root: string;
-  private readonly legacyRoot: string;
   private readonly now: () => Date;
 
   constructor(options: IdentityStorageOptions = {}) {
-    this.legacyRoot = path.resolve(options.agentDir ?? globalAgentDir());
-    this.root = path.join(this.legacyRoot, "identity");
+    this.root = path.resolve(options.configDir ?? globalConfigDir());
     this.now = options.now ?? (() => new Date());
   }
 
@@ -92,7 +90,7 @@ export class IdentityStorage {
   }
 
   async overview(): Promise<IdentityOverview> {
-    if (!await this.hasRoot() && !await this.hasLegacyDocument()) {
+    if (!await this.hasRoot()) {
       return { revision: 0, documents: {} };
     }
     const state = await this.readState();
@@ -170,8 +168,7 @@ export class IdentityStorage {
   }
 
   private async readDocument(kind: IdentityDocumentKind, state: IdentityState): Promise<IdentityDocument | undefined> {
-    const content = await readOptional(path.join(this.legacyRoot, identityDocumentFileNames[kind]))
-      ?? await readOptional(path.join(this.root, identityDocumentFileNames[kind]));
+    const content = await readOptional(path.join(this.root, identityDocumentFileNames[kind]));
     if (content === undefined) return undefined;
     const metadata = state.documents[kind];
     const normalized = normalizeIdentityContent(content, kind);
@@ -186,7 +183,6 @@ export class IdentityStorage {
   private async writeDocument(document: IdentityDocument): Promise<void> {
     const content = document.content.endsWith("\n") ? document.content : `${document.content}\n`;
     await this.writeFile(path.join(this.root, identityDocumentFileNames[document.kind]), content);
-    if (this.legacyRoot !== this.root) await this.writeFile(path.join(this.legacyRoot, identityDocumentFileNames[document.kind]), content);
   }
 
   private async writeHistory(document: IdentityDocument): Promise<void> {
@@ -251,18 +247,6 @@ export class IdentityStorage {
       if (isNotFound(error)) return false;
       throw error;
     }
-  }
-
-  private async hasLegacyDocument(): Promise<boolean> {
-    for (const kind of identityDocumentKinds) {
-      try {
-        const stat = await fs.lstat(path.join(this.legacyRoot, identityDocumentFileNames[kind]));
-        if (stat.isFile() && !stat.isSymbolicLink()) return true;
-      } catch (error) {
-        if (!isNotFound(error)) throw error;
-      }
-    }
-    return false;
   }
 
   private async ensureRoot(): Promise<void> {

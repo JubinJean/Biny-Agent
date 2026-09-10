@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { globalAgentDir } from "../config/paths.js";
+import { globalConfigDir } from "../config/paths.js";
 
 /**
  * 每日记忆笔记：给人和 agent 看的可读叙事，不属于 durable memory entries。
@@ -15,7 +15,7 @@ const dailyNoteLockPollMs = 25;
 export async function writeDailyMemoryNote(
   dateKey: string,
   content: string,
-  options: { agentDir?: string } = {}
+  options: { configDir?: string } = {}
 ): Promise<string> {
   return await mutateDailyMemoryNote(dateKey, options, () => {
     const trimmed = content.trim();
@@ -31,7 +31,7 @@ export interface DailyMemoryNote {
 /** 读取今天和昨天的文件记忆；读取不创建目录，也不触碰 SQLite durable memory。 */
 export async function readDailyMemoryNotes(
   now = new Date(),
-  options: { agentDir?: string } = {}
+  options: { configDir?: string } = {}
 ): Promise<DailyMemoryNote[]> {
   const yesterday = new Date(now.getTime());
   yesterday.setDate(yesterday.getDate() - 1);
@@ -46,7 +46,7 @@ export async function readDailyMemoryNotes(
 /** 读取任意一天的 Markdown；只读路径不会创建文件或目录。 */
 export async function readDailyMemoryNote(
   dateKey: string,
-  options: { agentDir?: string } = {}
+  options: { configDir?: string } = {}
 ): Promise<string | undefined> {
   assertDailyDate(dateKey);
   try {
@@ -70,7 +70,7 @@ export async function upsertDailyMemorySection(
   dateKey: string,
   sectionTitle: string,
   content: string,
-  options: { agentDir?: string } = {}
+  options: { configDir?: string } = {}
 ): Promise<string> {
   assertDailyDate(dateKey);
   const heading = normalizeSectionHeading(sectionTitle);
@@ -88,7 +88,7 @@ export async function appendDailyMemoryEntry(
   sectionTitle: string,
   entryKey: string,
   content: string,
-  options: { agentDir?: string } = {}
+  options: { configDir?: string } = {}
 ): Promise<string> {
   assertDailyDate(dateKey);
   const heading = normalizeSectionHeading(sectionTitle);
@@ -107,7 +107,7 @@ export async function appendDailyMemoryEntry(
 export async function writeDailyActivityNote(
   dateKey: string,
   content: string,
-  options: { agentDir?: string } = {}
+  options: { configDir?: string } = {}
 ): Promise<string> {
   assertDailyDate(dateKey);
   let body = content.trim();
@@ -120,7 +120,7 @@ export async function writeDailyActivityNote(
 
 async function mutateDailyMemoryNote(
   dateKey: string,
-  options: { agentDir?: string },
+  options: { configDir?: string },
   mutate: (existing: string) => string
 ): Promise<string> {
   assertDailyDate(dateKey);
@@ -162,8 +162,8 @@ async function readDailyNote(target: string, dateKey: string): Promise<string> {
   }
 }
 
-function dailyMemoryPath(dateKey: string, options: { agentDir?: string }): string {
-  const root = path.resolve(options.agentDir ?? globalAgentDir());
+function dailyMemoryPath(dateKey: string, options: { configDir?: string }): string {
+  const root = path.resolve(options.configDir ?? globalConfigDir());
   return path.join(root, "memory", `${dateKey}.md`);
 }
 

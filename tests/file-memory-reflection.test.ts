@@ -55,36 +55,36 @@ const previous = process.env[BINY_AGENT_DIR_ENV];
 process.env[BINY_AGENT_DIR_ENV] = root;
 
 try {
-  const storage = new FileMemoryStorage({ agentDir: root });
+  const storage = new FileMemoryStorage({ configDir: root });
   await storage.append("用户偏好简洁的日报。", { entryKey: "preference:daily" });
   await storage.append("用户偏好简洁的日报。", { entryKey: "preference:daily" });
-  await upsertDailyMemorySection("2026-09-05", "聊天摘要", "完成了记忆链路测试。", { agentDir: root });
-  await upsertDailyMemorySection("2026-09-05", "活动记录", "查看了项目面板并完成 OCR。", { agentDir: root });
-  const prompt = await readFileMemoryPrompt(new Date("2026-09-05T12:00:00.000Z"), { agentDir: root });
+  await upsertDailyMemorySection("2026-09-05", "聊天摘要", "完成了记忆链路测试。", { configDir: root });
+  await upsertDailyMemorySection("2026-09-05", "活动记录", "查看了项目面板并完成 OCR。", { configDir: root });
+  const prompt = await readFileMemoryPrompt(new Date("2026-09-05T12:00:00.000Z"), { configDir: root });
   assert.match(prompt ?? "", /简洁的日报/u);
   assert.match(prompt ?? "", /记忆链路测试/u);
 
   const reflection = await refreshSelfReflection("2026-09-05", {
-    agentDir: root,
+    configDir: root,
     model: reflectionModel,
     now: () => new Date("2026-09-05T23:00:00.000Z")
   });
   assert.equal(reflection.written, true);
-  const note = await readDailyMemoryNote("2026-09-05", { agentDir: root });
+  const note = await readDailyMemoryNote("2026-09-05", { configDir: root });
   assert.match(readDailyMemorySection(note ?? "", "自我反思") ?? "", /今天完成了闭环验证/u);
 
   const second = await refreshSelfReflection("2026-09-05", {
-    agentDir: root,
+    configDir: root,
     model: reflectionModel,
     now: () => new Date("2026-09-05T23:00:00.000Z")
   });
   assert.equal(second.reason, "up_to_date");
 
-  await upsertDailyMemorySection("2026-09-06", "聊天摘要", "完成日报闭环；补齐日报验收记录尚未完成。", { agentDir: root });
+  await upsertDailyMemorySection("2026-09-06", "聊天摘要", "完成日报闭环；补齐日报验收记录尚未完成。", { configDir: root });
   const promotedMemories: SelfReflectionMemoryCandidate[] = [];
   const promotedActions: SelfReflectionActionCandidate[] = [];
   const promoted = await refreshSelfReflection("2026-09-06", {
-    agentDir: root,
+    configDir: root,
     model: promotionModel,
     promoteMemory: async (candidate) => {
       promotedMemories.push(candidate);
@@ -100,10 +100,10 @@ try {
   assert.equal(promoted.tasksCreated, 1);
   assert.equal(promotedMemories[0]?.kind, "workflow");
   assert.equal(promotedActions[0]?.taskRunId.startsWith("reflection-"), true);
-  const promotedNote = await readDailyMemoryNote("2026-09-06", { agentDir: root });
+  const promotedNote = await readDailyMemoryNote("2026-09-06", { configDir: root });
   assert.match(readDailyMemorySection(promotedNote ?? "", "自我反思") ?? "", /biny-reflection-promoted/u);
   const promotedAgain = await refreshSelfReflection("2026-09-06", {
-    agentDir: root,
+    configDir: root,
     model: promotionModel,
     promoteMemory: async () => true,
     createTask: async () => true

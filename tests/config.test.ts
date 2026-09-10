@@ -3,7 +3,8 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { loadConfig, loadConfigFile, saveConfig, saveConfigFile } from "../src/config/loader.js";
-import { BINY_AGENT_DIR_ENV, globalAgentDir, globalConfigPath, projectSessionsDir } from "../src/config/paths.js";
+import { migrateLegacyGlobalState } from "../src/config/globalStateMigration.js";
+import { BINY_AGENT_DIR_ENV, globalAgentDir, globalConfigDir, globalConfigPath, globalModelsStorePath, globalPluginRoot, projectSessionsDir } from "../src/config/paths.js";
 import { configSchema, defaultConfig } from "../src/config/schema.js";
 import {
   BINY_KEYCHAIN_SERVICE,
@@ -20,12 +21,15 @@ import { resolveRunBudget } from "../src/agent/runBudget.js";
 import { createFileConfigStore, updateConfig } from "../src/config/store.js";
 import { loadProjectSettings, updateProjectSettings } from "../src/config/projectSettings.js";
 import { ConfigRevisionConflictError, configDocumentRevision } from "../src/config/versioned.js";
+import { migrateGlobalConfigDocument } from "../src/config/migrations.js";
 import type { CredentialStore } from "../src/config/credentials.js";
 import { DesktopConfigStore } from "../src/desktop/electron/main/DesktopConfigStore.js";
 
 await testGlobalPathResolution();
+await testLegacyGlobalStateMigration();
 testRunBudget();
 testMemoryEmbeddingDefaultsToE5();
+testBuiltInEmotionAndHeartbeatAreNotConfigurable();
 testRemovedModelFormatsRequireManualUpdate();
 await testProjectOverridesAndGlobalPersistence();
 await testConcurrentProjectSettingUpdates();
@@ -53,7 +57,11 @@ async function testGlobalPathResolution(): Promise<void> {
   assert.equal(globalAgentDir({ env: { [BINY_AGENT_DIR_ENV]: configured }, homeDir: "/unused" }), configured);
   assert.equal(globalConfigPath({ env: { [BINY_AGENT_DIR_ENV]: configured }, homeDir: "/unused" }), path.join(configured, "config.json"));
   assert.equal(globalAgentDir({ env: {}, homeDir: "/tmp/biny-home" }), "/tmp/biny-home/.biny/agent");
-  assert.equal(globalConfigPath({ env: {}, homeDir: "/tmp/biny-home" }), "/tmp/biny-home/.biny/config.json");
+  assert.equal(globalConfigDir({ env: {}, homeDir: "/tmp/biny-home" }), "/tmp/biny-home/.config/biny");
+  assert.equal(globalConfigPath({ env: {}, homeDir: "/tmp/biny-home" }), "/tmp/biny-home/.config/biny/config.json");
+  assert.equal(globalModelsStorePath({ env: {}, homeDir: "/tmp/biny-home" }), "/tmp/biny-home/.config/biny/models-store.json");
+  assert.equal(globalPluginRoot({ env: {}, homeDir: "/tmp/biny-home" }), "/tmp/biny-home/.config/biny/plugins");
+  assert.equal(globalConfigDir({ env: { [BINY_AGENT_DIR_ENV]: configured }, homeDir: "/unused" }), configured);
   const projectA = projectSessionsDir("/tmp/project-a", { env: { [BINY_AGENT_DIR_ENV]: configured } });
   const projectB = projectSessionsDir("/tmp/project-b", { env: { [BINY_AGENT_DIR_ENV]: configured } });
   assert.equal(path.dirname(projectA), path.join(configured, "sessions"));
@@ -89,6 +97,50 @@ function testRunBudget(): void {
     ...defaultConfig,
     agent: { ...defaultConfig.agent, maxProviderRetries: 2 }
   }), /Unrecognized key/u);
+}
+
+function testBuiltInEmotionAndHeartbeatAreNotConfigurable(): void {
+  const document = structuredClone(defaultConfig) as unknown as Record<string, unknown>;
+  const context = document.context as Record<string, unknown>;
+  context.emotion = { enabled: false, allowModelUpdate: false, autoAnalyze: false };
+  document.heartbeat = { enabled: false, intervalMinutes: 1 };
+  const migrated = migrateGlobalConfigDocument(document).document;
+  const parsed = configSchema.parse(migrated);
+  assert.equal("emotion" in parsed.context, false);
+  assert.equal("heartbeat" in parsed, false);
+}
+
+async function testLegacyGlobalStateMigration(): Promise<void> {
+  const home = await fs.mkdtemp(path.join(os.tmpdir(), "biny-config-migration-"));
+  try {
+    const legacyRoot = path.join(home, ".biny");
+    const legacyAgentRoot = path.join(legacyRoot, "agent");
+    const legacyIdentityRoot = path.join(legacyAgentRoot, "identity");
+    await fs.mkdir(legacyIdentityRoot, { recursive: true });
+    await fs.mkdir(path.join(legacyAgentRoot, "memory"), { recursive: true });
+    await fs.writeFile(path.join(legacyRoot, "config.json"), JSON.stringify(defaultConfig), "utf8");
+    await fs.writeFile(path.join(legacyAgentRoot, "models-store.json"), JSON.stringify({ version: 2, providers: {} }), "utf8");
+    await fs.writeFile(path.join(legacyAgentRoot, "SOUL.md"), "旧 Soul\n", "utf8");
+    await fs.writeFile(path.join(legacyRoot, "SOUL.md"), "实验版旧 Soul\n", "utf8");
+    await fs.writeFile(path.join(legacyIdentityRoot, "USER.md"), "旧用户资料\n", "utf8");
+    await fs.writeFile(path.join(legacyAgentRoot, "memory", "2026-09-08.md"), "旧日报\n", "utf8");
+    await fs.writeFile(path.join(legacyAgentRoot, "memory", "memory.sqlite"), "runtime state", "utf8");
+
+    const result = await migrateLegacyGlobalState({ env: {}, homeDir: home });
+    const targetRoot = path.join(home, ".config", "biny");
+    assert.ok(result.moved.length >= 5);
+    assert.equal(await fs.readFile(path.join(targetRoot, "config.json"), "utf8"), JSON.stringify(defaultConfig));
+    assert.equal(await fs.readFile(path.join(targetRoot, "models-store.json"), "utf8"), JSON.stringify({ version: 2, providers: {} }));
+    assert.equal(await fs.readFile(path.join(targetRoot, "SOUL.md"), "utf8"), "旧 Soul\n");
+    assert.equal(await fs.readFile(path.join(legacyRoot, "SOUL.md"), "utf8"), "实验版旧 Soul\n");
+    assert.equal(result.conflicts.filter((entry) => entry.endsWith(`${path.sep}SOUL.md`)).length, 1);
+    assert.equal(await fs.readFile(path.join(targetRoot, "USER.md"), "utf8"), "旧用户资料\n");
+    assert.equal(await fs.readFile(path.join(targetRoot, "memory", "2026-09-08.md"), "utf8"), "旧日报\n");
+    assert.equal(await fs.readFile(path.join(legacyAgentRoot, "memory", "memory.sqlite"), "utf8"), "runtime state");
+    await assert.rejects(fs.stat(path.join(legacyRoot, "config.json")), { code: "ENOENT" });
+  } finally {
+    await fs.rm(home, { recursive: true, force: true });
+  }
 }
 
 function testMemoryEmbeddingDefaultsToE5(): void {

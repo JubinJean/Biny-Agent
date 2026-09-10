@@ -18,7 +18,6 @@ import {
   memoryPolicySchema,
   type MemoryPolicy
 } from "../personalization/index.js";
-import { defaultHeartbeatConfig, type HeartbeatConfig } from "../agent/context/heartbeat.js";
 import { GLOBAL_CONFIG_FORMAT, GLOBAL_CONFIG_VERSION } from "./migrations.js";
 
 const agentSchema = z.object({
@@ -39,13 +38,13 @@ const agentSchema = z.object({
 
 const permissionSchema = z.object({
   mode: z.enum(["ask", "read-only", "auto", "full-access"]).default("full-access"),
-  allowTools: z.array(z.string()).default(["read_file", "list_files", "search_files", "git_status", "git_diff", "web_search", "save_memory", "update_emotion"]),
+  allowTools: z.array(z.string()).default(["Read", "Glob", "Grep", "git_status", "git_diff", "WebSearch", "save_memory", "update_emotion"]),
   allowPaths: z.array(z.string()).default([]),
   denyPaths: z.array(z.string()).default([".env", ".env.local", ".ssh/", "node_modules/"]),
   criticalAlwaysAsk: z.boolean().default(true)
 }).default({
   mode: "full-access",
-  allowTools: ["read_file", "list_files", "search_files", "git_status", "git_diff", "web_search", "save_memory", "update_emotion"],
+  allowTools: ["Read", "Glob", "Grep", "git_status", "git_diff", "WebSearch", "save_memory", "update_emotion"],
   allowPaths: [],
   denyPaths: [".env", ".env.local", ".ssh/", "node_modules/"],
   criticalAlwaysAsk: true
@@ -107,14 +106,6 @@ const identityPolicySchema = z.object({
 
 export type IdentityPolicy = z.infer<typeof identityPolicySchema>;
 
-export const emotionPolicySchema = z.object({
-  enabled: z.boolean().default(true),
-  allowModelUpdate: z.boolean().default(true),
-  autoAnalyze: z.boolean().default(true)
-}).strict().default({ enabled: true, allowModelUpdate: true, autoAnalyze: true });
-
-export type EmotionPolicy = z.infer<typeof emotionPolicySchema>;
-
 const crystalThresholdSchema = z.object({
   count: z.number().int().min(2).max(200),
   turns: z.number().int().min(2).max(200),
@@ -137,18 +128,6 @@ export const crystalSettingsSchema = z.object({
 
 export type CrystalSettings = z.infer<typeof crystalSettingsSchema>;
 
-const heartbeatSchema = z.object({
-  enabled: z.boolean().default(defaultHeartbeatConfig.enabled),
-  intervalMinutes: z.number().int().min(1).max(1_440).default(defaultHeartbeatConfig.intervalMinutes),
-  activeHoursStart: z.number().int().min(0).max(23).default(defaultHeartbeatConfig.activeHoursStart),
-  activeHoursEnd: z.number().int().min(0).max(23).default(defaultHeartbeatConfig.activeHoursEnd),
-  baseEmotionRefreshHours: z.number().int().min(1).max(168).default(defaultHeartbeatConfig.baseEmotionRefreshHours),
-  timezone: z.string().trim().min(1).max(100).optional(),
-  prompt: z.string().trim().min(1).max(4_000).optional()
-}).strict().default(defaultHeartbeatConfig);
-
-export type HeartbeatSettings = z.infer<typeof heartbeatSchema>;
-
 const contextSchema = z.object({
   // 不配置时按当前模型的上下文窗口自动推导；配置了就作为额外上限。
   maxInputTokens: z.number().int().min(2_048).max(2_000_000).optional(),
@@ -158,14 +137,12 @@ const contextSchema = z.object({
   instructionsMaxBytes: z.number().int().min(1_024).max(131_072).default(32 * 1024),
   compaction: compactionSchema,
   identity: identityPolicySchema,
-  emotion: emotionPolicySchema,
   memory: memoryPolicySchema
 }).default({
   maxTurnToolResultBytes: 128 * 1024,
   instructionsMaxBytes: 32 * 1024,
   compaction: { enabled: true, reserveTokens: undefined, triggerPercent: undefined, keepRecentTokens: undefined, keepRecentMessages: undefined, maxSummaryTokens: 4_096, summaryModel: undefined },
   identity: { enabled: true, userEnabled: true },
-  emotion: { enabled: true, allowModelUpdate: true, autoAnalyze: true },
   memory: {
     enabled: true,
     useMemories: true,
@@ -216,11 +193,12 @@ export const thinkingLevelMapSchema = z.record(z.string(), z.string().min(1).nul
  * 连接下按原始模型 ID 保存的用户元数据覆盖。
  *
  * 这组字段与 alias 的传输配置分开，目录刷新只能更新运行时投影，不能覆盖用户在这里
- * 明确填写的上下文窗口、输入上限或 thinking 参数映射。
+ * 明确填写的上下文窗口、输入/输出上限或 thinking 参数映射。
  */
 export const modelProfileSchema = z.object({
   contextWindow: z.number().int().min(4_096).max(2_000_000).optional(),
   maxInputTokens: z.number().int().min(2_048).max(2_000_000).optional(),
+  maxOutputTokens: z.number().int().min(1).max(384_000).optional(),
   thinkingLevelMap: thinkingLevelMapSchema.optional()
 }).strict();
 
@@ -255,6 +233,8 @@ const providerConfigSchema = z.object({
   apiKey: z.string().min(1).optional(),
   apiKeyEnv: z.string().min(1).optional(),
   requiresApiKey: z.boolean().optional(),
+  /** 模型目录的鉴权要求独立于聊天请求；未设置时沿用 requiresApiKey。 */
+  modelsRequiresApiKey: z.boolean().optional(),
   authMode: z.enum(["api-key", "oauth-bearer"]).optional(),
   oauth: z.object({
     provider: extensionIdSchema,
@@ -359,20 +339,18 @@ const mcpServerSchema = z.object({
 });
 
 export const defaultSubagentAllowedTools = [
-  "read_file",
-  "list_files",
-  "search_files",
-  // "grep_search" 已下线；保留在 enum 里只为老配置能通过校验（注册表中已无此工具，名字惰性）。
-  "grep_search",
+  "Read",
+  "Glob",
+  "Grep",
   "git_status",
   "git_diff",
-  "write_file",
+  "Write",
   "edit_file",
   "multi_edit",
   "delete_file",
   "apply_patch",
   "move_file",
-  "run_command"
+  "Bash"
 ] as const;
 
 const subagentToolNameSchema = z.enum(defaultSubagentAllowedTools);
@@ -404,8 +382,10 @@ const extensionsSchema = z.object({
   skillProjectOverrides: skillProjectOverridesSchema.default({}),
   skillExtraction: skillExtractionSchema,
   plugins: z.array(z.string().trim().min(1)).max(32).default([]),
+  /** 全局配置目录下的 Plugin 路径；只允许在 ~/.config/biny/plugins 内解析。 */
+  globalPlugins: z.array(z.string().trim().min(1)).max(32).default([]),
   subagent: z.object({
-    enabled: z.boolean().default(false),
+    enabled: z.boolean().default(true),
     maxSteps: z.number().int().min(1).max(32).default(16),
     maxOutputTokens: z.number().int().min(256).max(32_768).default(8_000),
     maxConcurrentSubagents: z.number().int().min(1).max(8).default(2),
@@ -414,10 +394,10 @@ const extensionsSchema = z.object({
     model: z.string().min(1).optional(),
     maxCostUsd: z.number().positive().max(100).optional(),
     allowedTools: z.array(subagentToolNameSchema).min(1).default([...defaultSubagentAllowedTools]),
-    // 具名子代理定义目录（workspace 相对路径）；全局 ~/.biny/agents 始终生效。
+    // 具名子代理定义目录（workspace 相对路径）；全局 ~/.config/biny/agents 始终生效。
     agentPaths: z.array(z.string().trim().min(1)).max(32).default([".biny/agents"])
   }).default({
-    enabled: false,
+    enabled: true,
     maxSteps: 16,
     maxOutputTokens: 8_000,
     maxConcurrentSubagents: 2,
@@ -438,8 +418,9 @@ const extensionsSchema = z.object({
     minToolCalls: 5
   },
   plugins: [],
+  globalPlugins: [],
   subagent: {
-    enabled: false,
+    enabled: true,
     maxSteps: 16,
     maxOutputTokens: 8_000,
     maxConcurrentSubagents: 2,
@@ -469,10 +450,10 @@ const webSearchSchema = z.object({
 });
 
 /**
- * 共享 cookie jar：桌面端内嵌浏览器登录后写入，`web_search` 的 Google provider 和
- * `web_fetch` 读取，用来访问需要登录态的页面。
+ * 共享 cookie jar：桌面端内嵌浏览器登录后写入，`WebSearch` 的 Google provider 和
+ * `WebFetch` 读取，用来访问需要登录态的页面。
  *
- * 打开它意味着模型选定的 URL 会带上真实登录凭据（只发给域名匹配的站点）。`web_fetch`
+ * 打开它意味着模型选定的 URL 会带上真实登录凭据（只发给域名匹配的站点）。`WebFetch`
  * 默认不在免确认工具白名单里，每次抓取仍要用户确认，这是这项能力的主要约束。
  */
 const webCookiesSchema = z.object({
@@ -641,7 +622,6 @@ const canonicalConfigSchema = z.object({
   }),
   activity: activitySettingsSchema,
   crystal: crystalSettingsSchema,
-  heartbeat: heartbeatSchema,
   context: contextSchema,
   chat: chatParamsSchema,
   diagnostics: diagnosticsSchema,
@@ -830,8 +810,8 @@ export const defaultConfig: AgentConfig = {
       description: "Fast and affordable model for everyday work.",
       supportsTools: true,
       capabilities: { tools: true, reasoning: true, streaming: true },
-      thinkingLevelMap: { off: "none", high: "high", max: "max" },
-      reasoning: { efforts: ["high", "max"], defaultEffort: "high", mapping: { high: "high", max: "max" } }
+      thinkingLevelMap: { off: "none", low: "low", high: "high", max: "max" },
+      reasoning: { efforts: ["low", "high", "max"], defaultEffort: "high", mapping: { low: "low", high: "high", max: "max" } }
     },
     "deepseek-v4-pro": {
       provider: "deepseek",
@@ -855,7 +835,7 @@ export const defaultConfig: AgentConfig = {
   },
   permission: {
     mode: "full-access",
-    allowTools: ["read_file", "list_files", "search_files", "git_status", "git_diff", "web_search", "save_memory", "update_emotion"],
+    allowTools: ["Read", "Glob", "Grep", "git_status", "git_diff", "WebSearch", "save_memory", "update_emotion"],
     allowPaths: [],
     denyPaths: [".env", ".env.local", ".ssh/", "node_modules/"],
     criticalAlwaysAsk: true
@@ -871,7 +851,6 @@ export const defaultConfig: AgentConfig = {
     nucleus: { count: 8, turns: 5, spread: 2 },
     dormantDays: 14
   },
-  heartbeat: defaultHeartbeatConfig satisfies HeartbeatConfig,
   chat: { temperature: undefined, maxOutputTokens: undefined, defaultToolSelection: "auto", defaultSkillSelection: "auto" },
   checkpoints: { enabled: true },
   sandbox: { mode: "off", allowNetwork: true },
@@ -888,7 +867,6 @@ export const defaultConfig: AgentConfig = {
     instructionsMaxBytes: 32 * 1024,
     compaction: { enabled: true, reserveTokens: undefined, triggerPercent: undefined, keepRecentTokens: undefined, keepRecentMessages: undefined, maxSummaryTokens: 4_096, summaryModel: undefined },
     identity: { enabled: true, userEnabled: true },
-    emotion: { enabled: true, allowModelUpdate: true, autoAnalyze: true },
     memory: {
       enabled: true,
       useMemories: true,
@@ -943,8 +921,9 @@ export const defaultConfig: AgentConfig = {
       minToolCalls: 5
     },
     plugins: [],
+    globalPlugins: [],
     subagent: {
-      enabled: false,
+      enabled: true,
       maxSteps: 16,
       maxOutputTokens: 8_000,
       maxConcurrentSubagents: 2,

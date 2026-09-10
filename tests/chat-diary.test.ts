@@ -27,9 +27,9 @@ async function testBackfillAndFallbackSummary(): Promise<void> {
   });
   await recorder.close();
 
-  const backfilled = await backfillDailyChatDiaryEntries("2026-09-04", { agentDir: root });
+  const backfilled = await backfillDailyChatDiaryEntries("2026-09-04", { agentDir: root, configDir: root });
   assert.equal(backfilled, 1);
-  const result = await refreshChatDailyDiary("2026-09-04", { agentDir: root });
+  const result = await refreshChatDailyDiary("2026-09-04", { agentDir: root, configDir: root });
   assert.equal(result.written, true);
   const note = await readFile(path.join(root, "memory", "2026-09-04.md"), "utf8");
   assert.match(note, /## 聊天摘要/u);
@@ -47,7 +47,7 @@ async function testBackfillAndFallbackSummary(): Promise<void> {
       yield { type: "finish", reason: "stop" };
     }
   };
-  const generated = await refreshChatDailyDiary("2026-09-04", { agentDir: root, model });
+  const generated = await refreshChatDailyDiary("2026-09-04", { agentDir: root, configDir: root, model });
   assert.equal(generated.model, "daily-diary-test");
   assert.equal(modelCalls, 1, "fallback 生成后模型可用时应重试一次整体回顾");
   const generatedNote = await readFile(path.join(root, "memory", "2026-09-04.md"), "utf8");
