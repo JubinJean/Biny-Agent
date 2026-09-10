@@ -26,13 +26,13 @@ async function testFiltersByToolAndExtension(workspaceRoot: string): Promise<voi
   const runner = new HookRunner(workspaceRoot, hooks({
     afterTool: [
       { command: "echo ts-only", tools: [], extensions: [".ts"], timeoutMs: 30_000 },
-      { command: "echo write-only", tools: ["write_file"], extensions: [], timeoutMs: 30_000 }
+      { command: "echo write-only", tools: ["Write"], extensions: [], timeoutMs: 30_000 }
     ]
   }));
   assert.equal(runner.hasHooks("afterTool"), true);
   assert.equal(runner.hasHooks("beforeTool"), false);
 
-  const both = await runner.run("afterTool", { tool: "write_file", path: "src/a.ts" });
+  const both = await runner.run("afterTool", { tool: "Write", path: "src/a.ts" });
   assert.deepEqual(both.map((outcome) => outcome.output), ["ts-only", "write-only"]);
 
   const extensionOnly = await runner.run("afterTool", { tool: "edit_file", path: "src/a.ts" });
@@ -47,7 +47,7 @@ async function testFailureIsReportedForBlocking(workspaceRoot: string): Promise<
   const runner = new HookRunner(workspaceRoot, hooks({
     beforeTool: [{ command: "echo 'protected file' >&2; exit 3", tools: [], extensions: [], timeoutMs: 30_000 }]
   }));
-  const [outcome] = await runner.run("beforeTool", { tool: "write_file", path: "src/a.ts" });
+  const [outcome] = await runner.run("beforeTool", { tool: "Write", path: "src/a.ts" });
   assert.equal(outcome?.exitCode, 3);
   assert.equal(outcome?.output.includes("protected file"), true);
 }
@@ -66,7 +66,7 @@ async function testMissingCommandCountsAsFailure(workspaceRoot: string): Promise
   const runner = new HookRunner(workspaceRoot, hooks({
     beforeTool: [{ command: "definitely-not-a-real-command-xyz", tools: [], extensions: [], timeoutMs: 30_000 }]
   }));
-  const [outcome] = await runner.run("beforeTool", { tool: "write_file", path: "a.ts" });
+  const [outcome] = await runner.run("beforeTool", { tool: "Write", path: "a.ts" });
   assert.notEqual(outcome?.exitCode, 0);
 }
 

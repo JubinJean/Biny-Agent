@@ -241,7 +241,7 @@ function testPermissionConfirmationContract(): void {
   assert.equal(isFullYesConfirmation(""), false);
 
   const baseRequest = {
-    tool: "run_command",
+    tool: "Bash",
     title: "Command execution request",
     details: "sudo example",
     actionType: "shell",
@@ -549,7 +549,7 @@ function testStatusAndUsageCardBuilders(): void {
       maxConcurrentSubagents: 2,
       maxPendingSubagents: 4,
       timeoutMs: 600_000,
-      allowedTools: ["read_file"],
+      allowedTools: ["Read"],
       agents: []
     },
     toolScheduling: { maxConcurrentTools: 1, maxQueuedToolCalls: 4 },
@@ -660,8 +660,8 @@ function testTranscriptUsesIndependentItemKinds(): void {
   state = reduce(state, { type: "run.failed", durationMs: 10, error: "fatal" });
   assert.deepEqual(state.transcript.committed.map((item) => item.kind), ["user", "assistant", "notification", "error"]);
 
-  state = reduce(state, { type: "tool.started", toolCallId: "read-1", tool: "read_file", args: { path: "README.md" } });
-  state = reduce(state, { type: "tool.completed", toolCallId: "read-1", tool: "read_file", result: { path: "README.md", content: "hello" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "read-1", tool: "Read", args: { path: "README.md" } });
+  state = reduce(state, { type: "tool.completed", toolCallId: "read-1", tool: "Read", result: { path: "README.md", content: "hello" } });
   assert.equal(state.transcript.committed.at(-1)?.kind, "tool");
 }
 
@@ -696,7 +696,7 @@ function testReasoningStreamingRendersStatusOnly(): void {
 function testLateReasoningDoesNotAppearBelowRunningTool(): void {
   let state = createInitialTuiState("/workspace");
   state = reduce(state, { type: "reasoning.delta", content: "先检查入口。" });
-  state = reduce(state, { type: "tool.started", toolCallId: "read", tool: "read_file", args: { path: "src/index.ts" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "read", tool: "Read", args: { path: "src/index.ts" } });
   state = reduce(state, { type: "reasoning.delta", content: "继续确认相关调用。" });
 
   assert.deepEqual(state.transcript.committed.map((item) => item.kind), ["reasoning"]);
@@ -715,14 +715,14 @@ function testReasoningStepGroupsToolsAndShowsNextMarker(): void {
   state = reduce(state, { type: "reasoning.started", phase: "initial" });
   assert.deepEqual(state.transcript.active.map((item) => item.kind), ["reasoning"]);
   state = reduce(state, { type: "reasoning.delta", content: "先定位入口。" });
-  state = reduce(state, { type: "tool.started", toolCallId: "read-1", tool: "read_file", args: { path: "src/index.ts" } });
-  state = reduce(state, { type: "tool.started", toolCallId: "read-2", tool: "read_file", args: { path: "src/app.ts" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "read-1", tool: "Read", args: { path: "src/index.ts" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "read-2", tool: "Read", args: { path: "src/app.ts" } });
 
   assert.deepEqual(state.transcript.committed.map((item) => item.kind), ["reasoning"]);
   assert.deepEqual(state.transcript.active.map((item) => item.kind), ["tool", "tool"]);
 
-  state = reduce(state, { type: "tool.completed", toolCallId: "read-1", tool: "read_file", result: { content: "one" } });
-  state = reduce(state, { type: "tool.completed", toolCallId: "read-2", tool: "read_file", result: { content: "two" } });
+  state = reduce(state, { type: "tool.completed", toolCallId: "read-1", tool: "Read", result: { content: "one" } });
+  state = reduce(state, { type: "tool.completed", toolCallId: "read-2", tool: "Read", result: { content: "two" } });
   state = reduce(state, { type: "reasoning.started", phase: "continuing" });
 
   assert.deepEqual(state.transcript.committed.map((item) => item.kind), ["reasoning", "tool", "tool"]);
@@ -804,11 +804,11 @@ function testAssistantStreamingUpdatesOneActiveCell(): void {
 
 function testToolProgressUpdatesOneActiveCell(): void {
   let state = createInitialTuiState("/workspace");
-  state = reduce(state, { type: "tool.started", toolCallId: "run-1", tool: "run_command", args: { command: "printf hello" } });
-  state = reduce(state, { type: "tool.progress", toolCallId: "run-1", tool: "run_command", update: { kind: "status", text: "Started: printf hello" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "run-1", tool: "Bash", args: { command: "printf hello" } });
+  state = reduce(state, { type: "tool.progress", toolCallId: "run-1", tool: "Bash", update: { kind: "status", text: "Started: printf hello" } });
   assert.equal((state.transcript.active[0] as ToolTranscriptItem).progress, "Running…");
-  state = reduce(state, { type: "tool.progress", toolCallId: "run-1", tool: "run_command", update: { kind: "stdout", text: "hel" } });
-  state = reduce(state, { type: "tool.progress", toolCallId: "run-1", tool: "run_command", update: { kind: "stdout", text: "lo" } });
+  state = reduce(state, { type: "tool.progress", toolCallId: "run-1", tool: "Bash", update: { kind: "stdout", text: "hel" } });
+  state = reduce(state, { type: "tool.progress", toolCallId: "run-1", tool: "Bash", update: { kind: "stdout", text: "lo" } });
 
   assert.equal(state.transcript.committed.length, 0);
   assert.equal(state.transcript.active.length, 1);
@@ -817,7 +817,7 @@ function testToolProgressUpdatesOneActiveCell(): void {
   state = reduce(state, {
     type: "tool.completed",
     toolCallId: "run-1",
-    tool: "run_command",
+    tool: "Bash",
     result: { stdout: "hello", stderr: "", exitCode: 0, durationMs: 12 }
   });
   assert.equal(state.transcript.active.length, 0);
@@ -831,9 +831,9 @@ function testToolDurationMeasuredInUi(): void {
   Date.now = () => now;
   try {
     let state = createInitialTuiState("/workspace");
-    state = reduce(state, { type: "tool.started", toolCallId: "timed", tool: "read_file", args: { path: "README.md" } });
+    state = reduce(state, { type: "tool.started", toolCallId: "timed", tool: "Read", args: { path: "README.md" } });
     now = 2_450;
-    state = reduce(state, { type: "tool.completed", toolCallId: "timed", tool: "read_file", result: { content: "done" } });
+    state = reduce(state, { type: "tool.completed", toolCallId: "timed", tool: "Read", result: { content: "done" } });
     assert.equal((state.transcript.committed[0] as ToolTranscriptItem).durationMs, 1_450);
   } finally {
     Date.now = originalNow;
@@ -842,11 +842,11 @@ function testToolDurationMeasuredInUi(): void {
 
 function testActiveToolShowsLatestOutput(): void {
   let state = createInitialTuiState("/workspace");
-  state = reduce(state, { type: "tool.started", toolCallId: "streaming", tool: "run_command", args: { command: "long-running-command" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "streaming", tool: "Bash", args: { command: "long-running-command" } });
   state = reduce(state, {
     type: "tool.progress",
     toolCallId: "streaming",
-    tool: "run_command",
+    tool: "Bash",
     update: { kind: "stdout", text: Array.from({ length: 8 }, (_, index) => `line ${String(index + 1)}`).join("\n") }
   });
   // 运行中的工具默认只显示标题；原始 stdout 不进入主 transcript。
@@ -859,14 +859,14 @@ function testActiveToolShowsLatestOutput(): void {
 
 function testParallelToolsUpdateById(): void {
   let state = createInitialTuiState("/workspace");
-  state = reduce(state, { type: "tool.started", toolCallId: "one", tool: "read_file", args: { path: "one.ts" } });
-  state = reduce(state, { type: "tool.started", toolCallId: "two", tool: "read_file", args: { path: "two.ts" } });
-  state = reduce(state, { type: "tool.progress", toolCallId: "two", tool: "read_file", update: { kind: "progress", text: "second" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "one", tool: "Read", args: { path: "one.ts" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "two", tool: "Read", args: { path: "two.ts" } });
+  state = reduce(state, { type: "tool.progress", toolCallId: "two", tool: "Read", update: { kind: "progress", text: "second" } });
   assert.equal((state.transcript.active[1] as ToolTranscriptItem).progress, "second");
   assert.equal((state.transcript.active[0] as ToolTranscriptItem).progress, undefined);
 
-  state = reduce(state, { type: "tool.completed", toolCallId: "one", tool: "read_file", result: { path: "one.ts", content: "one" } });
-  state = reduce(state, { type: "tool.completed", toolCallId: "two", tool: "read_file", result: { path: "two.ts", content: "two" } });
+  state = reduce(state, { type: "tool.completed", toolCallId: "one", tool: "Read", result: { path: "one.ts", content: "one" } });
+  state = reduce(state, { type: "tool.completed", toolCallId: "two", tool: "Read", result: { path: "two.ts", content: "two" } });
   assert.deepEqual(state.transcript.committed.map((item) => item.kind === "tool" ? item.toolCallId : undefined), ["one", "two"]);
   assert.equal(new Set(state.transcript.committed.map((item) => item.id)).size, 2);
   assert.equal(state.transcript.active.length, 0);
@@ -874,10 +874,10 @@ function testParallelToolsUpdateById(): void {
 
 function testDuplicateCompletionDoesNotFinishSiblingTool(): void {
   let state = createInitialTuiState("/workspace");
-  state = reduce(state, { type: "tool.started", toolCallId: "one", tool: "read_file", args: { path: "one.ts" } });
-  state = reduce(state, { type: "tool.started", toolCallId: "two", tool: "read_file", args: { path: "two.ts" } });
-  state = reduce(state, { type: "tool.completed", toolCallId: "one", tool: "read_file", result: { content: "one" } });
-  state = reduce(state, { type: "tool.completed", toolCallId: "one", tool: "read_file", result: { content: "duplicate" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "one", tool: "Read", args: { path: "one.ts" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "two", tool: "Read", args: { path: "two.ts" } });
+  state = reduce(state, { type: "tool.completed", toolCallId: "one", tool: "Read", result: { content: "one" } });
+  state = reduce(state, { type: "tool.completed", toolCallId: "one", tool: "Read", result: { content: "duplicate" } });
 
   assert.deepEqual(state.transcript.committed.map((item) => item.kind === "tool" ? item.toolCallId : undefined), ["one"]);
   assert.deepEqual(state.transcript.active.map((item) => item.kind === "tool" ? item.toolCallId : undefined), ["two"]);
@@ -885,11 +885,11 @@ function testDuplicateCompletionDoesNotFinishSiblingTool(): void {
 
 function testReusedToolCallIdKeepsUniqueTranscriptCells(): void {
   let state = createInitialTuiState("/workspace");
-  state = reduce(state, { type: "tool.started", toolCallId: "tool-1-1", tool: "read_file", args: { path: "one.ts" } });
-  state = reduce(state, { type: "tool.completed", toolCallId: "tool-1-1", tool: "read_file", result: { content: "one" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "tool-1-1", tool: "Read", args: { path: "one.ts" } });
+  state = reduce(state, { type: "tool.completed", toolCallId: "tool-1-1", tool: "Read", result: { content: "one" } });
   const firstId = state.transcript.committed[0]?.id;
-  state = reduce(state, { type: "tool.started", toolCallId: "tool-1-1", tool: "read_file", args: { path: "two.ts" } });
-  state = reduce(state, { type: "tool.completed", toolCallId: "tool-1-1", tool: "read_file", result: { content: "two" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "tool-1-1", tool: "Read", args: { path: "two.ts" } });
+  state = reduce(state, { type: "tool.completed", toolCallId: "tool-1-1", tool: "Read", result: { content: "two" } });
 
   assert.equal(state.transcript.active.length, 0);
   assert.equal(state.transcript.committed.filter((item) => item.kind === "tool").length, 2);
@@ -898,13 +898,13 @@ function testReusedToolCallIdKeepsUniqueTranscriptCells(): void {
 
 function testRecoverableErrorDoesNotFinalizeSiblingTools(): void {
   let state = createInitialTuiState("/workspace");
-  state = reduce(state, { type: "tool.started", toolCallId: "failed", tool: "run_command", args: { command: "false" } });
-  state = reduce(state, { type: "tool.started", toolCallId: "success", tool: "run_command", args: { command: "true" } });
-  state = reduce(state, { type: "tool.completed", toolCallId: "failed", tool: "run_command", result: { stderr: "failed", exitCode: 1 } });
+  state = reduce(state, { type: "tool.started", toolCallId: "failed", tool: "Bash", args: { command: "false" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "success", tool: "Bash", args: { command: "true" } });
+  state = reduce(state, { type: "tool.completed", toolCallId: "failed", tool: "Bash", result: { stderr: "failed", exitCode: 1 } });
   state = reduce(state, { type: "error.message", message: "first command failed" });
 
   assert.deepEqual(state.transcript.active.map((item) => item.kind === "tool" ? item.toolCallId : undefined), ["success"]);
-  state = reduce(state, { type: "tool.completed", toolCallId: "success", tool: "run_command", result: { stdout: "ok", exitCode: 0 } });
+  state = reduce(state, { type: "tool.completed", toolCallId: "success", tool: "Bash", result: { stdout: "ok", exitCode: 0 } });
   const tools = state.transcript.committed.filter((item): item is ToolTranscriptItem => item.kind === "tool");
   assert.deepEqual(tools.map((item) => item.status), ["failed", "success"]);
   assert.equal(state.transcript.committed.some((item) => item.kind === "error"), true);
@@ -913,14 +913,14 @@ function testRecoverableErrorDoesNotFinalizeSiblingTools(): void {
 function testPermissionRejectionKeepsTurnRunning(): void {
   let state = createInitialTuiState("/workspace");
   state = reduce(state, { type: "message.user", content: "write it" });
-  state = reduce(state, { type: "tool.started", toolCallId: "write", tool: "write_file", args: { path: "x.ts" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "write", tool: "Write", args: { path: "x.ts" } });
   state = reduce(state, {
     type: "permission.requested",
     requestId: "permission",
     toolCallId: "write",
     request: {
       toolCallId: "write",
-      tool: "write_file",
+      tool: "Write",
       title: "Write x.ts",
       details: "write",
       requireFullYes: false,
@@ -933,7 +933,7 @@ function testPermissionRejectionKeepsTurnRunning(): void {
     type: "permission.resolved",
     requestId: "permission",
     toolCallId: "write",
-    tool: "write_file",
+    tool: "Write",
     approved: false,
     message: "Denied"
   });
@@ -986,7 +986,7 @@ function testLongCommandKeepsDetailsHidden(): void {
   state = reduce(state, {
     type: "tool.started",
     toolCallId: "long-command",
-    tool: "run_command",
+    tool: "Bash",
     args: { command },
     display: { kind: "command", command }
   });
@@ -999,7 +999,7 @@ function testLongCommandKeepsDetailsHidden(): void {
   state = reduce(state, {
     type: "tool.completed",
     toolCallId: "long-command",
-    tool: "run_command",
+    tool: "Bash",
     result: { stdout: "done", stderr: "", exitCode: 0, durationMs: 25 }
   });
   const tool = state.transcript.committed[0] as ToolTranscriptItem;
@@ -1051,11 +1051,11 @@ function testCommandDisplayNeverLeaksRawCommand(): void {
 function testFailedCommandCommitsOneToolItem(): void {
   const command = "pnpm test --filter impossible";
   let state = createInitialTuiState("/workspace");
-  state = reduce(state, { type: "tool.started", toolCallId: "failed", tool: "run_command", args: { command } });
+  state = reduce(state, { type: "tool.started", toolCallId: "failed", tool: "Bash", args: { command } });
   state = reduce(state, {
     type: "tool.completed",
     toolCallId: "failed",
-    tool: "run_command",
+    tool: "Bash",
     result: { stdout: "partial output", stderr: "test suite failed", exitCode: 2, durationMs: 7 }
   });
   assert.equal(state.transcript.committed.length, 1);
@@ -1073,7 +1073,7 @@ function testFailedCommandCommitsOneToolItem(): void {
 function testErrorFinalizesActiveCells(): void {
   let state = createInitialTuiState("/workspace");
   state = reduce(state, { type: "assistant.delta", content: "partial" });
-  state = reduce(state, { type: "tool.started", toolCallId: "broken", tool: "run_command", args: { command: "bad-command" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "broken", tool: "Bash", args: { command: "bad-command" } });
   state = reduce(state, { type: "run.failed", durationMs: 10, error: "spawn failed" });
   assert.equal(state.transcript.active.length, 0);
   assert.deepEqual(state.transcript.committed.map((item) => item.kind), ["activity", "tool", "error"]);
@@ -1087,7 +1087,7 @@ function testErrorFinalizesActiveCells(): void {
 function testActivitySummaryBeforeTool(): void {
   let state = createInitialTuiState("/workspace");
   state = reduce(state, { type: "assistant.delta", content: "先读取入口文件，再确认调用关系。" });
-  state = reduce(state, { type: "tool.started", toolCallId: "read", tool: "read_file", args: { path: "src/index.ts" } });
+  state = reduce(state, { type: "tool.started", toolCallId: "read", tool: "Read", args: { path: "src/index.ts" } });
 
   assert.deepEqual(state.transcript.committed.map((item) => item.kind), ["activity"]);
   assert.equal(state.transcript.committed[0]?.kind === "activity" ? state.transcript.committed[0].content : undefined, "先读取入口文件，再确认调用关系。");
@@ -1117,8 +1117,8 @@ function testActivitySummaryUsesNormalTextColor(): void {
 function testSessionReplayUsesToolItems(): void {
   const items = sessionEventsToTranscript([
     { type: "user_message", content: "read", time: "2026-07-12T00:00:00.000Z" },
-    { type: "tool_call", toolCallId: "read-1", tool: "read_file", args: { path: "README.md" }, assistantContent: "先读取 README。", reasoningContent: "原始思考不应进入主界面。", time: "2026-07-12T00:00:01.000Z" },
-    { type: "tool_result", toolCallId: "read-1", tool: "read_file", result: { path: "README.md", content: "line 1\nline 2" }, time: "2026-07-12T00:00:03.500Z" },
+    { type: "tool_call", toolCallId: "read-1", tool: "Read", args: { path: "README.md" }, assistantContent: "先读取 README。", reasoningContent: "原始思考不应进入主界面。", time: "2026-07-12T00:00:01.000Z" },
+    { type: "tool_result", toolCallId: "read-1", tool: "Read", result: { path: "README.md", content: "line 1\nline 2" }, time: "2026-07-12T00:00:03.500Z" },
     { type: "assistant_message", content: "done" }
   ] as SessionEvent[]);
   assert.deepEqual(items.map((item) => item.kind), ["user", "activity", "tool", "assistant"]);
@@ -1132,14 +1132,14 @@ function testSessionReplayUsesToolItems(): void {
 
 function testSessionReplayFinalizesPendingTools(): void {
   const failed = sessionEventsToTranscript([
-    { type: "tool_call", toolCallId: "failed", tool: "run_command", args: { command: "false" } },
+    { type: "tool_call", toolCallId: "failed", tool: "Bash", args: { command: "false" } },
     { type: "error", message: "process failed" }
   ] as SessionEvent[]);
   assert.deepEqual(failed.map((item) => item.kind), ["tool", "error"]);
   assert.equal((failed[0] as ToolTranscriptItem).status, "failed");
 
   const interrupted = sessionEventsToTranscript([
-    { type: "tool_call", toolCallId: "pending", tool: "run_command", args: { command: "sleep 10" } }
+    { type: "tool_call", toolCallId: "pending", tool: "Bash", args: { command: "sleep 10" } }
   ] as SessionEvent[]);
   assert.equal((interrupted[0] as ToolTranscriptItem).status, "skipped");
   assert.equal((interrupted[0] as ToolTranscriptItem).title, "Skipped command");
@@ -1279,7 +1279,7 @@ function testToolBlockRendersTitleAndClampedOutput(): void {
   const item: ToolTranscriptItem = {
     id: "t1",
     kind: "tool",
-    tool: "run_command",
+    tool: "Bash",
     title: "Ran tests",
     argsSummary: "pnpm test",
     status: "success",
@@ -1461,7 +1461,7 @@ function testDialogsRenderAndHandleKeys(): void {
 function testPermissionDialogRequiresFullYes(): void {
   setTheme("dark");
   const request: TuiPermissionRequest = {
-    tool: "run_command",
+    tool: "Bash",
     title: "Command execution request",
     details: "sudo example",
     requireFullYes: true,

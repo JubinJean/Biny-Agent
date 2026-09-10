@@ -3,7 +3,7 @@ import type { AttachmentReference } from "./store.js";
 
 export type { AttachmentReference } from "./store.js";
 
-const referenceHeading = "Attached files (read them with read_file using these @attachments/ paths):";
+const referenceHeading = "Attached files (read them with Read using these @attachments/ paths):";
 const referenceLine = /^- (\S+) \(([^()]*), (\d+) bytes\)$/;
 const storedNamePrefix = /^\d+-[\da-f]{6}-/;
 

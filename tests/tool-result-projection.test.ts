@@ -14,16 +14,16 @@ console.log("tool result projection tests passed");
 async function testFileAndCommandProjection(): Promise<void> {
   const messages: AgentMessage[] = [
     { role: "user", content: "make the change" },
-    assistantCall("write-1", "write_file", { path: "src/example.ts", content: "new\ncontent\n" }),
-    toolResult("write-1", "write_file", {
+    assistantCall("write-1", "Write", { path: "src/example.ts", content: "new\ncontent\n" }),
+    toolResult("write-1", "Write", {
       path: "src/example.ts",
       bytes: 12,
       diffPreview: "@@ -1 +1,2 @@\n-old\n+new\n+content",
       contentPreview: "new\ncontent",
       changeSummary: "Overwrite src/example.ts"
     }),
-    assistantCall("command-1", "run_command", { command: "pnpm test" }),
-    toolResult("command-1", "run_command", {
+    assistantCall("command-1", "Bash", { command: "pnpm test" }),
+    toolResult("command-1", "Bash", {
       status: "completed",
       exitCode: 0,
       stdout: "pnpm test\n" + "old output\n".repeat(1_000),
@@ -72,10 +72,10 @@ async function testFileAndCommandProjection(): Promise<void> {
 async function testSemanticReplacementAndParallelIsolation(): Promise<void> {
   const messages: AgentMessage[] = [
     { role: "user", content: "inspect the workspace" },
-    assistantCall("read-old", "read_file", { path: "src/index.ts" }),
-    toolResult("read-old", "read_file", { path: "src/index.ts", content: "old contents" }),
-    assistantCall("read-new", "read_file", { path: "src/index.ts" }),
-    toolResult("read-new", "read_file", { path: "src/index.ts", content: "new contents" }),
+    assistantCall("read-old", "Read", { path: "src/index.ts" }),
+    toolResult("read-old", "Read", { path: "src/index.ts", content: "old contents" }),
+    assistantCall("read-new", "Read", { path: "src/index.ts" }),
+    toolResult("read-new", "Read", { path: "src/index.ts", content: "new contents" }),
     assistantCall("status-old", "git_status", {}),
     toolResult("status-old", "git_status", { output: " M old.ts" }),
     assistantCall("status-new", "git_status", {}),
@@ -93,10 +93,10 @@ async function testSemanticReplacementAndParallelIsolation(): Promise<void> {
     },
     toolResult("parallel-a", "opaque_tool", { result: "parallel" }),
     toolResult("parallel-b", "opaque_tool", { result: "parallel" }),
-    assistantCall("failure", "run_command", { command: "pnpm check" }),
-    toolResult("failure", "run_command", { status: "failed", exitCode: 1, error: "failed" }),
-    assistantCall("success", "run_command", { command: "pnpm check" }),
-    toolResult("success", "run_command", { status: "completed", exitCode: 0, stdout: "passed" })
+    assistantCall("failure", "Bash", { command: "pnpm check" }),
+    toolResult("failure", "Bash", { status: "failed", exitCode: 1, error: "failed" }),
+    assistantCall("success", "Bash", { command: "pnpm check" }),
+    toolResult("success", "Bash", { status: "completed", exitCode: 0, stdout: "passed" })
   ];
   const projected = await projectToolResultsForModel(messages, {
     archiveResult: async ({ sequence }) => ({

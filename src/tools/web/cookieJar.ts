@@ -1,8 +1,8 @@
 /**
  * 共享 Cookie jar 模块。
  *
- * 桌面端内嵌浏览器登录后把 cookie 落到这个 jar，`web_search` 的 Google provider 和
- * `web_fetch` 再从 jar 里取出来附到请求上 —— 登录一次，agent 侧就能读到需要身份验证的内容。
+ * 桌面端内嵌浏览器登录后把 cookie 落到这个 jar，`WebSearch` 的 Google provider 和
+ * `WebFetch` 再从 jar 里取出来附到请求上 —— 登录一次，agent 侧就能读到需要身份验证的内容。
  *
  * 文件格式刻意选成 Cookie-Editor 扩展的导出格式（一个平铺的 cookie 数组），这样用户可以把
  * 浏览器里的登录态直接导进来，也可以把 Biny 的导出去给浏览器用，不需要中间转换工具。

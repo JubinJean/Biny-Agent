@@ -893,8 +893,8 @@ function summaryFileList(summary: string, tag: "read-files" | "modified-files"):
   return match[1].split("\n").map((line) => line.replace(/^\s*-\s*/u, "").trim()).filter(Boolean);
 }
 
-const readToolNames = new Set(["read_file", "list_files", "search_files", "grep_search", "git_status", "git_diff", "read_tool_result"]);
-const modifiedToolNames = new Set(["write_file", "edit_file", "multi_edit", "delete_file", "apply_patch", "move_file"]);
+const readToolNames = new Set(["Read", "Glob", "Grep", "git_status", "git_diff", "read_tool_result"]);
+const modifiedToolNames = new Set(["Write", "edit_file", "multi_edit", "delete_file", "apply_patch", "move_file"]);
 
 function extractSummaryPaths(value: unknown): string[] {
   const serialized = safeJson(value);

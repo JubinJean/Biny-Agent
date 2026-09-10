@@ -84,8 +84,8 @@ async function seedSession(root: string): Promise<string> {
     { type: "user_message", content: "first request" },
     { type: "assistant_message", content: "first answer" },
     { type: "user_message", content: "second request" },
-    { type: "tool_call", tool: "read_file", args: { path: "a.ts" }, toolCallId: "c1", sequence: 1 },
-    { type: "tool_result", tool: "read_file", result: { content: "body" }, toolCallId: "c1", sequence: 1 },
+    { type: "tool_call", tool: "Read", args: { path: "a.ts" }, toolCallId: "c1", sequence: 1 },
+    { type: "tool_result", tool: "Read", result: { content: "body" }, toolCallId: "c1", sequence: 1 },
     { type: "assistant_message", content: "second answer" }
   ];
   for (const event of events) recorder.record(event);

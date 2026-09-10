@@ -8,7 +8,13 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import { isIgnoredPath } from "./ignore.js";
 
-export async function scanWorkspaceFiles(workspaceRoot: string, ignore: string[], limit = 200, signal?: AbortSignal): Promise<string[]> {
+export async function scanWorkspaceFiles(
+  workspaceRoot: string,
+  ignore: string[],
+  limit = 200,
+  signal?: AbortSignal,
+  includeFile?: (relativePath: string) => boolean
+): Promise<string[]> {
   const files: string[] = [];
   // 递归扫描只收集文件相对路径；目录遍历过程会持续检查 limit。
   await walk(workspaceRoot, "");
@@ -33,7 +39,7 @@ export async function scanWorkspaceFiles(workspaceRoot: string, ignore: string[]
       const absolutePath = path.join(currentDir, entry.name);
       if (entry.isDirectory()) {
         await walk(absolutePath, relativePath);
-      } else if (entry.isFile()) {
+      } else if (entry.isFile() && (includeFile === undefined || includeFile(relativePath))) {
         files.push(relativePath);
       }
     }

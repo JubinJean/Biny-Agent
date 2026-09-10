@@ -10,27 +10,27 @@ import { isProtectedCredentialPath } from "../utils/secrets.js";
 import path from "node:path";
 
 export type ToolName =
-  | "read_file"
+  | "Read"
   | "read_tool_result"
-  | "write_file"
+  | "Write"
   | "edit_file"
   | "multi_edit"
   | "delete_file"
   | "apply_patch"
   | "move_file"
-  | "list_files"
-  | "search_files"
+  | "Glob"
+  | "Grep"
   | "git_status"
   | "git_diff"
   | "git_commit"
-  | "run_command"
+  | "Bash"
   | "start_process"
   | "process_status"
   | "read_process_output"
   | "stop_process"
-  | "web_search"
-  | "web_fetch"
-  | "update_todos"
+  | "WebSearch"
+  | "WebFetch"
+  | "TodoWrite"
   | "update_emotion";
 
 export interface AnalyzePermissionInput {
@@ -44,7 +44,7 @@ export interface AnalyzePermissionInput {
 export function analyzePermissionRequest(input: AnalyzePermissionInput): PermissionRequestContext {
   const targetPath = normalizePermissionPath(getStringField(input.args, "path"));
 
-  if (input.toolName === "read_file") {
+  if (input.toolName === "Read") {
     return {
       ...base(input),
       actionType: "read",
@@ -54,7 +54,7 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
     };
   }
 
-  if (input.toolName === "list_files" || input.toolName === "search_files") {
+  if (input.toolName === "Glob" || input.toolName === "Grep") {
     return {
       ...base(input),
       actionType: "read",
@@ -82,7 +82,7 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
     };
   }
 
-  if (input.toolName === "write_file" || input.toolName === "edit_file" || input.toolName === "multi_edit" || input.toolName === "apply_patch") {
+  if (input.toolName === "Write" || input.toolName === "edit_file" || input.toolName === "multi_edit" || input.toolName === "apply_patch") {
     return {
       ...base(input),
       actionType: "write",
@@ -118,7 +118,7 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
     };
   }
 
-  if (input.toolName === "run_command" || input.toolName === "start_process") {
+  if (input.toolName === "Bash" || input.toolName === "start_process") {
     return analyzeCommand(input, getStringField(input.args, "command"));
   }
 
@@ -140,7 +140,7 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
     };
   }
 
-  if (input.toolName === "delegate_task") {
+  if (input.toolName === "Task") {
     return {
       ...base(input),
       actionType: input.toolRisk === "execute" ? "shell" : "read",
@@ -151,7 +151,7 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
     };
   }
 
-  if (input.toolName === "update_todos") {
+  if (input.toolName === "TodoWrite") {
     // 只写会话自己的计划清单，不碰工作区，也不触发任何外部动作。
     return {
       ...base(input),
@@ -161,8 +161,8 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
     };
   }
 
-  if (input.toolName === "web_fetch") {
-    // 目标地址已过私网/环回/云元数据校验，与 web_search 同级：只读、不改本地状态。
+  if (input.toolName === "WebFetch") {
+    // 目标地址已过私网/环回/云元数据校验，与 WebSearch 同级：只读、不改本地状态。
     return {
       ...base(input),
       actionType: "read",
@@ -171,7 +171,7 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
     };
   }
 
-  if (input.toolName === "web_search") {
+  if (input.toolName === "WebSearch") {
     return {
       ...base(input),
       actionType: "read",
@@ -180,7 +180,25 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
     };
   }
 
-  if (input.toolName === "invoke_skill" || input.toolName === "read_skill_resource") {
+  if (input.toolName === "skill_search") {
+    return {
+      ...base(input),
+      actionType: "read",
+      riskLevel: "low",
+      reason: "searches the public Skill catalog without changing local state"
+    };
+  }
+
+  if (input.toolName === "skill_install") {
+    return {
+      ...base(input),
+      actionType: "install",
+      riskLevel: "medium",
+      reason: "downloads and installs a validated Skill into Biny's managed global Skill directory"
+    };
+  }
+
+  if (input.toolName === "Skill" || input.toolName === "read_skill_resource") {
     // Skill 正文与资源都会在实际读取前重新校验路径、软链和硬链，按内置只读工具放行。
     return {
       ...base(input),
@@ -231,7 +249,7 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
   }
 
   if (input.toolName === "mcp_list_resources" || input.toolName === "mcp_read_resource") {
-    // MCP resources 是协议层只读数据，与 web_search 同级放行。
+    // MCP resources 是协议层只读数据，与 WebSearch 同级放行。
     return {
       ...base(input),
       actionType: "read",
@@ -260,7 +278,7 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
 }
 
 export function commandSafetyWarnings(command: string): string[] {
-  const request = analyzeCommand({ toolName: "run_command", args: { command }, sessionId: "", projectRoot: "" }, command);
+  const request = analyzeCommand({ toolName: "Bash", args: { command }, sessionId: "", projectRoot: "" }, command);
   if (request.riskLevel === "low") return [];
   return request.reason ? [request.reason] : ["command requires permission"];
 }

@@ -1,7 +1,7 @@
 /**
  * 文件写入工具模块。
  *
- * `write_file` 会在工作区内创建必要父目录并写入完整文件内容。是否允许写入、如何展示 diff、
+ * `Write` 会在工作区内创建必要父目录并写入完整文件内容。是否允许写入、如何展示 diff、
  * 以及用户是否确认，都由 agent loop 在调用这个工具前完成。
  */
 import { z } from "zod";
@@ -22,12 +22,12 @@ export interface WriteFileResult {
 }
 
 export function createWriteFileTool(context: ToolContext): Tool<WriteFileArgs, WriteFileResult> {
-  // write_file 的权限确认在 agent loop 完成；这里保持纯粹的文件写入实现。
+  // Write 的权限确认在 agent loop 完成；这里保持纯粹的文件写入实现。
   return {
-    name: "write_file",
+    name: "Write",
     description: "Atomically write a UTF-8 file in the workspace, safely creating missing parent directories.",
     promptSnippet: "Create a new file or replace a file with complete UTF-8 content",
-    promptGuidelines: ["Use write_file for new files or intentional full rewrites; use edit_file, multi_edit, or apply_patch for localized changes"],
+    promptGuidelines: ["Use Write for new files or intentional full rewrites; use edit_file, multi_edit, or apply_patch for localized changes"],
     parameters: {
       type: "object",
       properties: {
@@ -47,7 +47,7 @@ export function createWriteFileTool(context: ToolContext): Tool<WriteFileArgs, W
         display: { kind: "file_io", operation: "write", path: args.path, content: args.content },
         description: `Write ${args.path}`,
         retrySafety: "unsafe",
-        approvalRule: `write_file(${args.path})`,
+        approvalRule: `Write(${args.path})`,
         async execute({ signal, approvedFile, onExecutionState }) {
           signal?.throwIfAborted();
           const currentPath = resolveWorkspacePath(context.workspaceRoot, args.path, context.ignore);

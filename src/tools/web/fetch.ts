@@ -1,7 +1,7 @@
 /**
  * 网页抓取工具模块。
  *
- * `web_search` 只能拿到摘要；给定一个 URL（文档页、issue、RFC）时模型需要读到正文。
+ * `WebSearch` 只能拿到摘要；给定一个 URL（文档页、issue、RFC）时模型需要读到正文。
  * 抓取本身是把一个任意出网请求交给模型，所以目标地址必须先过 `addressPolicy` 的校验，
  * 跳转也要逐跳重新校验 —— 一次跳到 `169.254.169.254` 就能读到云实例凭证。
  */
@@ -50,10 +50,10 @@ export function createWebFetchTool(
   const allowPrivateNetwork = config?.allowPrivateNetwork ?? false;
   const cookieJarPath = cookies?.enabled === false ? undefined : cookies?.path ?? defaultCookieJarPath();
   return {
-    name: "web_fetch",
+    name: "WebFetch",
     description: `Fetch a public http(s) URL and return its readable text. HTML is converted to text. Returns at most ${String(maxLength)} characters; page through longer documents with offset.`,
     promptSnippet: "Fetch readable text from a public HTTP or HTTPS URL",
-    promptGuidelines: ["Use web_fetch to inspect a known URL and page through truncated documents with offset"],
+    promptGuidelines: ["Use WebFetch to inspect a known URL and page through truncated documents with offset"],
     parameters: {
       type: "object",
       properties: {
@@ -77,7 +77,7 @@ export function createWebFetchTool(
         accesses: ToolAccesses.none(),
         display: { kind: "generic", summary: "Fetch web page", detail: target.toString() },
         description: `Fetch ${target.toString()}`,
-        approvalRule: `web_fetch(${target.origin})`,
+        approvalRule: `WebFetch(${target.origin})`,
         async execute({ signal }) {
           const jar = cookieJarPath ? await readCookieJar(cookieJarPath) : [];
           const fetched = await fetchDocument(target, {
@@ -147,7 +147,7 @@ async function fetchDocument(url: URL, limits: FetchLimits, signal?: AbortSignal
       });
       const headers: Record<string, string> = {
         accept: "text/html,text/plain,application/json;q=0.9,*/*;q=0.8",
-        "user-agent": "Biny/web_fetch"
+        "user-agent": "Biny/WebFetch"
       };
       // Cookie 按当前这一跳的地址重新匹配：跳到别的域名时不能把上一跳的登录凭据带过去。
       const cookie = cookieHeaderFor(limits.jar, current);
@@ -188,7 +188,7 @@ async function fetchDocument(url: URL, limits: FetchLimits, signal?: AbortSignal
   }
 }
 
-/** Content-Length 是可以撒谎的，所以按实际读到的字节数收口。web_search 也复用这个上限读取。 */
+/** Content-Length 是可以撒谎的，所以按实际读到的字节数收口。WebSearch 也复用这个上限读取。 */
 export async function readBounded(response: Response, maxBytes: number): Promise<{ text: string; truncated: boolean }> {
   const body = response.body;
   if (!body) return { text: "", truncated: false };

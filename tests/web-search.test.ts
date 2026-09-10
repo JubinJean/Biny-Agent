@@ -290,7 +290,7 @@ async function testAnySearch(): Promise<void> {
           title: "AnySearch result",
           url: "https://example.com/anysearch",
           snippet: "A result from AnySearch.",
-          content: "The full content is intentionally ignored by web_search."
+          content: "The full content is intentionally ignored by WebSearch."
         }]
       }
     }), { status: 200, headers: { "content-type": "application/json" } });
@@ -325,7 +325,7 @@ async function testAnySearch(): Promise<void> {
 
 function testWebSearchPermission(): void {
   const request = analyzePermissionRequest({
-    toolName: "web_search",
+    toolName: "WebSearch",
     args: { query: "Chicago weather" },
     sessionId: "test",
     projectRoot: "/tmp"
@@ -339,13 +339,13 @@ function testWebSearchRegistration(): void {
     { workspaceRoot: "/tmp", ignore: [] },
     { ...defaultConfig.web.search, enabled: true }
   );
-  assert.equal(registry.get("web_search").name, "web_search");
+  assert.equal(registry.get("WebSearch").name, "WebSearch");
 
   const disabledRegistry = createToolRegistry({ workspaceRoot: "/tmp", ignore: [] }, {
     ...defaultConfig.web.search,
     enabled: false
   });
-  assert.throws(() => disabledRegistry.get("web_search"), /Unknown tool: web_search/);
+  assert.throws(() => disabledRegistry.get("WebSearch"), /Unknown tool: WebSearch/);
 }
 
 await main();

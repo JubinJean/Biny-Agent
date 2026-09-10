@@ -88,7 +88,7 @@ async function main(): Promise<void> {
     const originalResult = JSON.parse(archive.output ?? "{}") as { result?: string };
     assert.equal(originalResult.result, "x".repeat(768));
 
-    // 归档目录被 workspace ignore 挡在 read_file 之外，模型只能靠 read_tool_result 取回。
+    // 归档目录被 workspace ignore 挡在 Read 之外，模型只能靠 read_tool_result 取回。
     assert.throws(() => resolveWorkspacePath(workspaceRoot, String(second.archivePath), config.workspace.ignore));
     const reader = nativeTool(coordinator, "read_tool_result");
     const reread = await reader.execute("reread", { archivePath: second.archivePath }) as Record<string, unknown>;

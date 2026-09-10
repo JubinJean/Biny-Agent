@@ -85,7 +85,7 @@ async function testPermissionPreviewRejectsOversizeExistingFile(workspaceRoot: s
   await assert.rejects(
     createToolPermissionRequest({
       id: "oversize-preview",
-      name: "write_file",
+      name: "Write",
       args: { path: "oversize-edit.txt", content: "replacement" }
     }, {
       workspaceRoot,

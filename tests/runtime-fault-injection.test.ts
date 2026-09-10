@@ -176,14 +176,14 @@ async function testCanonicalFaultBoundaries(): Promise<void> {
     await recorder.recordAndFlush({ type: "user_message", content: "write once" });
     await recorder.recordAndFlush({
       type: "tool_call",
-      tool: "write_file",
+      tool: "Write",
       args: { path: "target.txt", content: "new" },
       toolCallId: "call-write",
       sequence: 1
     });
     const execution = await recorder.recordAndFlush({
       type: "tool_execution",
-      tool: "write_file",
+      tool: "Write",
       toolCallId: "call-write",
       sequence: 1,
       operationId: "operation-write",
@@ -197,13 +197,13 @@ async function testCanonicalFaultBoundaries(): Promise<void> {
       undefined,
       [
         { role: "user", content: "write once" },
-        { role: "assistant", content: [{ type: "toolCall", id: "call-write", name: "write_file", arguments: { path: "target.txt", content: "new" } }] }
+        { role: "assistant", content: [{ type: "toolCall", id: "call-write", name: "Write", arguments: { path: "target.txt", content: "new" } }] }
       ],
       1,
       undefined,
       undefined,
       undefined,
-      [{ tool: "write_file", toolCallId: "call-write", sequence: 1, operationId: "operation-write", state: "side_effect_committed", retrySafety: "unsafe" }],
+      [{ tool: "Write", toolCallId: "call-write", sequence: 1, operationId: "operation-write", state: "side_effect_committed", retrySafety: "unsafe" }],
       execution.runtime
     );
     await recorder.close();
@@ -403,7 +403,7 @@ async function testPermissionTargetChangeDoesNotExecute(): Promise<void> {
     const registry = new ToolRegistry();
     let executions = 0;
     registry.register({
-      name: "write_file",
+      name: "Write",
       description: "Write the target file.",
       parameters: {
         type: "object",
@@ -415,7 +415,7 @@ async function testPermissionTargetChangeDoesNotExecute(): Promise<void> {
       risk: "write",
       resolveExecution(args: { path: string; content: string }) {
         return {
-          approvalRule: "write_file",
+          approvalRule: "Write",
           accesses: ToolAccesses.writeFile(target),
           async execute() {
             executions += 1;
@@ -440,7 +440,7 @@ async function testPermissionTargetChangeDoesNotExecute(): Promise<void> {
       new PermissionManager(config.permission),
       () => undefined
     );
-    const tool = coordinator.createAgentTools().find((candidate) => candidate.name === "write_file");
+    const tool = coordinator.createAgentTools().find((candidate) => candidate.name === "Write");
     assert.ok(tool);
     const result = await tool.execute("permission-call", { path: "target.txt", content: "must-not-write" });
     await coordinator.waitForIdle();

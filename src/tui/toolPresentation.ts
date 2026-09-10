@@ -51,7 +51,7 @@ export function updateRunningToolItem(item: ToolTranscriptItem, update: ToolUpda
   }
   const command = item.display?.kind === "command"
     ? item.display.command
-    : item.tool === "run_command"
+    : item.tool === "Bash"
       ? item.argsSummary
       : undefined;
   if (command && (update.kind === "status" || Boolean(update.text?.includes(command)))) {
@@ -116,13 +116,13 @@ export function summarizeToolArgs(tool: string, args: unknown): string {
   const query = typeof record.query === "string" ? record.query : undefined;
   const command = typeof record.command === "string" ? record.command : undefined;
 
-  if ((tool === "read_file" || tool === "write_file" || tool === "edit_file") && path) return path;
-  if ((tool === "search_files" || tool === "grep_search") && query) return query;
-  if (tool === "web_search" && query) return query;
-  if (tool === "list_files") return "workspace files";
+  if ((tool === "Read" || tool === "Write" || tool === "edit_file") && path) return path;
+  if (tool === "Grep" && query) return query;
+  if (tool === "WebSearch" && query) return query;
+  if (tool === "Glob") return "workspace files";
   if (tool === "git_status") return "git status";
   if (tool === "git_diff") return "git diff";
-  if (tool === "run_command" && command) return command;
+  if (tool === "Bash" && command) return command;
   return summarizeValue(args, 800);
 }
 
@@ -133,18 +133,18 @@ export function semanticToolTitle(
   description: string | undefined,
   running: boolean
 ): string {
-  if (tool === "run_command" || display?.kind === "command") {
+  if (tool === "Bash" || display?.kind === "command") {
     const command = display?.kind === "command" ? display.command : argsSummary;
     return semanticCommandTitle(command, running);
   }
-  if (tool === "read_file") return `${running ? "Reading" : "Read"}${argsSummary ? ` ${argsSummary}` : " file"}`;
-  if (tool === "write_file") return `${running ? "Writing" : "Wrote"}${argsSummary ? ` ${argsSummary}` : " file"}`;
+  if (tool === "Read") return `${running ? "Reading" : "Read"}${argsSummary ? ` ${argsSummary}` : " file"}`;
+  if (tool === "Write") return `${running ? "Writing" : "Wrote"}${argsSummary ? ` ${argsSummary}` : " file"}`;
   if (tool === "edit_file") return `${running ? "Editing" : "Edited"}${argsSummary ? ` ${argsSummary}` : " file"}`;
-  if (tool === "list_files") return running ? "Listing workspace files" : "Listed workspace files";
-  if (tool === "search_files" || tool === "grep_search") {
+  if (tool === "Glob") return running ? "Listing workspace files" : "Listed workspace files";
+  if (tool === "Grep") {
     return `${running ? "Searching" : "Searched"}${argsSummary ? ` for “${argsSummary}”` : " workspace"}`;
   }
-  if (tool === "web_search") {
+  if (tool === "WebSearch") {
     return `${running ? "Searching the web" : "Searched the web"}${argsSummary ? ` for “${argsSummary}”` : ""}`;
   }
   if (tool === "git_status") return running ? "Checking git status" : "Checked git status";
@@ -170,9 +170,9 @@ function projectToolResult(item: ToolTranscriptItem, result: unknown, status: To
   const exitCode = typeof record?.exitCode === "number" ? record.exitCode : undefined;
   const truncated = typeof record?.truncated === "boolean" ? record.truncated : undefined;
 
-  if (item.tool === "web_search") return projectWebSearchResult(result, status, durationMs, outputLines, truncated);
+  if (item.tool === "WebSearch") return projectWebSearchResult(result, status, durationMs, outputLines, truncated);
 
-  if (item.tool === "run_command" || item.display?.kind === "command") {
+  if (item.tool === "Bash" || item.display?.kind === "command") {
     const command = item.display?.kind === "command" ? item.display.command : item.argsSummary;
     const stdout = typeof record?.stdout === "string" ? record.stdout.trimEnd() : "";
     const error = typeof record?.error === "string"
@@ -273,7 +273,7 @@ function commandOutputPreview(stdout: string, stderr: string, status: ToolTransc
 }
 
 function runningToolDetails(item: ToolTranscriptItem): string {
-  if (item.tool === "run_command" || item.display?.kind === "command") {
+  if (item.tool === "Bash" || item.display?.kind === "command") {
     const command = item.display?.kind === "command" ? item.display.command : item.argsSummary;
     return [
       `Command: ${command || "(unknown)"}`,

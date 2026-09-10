@@ -53,8 +53,8 @@ async function testRoundTripKeepsToolResults(root: string): Promise<void> {
   const store = new TurnStore(root, "session-a");
   const messages: AgentMessage[] = [
     { role: "user", content: "refactor the parser" },
-    { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "read_file", arguments: { path: "a.ts" } }] },
-    { role: "toolResult", toolCallId: "c1", toolName: "read_file", content: [{ type: "text", text: "file body" }] }
+    { role: "assistant", content: [{ type: "toolCall", id: "c1", name: "Read", arguments: { path: "a.ts" } }] },
+    { role: "toolResult", toolCallId: "c1", toolName: "Read", content: [{ type: "text", text: "file body" }] }
   ];
   const facts = {
     actualToolCallCount: 1,

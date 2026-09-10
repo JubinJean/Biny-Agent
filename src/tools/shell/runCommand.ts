@@ -1,7 +1,7 @@
 /**
  * Shell 命令工具模块。
  *
- * `run_command` 在当前工作区执行本地 shell 命令，并把 stdout、stderr 和退出码统一返回。
+ * `Bash` 在当前工作区执行本地 shell 命令，并把 stdout、stderr 和退出码统一返回。
  * 命令是否安全、是否需要确认由权限层处理，这里只负责受限超时和输出收集。
  */
 import { homedir, tmpdir } from "node:os";
@@ -15,7 +15,7 @@ import type { Tool, ToolContext, ToolUpdate } from "../types.js";
 import { resolveWorkspaceDirectory } from "../../workspace/resolvePath.js";
 
 const maxOutputBytes = 1024 * 1024;
-/** 普通调用仍只保留 1MiB；run_command 工具会在这个更大的边界内尽量保留全文，交给上层归档。 */
+/** 普通调用仍只保留 1MiB；Bash 工具会在这个更大的边界内尽量保留全文，交给上层归档。 */
 const maxCapturedOutputBytes = 8 * 1024 * 1024;
 const defaultTimeoutMs = 120_000;
 const defaultTerminationGraceMs = 1_000;
@@ -72,10 +72,10 @@ export function createRunCommandTool(
 ): Tool<RunCommandArgs, RunCommandResult> {
   const sandboxOptions: SandboxOptions = { mode: sandbox?.mode ?? "off", allowNetwork: sandbox?.allowNetwork ?? true };
   return {
-    name: "run_command",
+    name: "Bash",
     description: "Run a finite local shell command in the workspace. Commands have a bounded timeout; use start_process for long-running servers instead of &, nohup, or disown.",
     promptSnippet: "Run a finite local shell command inside the workspace",
-    promptGuidelines: ["Use run_command only for finite commands and pass a workspace-relative cwd when the command belongs in a subdirectory"],
+    promptGuidelines: ["Use Bash only for finite commands and pass a workspace-relative cwd when the command belongs in a subdirectory"],
     parameters: {
       type: "object",
       properties: {
@@ -96,7 +96,7 @@ export function createRunCommandTool(
         accesses: ToolAccesses.readWriteTree(commandCwd),
         display: { kind: "command", command: args.command, cwd: commandCwd, language: "bash" },
         description: `Run ${preview}`,
-        approvalRule: `run_command(${args.command})`,
+        approvalRule: `Bash(${args.command})`,
         async execute({ signal, onUpdate }) {
           const currentCwd = resolveWorkspaceDirectory(context.workspaceRoot, args.cwd ?? inferredCwd ?? ".", context.ignore);
           if (currentCwd !== commandCwd) throw new Error("The command working directory changed after the tool call was prepared.");

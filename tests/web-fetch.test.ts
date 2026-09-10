@@ -165,7 +165,7 @@ async function run(
   args: { url: string; offset?: number; length?: number }
 ): Promise<WebFetchResult> {
   const execution = await tool.resolveExecution(args);
-  if (!("execute" in execution)) throw new Error("web_fetch did not resolve to a runnable execution.");
+  if (!("execute" in execution)) throw new Error("WebFetch did not resolve to a runnable execution.");
   return await execution.execute({ toolCallId: "fetch-test" });
 }
 

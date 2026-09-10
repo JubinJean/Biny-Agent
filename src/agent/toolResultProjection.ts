@@ -348,21 +348,21 @@ function projectValue(
   const large = Buffer.byteLength(entry.serialized, "utf8") > thresholdBytes;
   if (isArchivedValue(entry.value)) return { value: entry.value, archive: false };
 
-  if (tool === "write_file" || tool === "write" || tool === "edit_file" || tool === "edit" || tool === "multi_edit" || tool === "apply_patch") {
+  if (tool === "write" || tool === "edit_file" || tool === "edit" || tool === "multi_edit" || tool === "apply_patch") {
     return { value: projectFileChange(entry), archive: large };
   }
-  if (tool === "run_command") {
+  if (tool === "bash") {
     const value = projectRunCommand(entry, aggressive && large);
     return { value, archive: aggressive && large };
   }
   if (tool === "git_diff" || tool === "git_status" || tool === "git_log" || tool === "git_show") {
     return { value: projectGitResult(entry, aggressive && large), archive: aggressive && large };
   }
-  if (tool === "read_file") {
+  if (tool === "read") {
     if (!aggressive || !large) return undefined;
     return { value: projectReadFile(entry), archive: true };
   }
-  if (tool === "search_files" || tool === "grep_search") {
+  if (tool === "grep") {
     if (!aggressive || !large) return undefined;
     return { value: projectSearchResult(entry), archive: true };
   }
@@ -586,7 +586,7 @@ function isToolCall(part: AgentAssistantMessage["content"][number]): part is Age
 }
 
 function readRange(entry: ToolResultEntry): ReadRange | undefined {
-  if (normalizedToolName(entry.message.toolName) !== "read_file") return undefined;
+  if (normalizedToolName(entry.message.toolName) !== "read") return undefined;
   const args = asRecord(entry.call?.args);
   const result = asRecord(entry.value);
   const argsRange = asRecord(args.range);
@@ -632,7 +632,7 @@ function rangeCovers(next: ReadRange, previous: ReadRange): boolean {
 function snapshotKind(entry: ToolResultEntry): string | undefined {
   const tool = normalizedToolName(entry.message.toolName);
   if (tool === "git_status" || tool === "git_diff" || tool === "git_log" || tool === "git_show") return `${tool}\0.`;
-  if (tool !== "run_command") return undefined;
+  if (tool !== "bash") return undefined;
   const args = asRecord(entry.call?.args);
   const command = stringField(args, "command").trim().replace(/^(?:sudo\s+)/u, "");
   const match = command.match(/^(?:git\s+)(status|diff|log|show)(?:\s|$)/iu);
@@ -699,20 +699,18 @@ function normalizedToolName(tool: string): string {
 
 function isKnownSemanticTool(entry: ToolResultEntry): boolean {
   const tool = normalizedToolName(entry.message.toolName);
-  return tool === "write_file"
-    || tool === "write"
+  return tool === "write"
     || tool === "edit_file"
     || tool === "edit"
     || tool === "multi_edit"
     || tool === "apply_patch"
-    || tool === "run_command"
+    || tool === "bash"
     || tool === "git_diff"
     || tool === "git_status"
     || tool === "git_log"
     || tool === "git_show"
-    || tool === "read_file"
-    || tool === "search_files"
-    || tool === "grep_search";
+    || tool === "read"
+    || tool === "grep";
 }
 
 function diffLineCounts(diff: string): { added?: number; deleted?: number } {

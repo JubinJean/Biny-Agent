@@ -51,7 +51,7 @@ async function testSubagentDefinitionLoading(workspaceRoot: string): Promise<voi
     "---",
     "name: scout",
     "description: Read-only reconnaissance over the repository.",
-    "tools: read_file, grep_search, read_file",
+    "tools: Read, Grep, Read",
     "model: deepseek-v4-flash",
     "---",
     "Locate relevant files and report exact paths with line ranges."
@@ -83,7 +83,7 @@ async function testSubagentDefinitionLoading(workspaceRoot: string): Promise<voi
     assert.ok(scout);
     assert.equal(scout.scope, "project");
     assert.equal(scout.model, "deepseek-v4-flash");
-    assert.deepEqual(scout.tools, ["read_file", "grep_search"]);
+    assert.deepEqual(scout.tools, ["Read", "Grep"]);
     assert.match(scout.prompt, /exact paths with line ranges/);
     assert.equal(scout.path, path.join(".biny", "agents", "scout.md"));
 
@@ -93,8 +93,8 @@ async function testSubagentDefinitionLoading(workspaceRoot: string): Promise<voi
 
     const prompt = buildSubagentDefinitionsPrompt(definitions);
     assert.match(prompt, /Named subagents/);
-    assert.match(prompt, /scout \(project, model deepseek-v4-flash, tools read_file\/grep_search\)/);
-    assert.match(prompt, /delegate_task/);
+    assert.match(prompt, /scout \(project, model deepseek-v4-flash, tools Read\/Grep\)/);
+    assert.match(prompt, /Task/);
     assert.equal(buildSubagentDefinitionsPrompt([]), "");
   } finally {
     await rm(globalRoot, { recursive: true, force: true });
@@ -174,7 +174,7 @@ async function testSubagentBudgetExhaustionReturnsPartialFindings(): Promise<voi
           message: {
             role: "assistant",
             content: `Inspect round ${String(requestCount)}.`,
-            tool_calls: [{ id: `list-${String(requestCount)}`, type: "function", function: { name: "list_files", arguments: "{}" } }]
+            tool_calls: [{ id: `list-${String(requestCount)}`, type: "function", function: { name: "Glob", arguments: "{}" } }]
           },
           finish_reason: "tool_calls"
         }],
@@ -218,14 +218,14 @@ async function testSubagentBudgetExhaustionReturnsPartialFindings(): Promise<voi
 
 function listFilesTool(): Tool {
   return {
-    name: "list_files",
+    name: "Glob",
     description: "List workspace files.",
     parameters: { type: "object", properties: {}, additionalProperties: false },
     schema: z.object({}),
     capability: "filesystem.list",
     risk: "read",
     resolveExecution() {
-      return { approvalRule: "list_files", async execute() { return { files: ["src/index.ts"] }; } };
+      return { approvalRule: "Glob", async execute() { return { files: ["src/index.ts"] }; } };
     }
   } as Tool;
 }

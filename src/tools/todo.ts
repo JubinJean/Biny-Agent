@@ -24,14 +24,14 @@ export interface UpdateTodosResult {
 
 export function createTodoTool(store: TodoStore): Tool<UpdateTodosArgs, UpdateTodosResult> {
   return {
-    name: "update_todos",
+    name: "TodoWrite",
     description: [
       "Record or update your plan for the current task. Pass the complete list every time; it replaces the previous one.",
       "Use it for work that takes several steps: write the plan before starting, mark exactly one item in_progress while you work on it, and mark items completed as soon as they are actually done.",
       "The list is shown back to you every turn, so it survives context compaction. Skip it for single-step requests."
     ].join(" "),
     promptSnippet: "Record and update the complete plan for a multi-step task",
-    promptGuidelines: ["Use update_todos for multi-step work, keep at most one item in_progress, and update statuses as work advances"],
+    promptGuidelines: ["Use TodoWrite for multi-step work, keep at most one item in_progress, and update statuses as work advances"],
     parameters: {
       type: "object",
       properties: {
@@ -62,7 +62,7 @@ export function createTodoTool(store: TodoStore): Tool<UpdateTodosArgs, UpdateTo
         accesses: ToolAccesses.none(),
         display: { kind: "generic", summary: "Update plan", detail: args.todos.map((todo) => `[${todo.status}] ${todo.content}`).join("\n") },
         description: `Update the plan (${String(args.todos.length)} items)`,
-        approvalRule: "update_todos",
+        approvalRule: "TodoWrite",
         async execute() {
           const todos = await store.replace(args.todos);
           return { todos, remaining: todos.filter((todo) => todo.status !== "completed").length };

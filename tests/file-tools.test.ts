@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { applyUnifiedPatch, createApplyPatchTool } from "../src/tools/file/applyPatch.js";
 import { createEditFileTool } from "../src/tools/file/editFile.js";
+import { createListFilesTool } from "../src/tools/file/listFiles.js";
 import { createMultiEditTool } from "../src/tools/file/multiEdit.js";
 import { createMoveFileTool } from "../src/tools/file/moveFile.js";
 import type { RunnableToolExecution, ToolExecution } from "../src/tools/types.js";
@@ -13,6 +14,7 @@ const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "biny-file-tools-"));
 try {
   testPatchParser();
   await testApplyPatchTool();
+  await testGlobTool();
   await testEditToolsKeepDollarSequences();
   await testMoveFileTool();
 } finally {
@@ -70,6 +72,16 @@ async function testApplyPatchTool(): Promise<void> {
   } }, { workspaceRoot, ignore: [], sessionId: "file-tools" });
   assert.equal(request.actionType, "write");
   assert.match(request.details, /Hunks: 1/);
+}
+
+async function testGlobTool(): Promise<void> {
+  await mkdir(path.join(workspaceRoot, "zzzz"), { recursive: true });
+  await writeFile(path.join(workspaceRoot, "zzzz", "match.ts"), "export {}\n", "utf8");
+  await writeFile(path.join(workspaceRoot, "zzzz", "notes.md"), "notes\n", "utf8");
+
+  const tool = createListFilesTool({ workspaceRoot, ignore: [] });
+  const execution = runnable(await tool.resolveExecution({ pattern: "zzzz/**/*.ts", limit: 1 }));
+  assert.deepEqual((await execution.execute({ toolCallId: "glob-1" })).files, [path.join("zzzz", "match.ts")]);
 }
 
 async function testEditToolsKeepDollarSequences(): Promise<void> {

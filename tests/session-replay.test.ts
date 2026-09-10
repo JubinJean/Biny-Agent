@@ -9,15 +9,15 @@ function main(): void {
     { type: "user_message", content: "inspect the workspace" },
     {
       type: "tool_call",
-      tool: "read_file",
+      tool: "Read",
       args: { path: "src/index.ts" },
       toolCallId: "read-1",
       sequence: 1,
       reasoningContent: "Start with the entry point.",
       reasoningProviderOptions: signedReasoning
     },
-    { type: "tool_result", tool: "read_file", toolCallId: "read-1", sequence: 1, result: { path: "src/index.ts", content: "export {};" } },
-    { type: "tool_call", tool: "run_command", args: { command: "pnpm typecheck" }, toolCallId: "check-1", sequence: 2 }
+    { type: "tool_result", tool: "Read", toolCallId: "read-1", sequence: 1, result: { path: "src/index.ts", content: "export {};" } },
+    { type: "tool_call", tool: "Bash", args: { command: "pnpm typecheck" }, toolCallId: "check-1", sequence: 2 }
   ];
   const replay = replaySessionEvents(events);
 
@@ -35,8 +35,8 @@ function main(): void {
 
   const notStarted = replaySessionEvents([
     { type: "user_message", content: "cancel before admission" },
-    { type: "tool_call", tool: "write_file", args: { path: "a.txt" }, toolCallId: "not-started", sequence: 1 },
-    { type: "tool_execution", tool: "write_file", toolCallId: "not-started", sequence: 1, operationId: "op-not-started", state: "not_started" }
+    { type: "tool_call", tool: "Write", args: { path: "a.txt" }, toolCallId: "not-started", sequence: 1 },
+    { type: "tool_execution", tool: "Write", toolCallId: "not-started", sequence: 1, operationId: "op-not-started", state: "not_started" }
   ]);
   assert.equal(notStarted.recoveredToolResults[0]?.auditOnly, true);
   assert.equal(notStarted.discardedToolCalls[0]?.state, "not_started");
@@ -44,8 +44,8 @@ function main(): void {
 
   const admitted = replaySessionEvents([
     { type: "user_message", content: "crash after admission" },
-    { type: "tool_call", tool: "write_file", args: { path: "a.txt" }, toolCallId: "admitted-1", sequence: 1 },
-    { type: "tool_execution", tool: "write_file", toolCallId: "admitted-1", sequence: 1, operationId: "op-admitted-1", state: "admitted" }
+    { type: "tool_call", tool: "Write", args: { path: "a.txt" }, toolCallId: "admitted-1", sequence: 1 },
+    { type: "tool_execution", tool: "Write", toolCallId: "admitted-1", sequence: 1, operationId: "op-admitted-1", state: "admitted" }
   ]);
   assert.equal(admitted.recoveredToolResults[0]?.executionStatus, "unknown");
   assert.equal(admitted.recoveredToolResults[0]?.auditOnly, undefined);
@@ -53,8 +53,8 @@ function main(): void {
 
   const sideEffectCommitted = replaySessionEvents([
     { type: "user_message", content: "write once" },
-    { type: "tool_call", tool: "write_file", args: { path: "a.txt" }, toolCallId: "write-1", sequence: 1 },
-    { type: "tool_execution", tool: "write_file", toolCallId: "write-1", sequence: 1, operationId: "op-write-1", state: "side_effect_committed", evidence: "rename committed" }
+    { type: "tool_call", tool: "Write", args: { path: "a.txt" }, toolCallId: "write-1", sequence: 1 },
+    { type: "tool_execution", tool: "Write", toolCallId: "write-1", sequence: 1, operationId: "op-write-1", state: "side_effect_committed", evidence: "rename committed" }
   ]);
   assert.equal(sideEffectCommitted.recoveredToolResults[0]?.result && typeof sideEffectCommitted.recoveredToolResults[0].result === "object"
     ? (sideEffectCommitted.recoveredToolResults[0].result as Record<string, unknown>).status
@@ -132,22 +132,22 @@ function main(): void {
     role: "assistant" as const,
     content: [
       { type: "reasoning" as const, text: "signed thought", providerMetadata: { signature: "sig-1" } },
-      { type: "toolCall" as const, id: "call-1", name: "read_file", arguments: { path: "a.ts" } }
+      { type: "toolCall" as const, id: "call-1", name: "Read", arguments: { path: "a.ts" } }
     ],
     stopReason: "tool-calls" as const
   };
   const canonicalResult = {
     role: "toolResult" as const,
     toolCallId: "call-1",
-    toolName: "read_file",
+    toolName: "Read",
     content: [{ type: "text" as const, text: "file body" }],
     details: { content: "file body" }
   };
   assert.deepEqual(replaySessionEvents([
     { type: "user_message", content: "read it" },
     { type: "agent_message", message: canonicalAssistant },
-    { type: "tool_call", tool: "read_file", args: { path: "a.ts" }, toolCallId: "call-1" },
-    { type: "tool_result", tool: "read_file", result: { content: "legacy projection" }, toolCallId: "call-1" },
+    { type: "tool_call", tool: "Read", args: { path: "a.ts" }, toolCallId: "call-1" },
+    { type: "tool_result", tool: "Read", result: { content: "legacy projection" }, toolCallId: "call-1" },
     { type: "agent_message", message: canonicalResult },
     { type: "assistant_message", content: "legacy projection" },
     { type: "user_message", content: "continue" },
@@ -222,9 +222,9 @@ function main(): void {
   ]), /not continuous/u);
   assert.throws(() => replaySessionEvents([
     { type: "user_message", content: "pairing", runtime: { eventId: "event-1", eventSeq: 1 } },
-    { type: "tool_call", tool: "write_file", args: {}, toolCallId: "call-1", runtime: { eventId: "event-2", eventSeq: 2 } },
-    { type: "tool_execution", tool: "write_file", toolCallId: "call-1", sequence: 1, operationId: "operation-1", state: "running", runtime: { eventId: "event-3", eventSeq: 3 } },
-    { type: "tool_result", tool: "write_file", toolCallId: "call-1", sequence: 1, operationId: "operation-2", result: {}, runtime: { eventId: "event-4", eventSeq: 4 } }
+    { type: "tool_call", tool: "Write", args: {}, toolCallId: "call-1", runtime: { eventId: "event-2", eventSeq: 2 } },
+    { type: "tool_execution", tool: "Write", toolCallId: "call-1", sequence: 1, operationId: "operation-1", state: "running", runtime: { eventId: "event-3", eventSeq: 3 } },
+    { type: "tool_result", tool: "Write", toolCallId: "call-1", sequence: 1, operationId: "operation-2", result: {}, runtime: { eventId: "event-4", eventSeq: 4 } }
   ]), /mismatched operation identity/u);
 }
 

@@ -60,13 +60,13 @@ async function testNaturalLanguageNeverSelectsAnotherExecutionFramework(): Promi
       yield {
         type: "tool.started",
         toolCallId: `read-${suffix}`,
-        tool: "read_file",
+        tool: "Read",
         args: { path: "README.md" }
       };
       yield {
         type: "tool.completed",
         toolCallId: `read-${suffix}`,
-        tool: "read_file",
+        tool: "Read",
         result: { content: "project" }
       };
       yield done({
@@ -125,7 +125,7 @@ async function testExecutionBridgesCliPermission(): Promise<void> {
     });
 
     assert.equal(result.turn.status, "completed");
-    assert.equal(observed[0]?.toolName, "write_file");
+    assert.equal(observed[0]?.toolName, "Write");
     assert.equal(observed[0]?.sessionId, "session-1");
     assert.equal(observed[0]?.projectRoot, root);
   } finally {
@@ -288,8 +288,8 @@ function fakeRuntime(
 function permissionRequest(root: string, toolCallId: string): AgentPermissionRequest {
   return {
     toolCallId,
-    tool: "write_file",
-    toolName: "write_file",
+    tool: "Write",
+    toolName: "Write",
     title: "Write file",
     details: "Write feature.ts",
     requireFullYes: false,

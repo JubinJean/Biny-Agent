@@ -1087,7 +1087,7 @@ export class ToolExecutionCoordinator {
   }
 
   private resolvePermissionTarget(toolName: string, args: unknown, execution: RunnableToolExecution): string | undefined {
-    if (toolName !== "write_file" && toolName !== "edit_file" && toolName !== "multi_edit" && toolName !== "delete_file" && toolName !== "apply_patch" && toolName !== "move_file") return undefined;
+    if (toolName !== "Write" && toolName !== "edit_file" && toolName !== "multi_edit" && toolName !== "delete_file" && toolName !== "apply_patch" && toolName !== "move_file") return undefined;
     const requestedPath = toolName === "move_file" ? readStringField(args, "from") : readStringField(args, "path");
     if (!requestedPath) return undefined;
     const resolvedPath = resolveWorkspacePath(this.context.workspaceRoot, requestedPath, this.context.config.workspace.ignore);
@@ -1432,7 +1432,7 @@ function attachToolSummary(result: unknown, durationMs: number): unknown {
     ...record,
     durationMs,
     outputLines: output ? output.split(/\r?\n/).length : undefined,
-    // run_command 已经分别记录两个输出流的截断状态。保留 UI 使用的历史聚合字段，但不能
+    // Bash 已经分别记录两个输出流的截断状态。保留 UI 使用的历史聚合字段，但不能
     // 覆盖更精确的逐流证据。
     truncated: record.truncated === true || record.stdoutTruncated === true || record.stderrTruncated === true
   };

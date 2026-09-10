@@ -30,7 +30,7 @@ export function renderPlanModePrompt(permissionMode: PermissionMode): string {
       ? "Full access is active. Do not impose a read-only restriction on the available tools, but use mutating tools or commands only when the current user request explicitly asks for that side effect during planning. Full access is not implementation approval by itself."
       : "The current permission mode only exposes read and inspection tools in Plan mode. Do not modify files, delete or move data, run commands, or delegate work.",
     "Inspect the repository and available context before proposing a concrete ordered plan with affected files, validation, assumptions, and material risks.",
-    "Use update_todos for a multi-step plan and keep its statuses accurate.",
+    "Use TodoWrite for a multi-step plan and keep its statuses accurate.",
     "Do not claim that implementation has started or completed unless the user explicitly asked for those side effects and the tool results confirm them."
   ].join("\n");
 }

@@ -38,7 +38,7 @@ async function testNaturalCompletion(scenario: "answer" | "write" | "recovery" |
       if (requests > 1) assert.equal(context.messages.at(-1)?.role, "toolResult");
       const response: ModelStreamEvent[] = [];
       if ((scenario === "write" || scenario === "limit") && requests === 1) {
-        response.push({ type: "tool-call", id: "write", name: "write_file", arguments: { path: "result.txt", content: "written" } });
+        response.push({ type: "tool-call", id: "write", name: "Write", arguments: { path: "result.txt", content: "written" } });
       } else if (scenario === "recovery" && requests <= 2) {
         response.push({ type: "tool-call", id: `check-${requests}`, name: "check", arguments: { command: requests === 1 ? "wrong" : "correct" } });
       } else {

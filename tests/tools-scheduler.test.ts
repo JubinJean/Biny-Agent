@@ -13,6 +13,7 @@ async function main(): Promise<void> {
   await testQueueLimitAndStatusSnapshot();
   await testWaitingWriterIsNotStarvedByLaterReaders();
   await testSynchronousStartFailureReleasesCapacity();
+  testBrowserAccessIsScopedToContext();
   testIndependentCommandDirectoriesDoNotConflict();
   assert.throws(() => new ToolScheduler(0), /positive integer/);
   assert.throws(() => new ToolScheduler(Number.NaN), /positive integer/);
@@ -20,6 +21,14 @@ async function main(): Promise<void> {
   assert.throws(() => new ToolScheduler({ maxConcurrency: 1, maxQueuedTasks: 0 }), /positive integer/);
   assert.throws(() => new ToolScheduler({ maxConcurrency: 1, maxQueuedTasks: Number.POSITIVE_INFINITY }), /positive integer/);
   testSchedulerConfigDefaultsAndValidation();
+}
+
+function testBrowserAccessIsScopedToContext(): void {
+  const primary = ToolAccesses.browser("browser-primary");
+  assert.equal(ToolAccesses.conflict(primary, ToolAccesses.browser("browser-primary")), true);
+  assert.equal(ToolAccesses.conflict(primary, ToolAccesses.browser("browser-secondary")), false);
+  assert.equal(ToolAccesses.conflict(primary, ToolAccesses.readFile(path.join(process.cwd(), "page.txt"))), false);
+  assert.equal(ToolAccesses.conflict(primary, ToolAccesses.all()), true);
 }
 
 function testIndependentCommandDirectoriesDoNotConflict(): void {
@@ -31,7 +40,7 @@ function testIndependentCommandDirectoriesDoNotConflict(): void {
     const backend = tool.resolveExecution({ command: "mvn test", cwd: "backend" });
     const frontend = tool.resolveExecution({ command: "npm run build", cwd: "frontend" });
     if (backend instanceof Promise || frontend instanceof Promise || "isError" in backend || "isError" in frontend) {
-      throw new Error("run_command unexpectedly failed to resolve.");
+      throw new Error("Bash unexpectedly failed to resolve.");
     }
     assert.equal(ToolAccesses.conflict(backend.accesses ?? ToolAccesses.all(), frontend.accesses ?? ToolAccesses.all()), false);
   } finally {

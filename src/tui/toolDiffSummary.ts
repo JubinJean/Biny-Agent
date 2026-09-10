@@ -64,7 +64,7 @@ function extractDiffText(tool: string, result: unknown): string | undefined {
 }
 
 function extractContentPreview(tool: string, result: unknown): string | undefined {
-  if (tool !== "write_file" || typeof result !== "object" || result === null) return undefined;
+  if (tool !== "Write" || typeof result !== "object" || result === null) return undefined;
   const record = result as Record<string, unknown>;
   const content = typeof record.contentPreview === "string" ? record.contentPreview : undefined;
   const path = typeof record.path === "string" ? record.path : "file";
@@ -188,7 +188,7 @@ function diffDisplayPath(file: MutableDiffFile, operation: ToolDiffOperation, fa
 }
 
 function formatReadFileSummary(tool: string, result: unknown): string | undefined {
-  if (tool !== "read_file" || typeof result !== "object" || result === null) return undefined;
+  if (tool !== "Read" || typeof result !== "object" || result === null) return undefined;
   const record = result as Record<string, unknown>;
   const content = typeof record.content === "string" ? record.content : undefined;
   if (content === undefined) return undefined;

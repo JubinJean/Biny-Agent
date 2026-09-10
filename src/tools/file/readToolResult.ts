@@ -2,7 +2,7 @@
  * 归档工具结果读取模块。
  *
  * 工具输出因回合预算或模型投影被移出对话时，只在上下文里留下 `.biny/tool-results` 引用。
- * 该目录被 workspace ignore 规则挡在 `read_file` 之外，因此按需取回必须走这个受限入口：
+ * 该目录被 workspace ignore 规则挡在 `Read` 之外，因此按需取回必须走这个受限入口：
  * 它只接受归档引用形态的路径，不接受任意工作区路径。
  */
 import { z } from "zod";

@@ -1,7 +1,7 @@
 /**
  * 公网搜索工具模块。
  *
- * `web_search` 只返回搜索结果标题、链接、摘要和可选的站点图标，不打开网页、不执行本地命令，也不修改工作区。
+ * `WebSearch` 只返回搜索结果标题、链接、摘要和可选的站点图标，不打开网页、不执行本地命令，也不修改工作区。
  * 默认使用支持匿名额度的 AnySearch API，也支持无需密钥的 DuckDuckGo HTML 搜索、Tavily、Brave Search，
  * 以及带共享 cookie 的 Google 网页搜索。
  */
@@ -65,10 +65,10 @@ export function createWebSearchTool(config?: WebSearchConfig, cookies?: WebCooki
   const resolvedConfig = config ?? defaultConfig;
   const resolvedCookies = cookies ?? defaultCookies;
   return {
-    name: "web_search",
+    name: "WebSearch",
     description: "Search the public web and return relevant result links and snippets. Use this for current information, research, news, weather, or facts outside the workspace.",
     promptSnippet: "Search the public web for current information and external facts",
-    promptGuidelines: ["Use web_search for current public information, research, news, weather, or facts outside the workspace"],
+    promptGuidelines: ["Use WebSearch for current public information, research, news, weather, or facts outside the workspace"],
     parameters: {
       type: "object",
       properties: {
@@ -93,7 +93,7 @@ export function createWebSearchTool(config?: WebSearchConfig, cookies?: WebCooki
         accesses: ToolAccesses.none(),
         display: { kind: "generic", summary: args.query, detail: args },
         description: `Search the public web for ${args.query}`,
-        approvalRule: `web_search(${args.query})`,
+        approvalRule: `WebSearch(${args.query})`,
         async execute({ signal, onUpdate }) {
           onUpdate?.({ kind: "status", text: "Searching the web" });
           const result = await searchWeb(resolvedConfig, resolvedCookies, args, signal);
@@ -112,7 +112,7 @@ async function searchWeb(
   signal: AbortSignal | undefined
 ): Promise<WebSearchResponse> {
   const query = args.query.trim();
-  if (!query) throw new Error("web_search requires a non-empty query.");
+  if (!query) throw new Error("WebSearch requires a non-empty query.");
 
   const domains = normalizeDomains(args.domains);
   const maxResults = Math.min(args.maxResults ?? config.maxResults, config.maxResults);
@@ -288,7 +288,7 @@ async function searchWithBrave(
   const body = await fetchText(url, {
     "accept": "application/json",
     "x-subscription-token": apiKey,
-    "user-agent": "Biny web_search"
+    "user-agent": "Biny WebSearch"
   }, config.timeoutMs, signal);
 
   let payload: unknown;
@@ -318,7 +318,7 @@ async function searchWithTavily(
     "accept": "application/json",
     "content-type": "application/json",
     "authorization": `Bearer ${apiKey}`,
-    "user-agent": "Biny web_search"
+    "user-agent": "Biny WebSearch"
   }, config.timeoutMs, signal, {
     method: "POST",
     body: JSON.stringify({
@@ -353,7 +353,7 @@ async function searchWithAnySearch(
   const headers: Record<string, string> = {
     "accept": "application/json",
     "content-type": "application/json",
-    "user-agent": "Biny web_search"
+    "user-agent": "Biny WebSearch"
   };
   if (apiKey) headers.authorization = `Bearer ${apiKey}`;
 

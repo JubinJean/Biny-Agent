@@ -1,7 +1,7 @@
 /**
  * 文本搜索工具模块。
  *
- * `search_files` 会扫描工作区文件并按行做子串匹配，返回路径、行号和裁剪后的命中文本。
+ * `Grep` 会扫描工作区文件并按行做子串匹配，返回路径、行号和裁剪后的命中文本。
  * 读取每个文件前都会再次走 workspace 路径校验，搜索失败的文件会被跳过而不是中断整次搜索。
  */
 import { z } from "zod";
@@ -29,9 +29,12 @@ export interface SearchFilesMatch {
 
 export function createSearchFilesTool(context: ToolContext): Tool<SearchFilesArgs, SearchFilesResult> {
   return {
-    name: "search_files",
+    name: "Grep",
     description: `Search text in workspace files. Each file is limited to its first ${String(maxSearchFileBytes)} bytes; truncated paths are returned in truncatedFiles.`,
     promptSnippet: "Search plain text across workspace files",
+    promptGuidelines: [
+      "Use Grep for exact literals, identifiers, filenames, paths, or regular expressions. If an indexed zvec_grep_search tool is available and wording or location is unknown, use that semantic route first."
+    ],
     parameters: {
       type: "object",
       properties: {
@@ -52,18 +55,18 @@ export function createSearchFilesTool(context: ToolContext): Tool<SearchFilesArg
         accesses: ToolAccesses.searchTree(context.workspaceRoot),
         display: { kind: "file_io", operation: "search", path: ".", detail: args.query },
         description: `Search files for ${args.query}`,
-        approvalRule: `search_files(${args.query})`,
+        approvalRule: `Grep(${args.query})`,
         async execute({ signal }) {
           signal?.throwIfAborted();
           const query = args.query.trim();
-          if (!query) throw new Error("search_files requires a non-empty query.");
+          if (!query) throw new Error("Grep requires a non-empty query.");
 
           const maxResults = args.maxResults ?? 50;
           const files = await scanWorkspaceFiles(context.workspaceRoot, context.ignore, 1000, signal);
           const matches: SearchFilesMatch[] = [];
           const truncatedFiles: string[] = [];
 
-          // search_files 是只读工具，但仍然逐个文件走 workspace path 校验和 ignore 规则。
+          // Grep 是只读工具，但仍然逐个文件走 workspace path 校验和 ignore 规则。
           for (const file of files) {
             signal?.throwIfAborted();
             if (matches.length >= maxResults) break;

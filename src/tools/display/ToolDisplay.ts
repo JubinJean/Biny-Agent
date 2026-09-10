@@ -69,7 +69,7 @@ export async function createToolPermissionRequest(
 }
 
 export const toolDisplayRules: Record<string, ToolDisplayRule> = {
-  run_command: {
+  Bash: {
     title: "Command execution request",
     async summarize(args) {
       const command = getStringField(args, "command");
@@ -93,7 +93,7 @@ export const toolDisplayRules: Record<string, ToolDisplayRule> = {
       };
     }
   },
-  write_file: {
+  Write: {
     title: "File write request",
     async summarize(args, context) {
       const filePath = getStringField(args, "path");
@@ -193,6 +193,29 @@ export const toolDisplayRules: Record<string, ToolDisplayRule> = {
         preview,
         changeSummary: `Delete ${filePath}`,
         requireFullYes: true
+      };
+    }
+  },
+  skill_install: {
+    title: "Skill installation request",
+    async summarize(args) {
+      const name = getStringField(args, "name");
+      const owner = getStringField(args, "repoOwner");
+      const repository = getStringField(args, "repoName");
+      const directory = getStringField(args, "directory");
+      return {
+        details: `Skill: ${name}\nSource: ${owner}/${repository}:${directory}\nTarget: ~/.config/biny/skills/`,
+        changeSummary: `Install Skill ${name}`
+      };
+    }
+  },
+  BrowserType: {
+    title: "Browser form fill request",
+    async summarize(args) {
+      const selector = getStringField(args, "selector");
+      return {
+        details: `Selector: ${selector}\nValue: [redacted before display]`,
+        changeSummary: `Fill browser field ${selector}`
       };
     }
   }

@@ -10,6 +10,7 @@ export type ToolFileOperation = "read" | "write" | "readwrite" | "search";
 
 export type ToolResourceAccess =
   | { kind: "all" }
+  | { kind: "browser"; contextId: string }
   | { kind: "file"; operation: ToolFileOperation; path: string; recursive?: boolean };
 
 export type ToolAccessList = readonly ToolResourceAccess[];
@@ -20,6 +21,10 @@ export const ToolAccesses = {
   },
   all(): ToolAccessList {
     return [{ kind: "all" }];
+  },
+  browser(contextId: string): ToolAccessList {
+    if (!contextId.trim()) throw new Error("Browser context id must not be empty.");
+    return [{ kind: "browser", contextId }];
   },
   readFile(filePath: string): ToolAccessList {
     return file("read", filePath);
@@ -53,6 +58,9 @@ function file(operation: ToolFileOperation, filePath: string, recursive = false)
 
 function conflicts(left: ToolResourceAccess, right: ToolResourceAccess): boolean {
   if (left.kind === "all" || right.kind === "all") return true;
+  if (left.kind === "browser" || right.kind === "browser") {
+    return left.kind === "browser" && right.kind === "browser" && left.contextId === right.contextId;
+  }
   if (!pathOverlaps(left, right)) return false;
   return isWriteOperation(left.operation) || isWriteOperation(right.operation);
 }

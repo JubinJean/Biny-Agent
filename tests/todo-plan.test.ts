@@ -110,7 +110,7 @@ async function testToolRoundTrip(workspaceRoot: string): Promise<void> {
       { content: "step two", status: "in_progress" }
     ]
   });
-  if (!("execute" in execution)) throw new Error("update_todos did not resolve to a runnable execution.");
+  if (!("execute" in execution)) throw new Error("TodoWrite did not resolve to a runnable execution.");
   const result = await execution.execute({ toolCallId: "todo-test" });
   assert.equal(result.remaining, 1);
   assert.equal(result.todos.length, 2);

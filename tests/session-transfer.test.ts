@@ -45,8 +45,8 @@ async function recordConversation(root: string, withAttachment: boolean): Promis
   }
   const recorder = new SessionRecorder(root);
   recorder.record({ type: "user_message", content: "帮我看下这个文件", attachments });
-  recorder.record({ type: "tool_call", tool: "read_file", args: { path: "note.txt" }, toolCallId: "call_1" });
-  recorder.record({ type: "tool_result", tool: "read_file", toolCallId: "call_1", result: "hello attachment", executionStatus: "succeeded" });
+  recorder.record({ type: "tool_call", tool: "Read", args: { path: "note.txt" }, toolCallId: "call_1" });
+  recorder.record({ type: "tool_result", tool: "Read", toolCallId: "call_1", result: "hello attachment", executionStatus: "succeeded" });
   recorder.record({ type: "assistant_message", content: "文件内容是 hello attachment", reasoningContent: "先读文件再总结" });
   await recorder.close();
   return { sessionId: recorder.sessionId, attachmentPath };
@@ -200,7 +200,7 @@ try {
     const toolCall = events[1];
     const toolResult = events[2];
     assert.equal(toolCall?.type, "tool_call");
-    assert.equal((toolCall as { tool: string }).tool, "read_file");
+    assert.equal((toolCall as { tool: string }).tool, "Read");
     assert.equal((toolCall as { toolCallId?: string }).toolCallId, "call_1");
     assert.equal(toolResult?.type, "tool_result");
     assert.equal((toolResult as { toolCallId?: string }).toolCallId, "call_1");

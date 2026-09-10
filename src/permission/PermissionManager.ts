@@ -93,7 +93,7 @@ export interface PermissionStatus {
 
 const defaultPolicy: ProjectPermissionPolicy = {
   mode: "full-access",
-  allowTools: ["read_file", "list_files", "search_files", "git_status", "git_diff", "web_search", "save_memory", "update_emotion"],
+  allowTools: ["Read", "Glob", "Grep", "git_status", "git_diff", "WebSearch", "save_memory", "update_emotion"],
   allowPaths: [],
   denyPaths: [".env", ".ssh/", "node_modules/"],
   criticalAlwaysAsk: true

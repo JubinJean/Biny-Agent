@@ -16,7 +16,7 @@ import { ToolRegistry } from "../src/tools/registry.js";
 import { permissionIcon, permissionLabel, permissionOptions } from "../src/desktop/renderer/src/components/composer/composerLabels.js";
 
 const baseRequest: PermissionRequestContext = {
-  toolName: "write_file",
+  toolName: "Write",
   actionType: "write",
   riskLevel: "medium",
   targetPath: "src/example.ts",
@@ -41,7 +41,7 @@ async function main(): Promise<void> {
 function testEvaluationOrder(): void {
   const manager = new PermissionManager({
     mode: "full-access",
-    allowTools: ["write_file"],
+    allowTools: ["Write"],
     denyPaths: ["private/"],
     criticalAlwaysAsk: true
   });
@@ -63,7 +63,7 @@ function testEvaluationOrder(): void {
   assert.match(critical.reason, /Critical operation/);
 
   const readOnly = new PermissionManager({ mode: "ask", allowTools: [], denyPaths: [] });
-  assert.equal(readOnly.evaluate({ ...baseRequest, toolName: "read_file", actionType: "read", riskLevel: "low" }).decision, "allow");
+  assert.equal(readOnly.evaluate({ ...baseRequest, toolName: "Read", actionType: "read", riskLevel: "low" }).decision, "allow");
   assert.equal(readOnly.evaluate({ ...baseRequest, toolName: "git_diff", actionType: "git", riskLevel: "low" }).decision, "allow");
   assert.equal(readOnly.evaluate(baseRequest).decision, "ask");
 }
@@ -72,14 +72,14 @@ function testScopedGrants(): void {
   const manager = new PermissionManager({ mode: "ask", allowTools: [], denyPaths: [] });
   const exactCommand = {
     ...baseRequest,
-    toolName: "run_command",
+    toolName: "Bash",
     actionType: "shell" as const,
     command: "pnpm typecheck",
-    approvalRule: "run_command:hash-one"
+    approvalRule: "Bash:hash-one"
   };
   manager.applyResult(exactCommand, { approved: true, scope: "command" });
   assert.equal(manager.evaluate(exactCommand).decision, "allow");
-  assert.equal(manager.evaluate({ ...exactCommand, approvalRule: "run_command:hash-two", command: "pnpm test" }).decision, "ask");
+  assert.equal(manager.evaluate({ ...exactCommand, approvalRule: "Bash:hash-two", command: "pnpm test" }).decision, "ask");
 
   manager.applyResult(baseRequest, { approved: true, scope: "path" });
   assert.equal(manager.evaluate({ ...baseRequest, targetPath: "src/nested/example.ts" }).decision, "ask");

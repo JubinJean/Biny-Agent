@@ -139,7 +139,7 @@ async function testManagedHttpProcessOutlivesFiniteCommandTimeout(workspaceRoot:
     const status = await runnable(createProcessStatusTool(service).resolveExecution({ processId: started.processId }))
       .execute({ toolCallId: "status-http" });
     assert.equal(status.processes.length, 1, "带 processId 时恰好返回一个进程");
-    assert.equal(status.processes[0]!.state, "running", "managed servers must not inherit run_command's deadline");
+    assert.equal(status.processes[0]!.state, "running", "managed servers must not inherit Bash's deadline");
     assert.equal((await fetch(url)).status, 200);
 
     const output = await runnable(createReadProcessOutputTool(service).resolveExecution({

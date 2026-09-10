@@ -1,7 +1,7 @@
 /**
  * 文件读取工具模块。
  *
- * `read_file` 读取工作区内通过路径校验的 UTF-8 文本文件；桌面端还可读取由应用保存的
+ * `Read` 读取工作区内通过路径校验的 UTF-8 文本文件；桌面端还可读取由应用保存的
  * `@attachments/` 虚拟路径，但不能借此访问任意用户目录。
  */
 import { z } from "zod";
@@ -21,12 +21,12 @@ export interface ReadFileResult {
 }
 
 export function createReadFileTool(context: ToolContext): Tool<ReadFileArgs, ReadFileResult> {
-  // read_file 是最小只读工具：解析路径、读 utf8、按原路径返回内容。
+  // Read 是最小只读工具：解析路径、读 utf8、按原路径返回内容。
   return {
-    name: "read_file",
-    description: `Read a UTF-8 file inside the workspace or a supplied attachment, up to ${String(maxReadFileBytes)} bytes. Larger files are rejected; use search_files to inspect their bounded prefix.`,
+    name: "Read",
+    description: `Read a UTF-8 file inside the workspace or a supplied attachment, up to ${String(maxReadFileBytes)} bytes. Larger files are rejected; use Grep to inspect their bounded prefix.`,
     promptSnippet: "Read UTF-8 file contents from the workspace or supplied attachments",
-    promptGuidelines: ["Use read_file instead of shell commands to read a file when its path is known"],
+    promptGuidelines: ["Use Read instead of shell commands to read a file when its path is known"],
     parameters: {
       type: "object",
       properties: {
@@ -44,7 +44,7 @@ export function createReadFileTool(context: ToolContext): Tool<ReadFileArgs, Rea
         accesses: ToolAccesses.readFile(absolutePath),
         display: { kind: "file_io", operation: "read", path: args.path },
         description: `Read ${args.path}`,
-        approvalRule: `read_file(${args.path})`,
+        approvalRule: `Read(${args.path})`,
         async execute({ signal }) {
           signal?.throwIfAborted();
           const currentPath = resolveReadablePath(context, args.path);

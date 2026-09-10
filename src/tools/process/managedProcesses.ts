@@ -101,7 +101,7 @@ export function createStartProcessTool(
 ): Tool<StartProcessArgs, ManagedProcessSnapshot> {
   return {
     name: "start_process",
-    description: "Start a long-running workspace process managed by Biny. Use this instead of run_command, &, nohup, or disown for servers. Optional HTTP, TCP, or log readiness is checked before the tool returns. Processes are cleaned up when the runtime closes unless lifecycle is explicitly set to retain.",
+    description: "Start a long-running workspace process managed by Biny. Use this instead of Bash, &, nohup, or disown for servers. Optional HTTP, TCP, or log readiness is checked before the tool returns. Processes are cleaned up when the runtime closes unless lifecycle is explicitly set to retain.",
     promptSnippet: "Start and readiness-check a long-running managed workspace process",
     promptGuidelines: ["Use start_process for servers and other long-running commands; do not background them with &, nohup, or disown"],
     parameters: {
