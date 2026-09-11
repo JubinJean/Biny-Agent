@@ -537,10 +537,8 @@ function validDraft(draft: DesktopSettingsDraft): boolean {
     || activity.jpegQuality < 0 || activity.jpegQuality > 100
     || activity.ocrEveryNFrames < 0 || activity.ocrEveryNFrames > 20
     || activity.ocrLanguages.length === 0 || activity.maxStorageMb < 256
-    || activity.outputDirectory.trim() === ""
-    || (activity.analysisModel !== undefined && activity.analysisModel.trim().length > 200)) return false;
-  // v3 移除了记忆向量阈值；这里只保留技能抽取参数的范围校验。
-  return draft.skills.extraction.minToolCalls >= 1 && draft.skills.extraction.minToolCalls <= 64;
+    || activity.outputDirectory.trim() === "") return false;
+  return true;
 }
 
 function saveInput(snapshot: DesktopSettingsSnapshot, draft: DesktopSettingsDraft): DesktopSettingsSaveInput {
@@ -578,20 +576,17 @@ function saveInput(snapshot: DesktopSettingsSnapshot, draft: DesktopSettingsDraf
 }
 
 function activityInputFromSnapshot(value: DesktopSettingsSnapshot["activity"]): DesktopActivitySettingsInput {
-  const { externalPolicy: _externalPolicy, ...input } = value;
-  return structuredClone(input);
+  return structuredClone(value);
 }
 
 function skillInputFromSnapshot(value: DesktopSettingsSnapshot["skills"] | undefined): DesktopSkillSettingsInput {
   const skills = value ?? {
     globalDefaults: {},
-    projectOverrides: {},
-    extraction: { enabled: true, minToolCalls: 5 }
+    projectOverrides: {}
   };
   return {
     globalDefaults: { ...skills.globalDefaults },
-    projectOverrides: { ...skills.projectOverrides },
-    extraction: { ...skills.extraction }
+    projectOverrides: { ...skills.projectOverrides }
   };
 }
 

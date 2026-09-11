@@ -6,12 +6,11 @@
  * LLM 时长不可用时回退整轮墙钟 `· 用时 X`。纯展示文本；hover 揭示由外层
  * `data-time-hover-root` 的 CSS 控制。
  */
-import { memo } from "react";
+import React, { memo } from "react";
 import {
   formatDuration,
   formatLatencySeconds,
   formatMessageClock,
-  formatRunDuration,
   formatTokensPerSecond,
 } from "../../chatModel.js";
 
@@ -33,7 +32,7 @@ export const MessageClock = memo(function MessageClock({ time, llmMs, runMs, ttf
   const duration = llmMs !== undefined
     ? <>{" "}LLM {formatDuration(llmMs)}</>
     : runMs !== undefined
-      ? <>{" "}用时 {formatRunDuration(runMs)}</>
+      ? <>{" "}用时 {formatDuration(runMs)}</>
       : null;
   return (
     <span className="chat-clock">

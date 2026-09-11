@@ -3,6 +3,7 @@
  *
  * 远程请求、仓库目录解析和文件落盘都在主进程完成；这里仅管理筛选、分页和弹层状态。
  */
+import { NativeSelect } from "./NativeSelect.js";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DesktopDiscoverableSkill,
@@ -29,6 +30,7 @@ export function SkillDiscoveryView({ onBack, onError, onInstalled }: {
   const [repository, setRepository] = useState("all");
   const [loading, setLoading] = useState(true);
   const [repositoryManagerOpen, setRepositoryManagerOpen] = useState(false);
+  const [installNotice, setInstallNotice] = useState<string>();
   const [installingKey, setInstallingKey] = useState<string>();
   const [skillsShInput, setSkillsShInput] = useState("");
   const [skillsShQuery, setSkillsShQuery] = useState("");
@@ -68,8 +70,9 @@ export function SkillDiscoveryView({ onBack, onError, onInstalled }: {
 
   const install = useCallback(async (skill: DesktopDiscoverableSkill | DesktopSkillsShDiscoverableSkill): Promise<void> => {
     setInstallingKey(skill.key);
+    setInstallNotice(undefined);
     try {
-      await window.biny.installDiscoveredSkill({
+      const result = await window.biny.installDiscoveredSkill({
         key: skill.key,
         name: skill.name,
         description: "description" in skill ? skill.description : "来自 skills.sh 的技能",
@@ -80,6 +83,7 @@ export function SkillDiscoveryView({ onBack, onError, onInstalled }: {
         repoBranch: skill.repoBranch,
         installed: skill.installed
       });
+      setInstallNotice(`${result.name} 已安装。`);
       await onInstalled();
       await loadSnapshot();
       if (source === "skillssh" && skillsShQuery) {
@@ -150,6 +154,7 @@ export function SkillDiscoveryView({ onBack, onError, onInstalled }: {
         </div>
       </header>
       <div className="biny-skill-discovery-body">
+        {installNotice ? <p className="biny-extension-warning" role="status">{installNotice}</p> : null}
         {snapshot.warnings.length ? <div className="biny-extension-warning" role="status"><Icon name="warning" size={15} /><div>{snapshot.warnings.map((warning) => <div key={warning}>{warning}</div>)}</div></div> : null}
         <div className="biny-skill-discovery-source-tabs" role="tablist" aria-label="技能发现来源">
           <button aria-selected={source === "repos"} className={source === "repos" ? "is-active" : ""} onClick={() => setSource("repos")} role="tab" type="button">仓库</button>
@@ -193,15 +198,15 @@ const DiscoveryFilters = memo(function DiscoveryFilters({ query, repository, rep
   return (
     <div className="biny-discovery-filters">
       <label className="biny-discovery-search"><Icon name="search" size={17} /><input aria-label="搜索技能名称或仓库名称" onChange={(event) => onQuery(event.target.value)} placeholder="搜索技能名称或仓库名称…" value={query} /></label>
-      <select aria-label="筛选仓库" onChange={(event) => onRepository(event.target.value)} value={repository}>
+      <NativeSelect aria-label="筛选仓库" onChange={(event) => onRepository(event.target.value)} value={repository}>
         <option value="all">全部仓库</option>
         {repositories.map((item) => <option key={`${item.owner}/${item.name}`} value={`${item.owner}/${item.name}`}>{item.owner}/{item.name}</option>)}
-      </select>
-      <select aria-label="筛选安装状态" onChange={(event) => onStatus(event.target.value as SkillStatusFilter)} value={status}>
+      </NativeSelect>
+      <NativeSelect aria-label="筛选安装状态" onChange={(event) => onStatus(event.target.value as SkillStatusFilter)} value={status}>
         <option value="all">全部</option>
         <option value="installed">已安装</option>
         <option value="uninstalled">未安装</option>
-      </select>
+      </NativeSelect>
     </div>
   );
 });

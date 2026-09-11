@@ -30,6 +30,77 @@ select {
   font: inherit;
 }
 
+/* Electron 支持可定制的原生 select：弹出层跟随应用主题，键盘、选中和定位仍交给浏览器。 */
+select,
+select::picker(select) {
+  appearance: base-select;
+}
+
+select {
+  /* 原生 picker 不再替固定高度控件居中文字，必须同时对齐选中文本和箭头。 */
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+select::picker-icon {
+  flex: none;
+  color: var(--text-secondary);
+}
+
+select selectedcontent {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+select::picker(select) {
+  max-block-size: min(320px, 70dvh);
+  margin-block: 4px;
+  padding: 4px;
+  overflow-y: auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 10px;
+  color: var(--text);
+  background: var(--surface-raised);
+  box-shadow: var(--biny-shadow-dialog);
+  font: inherit;
+}
+
+select option {
+  min-block-size: 32px;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+select option:checked {
+  background: var(--surface-selected);
+}
+
+select option:hover:not(:disabled),
+select option:focus:not(:disabled) {
+  outline: none;
+  background: var(--surface-hover);
+}
+
+select option::checkmark {
+  order: 1;
+  margin-inline-start: auto;
+}
+
+select:disabled,
+select option:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .navigation-button:focus-visible,
 .composer-select:focus-visible,
 .mode-toggle:focus-visible,
@@ -893,10 +964,14 @@ select {
   text-align: left;
 }
 
-.model-effort-options button:hover,
+/* 悬停底色由流动高亮绘制；选中保留底色，点亮行只提文本色。 */
 .model-effort-options button.is-selected {
   color: var(--text);
   background: var(--surface-hover);
+}
+
+.model-effort-options button[data-fluid-hover-active] {
+  color: var(--text);
 }
 
 .model-detail-panel > footer {
@@ -967,10 +1042,14 @@ select {
   color: var(--text-tertiary);
 }
 
-.model-picker-entry:hover,
+/* 悬停底色由流动高亮绘制；展开中的入口保留底色，点亮行只提文本色。 */
 .model-picker-entry.is-active {
   color: var(--text);
   background: var(--surface-hover);
+}
+
+.model-picker-entry[data-fluid-hover-active] {
+  color: var(--text);
 }
 
 .model-picker-submenu {
@@ -1075,10 +1154,14 @@ select {
   text-align: left;
 }
 
-.model-picker-submenu-option:hover,
+/* 悬停底色由流动高亮绘制；选中保留底色，点亮行只提文本色。 */
 .model-picker-submenu-option.is-selected {
   color: var(--text);
   background: var(--surface-hover);
+}
+
+.model-picker-submenu-option[data-fluid-hover-active] {
+  color: var(--text);
 }
 
 .model-picker-submenu-option svg {
@@ -1158,263 +1241,200 @@ select {
 }
 
 /* ===================== 设置中心 ===================== */
-/* 布局基准：13px 根字号，尺寸 token 以 --st-rem 换算；壳内圆角统一 12px。
-   侧栏是浮在背景上的玻璃卡片，右列由标题栏、滚动区、底栏三段组成。 */
-.settings-modal.is-full-page {
-  --st-rem: calc(13px * var(--font-scale, 1));
-  /* 卡片与控件密度（compact 档） */
-  --st-card-padding: calc(1.25 * var(--st-rem));
+/* 原生 Dialog 保持焦点隔离与 Escape 行为；尺寸只由外层决定，内部双栏共用一张面板。 */
+.desktop-settings-dialog {
+  height: min(760px, calc(100dvh - 80px));
+  max-width: calc(100dvw - 64px);
+  overflow: hidden;
+  border: 1px solid var(--border-strong);
+  border-radius: 20px;
+  background: var(--surface-raised);
+  box-shadow: 0 24px 80px var(--shadow), 0 4px 16px var(--shadow);
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.desktop-settings-dialog::backdrop {
+  background: color-mix(in srgb, var(--text) 12%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+/* 布局基准：14px 根字号；放在 Dialog 上，让关闭确认层也继承相同的控件参数。 */
+.desktop-settings-dialog {
+  --st-rem: calc(14px * var(--font-scale, 1));
+  --st-card-padding: calc(1.4 * var(--st-rem));
   --st-card-gap: calc(1 * var(--st-rem));
-  --st-control-h: calc(2.25 * var(--st-rem));
+  --st-control-h: calc(2.4 * var(--st-rem));
   --st-control-h-sm: calc(2 * var(--st-rem));
   --st-control-px: calc(0.9 * var(--st-rem));
   --st-control-py: calc(0.4 * var(--st-rem));
   --st-control-gap: calc(0.4 * var(--st-rem));
   --st-stack-gap: calc(0.75 * var(--st-rem));
   --st-radius: 12px;
-  /* 色彩角色：主色 / 焦点环 / 弱化文本 / 卡片底 / 侧栏玻璃底 */
-  --st-primary: var(--accent);
-  --st-on-primary: var(--biny-selection-text);
+  /* 操作使用黑白主色，蓝色只承担焦点和功能状态。 */
+  --st-primary: var(--text);
+  --st-on-primary: var(--bg);
   --st-ring: color-mix(in srgb, var(--accent) 25%, transparent);
   --st-ring-weak: color-mix(in srgb, var(--accent) 22%, transparent);
   --st-muted-foreground: var(--text-secondary);
-  --st-card: #f8fafc;
-  --st-sidebar-bg: rgb(255 255 255 / 80%);
-  --st-sidebar-border: rgb(255 255 255 / 30%);
-  --st-unsaved: #ea580c;
-  --st-unsaved-dot: #f97316;
+  --st-card: color-mix(in srgb, var(--surface-soft) 48%, var(--surface-raised));
+  --st-sidebar-bg: var(--sidebar);
+  --st-sidebar-border: var(--border);
   --st-ease: cubic-bezier(0.4, 0, 0.2, 1);
   --st-scrollbar-thumb: color-mix(in srgb, var(--text) 30%, transparent);
+}
+
+.desktop-settings-dialog .settings-modal {
   position: relative;
   display: flex;
   width: 100%;
   height: 100%;
+  min-width: 0;
   min-height: 0;
+  flex: 1;
   overflow: hidden;
   margin: 0;
   border: 0;
   border-radius: 0;
-  background: var(--bg);
+  background: var(--surface-raised);
   box-shadow: none;
   /* 密度行高（compact 档）作用于整个设置中心。 */
   line-height: 1.4;
 }
 
-/* 窗口拖拽：侧栏与标题栏是拖拽区，交互控件恢复 no-drag。 */
-.settings-modal.is-full-page .settings-tabs,
-.settings-modal.is-full-page .settings-titlebar {
-  -webkit-app-region: drag;
-  app-region: drag;
-}
-
-.settings-modal.is-full-page .settings-content,
-.settings-modal.is-full-page .settings-tabs button,
-.settings-modal.is-full-page .settings-nav-list,
-.settings-modal.is-full-page input,
-.settings-modal.is-full-page textarea,
-.settings-modal.is-full-page select {
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
-}
-
-/* 深色主题（含系统深色回退）下的卡片底与侧栏玻璃底。 */
-:root[data-theme="dark"] .settings-modal.is-full-page {
-  --st-card: var(--surface-raised);
-  --st-sidebar-bg: color-mix(in srgb, var(--sidebar) 80%, transparent);
-  --st-sidebar-border: rgb(255 255 255 / 20%);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]):not([data-theme="dark"]) .settings-modal.is-full-page,
-  :root[data-theme="system"] .settings-modal.is-full-page {
-    --st-card: var(--surface-raised);
-    --st-sidebar-bg: color-mix(in srgb, var(--sidebar) 80%, transparent);
-    --st-sidebar-border: rgb(255 255 255 / 20%);
-  }
-}
-
-/* 侧栏：0.5rem 外边距悬浮、宽 224px、圆角 26px-0.5rem、模糊 + 投影。 */
-.settings-modal.is-full-page .settings-tabs {
+/* 侧栏保持直连布局；层级略高于内容区，让柔影落在分界右侧而不被内容底色盖住。 */
+.desktop-settings-dialog .settings-modal .settings-tabs {
   position: relative;
-  z-index: 10;
+  z-index: 11;
   display: flex;
-  width: 224px;
-  min-width: 224px;
-  max-width: 224px;
-  height: calc(100% - 13px);
-  flex: 0 0 224px;
+  width: 208px;
+  min-width: 208px;
+  max-width: 208px;
+  height: 100%;
+  flex: 0 0 208px;
   flex-direction: column;
   overflow: hidden;
-  margin: 6.5px;
+  margin: 0;
   padding: 0;
-  border: 1px solid var(--st-sidebar-border);
-  border-radius: 19.5px;
+  border: 0;
+  border-right: 1px solid var(--st-sidebar-border);
+  border-radius: 0;
   background: var(--st-sidebar-bg);
-  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 10%), 0 4px 6px -4px rgb(0 0 0 / 10%);
-  backdrop-filter: blur(4px);
-  -webkit-backdrop-filter: blur(4px);
+  box-shadow: 8px 0 24px -8px var(--biny-shadow-sidebar);
 }
 
-/* 玻璃卡片高光边：浅色左向渐变 + 左缘 1px 竖光；深色隐藏渐变、换竖光取值。 */
-.settings-modal.is-full-page .settings-tabs::before {
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background: linear-gradient(to right, rgb(255 255 255 / 20%), transparent);
-  content: "";
-  pointer-events: none;
-}
-
-.settings-modal.is-full-page .settings-tabs::after {
-  position: absolute;
-  top: 1px;
-  bottom: 1px;
-  left: 0;
-  width: 1px;
-  background: linear-gradient(to bottom, rgb(255 255 255 / 40%), rgb(255 255 255 / 10%), transparent);
-  content: "";
-  pointer-events: none;
-}
-
-:root[data-theme="dark"] .settings-modal.is-full-page .settings-tabs::before {
-  display: none;
-}
-
-:root[data-theme="dark"] .settings-modal.is-full-page .settings-tabs::after {
-  background: linear-gradient(180deg, rgb(255 255 255 / 0%) 0%, rgb(255 255 255 / 24%) 20%, rgb(255 255 255 / 6%) 68%, rgb(255 255 255 / 0%) 100%);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]):not([data-theme="dark"]) .settings-modal.is-full-page .settings-tabs::before,
-  :root[data-theme="system"] .settings-modal.is-full-page .settings-tabs::before {
-    display: none;
-  }
-
-  :root:not([data-theme="light"]):not([data-theme="dark"]) .settings-modal.is-full-page .settings-tabs::after,
-  :root[data-theme="system"] .settings-modal.is-full-page .settings-tabs::after {
-    background: linear-gradient(180deg, rgb(255 255 255 / 0%) 0%, rgb(255 255 255 / 24%) 20%, rgb(255 255 255 / 6%) 68%, rgb(255 255 255 / 0%) 100%);
-  }
-}
-
-/* 侧栏顶部条：承载返回按钮；mac 红绿灯悬浮在同排左侧，预留系统控件位。
-   底部发丝分割线与主侧栏一致，把顶栏和下方导航分开。 */
+/* 弹窗内无需为系统红绿灯预留位置。 */
 .settings-sidebar-strip {
   display: flex;
-  height: calc(3 * var(--st-rem));
+  min-height: 84px;
   flex: none;
   align-items: center;
-  padding-right: 6.5px;
-  padding-left: 76px;
-  border-bottom: 1px solid var(--st-sidebar-border, color-mix(in srgb, var(--border) 70%, transparent));
+  justify-content: space-between;
+  gap: 12px;
+  padding: 24px;
 }
 
-.settings-back-button {
-  display: inline-flex;
-  height: var(--st-control-h-sm);
-  align-items: center;
-  gap: var(--st-control-gap);
-  margin: 0;
-  padding-inline: 8px;
-  border: 0;
-  border-radius: var(--st-radius);
+.settings-sidebar-strip strong {
   color: var(--text);
-  background: transparent;
-  font-size: calc(0.875 * var(--st-rem));
-  transition: background-color 0.15s var(--st-ease);
+  font-size: calc(1.125 * var(--st-rem));
+  font-weight: 600;
 }
 
-.settings-back-button strong {
+.settings-sidebar-strip > span {
+  color: var(--text-tertiary);
+  font-size: 12px;
+}
+
+.settings-nav-group {
+  margin: 20px 12px 8px;
+  color: var(--text-tertiary);
+  font-size: calc(0.75 * var(--st-rem));
   font-weight: 500;
 }
 
-.settings-back-button:hover {
-  background: color-mix(in srgb, var(--text) 6%, transparent);
-}
+.settings-nav-group:first-child { margin-top: 0; }
 
-/* 侧栏导航：细滚动条静止透明、悬停显形；按钮 px-6 py-3、右缘 2px 选中指示。 */
-.settings-modal.is-full-page .settings-nav-list {
+/* 导航独立滚动，短窗口与大字号下始终可以访问全部分类。 */
+.desktop-settings-dialog .settings-modal .settings-nav-list {
   display: flex;
   flex: 1 1 auto;
   min-height: 0;
   flex-direction: column;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: 0;
+  gap: 3px;
+  padding: 0 12px 20px;
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
 }
 
-.settings-modal.is-full-page .settings-nav-list:hover {
+.desktop-settings-dialog .settings-modal .settings-nav-list:hover {
   scrollbar-color: var(--st-scrollbar-thumb) transparent;
 }
 
-.settings-modal.is-full-page .settings-nav-list::-webkit-scrollbar {
+.desktop-settings-dialog .settings-modal .settings-nav-list::-webkit-scrollbar {
   width: 5px;
 }
 
-.settings-modal.is-full-page .settings-nav-list::-webkit-scrollbar-thumb {
+.desktop-settings-dialog .settings-modal .settings-nav-list::-webkit-scrollbar-thumb {
   border: none;
   border-radius: 999px;
   background-color: #0000;
   background-clip: padding-box;
 }
 
-.settings-modal.is-full-page .settings-nav-list:hover::-webkit-scrollbar-thumb {
+.desktop-settings-dialog .settings-modal .settings-nav-list:hover::-webkit-scrollbar-thumb {
   background-color: var(--st-scrollbar-thumb);
 }
 
-.settings-modal.is-full-page .settings-nav-list::-webkit-scrollbar-track {
+.desktop-settings-dialog .settings-modal .settings-nav-list::-webkit-scrollbar-track {
   background: none;
 }
 
-.settings-modal.is-full-page .settings-nav-list button {
+.desktop-settings-dialog .settings-modal .settings-nav-list button {
   display: flex;
   width: 100%;
+  min-height: 36px;
   height: auto;
   flex: none;
   align-items: center;
   gap: 9.75px;
-  padding: 9.75px 19.5px;
+  padding: 8px 12px;
   border: 0;
-  border-right: 2px solid transparent;
-  border-radius: 0;
-  color: var(--text);
+  border-radius: 8px;
+  color: var(--text-secondary);
   background: transparent;
   text-align: left;
   font-size: calc(0.875 * var(--st-rem));
   font-weight: 500;
-  letter-spacing: -0.025em;
+  letter-spacing: 0;
   line-height: 1.4;
   transition: background-color 0.15s var(--st-ease), color 0.15s var(--st-ease), border-color 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .settings-nav-list button svg {
+.desktop-settings-dialog .settings-modal .settings-nav-list button svg {
   color: inherit;
 }
 
-.settings-modal.is-full-page .settings-nav-list button:hover {
+.desktop-settings-dialog .settings-modal .settings-nav-list button:hover {
   color: var(--text);
   background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
-.settings-modal.is-full-page .settings-nav-list button.is-selected {
-  border-right-color: var(--st-primary);
-  color: var(--st-primary);
-  background: color-mix(in srgb, var(--st-primary) 10%, transparent);
+.desktop-settings-dialog .settings-modal .settings-nav-list button.is-selected {
+  color: var(--text);
+  background: var(--surface-selected);
+  font-weight: 600;
 }
 
-:root[data-theme="dark"] .settings-modal.is-full-page .settings-nav-list button.is-selected {
-  background: color-mix(in srgb, var(--st-primary) 20%, transparent);
+.desktop-settings-dialog .settings-nav-list button:focus-visible,
+.desktop-settings-dialog .settings-close-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]):not([data-theme="dark"]) .settings-modal.is-full-page .settings-nav-list button.is-selected,
-  :root[data-theme="system"] .settings-modal.is-full-page .settings-nav-list button.is-selected {
-    background: color-mix(in srgb, var(--st-primary) 20%, transparent);
-  }
-}
-
-.settings-modal.is-full-page .settings-nav-icon {
+.desktop-settings-dialog .settings-modal .settings-nav-icon {
   display: inline-flex;
   flex: none;
   align-items: center;
@@ -1422,12 +1442,12 @@ select {
   transition: opacity 0.2s linear;
 }
 
-.settings-modal.is-full-page .settings-nav-list button:hover .settings-nav-icon,
-.settings-modal.is-full-page .settings-nav-list button.is-selected .settings-nav-icon {
+.desktop-settings-dialog .settings-modal .settings-nav-list button:hover .settings-nav-icon,
+.desktop-settings-dialog .settings-modal .settings-nav-list button.is-selected .settings-nav-icon {
   opacity: 1;
 }
 
-.settings-modal.is-full-page .settings-nav-label {
+.desktop-settings-dialog .settings-modal .settings-nav-label {
   min-width: 0;
   flex: 1;
   overflow: hidden;
@@ -1435,7 +1455,8 @@ select {
   white-space: nowrap;
 }
 
-.settings-modal.is-full-page .settings-nav-badge {
+/* 搜索服务的认证要求直接影响配置选择，保留紧凑标签。 */
+.desktop-settings-dialog .settings-modal .settings-search-auth {
   display: inline-flex;
   height: calc(1 * var(--st-rem));
   min-width: calc(1 * var(--st-rem));
@@ -1452,8 +1473,10 @@ select {
   letter-spacing: 0;
 }
 
+
 /* 右列：标题栏 + 滚动区 + 底栏，自身不滚动。 */
-.settings-modal.is-full-page .settings-content {
+.desktop-settings-dialog .settings-modal .settings-content {
+  container: settings / inline-size;
   position: relative;
   z-index: 10;
   display: flex;
@@ -1465,11 +1488,11 @@ select {
   margin: 0;
   padding: 0;
   border-radius: 0;
-  background: var(--bg);
+  background: var(--surface-raised);
 }
 
-/* 标题栏：border-b、px-6 py-4；左侧图标 + 分页名，右侧未保存提示。 */
-.settings-modal.is-full-page .settings-content > header.settings-titlebar {
+/* 标题栏只展示当前分页，保存状态统一留在固定底栏。 */
+.desktop-settings-dialog .settings-modal .settings-content > header.settings-titlebar {
   position: relative;
   z-index: auto;
   top: auto;
@@ -1480,9 +1503,9 @@ select {
   justify-content: space-between;
   gap: calc(0.5 * var(--st-rem));
   margin: 0;
-  padding: calc(1 * var(--st-rem)) calc(1.5 * var(--st-rem));
-  border-bottom: 1px solid var(--border);
-  background: var(--bg);
+  padding: 24px 32px 20px;
+  border-bottom: 0;
+  background: var(--surface-raised);
 }
 
 .settings-titlebar h2 {
@@ -1493,45 +1516,41 @@ select {
   margin: 0;
   overflow: hidden;
   color: var(--text);
-  font-size: calc(1.125 * var(--st-rem));
+  font-size: calc(1.5 * var(--st-rem));
   font-weight: 600;
+  letter-spacing: -0.025em;
 }
 
-.settings-titlebar-icon {
-  display: inline-flex;
-  flex: none;
-  color: inherit;
-}
-
-.settings-header-unsaved {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: calc(0.5 * var(--st-rem));
-  color: var(--st-unsaved);
+.settings-titlebar p {
+  margin: 6px 0 0;
+  color: var(--text-tertiary);
   font-size: calc(0.875 * var(--st-rem));
-  white-space: nowrap;
+  line-height: 1.5;
 }
 
-.settings-unsaved-dot {
-  width: calc(0.5 * var(--st-rem));
-  height: calc(0.5 * var(--st-rem));
-  border-radius: 999px;
-  background: var(--st-unsaved-dot);
+.desktop-settings-dialog .settings-close-button {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  margin-right: -8px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
 }
 
-/* 内容滚动区：p-6，页面铺满整列宽度。 */
-.settings-modal.is-full-page .settings-scroll {
+/* 内容滚动区与固定标题、底栏对齐。 */
+.desktop-settings-dialog .settings-modal .settings-scroll {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
   overflow-x: hidden;
   overflow-y: auto;
-  padding: calc(1.5 * var(--st-rem));
+  padding: 0 32px 28px;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 /* 扩展页（MCP / 技能 / 插件）自带滚动，滚动区只做容器。 */
-.settings-modal.is-full-page .settings-scroll.is-extension {
+.desktop-settings-dialog .settings-modal .settings-scroll.is-extension {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1539,7 +1558,7 @@ select {
 }
 
 /* 底栏：border-t、px-6 py-4；左侧状态文本，右侧操作按钮。 */
-.settings-modal.is-full-page .settings-page-footer {
+.desktop-settings-dialog .settings-modal .settings-page-footer {
   position: relative;
   display: flex;
   flex: none;
@@ -1547,8 +1566,8 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: calc(1 * var(--st-rem));
-  padding: calc(1 * var(--st-rem)) calc(1.5 * var(--st-rem));
-  background: var(--bg);
+  padding: 16px 32px;
+  background: var(--surface-raised);
   border-top: 1px solid var(--border);
 }
 
@@ -1582,7 +1601,7 @@ select {
   border-radius: var(--st-radius);
   color: var(--text);
   background: transparent;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
+  box-shadow: none;
   outline: none;
   cursor: pointer;
   white-space: nowrap;
@@ -1638,13 +1657,14 @@ select {
 
 .settings-confirm-panel h3 {
   margin: 0 0 8px;
-  font-size: calc(15px * var(--font-scale));
+  font-size: calc(16px * var(--font-scale));
+  font-weight: 600;
 }
 
 .settings-confirm-panel p {
   margin: 0 0 18px;
   color: var(--text-secondary);
-  font-size: calc(12px * var(--font-scale));
+  font-size: calc(13px * var(--font-scale));
   line-height: 1.6;
 }
 
@@ -1661,7 +1681,7 @@ select {
 
 .settings-discard-panel {
   display: flex;
-  width: min(484px, 100%);
+  width: min(480px, 100%);
   flex-direction: column;
   align-items: center;
   padding: 48px 28px 28px;
@@ -1686,7 +1706,7 @@ select {
   max-width: 390px;
   margin: 0 0 8px;
   font-size: calc(16px * var(--font-scale));
-  font-weight: 620;
+  font-weight: 600;
   line-height: 1.5;
 }
 
@@ -1709,14 +1729,8 @@ select {
   border-radius: 9px;
 }
 
-.settings-discard-panel .settings-confirm-actions button:first-child {
-  color: var(--text);
-  border-color: var(--border-strong);
-  background: var(--surface-hover);
-}
-
 /* 卡片内主操作按钮：对齐 default 变体参数（主色底、12px 圆角、控件高度）。 */
-.settings-modal.is-full-page .settings-primary-button {
+.desktop-settings-dialog .settings-modal .settings-primary-button {
   display: inline-flex;
   min-height: var(--st-control-h);
   align-items: center;
@@ -1733,11 +1747,11 @@ select {
   transition: background-color 0.15s var(--st-ease), border-color 0.15s var(--st-ease), color 0.15s var(--st-ease), box-shadow 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .settings-primary-button:hover:not(:disabled) {
+.desktop-settings-dialog .settings-modal .settings-primary-button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--st-primary) 90%, transparent);
 }
 
-.settings-modal.is-full-page .settings-primary-button:disabled {
+.desktop-settings-dialog .settings-modal .settings-primary-button:disabled {
   opacity: 0.5;
   cursor: default;
   pointer-events: none;
@@ -1746,9 +1760,9 @@ select {
 /* 分区卡片：bg-card + 1px 边 + 12px 圆角 + 细投影 + 密度内边距。
    卡体是 flex 列、子项间距 13px（对应密度 card-gap）；只重置旧样式的
    margin-bottom——margin-top 交给下方相邻规则，否则卡片会全部贴死。 */
-.settings-modal.is-full-page .settings-sections > section,
-.settings-modal.is-full-page .settings-sections > .connection-section,
-.settings-modal.is-full-page .appearance-card {
+.desktop-settings-dialog .settings-modal .settings-sections > section,
+.desktop-settings-dialog .settings-modal .settings-sections > .connection-section,
+.desktop-settings-dialog .settings-modal .appearance-card {
   display: flex;
   flex-direction: column;
   gap: var(--st-card-gap);
@@ -1760,65 +1774,66 @@ select {
   box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
 }
 
-.settings-modal.is-full-page .settings-scroll > * + *,
-.settings-modal.is-full-page .settings-sections > * + * {
+.desktop-settings-dialog .settings-modal .settings-scroll > * + *,
+.desktop-settings-dialog .settings-modal .settings-sections > * + * {
   margin-top: calc(1.5 * var(--st-rem));
 }
 
 /* 内容列全页面统一宽度并居中；960px 在宽窗下左右留白均衡，
    窄窗时退化为 100% 铺满。扩展页也走同一列宽，避免切页时宽度跳变。 */
-.settings-modal.is-full-page .settings-scroll > * {
+.desktop-settings-dialog .settings-modal .settings-scroll > * {
   width: 100%;
   max-width: 960px;
   margin-inline: auto;
 }
 
 /* fixed 定位的二级详情层是全屏遮罩，不参与列宽与相邻间距。 */
-.settings-modal.is-full-page .settings-scroll > .model-dialog-backdrop {
+.desktop-settings-dialog .settings-modal .settings-scroll > .model-dialog-backdrop {
   width: auto;
   max-width: none;
   margin: 0;
 }
 
-/* 卡片标题：text-lg font-medium，紧跟 6.5px 间距；描述 text-xs 弱化色，下距 13px。 */
-.settings-modal.is-full-page .settings-sections h3 {
-  margin: 0 0 calc(0.5 * var(--st-rem));
+/* 卡片标题：text-lg font-medium。只作用于卡片的直接标题，避免压过活动页
+   小节标题（activity-section-title 等）与记忆分组标题的专属字号字重。 */
+.desktop-settings-dialog .settings-modal .settings-sections > section:not(.activity-memory-group) > h3 {
+  margin: 0;
   color: var(--text);
   font-size: calc(1.125 * var(--st-rem));
   font-weight: 500;
   letter-spacing: 0;
 }
 
-.settings-modal.is-full-page .settings-sections h3 + p {
-  margin: 0 0 calc(1 * var(--st-rem));
+.desktop-settings-dialog .settings-modal .settings-sections h3 + p {
+  margin: 0;
   color: var(--st-muted-foreground);
-  font-size: calc(0.75 * var(--st-rem));
-  line-height: 1.4;
+  font-size: calc(11px * var(--font-scale, 1));
+  line-height: 1.5;
 }
 
-.settings-modal.is-full-page .section-heading-row {
+.desktop-settings-dialog .settings-modal .section-heading-row {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: calc(1 * var(--st-rem));
-  margin-bottom: calc(1 * var(--st-rem));
+  margin-bottom: 0;
 }
 
-.settings-modal.is-full-page .section-heading-row p {
+.desktop-settings-dialog .settings-modal .section-heading-row p {
   margin: 0;
   color: var(--st-muted-foreground);
-  font-size: calc(0.75 * var(--st-rem));
-  line-height: 1.4;
+  font-size: calc(11px * var(--font-scale, 1));
+  line-height: 1.5;
 }
 
 /* 卡片内输入 / 下拉：统一控件高度与 12px 圆角，焦点环 3px。 */
-.settings-modal.is-full-page .settings-sections input[type="text"],
-.settings-modal.is-full-page .settings-sections input[type="number"],
-.settings-modal.is-full-page .settings-sections input[type="search"],
-.settings-modal.is-full-page .settings-sections input[type="password"],
-.settings-modal.is-full-page .settings-sections input:not([type]),
-.settings-modal.is-full-page .settings-sections textarea,
-.settings-modal.is-full-page .settings-sections select {
+.desktop-settings-dialog .settings-modal .settings-sections input[type="text"],
+.desktop-settings-dialog .settings-modal .settings-sections input[type="number"],
+.desktop-settings-dialog .settings-modal .settings-sections input[type="search"],
+.desktop-settings-dialog .settings-modal .settings-sections input[type="password"],
+.desktop-settings-dialog .settings-modal .settings-sections input:not([type]),
+.desktop-settings-dialog .settings-modal .settings-sections textarea,
+.desktop-settings-dialog .settings-modal .settings-sections select {
   min-height: var(--st-control-h);
   padding: var(--st-control-py) var(--st-control-px);
   border: 1px solid var(--border);
@@ -1830,20 +1845,20 @@ select {
   transition: color 0.15s var(--st-ease), border-color 0.15s var(--st-ease), box-shadow 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .settings-sections input[type="text"]:focus-visible,
-.settings-modal.is-full-page .settings-sections input[type="number"]:focus-visible,
-.settings-modal.is-full-page .settings-sections input[type="search"]:focus-visible,
-.settings-modal.is-full-page .settings-sections input[type="password"]:focus-visible,
-.settings-modal.is-full-page .settings-sections input:not([type]):focus-visible,
-.settings-modal.is-full-page .settings-sections textarea:focus-visible,
-.settings-modal.is-full-page .settings-sections select:focus-visible {
+.desktop-settings-dialog .settings-modal .settings-sections input[type="text"]:focus-visible,
+.desktop-settings-dialog .settings-modal .settings-sections input[type="number"]:focus-visible,
+.desktop-settings-dialog .settings-modal .settings-sections input[type="search"]:focus-visible,
+.desktop-settings-dialog .settings-modal .settings-sections input[type="password"]:focus-visible,
+.desktop-settings-dialog .settings-modal .settings-sections input:not([type]):focus-visible,
+.desktop-settings-dialog .settings-modal .settings-sections textarea:focus-visible,
+.desktop-settings-dialog .settings-modal .settings-sections select:focus-visible {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   box-shadow: 0 0 0 3px var(--st-ring);
   outline: none;
 }
 
 /* 统一布尔开关行：左侧标题与说明、右侧滑动开关。 */
-.settings-modal.is-full-page .settings-switch-row {
+.desktop-settings-dialog .settings-modal .settings-switch-row {
   display: flex;
   width: 100%;
   align-items: center;
@@ -1856,31 +1871,32 @@ select {
   text-align: left;
 }
 
-.settings-modal.is-full-page .settings-switch-row:disabled {
+.desktop-settings-dialog .settings-modal .settings-switch-row:disabled {
   cursor: not-allowed;
   opacity: 0.5;
 }
 
-.settings-modal.is-full-page .settings-switch-copy {
+.desktop-settings-dialog .settings-modal .settings-switch-copy {
   display: flex;
   min-width: 0;
+  flex: 1;
   flex-direction: column;
   gap: 2px;
 }
 
-.settings-modal.is-full-page .settings-switch-copy strong {
-  font-size: calc(0.875 * var(--st-rem));
-  font-weight: 500;
+.desktop-settings-dialog .settings-modal .settings-switch-copy strong {
+  font-size: calc(12px * var(--font-scale, 1));
+  font-weight: 550;
 }
 
-.settings-modal.is-full-page .settings-switch-copy small {
+.desktop-settings-dialog .settings-modal .settings-switch-copy small {
   color: var(--st-muted-foreground);
   font-size: calc(0.75 * var(--st-rem));
   line-height: 1.4;
 }
 
 /* 滑动开关：轨道 1.5rem×2.75rem、圆头 1.25rem、选中位移 1.25rem。 */
-.settings-modal.is-full-page .settings-switch {
+.desktop-settings-dialog .settings-modal .settings-switch {
   display: inline-flex;
   width: calc(2.75 * var(--st-rem));
   height: calc(1.5 * var(--st-rem));
@@ -1892,19 +1908,19 @@ select {
   transition: background-color 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .settings-switch-row.is-checked .settings-switch {
+.desktop-settings-dialog .settings-modal .settings-switch-row.is-checked .settings-switch {
   background: var(--st-primary);
 }
 
-.settings-modal.is-full-page .settings-switch-row:focus-visible {
+.desktop-settings-dialog .settings-modal .settings-switch-row:focus-visible {
   outline: none;
 }
 
-.settings-modal.is-full-page .settings-switch-row:focus-visible .settings-switch {
+.desktop-settings-dialog .settings-modal .settings-switch-row:focus-visible .settings-switch {
   box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--st-ring);
 }
 
-.settings-modal.is-full-page .settings-switch-thumb {
+.desktop-settings-dialog .settings-modal .settings-switch-thumb {
   display: block;
   width: calc(1.25 * var(--st-rem));
   height: calc(1.25 * var(--st-rem));
@@ -1914,22 +1930,22 @@ select {
   transition: transform 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .settings-switch-row.is-checked .settings-switch-thumb {
+.desktop-settings-dialog .settings-modal .settings-switch-row.is-checked .settings-switch-thumb {
   transform: translateX(calc(1.25 * var(--st-rem)));
 }
 
 /* 动效降级：系统要求减少动态效果时关闭设置内的过渡。 */
 @media (prefers-reduced-motion: reduce) {
-  .settings-modal.is-full-page .settings-nav-list button,
-  .settings-modal.is-full-page .settings-nav-icon,
-  .settings-modal.is-full-page .settings-back-button,
-  .settings-modal.is-full-page .settings-switch,
-  .settings-modal.is-full-page .settings-switch-thumb,
-  .settings-modal.is-full-page .settings-page-footer button,
-  .settings-modal.is-full-page .settings-confirm-actions button,
-  .settings-modal.is-full-page .settings-sections input,
-  .settings-modal.is-full-page .settings-sections textarea,
-  .settings-modal.is-full-page .settings-sections select {
+  .desktop-settings-dialog .settings-modal .settings-nav-list button,
+  .desktop-settings-dialog .settings-modal .settings-nav-icon,
+  .desktop-settings-dialog .settings-close-button,
+  .desktop-settings-dialog .settings-modal .settings-switch,
+  .desktop-settings-dialog .settings-modal .settings-switch-thumb,
+  .desktop-settings-dialog .settings-modal .settings-page-footer button,
+  .desktop-settings-dialog .settings-modal .settings-confirm-actions button,
+  .desktop-settings-dialog .settings-modal .settings-sections input,
+  .desktop-settings-dialog .settings-modal .settings-sections textarea,
+  .desktop-settings-dialog .settings-modal .settings-sections select {
     transition: none;
   }
 }
@@ -1957,14 +1973,53 @@ select {
   border-color: color-mix(in srgb, var(--yellow) 36%, var(--border));
 }
 
-.appearance-section-group {
-  margin-bottom: 14px;
+/* 标签与控件在空间足够时同行；只有整组放不下时才换行，不挤压成竖排。 */
+.desktop-settings-dialog :is(.setting-row, .activity-memory-row, .activity-memory-number-row) {
+  flex-wrap: wrap;
+  gap: 10px 20px;
+  min-width: 0;
+  height: auto;
 }
 
-.appearance-section-group > h3 {
-  margin: 0 0 10px;
-  font-size: calc(14px * var(--font-scale));
-  font-weight: 580;
+.desktop-settings-dialog :is(.setting-row, .activity-memory-row, .activity-memory-number-row) > :is(label, span):first-child {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+.desktop-settings-dialog .setting-row > label {
+  color: var(--text);
+  font-size: calc(0.875 * var(--st-rem));
+  font-weight: 500;
+}
+
+.desktop-settings-dialog .setting-row > :is(select, .settings-model-picker) {
+  width: min(220px, 100%);
+  min-width: 0;
+  flex: 0 1 220px;
+}
+
+.desktop-settings-dialog .setting-row > .font-size-row { flex: none; }
+.desktop-settings-dialog .setting-row:last-child { border-bottom: 0; }
+.desktop-settings-dialog .appearance-card { gap: 0; }
+
+.desktop-settings-dialog .capability-default-field {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 20px;
+}
+
+.desktop-settings-dialog .capability-default-grid { margin-top: 0; }
+.desktop-settings-dialog .capability-default-option-title { white-space: nowrap; }
+
+.desktop-settings-dialog .activity-permission-row { flex-wrap: wrap; }
+.desktop-settings-dialog .activity-permission-copy { flex: 1 1 220px; }
+.desktop-settings-dialog .activity-memory-heading-row { flex-wrap: wrap; gap: 8px 16px; }
+.desktop-settings-dialog .activity-memory-heading-row span { white-space: normal; }
+
+@container settings (max-width: 420px) {
+  .agent-permission-options { grid-template-columns: 1fr; }
 }
 
 .appearance-settings .appearance-card {
@@ -1975,125 +2030,7 @@ select {
   background: var(--surface);
 }
 
-.appearance-control-label {
-  margin-bottom: 12px;
-  color: var(--text-secondary);
-  font-size: calc(12px * var(--font-scale));
-  font-weight: 520;
-}
-
-.appearance-settings .theme-option-grid {
-  gap: 12px;
-  margin: 0;
-}
-
-.appearance-settings .theme-option {
-  min-height: 0;
-  gap: 8px;
-  padding: 0;
-  border: 0;
-  border-radius: 0;
-  color: var(--text-secondary);
-  background: transparent;
-  box-shadow: none;
-}
-
-.appearance-settings .theme-option:hover,
-.appearance-settings .theme-option.is-selected {
-  color: var(--text);
-  background: transparent;
-  box-shadow: none;
-}
-
-.theme-option-preview {
-  display: grid;
-  width: 100%;
-  height: 72px;
-  place-items: center;
-  overflow: hidden;
-  border: 1px solid var(--border-strong);
-  border-radius: 12px;
-  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
-}
-
-.theme-option:hover .theme-option-preview {
-  border-color: var(--text-tertiary);
-}
-
-.theme-option:active .theme-option-preview {
-  transform: translateY(1px);
-}
-
-.theme-option.is-selected .theme-option-preview {
-  border-color: var(--text-secondary);
-  box-shadow: inset 0 0 0 1px var(--text-secondary);
-}
-
-.theme-option[data-theme-option="light"] .theme-option-preview {
-  color: var(--biny-light-text);
-  background: var(--biny-light-surface);
-}
-
-.theme-option[data-theme-option="dark"] .theme-option-preview {
-  color: var(--biny-dark-text);
-  background: var(--biny-dark-surface);
-}
-
-.theme-option[data-theme-option="system"] .theme-option-preview {
-  color: var(--biny-dark-text-secondary);
-  background: linear-gradient(90deg, var(--biny-dark-surface) 0 50%, var(--biny-light-surface) 50% 100%);
-}
-
-.theme-option-caption {
-  display: flex;
-  min-height: 20px;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  color: var(--text-secondary);
-  font-size: calc(12px * var(--font-scale));
-  font-weight: 500;
-}
-
-.theme-option.is-selected .theme-option-caption {
-  color: var(--text);
-}
-
-.theme-option-caption i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: currentColor;
-}
-
-.appearance-font-card {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.appearance-font-card .font-field {
-  gap: 10px;
-  margin: 0;
-}
-
-.appearance-card-heading {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.appearance-font-card .font-select,
-.appearance-font-card .font-size-input {
-  height: 40px;
-  border-radius: 10px;
-  background: transparent;
-}
-
-.appearance-card-divider {
-  height: 1px;
-  background: var(--border);
-}
+/* 主题缩略图呈现真实的侧栏与对话区比例；分屏代表跟随系统，不承载交互。 */
 
 /* 单库记忆 v3：配置先按功能分组，维护与记忆库保持独立。 */
 .memory-mode-nested {
@@ -2167,7 +2104,7 @@ select {
 }
 
 .memory-index-summary > span {
-  padding: 11px 12px;
+  padding: 8px 12px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--surface-soft);
@@ -2280,13 +2217,18 @@ select {
 }
 
 @media (max-width: 900px) {
-  /* 窄屏下侧栏玻璃卡片收窄到 190px。 */
-  .settings-modal.is-full-page .settings-tabs {
+  /* 窄窗口收紧导航与内容留白，仍保留弹窗四周的工作区。 */
+  .desktop-settings-dialog .settings-modal .settings-tabs {
     width: 177px;
     min-width: 177px;
     max-width: 177px;
     flex-basis: 177px;
   }
+
+  .settings-sidebar-strip { padding-inline: 20px; }
+  .desktop-settings-dialog .settings-modal .settings-content > header.settings-titlebar { padding: 24px 24px 20px; }
+  .desktop-settings-dialog .settings-modal .settings-scroll { padding-inline: 24px; }
+  .desktop-settings-dialog .settings-modal .settings-page-footer { padding-inline: 24px; }
 
   .memory-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2307,16 +2249,16 @@ select {
     display: none;
   }
 
-  .settings-modal.is-full-page .settings-tabs {
+  .desktop-settings-dialog .settings-modal .settings-tabs {
     width: 147px;
     min-width: 147px;
     max-width: 147px;
     flex-basis: 147px;
   }
 
-  .appearance-settings .theme-option-grid {
-    grid-template-columns: 1fr;
-  }
+  .desktop-settings-dialog { max-width: calc(100dvw - 32px); }
+  .desktop-settings-dialog .settings-modal .settings-nav-list { padding-inline: 8px; }
+  .desktop-settings-dialog .settings-modal .settings-nav-list button { gap: 7px; padding-inline: 8px; }
 
   .memory-threshold-grid,
   .memory-model-grid,
@@ -2349,7 +2291,7 @@ select {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 18px;
+  gap: 16px;
 }
 
 .activity-heading-copy {
@@ -2383,7 +2325,7 @@ select {
   margin: 8px 0 0;
   color: var(--text-tertiary);
   font-size: calc(11px * var(--font-scale));
-  line-height: 1.55;
+  line-height: 1.5;
 }
 
 .activity-section-description.is-error {
@@ -2391,7 +2333,7 @@ select {
 }
 
 .activity-feedback {
-  margin: 9px 0 0;
+  margin: 8px 0 0;
   color: var(--green);
   font-size: calc(11px * var(--font-scale));
 }
@@ -2694,11 +2636,7 @@ select {
 }
 
 .activity-secondary-button,
-.activity-danger-button,
-.activity-session-row,
-.activity-search-result,
-.activity-snapshot,
-.activity-analysis-fields .settings-segmented button {
+.activity-danger-button {
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
@@ -2710,9 +2648,6 @@ select {
 
 .activity-icon-button:focus-visible,
 .activity-secondary-button:focus-visible,
-.activity-session-row:focus-visible,
-.activity-search-result:focus-visible,
-.activity-snapshot:focus-visible,
 .activity-danger-button:focus-visible {
   outline: 2px solid color-mix(in srgb, var(--accent) 62%, transparent);
   outline-offset: 2px;
@@ -2729,7 +2664,7 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 11px 12px;
+  padding: 8px 12px;
   border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
   border-radius: 10px;
   background: color-mix(in srgb, var(--surface-hover) 55%, transparent);
@@ -2832,7 +2767,7 @@ select {
 .activity-field-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px 12px;
+  gap: 12px;
 }
 
 .activity-field {
@@ -2844,7 +2779,7 @@ select {
 
 .activity-field > span {
   color: var(--text-secondary);
-  font-size: calc(11px * var(--font-scale));
+  font-size: calc(12px * var(--font-scale));
   font-weight: 550;
 }
 
@@ -2868,8 +2803,7 @@ select {
 
 .activity-field > input:focus-visible,
 .activity-field > textarea:focus-visible,
-.activity-number-input:has(input:focus-visible),
-.activity-analysis-fields .settings-segmented button:focus-visible {
+.activity-number-input:has(input:focus-visible) {
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
 }
@@ -2892,6 +2826,11 @@ select {
   font: inherit;
   font-size: calc(12px * var(--font-scale));
 }
+
+/* 隐藏原生数字步进箭头：与输入框内的单位后缀、圆角风格冲突，编辑交给键盘输入。 */
+.activity-number-input input::-webkit-inner-spin-button,
+.activity-number-input input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+.activity-number-input input { appearance: textfield; }
 
 .activity-number-input em {
   flex: 0 0 auto;
@@ -2930,16 +2869,6 @@ select {
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
 }
 
-/* 分析 › 策略选择器与专用模型：单列、说明文案需要完整宽度。 */
-.activity-analysis-fields {
-  align-items: start;
-  grid-template-columns: 1fr;
-}
-
-.activity-analysis-fields .settings-segmented {
-  align-self: flex-start;
-}
-
 .activity-field-wide {
   grid-column: span 1;
 }
@@ -2969,393 +2898,6 @@ select {
 
 .activity-storage-note {
   margin-top: 16px;
-}
-
-.activity-empty-state {
-  display: grid;
-  min-height: 80px;
-  place-items: center;
-  border: 1px dashed var(--border-strong);
-  border-radius: 10px;
-  color: var(--text-tertiary);
-  background: color-mix(in srgb, var(--surface-hover) 55%, transparent);
-  font-size: calc(11px * var(--font-scale));
-  text-align: center;
-}
-
-.activity-recent-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.activity-session-row {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 5px;
-  padding: 11px 13px;
-  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-  border-radius: 10px;
-  color: inherit;
-  background: color-mix(in srgb, var(--surface-hover) 55%, transparent);
-  text-align: left;
-  cursor: pointer;
-  touch-action: manipulation;
-  transition: border-color 150ms ease, background 150ms ease;
-}
-
-.activity-session-row:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-hover);
-}
-
-.activity-session-row strong {
-  overflow: hidden;
-  color: var(--text);
-  font-size: calc(12px * var(--font-scale));
-  font-weight: 560;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.activity-session-row span {
-  color: var(--text-tertiary);
-  font-size: calc(10px * var(--font-scale));
-}
-
-.activity-session-row em {
-  color: var(--accent);
-  font-size: calc(10px * var(--font-scale));
-  font-style: normal;
-}
-
-.activity-search-form,
-.activity-report-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-}
-
-.activity-search-form .activity-field,
-.activity-report-row .activity-field {
-  flex: 1 1 auto;
-}
-
-.activity-search-form .activity-secondary-button,
-.activity-report-actions {
-  margin-bottom: 21px;
-}
-
-.activity-search-results {
-  display: flex;
-  max-height: 260px;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 12px;
-  padding: 0;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  list-style: none;
-}
-
-.activity-search-results > li {
-  min-width: 0;
-}
-
-.activity-search-result {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  flex-direction: column;
-  gap: 3px;
-  padding: 9px 11px;
-  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-  border-radius: 9px;
-  color: inherit;
-  background: color-mix(in srgb, var(--surface-hover) 55%, transparent);
-  text-align: left;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.activity-search-result:hover {
-  border-color: var(--border-strong);
-  background: var(--surface-hover);
-}
-
-.activity-search-result strong {
-  overflow: hidden;
-  color: var(--text);
-  font-size: calc(11px * var(--font-scale));
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.activity-search-result span {
-  overflow: hidden;
-  color: var(--text-tertiary);
-  font-size: calc(10px * var(--font-scale));
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.activity-report-row {
-  margin-top: 18px;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-}
-
-.activity-report-actions {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  flex: 0 0 auto;
-}
-
-.activity-report-actions .activity-icon-button {
-  width: auto;
-  padding: 0 7px;
-  font-size: calc(10px * var(--font-scale));
-}
-
-.activity-report-output {
-  max-height: 420px;
-  margin-top: 14px;
-  padding: 12px;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
-  border-radius: 9px;
-  background: var(--surface-soft);
-}
-
-.activity-report-output pre {
-  margin: 0;
-  color: var(--text-secondary);
-  font-family: inherit;
-  font-size: calc(11px * var(--font-scale));
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.activity-report-output p {
-  margin: 10px 0 0;
-  color: var(--amber);
-  font-size: calc(10.5px * var(--font-scale));
-}
-
-.activity-detail-panel {
-  display: flex;
-  width: min(760px, 100%);
-  max-height: calc(100vh - 48px);
-  flex-direction: column;
-  overflow: hidden;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface-raised);
-  box-shadow: 0 18px 48px var(--biny-shadow-heavy);
-}
-
-.activity-detail-layer {
-  overscroll-behavior: contain;
-}
-
-.activity-detail-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 18px 20px 14px;
-  border-bottom: 1px solid var(--border);
-}
-
-.activity-detail-eyebrow,
-.activity-detail-label {
-  color: var(--accent);
-  font-size: calc(10px * var(--font-scale));
-  font-weight: 600;
-}
-
-.activity-detail-header h2 {
-  margin: 3px 0 0;
-  color: var(--text);
-  font-size: calc(17px * var(--font-scale));
-  font-weight: 620;
-}
-
-.activity-detail-header p {
-  margin: 4px 0 0;
-  color: var(--text-tertiary);
-  font-size: calc(10.5px * var(--font-scale));
-}
-
-.activity-detail-body {
-  min-height: 0;
-  padding: 16px 20px 20px;
-  overflow: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-}
-
-.activity-detail-analysis,
-.activity-detail-unavailable {
-  padding: 11px 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--accent) 6%, var(--surface-soft));
-}
-
-.activity-detail-analysis strong {
-  display: block;
-  margin-top: 4px;
-  color: var(--text);
-  font-size: calc(12px * var(--font-scale));
-  line-height: 1.5;
-}
-
-.activity-detail-analysis p {
-  margin: 5px 0 0;
-  color: var(--text-secondary);
-  font-size: calc(10.5px * var(--font-scale));
-  line-height: 1.45;
-}
-
-.activity-detail-unavailable {
-  color: var(--text-secondary);
-  font-size: calc(11px * var(--font-scale));
-  line-height: 1.5;
-}
-
-.activity-detail-section {
-  margin-top: 18px;
-}
-
-.activity-detail-section-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 9px;
-}
-
-.activity-detail-section-heading h3 {
-  margin: 0;
-  color: var(--text);
-  font-size: calc(12px * var(--font-scale));
-  font-weight: 600;
-}
-
-.activity-detail-section-heading span,
-.activity-detail-loading {
-  color: var(--text-tertiary);
-  font-size: calc(10px * var(--font-scale));
-}
-
-.activity-snapshot-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.activity-snapshot {
-  display: flex;
-  min-width: 0;
-  flex-direction: column;
-  gap: 5px;
-  padding: 5px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  color: var(--text-tertiary);
-  background: var(--surface-soft);
-  text-align: left;
-  cursor: pointer;
-  touch-action: manipulation;
-}
-
-.activity-snapshot:hover,
-.activity-snapshot.is-selected {
-  border-color: var(--accent);
-  color: var(--text-secondary);
-}
-
-.activity-snapshot img,
-.activity-snapshot-placeholder {
-  display: block;
-  width: 100%;
-  aspect-ratio: 16 / 10;
-  object-fit: cover;
-  border-radius: 5px;
-}
-
-.activity-snapshot-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 5px;
-  color: var(--text-tertiary);
-  background: var(--surface-hover);
-}
-
-.activity-snapshot > span:last-child {
-  overflow: hidden;
-  font-size: calc(9px * var(--font-scale));
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.activity-event-timeline {
-  display: flex;
-  margin: 0;
-  padding: 0 0 0 4px;
-  flex-direction: column;
-  gap: 0;
-  list-style: none;
-}
-
-.activity-event-timeline li {
-  display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
-  gap: 10px;
-  padding: 9px 0 9px 10px;
-  border-left: 1px solid var(--border-strong);
-}
-
-.activity-event-timeline time {
-  color: var(--text-tertiary);
-  font-size: calc(9.5px * var(--font-scale));
-  font-variant-numeric: tabular-nums;
-}
-
-.activity-event-timeline strong {
-  color: var(--text-secondary);
-  font-size: calc(10.5px * var(--font-scale));
-  font-weight: 600;
-}
-
-.activity-event-timeline p,
-.activity-event-timeline small {
-  display: block;
-  margin: 3px 0 0;
-  color: var(--text-tertiary);
-  font-size: calc(10px * var(--font-scale));
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
-
-.activity-detail-state {
-  padding: 48px 20px;
-  color: var(--text-secondary);
-  text-align: center;
-  font-size: calc(11px * var(--font-scale));
-}
-
-.activity-detail-state.is-error {
-  color: var(--red);
 }
 
 .activity-clear-panel {
@@ -3421,37 +2963,10 @@ select {
     align-self: flex-start;
   }
 
-  .activity-search-form,
-  .activity-report-row {
-    align-items: stretch;
-    flex-direction: column;
-  }
 
-  .activity-search-form .activity-secondary-button,
-  .activity-report-actions {
-    margin-bottom: 0;
-  }
-
-  .activity-report-actions {
-    align-self: flex-start;
-  }
-
-  .activity-snapshot-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .activity-detail-panel {
-    max-height: calc(100vh - 24px);
-  }
-
-  .activity-detail-body {
-    padding-right: 14px;
-    padding-left: 14px;
-  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .activity-session-row,
   .activity-progress > span,
   .activity-switch-track,
   .activity-switch-track > span {
@@ -3459,104 +2974,106 @@ select {
   }
 }
 
-/* memory：轻量条目列表，不把内部索引/来源治理暴露成控制台。 */
-.activity-memory-header,
-.activity-memory-diary,
-.activity-memory-add,
-.activity-memory-list,
-.activity-memory-sleep { padding: 16px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
-/* 统一设置卡片规则(.settings-modal.is-full-page .settings-sections > section)
-   把所有直接子 section 固定为纵向 flex 且优先级更高；只有 header 需要保留
-   「标题居左、开关居右」的行布局，用同等作用域的选择器赢回。
-   config / sleep 跟随统一纵向布局，开关一行一个。 */
-.settings-modal.is-full-page .settings-sections > .activity-memory-header { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 20px; }
-.activity-memory-header h3,
-.activity-memory-add h3,
-.activity-memory-list h3,
-.activity-memory-sleep h3 { margin: 0; font-size: calc(15px * var(--font-scale)); }
-.activity-memory-header p,
-.activity-memory-diary p,
-.activity-memory-add > p,
-.activity-memory-list p,
-.activity-memory-sleep p { margin: 5px 0 0; color: var(--text-secondary); font-size: calc(12px * var(--font-scale)); line-height: 1.5; }
-.activity-memory-diary-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-.activity-memory-diary-heading h3 { margin: 0; font-size: calc(15px * var(--font-scale)); }
-.activity-memory-diary-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
-.activity-memory-diary-actions input { min-width: 190px; min-height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 7px; color: var(--text); background: var(--surface-soft); font: inherit; font-size: 12px; }
-.activity-memory-diary-output { margin-top: 14px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
-.activity-memory-diary-output small { color: var(--text-tertiary); font-size: 10px; }
-.activity-memory-diary-output pre { max-height: 360px; margin: 8px 0 0; overflow: auto; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; line-height: 1.6; }
-.activity-memory-add-box { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
-.activity-memory-add-box textarea { box-sizing: border-box; width: 100%; resize: vertical; border: 0; outline: 0; color: var(--text); background: transparent; font: inherit; line-height: 1.55; }
-.activity-memory-add-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 8px; color: var(--text-tertiary); font-size: 11px; }
-.activity-memory-list .section-heading-row { align-items: center; margin-bottom: 12px; }
-.activity-memory-search { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; color: var(--text-tertiary); background: var(--surface-soft); }
-.activity-memory-search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 15%, transparent); }
-.activity-memory-search input { flex: 1; min-width: 0; border: 0; outline: 0; color: var(--text); background: transparent; font: inherit; font-size: 12px; }
-.activity-memory-filters { display: flex; gap: 6px; margin: 10px 0 12px; }
-.activity-memory-filters button,
-.activity-memory-archived-toggle { color: var(--text-secondary); font-size: 11px; }
-.activity-memory-filters button { padding: 5px 9px; border: 1px solid transparent; border-radius: 7px; background: transparent; cursor: pointer; }
-.activity-memory-filters button.is-selected { border-color: var(--border); color: var(--text); background: var(--surface-soft); }
-.activity-memory-archived-toggle { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+/* 记忆设置沿用 Alma 的分组卡片与控件密度；索引状态只在必要的操作反馈中出现。 */
+.activity-memory-group { display: flex; flex-direction: column; gap: 13px; padding: 16px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
 .activity-memory-entries { display: flex; flex-direction: column; gap: 8px; }
 .activity-memory-entry { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
 .activity-memory-entry-content { min-width: 0; flex: 1; }
 .activity-memory-entry-content p { margin: 0; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
-.activity-memory-entry-content small { display: block; margin-top: 7px; color: var(--text-tertiary); font-size: 10px; }
+.activity-memory-entry-content small { display: block; margin-top: 7px; color: var(--text-tertiary); font-size: calc(10px * var(--font-scale, 1)); }
 .activity-memory-entry-actions { display: flex; gap: 3px; flex: 0 0 auto; }
-.activity-memory-empty { padding: 26px 8px; color: var(--text-tertiary); text-align: center; font-size: 12px; }
-.activity-memory-sleep { color: var(--text-secondary); }
-.activity-memory-sleep > small { color: var(--text-tertiary); font-size: 10px; white-space: nowrap; }
-.activity-memory-sleep-history { display: block; margin-top: 3px; color: var(--text-tertiary); font-size: 10px; }
-.activity-memory-sleep-detail { display: block; margin-top: 6px; color: var(--text-tertiary); font-size: 10px; }
-@media (max-width: 720px) {
-  .settings-modal.is-full-page .settings-sections > .activity-memory-header,
-  .activity-memory-diary-heading { align-items: flex-start; flex-direction: column; }
-  .activity-memory-diary-actions { width: 100%; }
-  .activity-memory-diary-actions input { flex: 1; min-width: 0; }
-}
-
-.activity-memory-limit { display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
-.activity-memory-limit > span { display: flex; flex-direction: column; gap: 3px; }
-.activity-memory-limit small { color: var(--text-tertiary); font-size: 10px; }
-.activity-memory-limit input { width: 100%; accent-color: var(--accent); }
-
-.activity-memory-model { display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
-.activity-memory-model > span { display: flex; flex-direction: column; gap: 3px; }
-.activity-memory-model small { color: var(--text-tertiary); font-size: 10px; }
-.activity-memory-model select { min-height: 30px; padding: 0 8px; border: 1px solid var(--border); border-radius: 7px; color: var(--text); background: var(--surface); font: inherit; font-size: 12px; }
-
-.activity-memory-embedding { display: flex; flex-direction: column; gap: 10px; padding: 12px; border: 1px solid var(--border); border-radius: 9px; background: var(--surface-soft); }
-.activity-memory-embedding-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.activity-memory-embedding-heading h4 { margin: 0; color: var(--text); font-size: 12px; }
-.activity-memory-embedding-heading p { margin: 4px 0 0; color: var(--text-tertiary); font-size: 10px; line-height: 1.45; }
-.activity-memory-status { flex: 0 0 auto; padding: 3px 7px; border-radius: 999px; color: var(--amber); background: color-mix(in srgb, var(--amber) 12%, transparent); font-size: 10px; }
-.activity-memory-status.is-ready { color: var(--green); background: color-mix(in srgb, var(--green) 12%, transparent); }
-.activity-memory-embedding-meta { display: flex; flex-wrap: wrap; gap: 5px; color: var(--text-tertiary); font-size: 10px; }
-.activity-memory-embedding-meta span { padding: 2px 6px; border-radius: 999px; background: var(--surface); }
+.activity-memory-empty { padding: 26px 8px; color: var(--text-tertiary); text-align: center; font-size: calc(12px * var(--font-scale, 1)); }
+/* 进度、错误和高级参数由当前 Alma 对齐版结构继续复用。 */
 .activity-memory-embedding-progress,
 .activity-memory-embedding-hint { color: var(--text-tertiary); font-size: 10px; line-height: 1.45; }
-.activity-memory-embedding-actions { display: flex; align-items: center; gap: 6px; }
+.activity-memory-embedding-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--red); font-size: 11px; line-height: 1.45; }
+.activity-memory-advanced-content { display: flex; flex-direction: column; gap: 13px; margin-top: 13px; }
 
-/* 记忆总开关关闭：配置区不隐藏，整体变暗、控件禁用，保留可恢复的完整配置视图。 */
-.activity-memory-config.is-disabled { opacity: 0.55; }
-/* 区块已整体变暗，抵消内部按钮与模型选择器自带的禁用透明度，避免叠加过暗。 */
-.activity-memory-config.is-disabled button:disabled { opacity: 1; }
-.settings-modal.is-full-page .activity-memory-config.is-disabled .settings-model-picker.is-disabled { opacity: 1; }
+/* 记忆设置与 Alma 的卡片结构保持一致：只保留用户需要的开关、滑块和操作，
+   状态与索引细节留在后端，不把实现信息变成设置页的主视觉。 */
+.activity-memory-settings { gap: 24px; }
+.activity-memory-settings > .activity-memory-group { gap: 16px; padding: 20px 22px; border-radius: 12px; }
+.activity-memory-settings > .activity-memory-group h3 { margin: 0 0 2px; font-size: calc(16px * var(--font-scale)); font-weight: 500; }
+.activity-memory-settings > .activity-memory-group > p { margin: -8px 0 2px; color: var(--text-tertiary); font-size: calc(11px * var(--font-scale)); line-height: 1.5; }
+.activity-memory-checkbox-row { display: flex; flex-direction: column; gap: 6px; }
+.activity-memory-checkbox-row label { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: calc(12px * var(--font-scale)); font-weight: 550; cursor: pointer; }
+.activity-memory-checkbox-row input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.activity-memory-checkbox-row p { margin: 0 0 0 26px; color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); line-height: 1.5; }
+.activity-memory-nested { display: flex; flex-direction: column; gap: 22px; margin-left: 26px; }
+.activity-memory-range { display: flex; flex-direction: column; gap: 7px; }
+.activity-memory-range label { color: var(--text); font-size: calc(14px * var(--font-scale)); font-weight: 500; }
+.activity-memory-range input[type="range"] { width: 100%; }
+.activity-memory-range p { margin: 0; color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); line-height: 1.45; }
+.activity-memory-range-labels { display: flex; justify-content: space-between; color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); }
+.activity-memory-heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+.activity-memory-heading-row span { min-width: 0; overflow: hidden; color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); text-overflow: ellipsis; white-space: nowrap; }
+.activity-memory-sleep-content { display: flex; flex-direction: column; gap: 20px; }
+.activity-memory-last-run { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); font-size: calc(12px * var(--font-scale)); }
+.activity-memory-last-run span,
+.activity-memory-last-run small { color: var(--text-tertiary); font-size: calc(11px * var(--font-scale)); }
+.activity-memory-sleep-actions,
+.activity-memory-sleep-footer,
+.activity-memory-embedding-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.activity-memory-sleep-actions { justify-content: flex-start; }
+.activity-memory-row,
+.activity-memory-number-row { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.activity-memory-row > span,
+.activity-memory-number-row > span { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.activity-memory-row small,
+.activity-memory-number-row small { color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); line-height: 1.45; }
+.activity-memory-row input[type="time"] { width: 128px; flex: 0 0 auto; }
+.activity-memory-number-row input[type="number"] { width: 76px; flex: 0 0 auto; }
+.activity-memory-retention { display: flex; flex-direction: column; gap: 16px; }
+.activity-memory-retention h4 { margin: 0; color: var(--text); font-size: calc(14px * var(--font-scale)); font-weight: 500; }
+.activity-memory-disclosure { align-self: flex-start; padding: 0; border: 0; color: var(--text-tertiary); background: transparent; font: inherit; font-size: calc(12px * var(--font-scale)); cursor: pointer; }
+.activity-memory-disclosure:hover { color: var(--text); }
+.activity-memory-advanced-content { width: 100%; margin-top: -4px; padding-left: 14px; border-left: 1px solid var(--border); }
+.activity-memory-sleep-preview,
+.activity-memory-embedding-progress,
+.activity-memory-embedding-hint { color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); line-height: 1.45; }
+.activity-memory-archive-list { display: flex; flex-direction: column; gap: 8px; }
+.activity-memory-archive-list > p { margin: 0; color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); }
+.activity-memory-run-details { margin: 0; }
+.activity-memory-run-details summary { color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); cursor: pointer; }
+.activity-memory-run-details p { margin: 7px 0 0; color: var(--text-tertiary); font-size: calc(11px * var(--font-scale)); }
+.activity-memory-model-picker-row { display: flex; align-items: center; gap: 12px; }
+.activity-memory-model-picker-row .settings-model-picker { flex: 1; }
+.activity-memory-model-picker-row .text-button { flex: 0 0 auto; }
+.activity-memory-settings .settings-model-picker { width: 100%; }
+.activity-memory-embedding-footer > span { color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); }
+.activity-memory-embedding-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--red); font-size: calc(12px * var(--font-scale)); }
+.activity-memory-stat-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.activity-memory-stat-grid > div { display: flex; min-height: 76px; align-items: center; justify-content: center; flex-direction: column; gap: 6px; border: 1px solid var(--border); border-radius: 10px; }
+.activity-memory-stat-grid strong { color: var(--text); font-size: calc(24px * var(--font-scale)); font-weight: 500; }
+.activity-memory-stat-grid span { color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); }
+.activity-memory-settings > .activity-memory-group > textarea { min-height: 100px; resize: vertical; }
+.activity-memory-search-results { display: flex; flex-direction: column; gap: 10px; }
+.activity-memory-search-results h4 { margin: 0; color: var(--text-tertiary); font-size: calc(13px * var(--font-scale)); font-weight: 500; }
+.activity-memory-search-result { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; }
+.activity-memory-search-result p { margin: 0; color: var(--text); font-size: calc(13px * var(--font-scale)); line-height: 1.5; }
+.activity-memory-search-result span { flex: 0 0 auto; color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); white-space: nowrap; }
+.activity-memory-list-actions { display: flex; align-items: center; gap: 8px; }
+.activity-memory-entry-editor { width: 100%; }
+.activity-memory-entry-editor textarea { box-sizing: border-box; width: 100%; min-height: 80px; }
+.activity-memory-entry-editor > div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 8px; }
+.activity-memory-entry-meta { margin-bottom: 8px; }
+.activity-memory-entry-meta span { border: 0; border-radius: 0; padding: 0; background: transparent; font-size: calc(12px * var(--font-scale)); }
+.activity-memory-pagination { display: flex; align-items: center; justify-content: space-between; padding: 16px 4px 0; color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); }
+.activity-memory-pagination > div { display: flex; align-items: center; gap: 6px; }
+.activity-memory-pagination > div > span { min-width: 52px; text-align: center; }
+
+@media (max-width: 720px) {
+  .activity-memory-heading-row { align-items: flex-start; flex-direction: column; gap: 4px; }
+  .activity-memory-heading-row span { white-space: normal; }
+  .activity-memory-model-picker-row { align-items: stretch; flex-direction: column; }
+  .activity-memory-stat-grid { grid-template-columns: 1fr; }
+  .activity-memory-row,
+  .activity-memory-number-row { align-items: stretch; flex-direction: column; gap: 8px; }
+  .activity-memory-row input[type="time"],
+  .activity-memory-number-row input[type="number"] { width: 100%; }
+}
 
 .activity-memory-entry-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
-.activity-memory-entry-meta span { padding: 2px 6px; border-radius: 999px; color: var(--text-tertiary); background: var(--surface); font-size: 9px; }
-.activity-memory-entry-meta span.is-auto { color: var(--accent); }
-.activity-memory-entry-meta span.is-manual { color: var(--green); }
-
-.activity-memory-sleep-buttons { display: flex; gap: 6px; align-items: center; }
-
-.activity-memory-sleep-preview { display: block; margin-top: 6px; color: var(--text-secondary); font-size: 10px; }
-
-.activity-memory-archive { padding: 16px 18px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
-.activity-memory-archive > h3 { margin: 0 0 10px; font-size: calc(15px * var(--font-scale)); }
-.activity-memory-archive > p { color: var(--text-tertiary); font-size: 12px; }
 
 /* ===================== 设置内容区统一参数 ===================== */
 /* 内容区的行内盒、控件、按钮与二级弹层对齐壳层参数：
@@ -3564,23 +3081,22 @@ select {
    控件高 2.25rem（紧凑 2rem），焦点环 3px 主色，过渡 150ms。 */
 
 /* —— 内容区单行输入与下拉：统一控件高度与圆角 —— */
-.settings-modal.is-full-page .settings-sections input[type="text"],
-.settings-modal.is-full-page .settings-sections input[type="number"],
-.settings-modal.is-full-page .settings-sections input[type="search"],
-.settings-modal.is-full-page .settings-sections input[type="password"],
-.settings-modal.is-full-page .settings-sections input:not([type]) {
+.desktop-settings-dialog .settings-modal .settings-sections input[type="text"],
+.desktop-settings-dialog .settings-modal .settings-sections input[type="number"],
+.desktop-settings-dialog .settings-modal .settings-sections input[type="search"],
+.desktop-settings-dialog .settings-modal .settings-sections input[type="password"],
+.desktop-settings-dialog .settings-modal .settings-sections input:not([type]) {
   height: var(--st-control-h);
   min-height: 0;
 }
 
-.settings-modal.is-full-page .settings-sections select {
+.desktop-settings-dialog .settings-modal .settings-sections select {
   height: var(--st-control-h);
   min-height: 0;
 }
 
 /* 包装器内的裸输入不吃外层控件的边框与内边距。 */
-.settings-modal.is-full-page .settings-sections .activity-number-input input,
-.settings-modal.is-full-page .settings-sections .activity-memory-search input {
+.desktop-settings-dialog .settings-modal .settings-sections .activity-number-input input {
   height: 100%;
   min-height: 0;
   padding: 0;
@@ -3591,15 +3107,16 @@ select {
 }
 
 /* —— 对话框与面板输入（模型连接、记忆编辑、详情层） —— */
-.settings-modal.is-full-page .connection-field > input,
-.settings-modal.is-full-page .secret-input-row input,
-.settings-modal.is-full-page .connection-row-editor input,
-.settings-modal.is-full-page .manual-model-row input,
-.settings-modal.is-full-page .model-profile-editor-fields input,
-.settings-modal.is-full-page .settings-confirm-panel input,
-.settings-modal.is-full-page .web-browser-url-row input,
-.settings-modal.is-full-page .settings-inline-input,
-.settings-modal.is-full-page .memory-importance-input {
+.desktop-settings-dialog .settings-modal .connection-field > input,
+.desktop-settings-dialog .settings-modal .secret-input-row input,
+.desktop-settings-dialog .settings-modal .connection-row-editor input,
+.desktop-settings-dialog .settings-modal .manual-model-row input,
+.desktop-settings-dialog .settings-modal .model-profile-editor-fields input,
+.desktop-settings-dialog .settings-modal .settings-confirm-panel input,
+.desktop-settings-dialog .settings-modal .web-browser-url-row input,
+.desktop-settings-dialog .settings-modal .settings-inline-input,
+.desktop-settings-dialog .settings-modal .memory-importance-input,
+.desktop-settings-dialog .settings-modal .provider-row-item > input {
   height: var(--st-control-h);
   min-height: 0;
   padding: 0 var(--st-control-px);
@@ -3611,29 +3128,30 @@ select {
   transition: color 0.15s var(--st-ease), border-color 0.15s var(--st-ease), box-shadow 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .connection-field > input:focus,
-.settings-modal.is-full-page .secret-input-row input:focus,
-.settings-modal.is-full-page .connection-row-editor input:focus,
-.settings-modal.is-full-page .manual-model-row input:focus,
-.settings-modal.is-full-page .model-profile-editor-fields input:focus,
-.settings-modal.is-full-page .settings-confirm-panel input:focus,
-.settings-modal.is-full-page .web-browser-url-row input:focus,
-.settings-modal.is-full-page .settings-inline-input:focus,
-.settings-modal.is-full-page .memory-importance-input:focus,
-.settings-modal.is-full-page .connection-select:focus,
-.settings-modal.is-full-page .memory-note-input:focus,
-.settings-modal.is-full-page .personalization-instructions:focus,
-.settings-modal.is-full-page .chat-instructions-field textarea:focus,
-.settings-modal.is-full-page .provider-search:focus-within {
+.desktop-settings-dialog .settings-modal .connection-field > input:focus,
+.desktop-settings-dialog .settings-modal .secret-input-row input:focus,
+.desktop-settings-dialog .settings-modal .connection-row-editor input:focus,
+.desktop-settings-dialog .settings-modal .manual-model-row input:focus,
+.desktop-settings-dialog .settings-modal .model-profile-editor-fields input:focus,
+.desktop-settings-dialog .settings-modal .settings-confirm-panel input:focus,
+.desktop-settings-dialog .settings-modal .web-browser-url-row input:focus,
+.desktop-settings-dialog .settings-modal .settings-inline-input:focus,
+.desktop-settings-dialog .settings-modal .memory-importance-input:focus,
+.desktop-settings-dialog .settings-modal .provider-row-item > input:focus,
+.desktop-settings-dialog .settings-modal .connection-select:focus,
+.desktop-settings-dialog .settings-modal .memory-note-input:focus,
+.desktop-settings-dialog .settings-modal .personalization-instructions:focus,
+.desktop-settings-dialog .settings-modal .chat-instructions-field textarea:focus,
+.desktop-settings-dialog .settings-modal .provider-search:focus-within {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   box-shadow: 0 0 0 3px var(--st-ring);
   outline: none;
 }
 
-.settings-modal.is-full-page .connection-select,
-.settings-modal.is-full-page .chat-override-grid select,
-.settings-modal.is-full-page .compaction-model-select,
-.settings-modal.is-full-page .font-select {
+.desktop-settings-dialog .settings-modal .connection-select,
+.desktop-settings-dialog .settings-modal .chat-override-grid select,
+.desktop-settings-dialog .settings-modal .compaction-model-select,
+.desktop-settings-dialog .settings-modal .font-select {
   height: var(--st-control-h);
   min-height: 0;
   padding-inline: var(--st-control-px);
@@ -3644,21 +3162,21 @@ select {
   transition: color 0.15s var(--st-ease), border-color 0.15s var(--st-ease), box-shadow 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .font-size-input {
+.desktop-settings-dialog .settings-modal .font-size-input {
   height: var(--st-control-h);
   min-height: 0;
   border-radius: var(--st-radius);
 }
 
-.settings-modal.is-full-page .provider-search {
+.desktop-settings-dialog .settings-modal .provider-search {
   height: var(--st-control-h);
   border-radius: var(--st-radius);
 }
 
 /* —— 文本域 —— */
-.settings-modal.is-full-page .memory-note-input,
-.settings-modal.is-full-page .personalization-instructions,
-.settings-modal.is-full-page .chat-instructions-field textarea {
+.desktop-settings-dialog .settings-modal .memory-note-input,
+.desktop-settings-dialog .settings-modal .personalization-instructions,
+.desktop-settings-dialog .settings-modal .chat-instructions-field textarea {
   border: 1px solid var(--border);
   border-radius: var(--st-radius);
   background: transparent;
@@ -3668,19 +3186,19 @@ select {
 
 /* —— 按钮变体统一 —— */
 /* outline（次要操作）：1px 边 + 透明底，悬停浮起。 */
-.settings-modal.is-full-page .settings-secondary-button,
-.settings-modal.is-full-page .memory-library-toolbar > button,
-.settings-modal.is-full-page .memory-add-row > button,
-.settings-modal.is-full-page .activity-secondary-button,
-.settings-modal.is-full-page .web-browser-url-row button,
-.settings-modal.is-full-page .memory-search-row > button,
-.settings-modal.is-full-page .settings-button-row > button,
-.settings-modal.is-full-page .memory-index-actions > button,
-.settings-modal.is-full-page .memory-advanced-toggle,
-.settings-modal.is-full-page .login-code-actions > button:last-child,
-.settings-modal.is-full-page .connect-dialog-actions button:not(.is-primary):not(.is-danger),
-.settings-modal.is-full-page .danger-button,
-.settings-modal.is-full-page .activity-danger-button {
+.desktop-settings-dialog .settings-modal .settings-secondary-button,
+.desktop-settings-dialog .settings-modal .memory-library-toolbar > button,
+.desktop-settings-dialog .settings-modal .memory-add-row > button,
+.desktop-settings-dialog .settings-modal .activity-secondary-button,
+.desktop-settings-dialog .settings-modal .web-browser-url-row button,
+.desktop-settings-dialog .settings-modal .memory-search-row > button,
+.desktop-settings-dialog .settings-modal .settings-button-row > button,
+.desktop-settings-dialog .settings-modal .memory-index-actions > button,
+.desktop-settings-dialog .settings-modal .memory-advanced-toggle,
+.desktop-settings-dialog .settings-modal .login-code-actions > button:last-child,
+.desktop-settings-dialog .settings-modal .connect-dialog-actions button:not(.is-primary):not(.is-danger),
+.desktop-settings-dialog .settings-modal .danger-button,
+.desktop-settings-dialog .settings-modal .activity-danger-button {
   display: inline-flex;
   min-height: var(--st-control-h-sm);
   align-items: center;
@@ -3698,36 +3216,36 @@ select {
   transition: background-color 0.15s var(--st-ease), border-color 0.15s var(--st-ease), color 0.15s var(--st-ease), box-shadow 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .settings-secondary-button:hover:not(:disabled),
-.settings-modal.is-full-page .memory-library-toolbar > button:hover:not(:disabled),
-.settings-modal.is-full-page .memory-add-row > button:hover:not(:disabled),
-.settings-modal.is-full-page .activity-secondary-button:hover:not(:disabled),
-.settings-modal.is-full-page .web-browser-url-row button:hover:not(:disabled),
-.settings-modal.is-full-page .memory-search-row > button:hover:not(:disabled),
-.settings-modal.is-full-page .settings-button-row > button:hover:not(:disabled),
-.settings-modal.is-full-page .memory-index-actions > button:hover:not(:disabled),
-.settings-modal.is-full-page .memory-advanced-toggle:hover:not(:disabled),
-.settings-modal.is-full-page .login-code-actions > button:last-child:hover:not(:disabled),
-.settings-modal.is-full-page .connect-dialog-actions button:not(.is-primary):not(.is-danger):hover:not(:disabled) {
+.desktop-settings-dialog .settings-modal .settings-secondary-button:hover:not(:disabled),
+.desktop-settings-dialog .settings-modal .memory-library-toolbar > button:hover:not(:disabled),
+.desktop-settings-dialog .settings-modal .memory-add-row > button:hover:not(:disabled),
+.desktop-settings-dialog .settings-modal .activity-secondary-button:hover:not(:disabled),
+.desktop-settings-dialog .settings-modal .web-browser-url-row button:hover:not(:disabled),
+.desktop-settings-dialog .settings-modal .memory-search-row > button:hover:not(:disabled),
+.desktop-settings-dialog .settings-modal .settings-button-row > button:hover:not(:disabled),
+.desktop-settings-dialog .settings-modal .memory-index-actions > button:hover:not(:disabled),
+.desktop-settings-dialog .settings-modal .memory-advanced-toggle:hover:not(:disabled),
+.desktop-settings-dialog .settings-modal .login-code-actions > button:last-child:hover:not(:disabled),
+.desktop-settings-dialog .settings-modal .connect-dialog-actions button:not(.is-primary):not(.is-danger):hover:not(:disabled) {
   background: var(--surface-hover);
 }
 
 /* destructive（危险操作）：红描边 + 弱红底悬停。 */
-.settings-modal.is-full-page .danger-button,
-.settings-modal.is-full-page .activity-danger-button {
+.desktop-settings-dialog .settings-modal .danger-button,
+.desktop-settings-dialog .settings-modal .activity-danger-button {
   border-color: color-mix(in srgb, var(--red) 35%, transparent);
   color: var(--red);
 }
 
-.settings-modal.is-full-page .danger-button:hover:not(:disabled),
-.settings-modal.is-full-page .activity-danger-button:hover:not(:disabled) {
+.desktop-settings-dialog .settings-modal .danger-button:hover:not(:disabled),
+.desktop-settings-dialog .settings-modal .activity-danger-button:hover:not(:disabled) {
   border-color: color-mix(in srgb, var(--red) 50%, transparent);
   background: var(--red-bg);
 }
 
 /* default（主要操作）：主色底。 */
-.settings-modal.is-full-page .login-primary-button,
-.settings-modal.is-full-page .connect-dialog-actions button.is-primary {
+.desktop-settings-dialog .settings-modal .login-primary-button,
+.desktop-settings-dialog .settings-modal .connect-dialog-actions button.is-primary {
   display: inline-flex;
   min-height: var(--st-control-h-sm);
   align-items: center;
@@ -3745,14 +3263,14 @@ select {
   transition: background-color 0.15s var(--st-ease), border-color 0.15s var(--st-ease), color 0.15s var(--st-ease), box-shadow 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .login-primary-button:hover:not(:disabled),
-.settings-modal.is-full-page .connect-dialog-actions button.is-primary:hover:not(:disabled) {
+.desktop-settings-dialog .settings-modal .login-primary-button:hover:not(:disabled),
+.desktop-settings-dialog .settings-modal .connect-dialog-actions button.is-primary:hover:not(:disabled) {
   background: color-mix(in srgb, var(--st-primary) 90%, transparent);
 }
 
 /* ghost 图标按钮：方形紧凑，悬停弱化底。 */
-.settings-modal.is-full-page .icon-button,
-.settings-modal.is-full-page .activity-icon-button {
+.desktop-settings-dialog .settings-modal .icon-button,
+.desktop-settings-dialog .settings-modal .activity-icon-button {
   display: grid;
   place-items: center;
   min-height: var(--st-control-h-sm);
@@ -3764,16 +3282,16 @@ select {
   transition: background-color 0.15s var(--st-ease), color 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .icon-button:hover,
-.settings-modal.is-full-page .activity-icon-button:hover {
+.desktop-settings-dialog .settings-modal .icon-button:hover,
+.desktop-settings-dialog .settings-modal .activity-icon-button:hover {
   color: var(--text);
   background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
 /* link（文字按钮）。 */
-.settings-modal.is-full-page .text-button,
-.settings-modal.is-full-page .settings-link,
-.settings-modal.is-full-page .chat-temperature-reset {
+.desktop-settings-dialog .settings-modal .text-button,
+.desktop-settings-dialog .settings-modal .settings-link,
+.desktop-settings-dialog .settings-modal .chat-temperature-reset {
   border: 0;
   border-radius: calc(var(--st-radius) - 4px);
   color: var(--st-primary);
@@ -3781,14 +3299,14 @@ select {
   transition: color 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .text-button:hover,
-.settings-modal.is-full-page .settings-link:hover,
-.settings-modal.is-full-page .chat-temperature-reset:hover {
+.desktop-settings-dialog .settings-modal .text-button:hover,
+.desktop-settings-dialog .settings-modal .settings-link:hover,
+.desktop-settings-dialog .settings-modal .chat-temperature-reset:hover {
   color: color-mix(in srgb, var(--st-primary) 80%, transparent);
 }
 
 /* 通用 ghost 按钮（设置范围内）：无边框弱化按钮。 */
-.settings-modal.is-full-page .ghost-button {
+.desktop-settings-dialog .settings-modal .ghost-button {
   display: inline-flex;
   min-height: var(--st-control-h-sm);
   align-items: center;
@@ -3804,140 +3322,129 @@ select {
   transition: background-color 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .ghost-button:hover:not(:disabled) {
+.desktop-settings-dialog .settings-modal .ghost-button:hover:not(:disabled) {
   background: color-mix(in srgb, var(--text) 6%, transparent);
 }
 
-.settings-modal.is-full-page .ghost-button.is-danger {
+.desktop-settings-dialog .settings-modal .ghost-button.is-danger {
   color: var(--red);
 }
 
-.settings-modal.is-full-page .ghost-button.is-danger:hover:not(:disabled) {
+.desktop-settings-dialog .settings-modal .ghost-button.is-danger:hover:not(:disabled) {
   color: var(--red);
   background: var(--red-bg);
 }
 
+/* 密钥行：按钮与同排输入框等高，组合控件基线一致。 */
+.desktop-settings-dialog .settings-modal .secret-input-row .ghost-button {
+  min-height: var(--st-control-h);
+}
+
 /* —— 选项卡片（单选组）圆角与选中环 —— */
-.settings-modal.is-full-page .agent-permission-option,
-.settings-modal.is-full-page .capability-default-option,
-.settings-modal.is-full-page .personality-option,
-.settings-modal.is-full-page .theme-option-preview {
+.desktop-settings-dialog .settings-modal .agent-permission-option,
+.desktop-settings-dialog .settings-modal .capability-default-option,
+.desktop-settings-dialog .settings-modal .personality-option {
   border-radius: var(--st-radius);
 }
 
 /* —— 行内提示 / 内层信息盒圆角 —— */
-.settings-modal.is-full-page .settings-inline-notice,
-.settings-modal.is-full-page .manual-model-editor,
-.settings-modal.is-full-page .model-profile-editor-row,
-.settings-modal.is-full-page .settings-memory-report,
-.settings-modal.is-full-page .connection-test-result,
-.settings-modal.is-full-page .connection-oauth-card,
-.settings-modal.is-full-page .login-subscription-card,
-.settings-modal.is-full-page .login-code-panel,
-.settings-modal.is-full-page .memory-stat-card,
-.settings-modal.is-full-page .memory-entry,
-.settings-modal.is-full-page .memory-index-summary > span,
-.settings-modal.is-full-page .permission-scope-summary > span,
-.settings-modal.is-full-page .chat-personalization-section,
-.settings-modal.is-full-page .activity-stat,
-.settings-modal.is-full-page .activity-permission-row,
-.settings-modal.is-full-page .activity-empty-state,
-.settings-modal.is-full-page .activity-session-row,
-.settings-modal.is-full-page .activity-search-result,
-.settings-modal.is-full-page .activity-report-output,
-.settings-modal.is-full-page .activity-detail-analysis,
-.settings-modal.is-full-page .activity-detail-unavailable,
-.settings-modal.is-full-page .activity-memory-diary-output,
-.settings-modal.is-full-page .activity-memory-add-box,
-.settings-modal.is-full-page .activity-memory-limit,
-.settings-modal.is-full-page .activity-memory-model,
-.settings-modal.is-full-page .memory-embedding-maintenance,
-.settings-modal.is-full-page .memory-filter-tabs button {
+.desktop-settings-dialog .settings-modal .settings-inline-notice,
+.desktop-settings-dialog .settings-modal .manual-model-editor,
+.desktop-settings-dialog .settings-modal .model-profile-editor-row,
+.desktop-settings-dialog .settings-modal .settings-memory-report,
+.desktop-settings-dialog .settings-modal .connection-test-result,
+.desktop-settings-dialog .settings-modal .connection-oauth-card,
+.desktop-settings-dialog .settings-modal .login-subscription-card,
+.desktop-settings-dialog .settings-modal .login-code-panel,
+.desktop-settings-dialog .settings-modal .memory-stat-card,
+.desktop-settings-dialog .settings-modal .memory-entry,
+.desktop-settings-dialog .settings-modal .memory-index-summary > span,
+.desktop-settings-dialog .settings-modal .permission-scope-summary > span,
+.desktop-settings-dialog .settings-modal .chat-personalization-section,
+.desktop-settings-dialog .settings-modal .activity-permission-row,
+.desktop-settings-dialog .settings-modal .memory-embedding-maintenance,
+.desktop-settings-dialog .settings-modal .memory-filter-tabs button {
   border-radius: var(--st-radius);
 }
 
-/* 搜索条与过滤行：控件级圆角。 */
-.settings-modal.is-full-page .activity-memory-search,
-.settings-modal.is-full-page .memory-search-row .settings-inline-input {
+/* 搜索条：控件级圆角。 */
+.desktop-settings-dialog .settings-modal .memory-search-row .settings-inline-input {
   border-radius: var(--st-radius);
 }
 
-.settings-modal.is-full-page .activity-memory-filters button,
-.settings-modal.is-full-page .activity-memory-model select,
-.settings-modal.is-full-page .activity-memory-diary-actions input,
-.settings-modal.is-full-page .web-search-select {
-  border-radius: calc(var(--st-radius) - 4px);
+.desktop-settings-dialog .settings-modal .web-search-select {
+  padding-inline: var(--st-control-px);
+  border-radius: var(--st-radius);
 }
 
 /* —— 二级弹层面板：对齐卡片语言（12px 圆角 + 卡片底 + 投影） —— */
-.settings-modal.is-full-page .connect-dialog,
-.settings-modal.is-full-page .memory-editor-panel,
-.settings-modal.is-full-page .activity-detail-panel,
-.settings-modal.is-full-page .settings-confirm-panel,
-.settings-modal.is-full-page .settings-discard-panel {
+.desktop-settings-dialog .settings-modal .connect-dialog,
+.desktop-settings-dialog .settings-modal .memory-editor-panel,
+.desktop-settings-dialog .settings-modal .settings-confirm-panel,
+.desktop-settings-dialog .settings-modal .settings-discard-panel {
   border: 1px solid var(--border);
   border-radius: var(--st-radius);
   background: var(--st-card);
 }
 
-.settings-modal.is-full-page .detail-section-head h3 {
+.desktop-settings-dialog .settings-modal .detail-section-head h3 {
   font-size: calc(1.125 * var(--st-rem));
   font-weight: 500;
 }
 
-.settings-modal.is-full-page .connection-detail-title strong {
+.desktop-settings-dialog .settings-modal .connection-detail-title strong {
   font-size: calc(1.125 * var(--st-rem));
   font-weight: 600;
 }
 
 /* 分段控件 / 标签条：外层 12px、内层选中片 8px（radius-sm）。 */
-.settings-modal.is-full-page .settings-segmented,
-.settings-modal.is-full-page .memory-filter-tabs {
+.desktop-settings-dialog .settings-modal .settings-segmented,
+.desktop-settings-dialog .settings-modal .memory-filter-tabs {
   border-radius: var(--st-radius);
 }
 
-.settings-modal.is-full-page .settings-segmented button,
-.settings-modal.is-full-page .memory-filter-tabs button {
+.desktop-settings-dialog .settings-modal .settings-segmented button,
+.desktop-settings-dialog .settings-modal .memory-filter-tabs button {
   border-radius: calc(var(--st-radius) - 4px);
 }
 
 /* 活动页字段控件高度归一。 */
-.settings-modal.is-full-page .activity-field > input,
-.settings-modal.is-full-page .activity-field > textarea,
-.settings-modal.is-full-page .activity-number-input {
+.desktop-settings-dialog .settings-modal .activity-field > input,
+.desktop-settings-dialog .settings-modal .activity-field > textarea,
+.desktop-settings-dialog .settings-modal .activity-number-input {
   min-height: var(--st-control-h);
   border-radius: var(--st-radius);
 }
 
-.settings-modal.is-full-page .activity-number-input input {
+.desktop-settings-dialog .settings-modal .activity-number-input input {
   height: 100%;
   min-height: 0;
 }
 
 /* 减少动态效果时关闭内容区过渡。 */
 @media (prefers-reduced-motion: reduce) {
-  .settings-modal.is-full-page .settings-secondary-button,
-  .settings-modal.is-full-page .memory-library-toolbar > button,
-  .settings-modal.is-full-page .activity-secondary-button,
-  .settings-modal.is-full-page .danger-button,
-  .settings-modal.is-full-page .activity-danger-button,
-  .settings-modal.is-full-page .login-primary-button,
-  .settings-modal.is-full-page .icon-button,
-  .settings-modal.is-full-page .activity-icon-button,
-  .settings-modal.is-full-page .text-button,
-  .settings-modal.is-full-page .ghost-button,
-  .settings-modal.is-full-page .settings-primary-button,
-  .settings-modal.is-full-page .connection-field > input,
-  .settings-modal.is-full-page .connection-select,
-  .settings-modal.is-full-page .memory-note-input,
-  .settings-modal.is-full-page .personalization-instructions {
+  .desktop-settings-dialog .settings-modal .settings-secondary-button,
+  .desktop-settings-dialog .settings-modal .memory-library-toolbar > button,
+  .desktop-settings-dialog .settings-modal .activity-secondary-button,
+  .desktop-settings-dialog .settings-modal .danger-button,
+  .desktop-settings-dialog .settings-modal .activity-danger-button,
+  .desktop-settings-dialog .settings-modal .login-primary-button,
+  .desktop-settings-dialog .settings-modal .icon-button,
+  .desktop-settings-dialog .settings-modal .activity-icon-button,
+  .desktop-settings-dialog .settings-modal .text-button,
+  .desktop-settings-dialog .settings-modal .ghost-button,
+  .desktop-settings-dialog .settings-modal .settings-primary-button,
+  .desktop-settings-dialog .settings-modal .connection-field > input,
+  .desktop-settings-dialog .settings-modal .connection-select,
+  .desktop-settings-dialog .settings-modal .memory-note-input,
+  .desktop-settings-dialog .settings-modal .personalization-instructions {
     transition: none;
   }
 }
 
 /* 关闭确认面板：按钮对齐 outline/default 变体（不落入 ghost 紧凑规则）。 */
-.settings-modal.is-full-page .settings-discard-panel .settings-confirm-actions button,
-.settings-modal.is-full-page .settings-discard-panel .ghost-button {
+.desktop-settings-dialog .settings-modal .settings-discard-panel .settings-confirm-actions button,
+.desktop-settings-dialog .settings-modal .settings-discard-panel .ghost-button {
   min-height: var(--st-control-h);
   border: 1px solid var(--border);
   border-radius: var(--st-radius);
@@ -3945,27 +3452,27 @@ select {
   box-shadow: 0 1px 2px rgb(0 0 0 / 5%);
 }
 
-.settings-modal.is-full-page .settings-discard-panel .ghost-button:hover:not(:disabled) {
+.desktop-settings-dialog .settings-modal .settings-discard-panel .ghost-button:hover:not(:disabled) {
   background: var(--surface-hover);
 }
 
 /* ===================== 设置控件可读性 ===================== */
 /* 模型分组选择器：按钮里先看到 provider，再看到模型；展开面板仍在当前卡片内，
    不把设置页变成一个难以定位的全屏弹窗。 */
-.settings-modal.is-full-page .settings-model-picker {
+.desktop-settings-dialog .settings-modal .settings-model-picker {
   position: relative;
   width: 100%;
 }
 
-.settings-modal.is-full-page .settings-model-picker > summary {
+.desktop-settings-dialog .settings-modal .settings-model-picker > summary {
   list-style: none;
 }
 
-.settings-modal.is-full-page .settings-model-picker > summary::-webkit-details-marker {
+.desktop-settings-dialog .settings-modal .settings-model-picker > summary::-webkit-details-marker {
   display: none;
 }
 
-.settings-modal.is-full-page .settings-model-picker-trigger {
+.desktop-settings-dialog .settings-modal .settings-model-picker-trigger {
   display: flex;
   width: 100%;
   min-height: var(--st-control-h);
@@ -3981,27 +3488,27 @@ select {
   transition: border-color 0.15s var(--st-ease), box-shadow 0.15s var(--st-ease), background-color 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .settings-model-picker-trigger:hover {
+.desktop-settings-dialog .settings-modal .settings-model-picker-trigger:hover {
   background: var(--surface-hover);
 }
 
-.settings-modal.is-full-page .settings-model-picker-trigger:focus-visible,
-.settings-modal.is-full-page .settings-model-picker[open] > summary {
+.desktop-settings-dialog .settings-modal .settings-model-picker-trigger:focus-visible,
+.desktop-settings-dialog .settings-modal .settings-model-picker[open] > summary {
   border-color: color-mix(in srgb, var(--accent) 55%, var(--border));
   box-shadow: 0 0 0 3px var(--st-ring);
   outline: none;
 }
 
-.settings-modal.is-full-page .settings-model-picker.is-disabled {
+.desktop-settings-dialog .settings-modal .settings-model-picker.is-disabled {
   opacity: 0.55;
 }
 
-.settings-modal.is-full-page .settings-model-picker.is-disabled .settings-model-picker-trigger {
+.desktop-settings-dialog .settings-modal .settings-model-picker.is-disabled .settings-model-picker-trigger {
   cursor: not-allowed;
 }
 
-.settings-modal.is-full-page .settings-model-picker-trigger-copy,
-.settings-modal.is-full-page .settings-model-picker-option-copy {
+.desktop-settings-dialog .settings-modal .settings-model-picker-trigger-copy,
+.desktop-settings-dialog .settings-modal .settings-model-picker-option-copy {
   display: flex;
   min-width: 0;
   flex: 1;
@@ -4011,42 +3518,42 @@ select {
   text-align: left;
 }
 
-.settings-modal.is-full-page .settings-model-picker-trigger-copy strong,
-.settings-modal.is-full-page .settings-model-picker-option-copy strong {
+.desktop-settings-dialog .settings-modal .settings-model-picker-trigger-copy strong,
+.desktop-settings-dialog .settings-modal .settings-model-picker-option-copy strong {
   overflow: hidden;
   color: var(--text);
-  font-size: 12px;
+  font-size: calc(12px * var(--font-scale, 1));
   font-weight: 550;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.settings-modal.is-full-page .settings-model-picker-trigger-copy small,
-.settings-modal.is-full-page .settings-model-picker-option-copy small {
+.desktop-settings-dialog .settings-modal .settings-model-picker-trigger-copy small,
+.desktop-settings-dialog .settings-modal .settings-model-picker-option-copy small {
   overflow: hidden;
   color: var(--text-tertiary);
-  font-size: 10px;
+  font-size: calc(10px * var(--font-scale, 1));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.settings-modal.is-full-page .settings-model-picker-placeholder {
+.desktop-settings-dialog .settings-modal .settings-model-picker-placeholder {
   flex: 1;
   color: var(--text-secondary);
   font-size: 12px;
 }
 
-.settings-modal.is-full-page .settings-model-picker-chevron {
+.desktop-settings-dialog .settings-modal .settings-model-picker-chevron {
   flex: 0 0 auto;
   color: var(--text-tertiary);
   transition: transform 0.15s var(--st-ease);
 }
 
-.settings-modal.is-full-page .settings-model-picker[open] .settings-model-picker-chevron {
+.desktop-settings-dialog .settings-modal .settings-model-picker[open] .settings-model-picker-chevron {
   transform: rotate(180deg);
 }
 
-.settings-modal.is-full-page .settings-model-picker-provider-mark {
+.desktop-settings-dialog .settings-modal .settings-model-picker-provider-mark {
   display: grid;
   width: 24px;
   height: 24px;
@@ -4058,17 +3565,17 @@ select {
   background: color-mix(in srgb, var(--surface-hover) 75%, transparent);
 }
 
-.settings-modal.is-full-page .settings-model-picker-provider-mark.is-local {
+.desktop-settings-dialog .settings-modal .settings-model-picker-provider-mark.is-local {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 12%, var(--surface));
 }
 
-.settings-modal.is-full-page .settings-model-picker-provider-mark .provider-logo {
+.desktop-settings-dialog .settings-modal .settings-model-picker-provider-mark .provider-logo {
   width: 14px;
   height: 14px;
 }
 
-.settings-modal.is-full-page .settings-model-picker-panel {
+.desktop-settings-dialog .settings-modal .settings-model-picker-panel {
   position: absolute;
   z-index: 40;
   top: calc(100% + 6px);
@@ -4081,9 +3588,9 @@ select {
   box-shadow: 0 16px 36px rgb(0 0 0 / 24%), 0 2px 8px rgb(0 0 0 / 10%);
 }
 
-.settings-modal.is-full-page .settings-model-picker-search {
+.desktop-settings-dialog .settings-modal .settings-model-picker-search {
   display: flex;
-  height: 38px;
+  height: 32px;
   align-items: center;
   gap: 8px;
   padding: 0 11px;
@@ -4091,7 +3598,7 @@ select {
   color: var(--text-tertiary);
 }
 
-.settings-modal.is-full-page .settings-model-picker-search input {
+.desktop-settings-dialog .settings-modal .settings-model-picker-search input {
   width: 100%;
   min-height: 0;
   height: 100%;
@@ -4105,19 +3612,19 @@ select {
   font-size: 12px;
 }
 
-.settings-modal.is-full-page .settings-model-picker-options {
+.desktop-settings-dialog .settings-modal .settings-model-picker-options {
   max-height: min(340px, 42vh);
   padding: 6px;
   overflow: auto;
 }
 
-.settings-modal.is-full-page .settings-model-picker-group + .settings-model-picker-group {
+.desktop-settings-dialog .settings-modal .settings-model-picker-group + .settings-model-picker-group {
   margin-top: 5px;
   padding-top: 5px;
   border-top: 1px solid var(--border);
 }
 
-.settings-modal.is-full-page .settings-model-picker-group-heading {
+.desktop-settings-dialog .settings-modal .settings-model-picker-group-heading {
   display: flex;
   min-height: 30px;
   align-items: center;
@@ -4126,31 +3633,31 @@ select {
   color: var(--text-secondary);
 }
 
-.settings-modal.is-full-page .settings-model-picker-group-heading .settings-model-picker-provider-mark {
+.desktop-settings-dialog .settings-modal .settings-model-picker-group-heading .settings-model-picker-provider-mark {
   width: 20px;
   height: 20px;
   flex-basis: 20px;
   border-radius: 6px;
 }
 
-.settings-modal.is-full-page .settings-model-picker-group-heading .provider-logo {
+.desktop-settings-dialog .settings-modal .settings-model-picker-group-heading .provider-logo {
   width: 12px;
   height: 12px;
 }
 
-.settings-modal.is-full-page .settings-model-picker-group-heading strong {
+.desktop-settings-dialog .settings-modal .settings-model-picker-group-heading strong {
   flex: 1;
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   font-weight: 600;
 }
 
-.settings-modal.is-full-page .settings-model-picker-group-heading small {
+.desktop-settings-dialog .settings-modal .settings-model-picker-group-heading small {
   color: var(--text-tertiary);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
 }
 
-.settings-modal.is-full-page .settings-model-picker-option {
+.desktop-settings-dialog .settings-modal .settings-model-picker-option {
   display: flex;
   width: 100%;
   min-height: 42px;
@@ -4165,22 +3672,22 @@ select {
   text-align: left;
 }
 
-.settings-modal.is-full-page .settings-model-picker-option:hover:not(:disabled),
-.settings-modal.is-full-page .settings-model-picker-option.is-selected {
+/* 悬停底色由流动高亮绘制；选中保留原有底色。 */
+.desktop-settings-dialog .settings-modal .settings-model-picker-option.is-selected {
   background: color-mix(in srgb, var(--accent) 10%, var(--surface));
 }
 
-.settings-modal.is-full-page .settings-model-picker-option:focus-visible {
+.desktop-settings-dialog .settings-modal .settings-model-picker-option:focus-visible {
   box-shadow: inset 0 0 0 2px var(--st-ring);
   outline: none;
 }
 
-.settings-modal.is-full-page .settings-model-picker-option:disabled {
+.desktop-settings-dialog .settings-modal .settings-model-picker-option:disabled {
   cursor: not-allowed;
   opacity: 0.48;
 }
 
-.settings-modal.is-full-page .settings-model-picker-option-check {
+.desktop-settings-dialog .settings-modal .settings-model-picker-option-check {
   display: grid;
   width: 18px;
   height: 18px;
@@ -4189,21 +3696,21 @@ select {
   color: var(--accent);
 }
 
-.settings-modal.is-full-page .settings-model-picker-option.is-inherit {
+.desktop-settings-dialog .settings-modal .settings-model-picker-option.is-inherit {
   margin-bottom: 5px;
   border-bottom: 1px solid var(--border);
   border-radius: 0;
 }
 
-.settings-modal.is-full-page .settings-model-picker-empty {
+.desktop-settings-dialog .settings-modal .settings-model-picker-empty {
   margin: 15px 8px;
   color: var(--text-tertiary);
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   text-align: center;
 }
 
 /* 滑块统一有“已完成/剩余”轨道与右侧数值，避免只看见一个难定位的圆点。 */
-.settings-modal.is-full-page .settings-sections input[type="range"] {
+.desktop-settings-dialog .settings-modal .settings-sections input[type="range"] {
   width: 100%;
   height: 22px;
   margin: 0;
@@ -4215,13 +3722,13 @@ select {
   accent-color: var(--accent);
 }
 
-.settings-modal.is-full-page .settings-sections input[type="range"]::-webkit-slider-runnable-track {
+.desktop-settings-dialog .settings-modal .settings-sections input[type="range"]::-webkit-slider-runnable-track {
   height: 5px;
   border-radius: 999px;
   background: linear-gradient(90deg, var(--accent) 0 var(--range-progress, 0%), color-mix(in srgb, var(--text) 16%, transparent) var(--range-progress, 0%) 100%);
 }
 
-.settings-modal.is-full-page .settings-sections input[type="range"]::-webkit-slider-thumb {
+.desktop-settings-dialog .settings-modal .settings-sections input[type="range"]::-webkit-slider-thumb {
   width: 16px;
   height: 16px;
   margin-top: -5.5px;
@@ -4232,19 +3739,19 @@ select {
   appearance: none;
 }
 
-.settings-modal.is-full-page .settings-sections input[type="range"]::-moz-range-track {
+.desktop-settings-dialog .settings-modal .settings-sections input[type="range"]::-moz-range-track {
   height: 5px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--text) 16%, transparent);
 }
 
-.settings-modal.is-full-page .settings-sections input[type="range"]::-moz-range-progress {
+.desktop-settings-dialog .settings-modal .settings-sections input[type="range"]::-moz-range-progress {
   height: 5px;
   border-radius: 999px;
   background: var(--accent);
 }
 
-.settings-modal.is-full-page .settings-sections input[type="range"]::-moz-range-thumb {
+.desktop-settings-dialog .settings-modal .settings-sections input[type="range"]::-moz-range-thumb {
   width: 12px;
   height: 12px;
   border: 2px solid var(--surface);
@@ -4253,54 +3760,50 @@ select {
   box-shadow: 0 1px 4px rgb(0 0 0 / 25%);
 }
 
-.settings-modal.is-full-page .settings-sections input[type="range"]:focus-visible {
+.desktop-settings-dialog .settings-modal .settings-sections input[type="range"]:focus-visible {
   outline: none;
 }
 
-.settings-modal.is-full-page .settings-sections input[type="range"]:focus-visible::-webkit-slider-runnable-track {
+.desktop-settings-dialog .settings-modal .settings-sections input[type="range"]:focus-visible::-webkit-slider-runnable-track {
   box-shadow: 0 0 0 3px var(--st-ring);
 }
 
-.settings-modal.is-full-page .activity-memory-limit-heading {
-  flex-direction: row;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+.desktop-settings-dialog .settings-modal .compaction-threshold-field strong {
+  font-size: calc(12px * var(--font-scale, 1));
+  font-weight: 550;
 }
 
-.settings-modal.is-full-page .activity-memory-limit-heading output,
-.settings-modal.is-full-page .compaction-threshold-field em,
-.settings-modal.is-full-page .settings-skill-threshold output {
+.desktop-settings-dialog .settings-modal .compaction-threshold-field em {
   flex: 0 0 auto;
   padding: 3px 7px;
   border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
   border-radius: 999px;
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 10%, var(--surface));
-  font-size: 11px;
+  font-size: calc(11px * var(--font-scale, 1));
   font-style: normal;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
   line-height: 1.2;
 }
 
-.settings-modal.is-full-page .settings-sections input[type="text"],
-.settings-modal.is-full-page .settings-sections input[type="number"],
-.settings-modal.is-full-page .settings-sections input[type="search"],
-.settings-modal.is-full-page .settings-sections input[type="password"],
-.settings-modal.is-full-page .settings-sections input:not([type]),
-.settings-modal.is-full-page .settings-sections textarea,
-.settings-modal.is-full-page .settings-sections select {
+.desktop-settings-dialog .settings-modal .settings-sections input[type="text"],
+.desktop-settings-dialog .settings-modal .settings-sections input[type="number"],
+.desktop-settings-dialog .settings-modal .settings-sections input[type="search"],
+.desktop-settings-dialog .settings-modal .settings-sections input[type="password"],
+.desktop-settings-dialog .settings-modal .settings-sections input:not([type]),
+.desktop-settings-dialog .settings-modal .settings-sections textarea,
+.desktop-settings-dialog .settings-modal .settings-sections select {
   background: var(--surface-soft);
 }
 
-.settings-modal.is-full-page .settings-sections input::placeholder,
-.settings-modal.is-full-page .settings-sections textarea::placeholder {
+.desktop-settings-dialog .settings-modal .settings-sections input::placeholder,
+.desktop-settings-dialog .settings-modal .settings-sections textarea::placeholder {
   color: var(--text-tertiary);
 }
 
 @media (max-width: 720px) {
-  .settings-modal.is-full-page .settings-model-picker-panel {
+  .desktop-settings-dialog .settings-modal .settings-model-picker-panel {
     position: static;
     margin-top: 6px;
     box-shadow: none;
@@ -4311,7 +3814,7 @@ select {
    左栏 264px 服务商清单（搜索 + 状态圆点），右栏为所选服务商的常驻配置面板。
    两栏各自独立滚动，滚动区只做容器。 */
 
-.settings-modal.is-full-page .settings-scroll.is-providers {
+.desktop-settings-dialog .settings-modal .settings-scroll.is-providers {
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -4332,7 +3835,7 @@ select {
   flex-direction: column;
   min-height: 0;
   border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
-  border-radius: calc(0.75 * var(--st-rem));
+  border-radius: var(--st-radius);
   background: color-mix(in srgb, var(--surface-raised) 70%, transparent);
   box-shadow: 0 1px 2px var(--biny-shadow-soft);
 }
@@ -4352,7 +3855,7 @@ select {
 
 .provider-list-search input {
   flex: 1;
-  height: 30px;
+  height: 32px;
   border: 0;
   color: var(--text);
   background: transparent;
@@ -4468,7 +3971,7 @@ select {
 .provider-panel {
   display: flex;
   flex-direction: column;
-  gap: calc(1 * var(--st-rem));
+  gap: 12px;
   padding: 2px 4px 12px 0;
 }
 
@@ -4485,10 +3988,11 @@ select {
   display: flex;
   margin: 0;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   color: var(--text);
   font-size: calc(1.125 * var(--st-rem));
-  font-weight: 560;
+  font-weight: 500;
 }
 
 .provider-panel-title p {
@@ -4521,7 +4025,7 @@ select {
   align-items: flex-start;
   padding: 16px;
   border: 1px solid var(--border);
-  border-radius: calc(0.75 * var(--st-rem));
+  border-radius: var(--st-radius);
   background: var(--surface-soft);
 }
 
@@ -4533,19 +4037,26 @@ select {
 .provider-rows {
   display: flex;
   flex-direction: column;
-  gap: 14px;
-  padding: 14px 16px;
+  gap: 12px;
+  padding: 16px;
   border: 1px solid var(--border);
-  border-radius: calc(0.75 * var(--st-rem));
+  border-radius: var(--st-radius);
   background: var(--surface-raised);
 }
 
 .provider-row-item { display: flex; flex-direction: column; gap: 6px; }
 
+.provider-row-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .provider-row-label {
   color: var(--text);
-  font-size: calc(0.8125 * var(--st-rem));
-  font-weight: 560;
+  font-size: calc(12px * var(--font-scale, 1));
+  font-weight: 550;
 }
 
 .provider-row-item > input {
@@ -4568,9 +4079,14 @@ select {
 
 .provider-row-hint {
   color: var(--text-tertiary);
-  font-size: calc(0.6875 * var(--st-rem));
-  line-height: 1.45;
+  font-size: calc(11px * var(--font-scale, 1));
+  line-height: 1.5;
 }
+
+/* 密钥保存的行内状态反馈：与 hint 同行替换显示，行高不跳。 */
+.provider-key-state.is-ok { color: var(--green); }
+.provider-key-state.is-error { color: var(--red); }
+.provider-key-state.is-busy { color: var(--text-tertiary); }
 
 .provider-row-warning {
   display: flex;
@@ -4596,26 +4112,33 @@ select {
 
 .secret-input-row input:focus { border-color: var(--accent); outline: none; }
 
-/* 测试连接：主按钮 + 模型下拉；结果作为内联状态文本放在按钮左侧。 */
-.provider-test-area {
-  display: flex;
-  flex: 0 0 auto;
-  align-items: center;
-  gap: 10px;
-}
-
+/* 测试结果独占内容宽度，原始错误按需展开，不参与标题行布局。 */
 .connection-test-result {
-  overflow: hidden;
-  max-width: 320px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: calc(0.6875 * var(--st-rem));
+  min-width: 0;
+  max-width: 100%;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  white-space: normal;
+  font-size: calc(0.75 * var(--st-rem));
 }
 
 .connection-test-result.is-ok { color: var(--green); }
 .connection-test-result.is-error { color: var(--red); }
+.connection-test-result details { min-width: 0; width: 100%; }
+.connection-test-result summary { width: fit-content; cursor: pointer; }
+.connection-test-result pre {
+  max-height: 180px;
+  margin: 8px 0 0;
+  overflow: auto;
+  color: var(--text-secondary);
+  font: inherit;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 
-.provider-test-split { position: relative; display: flex; align-items: stretch; }
+.provider-test-split { position: relative; display: flex; flex: 0 0 auto; align-items: stretch; }
 
 .provider-test-button { border-top-right-radius: 0; border-bottom-right-radius: 0; }
 .provider-test-caret { border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 1px solid var(--border); }
@@ -4628,7 +4151,7 @@ select {
   max-height: 240px;
   overflow-y: auto;
   border: 1px solid var(--border-strong);
-  border-radius: 10px;
+  border-radius: var(--st-radius);
   background: var(--surface-raised);
   box-shadow: 0 10px 28px var(--biny-shadow-heavy);
 }
@@ -4636,6 +4159,7 @@ select {
 .provider-test-option {
   display: flex;
   width: 100%;
+  min-width: 0;
   flex-direction: column;
   gap: 1px;
   padding: 7px 12px;
@@ -4644,17 +4168,16 @@ select {
   text-align: left;
 }
 
-.provider-test-option:hover { background: var(--surface-hover); }
-.provider-test-option span { color: var(--text); font-size: calc(0.75 * var(--st-rem)); }
-.provider-test-option small { color: var(--text-tertiary); font-size: calc(0.6875 * var(--st-rem)); }
+.provider-test-option span { min-width: 0; overflow: hidden; color: var(--text); font-size: calc(0.75 * var(--st-rem)); text-overflow: ellipsis; white-space: nowrap; }
+.provider-test-option small { min-width: 0; overflow: hidden; color: var(--text-tertiary); font-size: calc(0.6875 * var(--st-rem)); text-overflow: ellipsis; white-space: nowrap; }
 
 .provider-oauth-card {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 14px 16px;
+  padding: 16px;
   border: 1px solid var(--border);
-  border-radius: calc(0.75 * var(--st-rem));
+  border-radius: var(--st-radius);
   background: var(--surface-soft);
 }
 
@@ -4669,7 +4192,7 @@ select {
   gap: 10px;
   padding: 16px;
   border: 1px solid var(--border);
-  border-radius: calc(0.75 * var(--st-rem));
+  border-radius: var(--st-radius);
   background: var(--surface-raised);
 }
 
@@ -4719,10 +4242,10 @@ select {
 .provider-models {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 14px 16px;
+  gap: 12px;
+  padding: 16px;
   border: 1px solid var(--border);
-  border-radius: calc(0.75 * var(--st-rem));
+  border-radius: var(--st-radius);
   background: var(--surface-raised);
 }
 
@@ -4760,6 +4283,7 @@ select {
 }
 
 .provider-model-search input {
+  min-width: 0;
   flex: 1;
   height: 30px;
   border: 0;
@@ -4770,13 +4294,12 @@ select {
 
 .provider-model-search input:focus { outline: none; }
 
+/* 模型列表不再自设滚动：详情面板是唯一滚动容器，避免双滚动条嵌套。 */
 .provider-model-list {
   display: flex;
-  max-height: max(14rem, calc(100vh - 34rem));
   flex-direction: column;
-  overflow-y: auto;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--st-radius);
 }
 
 .provider-model-row {
@@ -4786,10 +4309,16 @@ select {
   padding: 8px 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
   background: var(--surface-raised);
+  /* 整行可点：点击行内空白等价于切换启用，按钮内部自行 stopPropagation；
+     连续快速点击时不触发文本选中。 */
+  cursor: pointer;
+  user-select: none;
 }
 
 .provider-model-row:last-child { border-bottom: 0; }
 .provider-model-row:hover { background: var(--surface-hover); }
+
+.provider-model-row:not(.is-enabled) .provider-model-name { color: var(--text-secondary); }
 
 .provider-model-copy {
   display: flex;
@@ -4800,24 +4329,25 @@ select {
 }
 
 .provider-model-name {
-  overflow: hidden;
   color: var(--text);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
   font-size: calc(0.8125 * var(--st-rem));
+  line-height: 1.4;
+  text-align: left;
 }
 
 .provider-model-meta {
   display: flex;
+  min-width: 0;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   color: var(--text-tertiary);
   font-size: calc(0.6875 * var(--st-rem));
 }
 
 .provider-model-cap {
   display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   justify-content: center;
   width: 18px;
@@ -4828,16 +4358,38 @@ select {
 }
 
 .provider-model-id {
+  min-width: 0;
   overflow: hidden;
-  margin-left: auto;
-  max-width: 45%;
-  color: color-mix(in srgb, var(--text-tertiary) 70%, transparent);
+  color: var(--text-tertiary);
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: calc(0.6875 * var(--st-rem));
+  text-align: left;
 }
 
-.provider-model-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
+/* 信息区自由伸缩，操作占固定列；长名称不会挤走开关，各行按钮保持对齐。 */
+.provider-model-actions {
+  display: grid;
+  flex: 0 0 auto;
+  grid-template-columns: calc(3 * var(--st-rem)) var(--st-control-h-sm) 30px;
+  align-items: center;
+  justify-items: center;
+  gap: 4px;
+}
+
+.provider-model-actions > .text-button,
+.provider-model-actions > .default-pill {
+  grid-column: 1;
+  grid-row: 1;
+  margin: 0;
+  font-size: calc(0.6875 * var(--st-rem));
+  white-space: nowrap;
+}
+
+.provider-model-actions > .text-button { min-height: var(--st-control-h-sm); padding: 0; }
+.provider-model-actions > .icon-button { grid-column: 2; grid-row: 1; width: var(--st-control-h-sm); }
+.provider-model-actions > .model-toggle { grid-column: 3; grid-row: 1; }
 
 /* 迷你开关：几何与 settings-switch 一致，尺寸缩到行内。 */
 .model-toggle {
@@ -4885,6 +4437,11 @@ select {
   gap: 8px;
 }
 
+/* 收起态的手动添加入口：紧凑靠左，不与列表争视觉权重。 */
+.provider-manual-toggle {
+  align-self: flex-start;
+}
+
 .provider-manual-row input {
   min-width: 0;
   flex: 1;
@@ -4905,12 +4462,13 @@ select {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 16px;
+  padding: 16px;
   border: 1px solid color-mix(in srgb, var(--red) 26%, var(--border));
-  border-radius: calc(0.75 * var(--st-rem));
+  border-radius: var(--st-radius);
 }
 
-.provider-danger-copy { display: flex; flex-direction: column; gap: 2px; }
+.provider-danger-copy { display: flex; min-width: 0; flex-direction: column; gap: 2px; }
+.provider-danger-zone > button { flex: 0 0 auto; white-space: nowrap; }
 .provider-danger-copy strong { color: var(--text); font-size: calc(0.8125 * var(--st-rem)); }
 .provider-danger-copy span { color: var(--text-tertiary); font-size: calc(0.6875 * var(--st-rem)); }
 
@@ -4939,30 +4497,19 @@ select {
   gap: 8px;
 }
 
-/* 模型选项对话框。 */
-.provider-dialog-backdrop {
-  position: fixed;
-  z-index: 90;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 24px;
-  background: color-mix(in srgb, var(--biny-shadow-heavy) 45%, transparent);
-}
-
+/* 模型设置复用设置详情层；仅正文滚动，标题和保存按钮始终可见。 */
 .provider-dialog {
   display: flex;
-  width: min(520px, 100%);
-  max-height: min(640px, calc(100vh - 48px));
+  width: min(560px, 100%);
+  min-width: 0;
+  max-height: min(760px, calc(100dvh - 96px));
   flex-direction: column;
-  gap: 12px;
-  overflow-y: auto;
+  overflow: hidden;
   border: 1px solid var(--border-strong);
   border-radius: 14px;
   background: var(--surface-raised);
   box-shadow: 0 18px 48px var(--biny-shadow-heavy);
-  padding: 18px;
+  padding: 0;
 }
 
 .provider-dialog > header {
@@ -4970,11 +4517,127 @@ select {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  flex: 0 0 auto;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
 }
 
-.provider-dialog > header strong { font-size: calc(0.9375 * var(--st-rem)); }
-.provider-dialog > header small { display: block; margin-top: 3px; color: var(--text-tertiary); font-size: calc(0.75 * var(--st-rem)); }
-.provider-dialog > header code { font-family: var(--font-mono, ui-monospace, monospace); }
+.provider-dialog > header > div { min-width: 0; }
+.provider-dialog > header strong { font-size: calc(16px * var(--font-scale, 1)); font-weight: 600; }
+.provider-dialog > header small { display: block; margin-top: 3px; overflow-wrap: anywhere; color: var(--text-tertiary); font-size: calc(0.75 * var(--st-rem)); }
 .provider-dialog-hint { margin: 0; color: var(--text-tertiary); font-size: calc(0.75 * var(--st-rem)); }
+.provider-dialog-body,
+.provider-dialog-advanced-body { display: flex; flex-direction: column; gap: 18px; }
+.provider-dialog-body { min-height: 0; padding: 16px 20px; overflow-y: auto; overscroll-behavior: contain; }
+.provider-dialog-advanced { border-top: 1px solid var(--border); }
+.provider-dialog-advanced > summary { padding: 14px 0; color: var(--text); font-size: calc(0.8125 * var(--st-rem)); cursor: pointer; }
+.provider-dialog-advanced > summary > span { margin-left: 8px; color: var(--text-tertiary); font-size: calc(0.6875 * var(--st-rem)); }
 
-.provider-dialog > footer { display: flex; justify-content: flex-end; }
+/* 弹窗内分区：标题行 + 说明 + 内容块，与成熟产品的设置弹窗一致。 */
+.provider-dialog-section { display: flex; flex-direction: column; gap: 8px; }
+
+.provider-dialog-section-head { display: flex; flex-direction: column; gap: 2px; }
+.provider-dialog-section-head h5 { margin: 0; color: var(--text); font-size: calc(0.8125 * var(--st-rem)); font-weight: 560; }
+.provider-dialog-section-head p { margin: 0; color: var(--text-tertiary); font-size: calc(0.6875 * var(--st-rem)); }
+
+/* 能力按行展示，同一列对齐开关，不让重复的自动标记挤占功能名。 */
+.provider-cap-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+}
+
+.provider-cap-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.provider-cap-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text);
+  font-size: calc(0.75 * var(--st-rem));
+}
+
+.provider-cap-label svg { color: var(--text-tertiary); }
+
+/* 按实际可用宽度排列字段；大字号时自然切成一列。 */
+.provider-cap-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, calc(12 * var(--st-rem))), 1fr));
+  gap: 10px 12px;
+}
+
+.provider-cap-fields label { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.provider-cap-fields label > span { color: var(--text-tertiary); font-size: calc(0.6875 * var(--st-rem)); }
+
+/* 二级层不依赖外层 settings-sections，字段自己使用统一控件样式。 */
+.provider-dialog input,
+.provider-dialog select {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  height: var(--st-control-h);
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-soft);
+  font-size: calc(0.8125 * var(--st-rem));
+}
+.provider-dialog input:focus-visible,
+.provider-dialog select:focus-visible,
+.provider-dialog summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.provider-dialog .model-profile-thinking-fields > label { grid-template-columns: calc(4 * var(--st-rem)) minmax(0, 1fr); font-size: calc(0.75 * var(--st-rem)); }
+
+/* JSON 编辑器：等宽、不可拉伸，语法错误行内提示。 */
+.provider-json-editor {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--surface-soft);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: calc(0.75 * var(--st-rem));
+  resize: vertical;
+}
+
+.provider-json-editor:focus { border-color: var(--accent); outline: none; }
+
+.provider-json-error { margin: 0; color: var(--red); font-size: calc(0.75 * var(--st-rem)); }
+
+.provider-dialog > footer { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid var(--border); }
+.provider-dialog > footer > button { white-space: nowrap; }
+.provider-dialog > footer > .provider-reset-button { margin-right: auto; font-size: calc(0.75 * var(--st-rem)); }
+
+/* 链接文字与外链图标视作一个整体，避免图标单独掉到下一行。 */
+.provider-key-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+/* ── Fluid Functionalism 流动悬停 ─────────────────────────────
+   菜单/选项列表的悬停底色统一由 FluidHoverHighlight 绘制；列表容器是
+   高亮的定位上下文，点亮行的文本提亮到主色。 */
+.model-picker-submenu,
+.model-picker-primary,
+.model-options-scroll,
+.desktop-settings-dialog .settings-modal .settings-model-picker-options,
+.agent-permission-options,
+.capabilities-scroll {
+  position: relative;
+}
+
+.menu-option[data-fluid-hover-active],
+.model-option[data-fluid-hover-active] {
+  color: var(--text);
+}

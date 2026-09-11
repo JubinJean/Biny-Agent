@@ -4,14 +4,17 @@
  * 它只负责层级交互：进入时聚焦首个控件，捕获 Escape，并在退出后恢复触发控件焦点。
  * 详情内容自己提供 dialog 语义和可访问名称，避免嵌套原生 Dialog。
  */
-import { useEffect, useRef } from "react";
+import { useContext, useEffect, useLayoutEffect, useRef } from "react";
+import { createPortal } from "react-dom";
+import { SettingsDetailHostContext } from "./SettingsDetailHostContext.js";
 
 const detailLayerStack: symbol[] = [];
 
 export function SettingsDetailLayer({ children, onClose }: {
   children: React.ReactNode;
   onClose(): void;
-}): React.JSX.Element {
+}): React.ReactPortal | null {
+  const host = useContext(SettingsDetailHostContext);
   const backdropRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
   const layerIdRef = useRef(Symbol("settings-detail-layer"));
@@ -20,7 +23,8 @@ export function SettingsDetailLayer({ children, onClose }: {
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    if (!host) return;
     const layerId = layerIdRef.current;
     detailLayerStack.push(layerId);
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : undefined;
@@ -59,15 +63,16 @@ export function SettingsDetailLayer({ children, onClose }: {
       if (stackIndex >= 0) detailLayerStack.splice(stackIndex, 1);
       if (previousFocus?.isConnected) previousFocus.focus();
     };
-  }, []);
+  }, [host]);
 
-  return (
+  return host ? createPortal(
     <div
       className="model-dialog-backdrop settings-detail-layer"
       onMouseDown={(event) => { if (event.target === event.currentTarget) onCloseRef.current(); }}
       ref={backdropRef}
     >
       {children}
-    </div>
-  );
+    </div>,
+    host
+  ) : null;
 }

@@ -11,6 +11,8 @@ import type { ModelChoice } from "../../../../../llm/ModelManager.js";
 import type { ThinkingSelection } from "../../../../../llm/modelThinking.js";
 import { catalogForConnection } from "../../providerCatalog.js";
 import { useClosingPresence } from "../../useClosingPresence.js";
+import { useFluidHoverItems } from "../../useFluidHoverItems.js";
+import { FluidHoverHighlight } from "../FluidHoverHighlight.js";
 import { Icon } from "../Icon.js";
 
 type PickerSection = "model" | "thinking";
@@ -69,6 +71,8 @@ export function ModelPickerMenu({
   const parentSurfaceRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
   const groups = useMemo(() => groupModels(models), [models]);
+  // 流动悬停：一级菜单的两个入口行也交给统一的高亮绘制。
+  const primaryHover = useFluidHoverItems(primaryRef, ".model-picker-entry");
 
   useLayoutEffect(() => {
     if (typeof document === "undefined") return;
@@ -257,7 +261,8 @@ export function ModelPickerMenu({
           ref={parentSurfaceRef}
           style={parentStyle}
         >
-          <div aria-label="模型与推理强度" className="model-picker-primary" ref={primaryRef} role="menu">
+          <div aria-label="模型与推理强度" className="model-picker-primary" ref={primaryRef} role="menu" {...primaryHover.handlers}>
+            <FluidHoverHighlight hover={primaryHover} className="has-row-radius" />
             <div
               aria-expanded={activeSection === "model"}
               aria-haspopup="menu"
@@ -313,6 +318,9 @@ export function ModelPickerMenu({
 function ModelSubmenu({ currentAlias, groups, onSelect, unsetLabel }: { currentAlias?: string; groups: ModelGroup[]; onSelect(alias: string): void; unsetLabel?: string }): React.JSX.Element {
   const [query, setQuery] = useState("");
   const searchRef = useRef<HTMLInputElement>(null);
+  // 流动悬停：容器内按选择器自动注册模型选项，搜索过滤后自动重注册。
+  const listRef = useRef<HTMLDivElement>(null);
+  const hover = useFluidHoverItems(listRef, ".model-picker-submenu-option");
   const filteredGroups = useMemo(() => filterModelGroups(groups, query), [groups, query]);
   const duplicateLabels = useMemo(() => {
     const counts = new Map<string, number>();
@@ -325,7 +333,8 @@ function ModelSubmenu({ currentAlias, groups, onSelect, unsetLabel }: { currentA
   }, []);
 
   return (
-    <div className="model-picker-submenu">
+    <div className="model-picker-submenu" ref={listRef} {...hover.handlers}>
+      <FluidHoverHighlight hover={hover} className="has-row-radius" />
       <div className="model-picker-submenu-heading">模型</div>
       <label className="model-search model-picker-search">
         <Icon name="search" size={13} />
@@ -402,8 +411,11 @@ function ModelSubmenu({ currentAlias, groups, onSelect, unsetLabel }: { currentA
 }
 
 function ThinkingSubmenu({ current, levels, onSelect }: { current?: ThinkingSelection; levels: ThinkingSelection[]; onSelect(thinking: ThinkingSelection): void }): React.JSX.Element {
+  const listRef = useRef<HTMLDivElement>(null);
+  const hover = useFluidHoverItems(listRef, ".model-effort-options button");
   return (
-    <div className="model-picker-submenu">
+    <div className="model-picker-submenu" ref={listRef} {...hover.handlers}>
+      <FluidHoverHighlight hover={hover} className="has-row-radius" />
       <div className="model-picker-submenu-heading">推理强度</div>
       <div className="model-effort-options">
         {levels.map((level) => (

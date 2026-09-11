@@ -31,6 +31,10 @@ export interface McpDraftForm {
   stderr: "ignore" | "inherit" | "pipe";
   url: string;
   remoteProtocol: DesktopMcpRemoteProtocol;
+  oauthEnabled?: boolean;
+  oauthClientId?: string;
+  oauthScopes?: string;
+  oauthRedirectPort?: string;
   timeoutMs: string;
   env: FieldRow[];
   headers: FieldRow[];
@@ -60,7 +64,9 @@ export function toProtocolDraft(draft: McpDraftForm): DesktopMcpServerDraft {
   const name = draft.name.trim();
   if (!name) throw new Error("请输入服务器名称。");
   const timeoutMs = draft.timeoutMs.trim() ? Number(draft.timeoutMs.trim()) : undefined;
-  if (timeoutMs !== undefined && (!Number.isInteger(timeoutMs) || timeoutMs < 100 || timeoutMs > 300_000)) throw new Error("连接超时需要是 100 到 300000 之间的整数。");
+  if (timeoutMs !== undefined && (!Number.isInteger(timeoutMs) || timeoutMs < 1_000 || timeoutMs > 600_000)) throw new Error("连接超时需要是 1000 到 600000 之间的整数。");
+  const redirectPort = draft.oauthRedirectPort?.trim() ? Number(draft.oauthRedirectPort) : undefined;
+  if (redirectPort !== undefined && (!Number.isInteger(redirectPort) || redirectPort < 1024 || redirectPort > 65535)) throw new Error("OAuth 回调端口需要是 1024 到 65535 之间的整数。");
   return {
     name,
     description: draft.description.trim() || undefined,
@@ -71,6 +77,11 @@ export function toProtocolDraft(draft: McpDraftForm): DesktopMcpServerDraft {
     stderr: draft.stderr,
     url: draft.transport === "remote" ? draft.url.trim() || undefined : undefined,
     remoteProtocol: draft.transport === "remote" ? draft.remoteProtocol : undefined,
+    oauth: draft.transport === "remote" && draft.oauthEnabled ? {
+      clientId: draft.oauthClientId?.trim() || undefined,
+      scopes: draft.oauthScopes?.trim() ? draft.oauthScopes.trim().split(/\s+/u) : undefined,
+      redirectPort
+    } : undefined,
     timeoutMs,
     env: toFieldMutations(draft.env, draft.savedEnvKeys),
     headers: toFieldMutations(draft.headers, draft.savedHeaderKeys)
@@ -129,6 +140,10 @@ export function parseClipboardConfig(value: unknown): McpDraftForm | undefined {
     url: typeof config.url === "string" ? config.url : "",
     // Claude Desktop / Cursor 用 "type": "sse" 声明传输协议，与 transportProtocol 写法一并兼容。
     remoteProtocol: config.transportProtocol === "sse" || config.type === "sse" ? "sse" : "streamable-http",
+    oauthEnabled: isRecord(config.oauth),
+    oauthClientId: isRecord(config.oauth) && typeof config.oauth.clientId === "string" ? config.oauth.clientId : "",
+    oauthScopes: isRecord(config.oauth) && Array.isArray(config.oauth.scopes) ? config.oauth.scopes.filter((scope): scope is string => typeof scope === "string").join(" ") : "",
+    oauthRedirectPort: isRecord(config.oauth) && typeof config.oauth.redirectPort === "number" ? String(config.oauth.redirectPort) : "",
     timeoutMs: typeof config.timeoutMs === "number" ? String(config.timeoutMs) : "",
     env: recordRows(config.env),
     headers: recordRows(config.headers)

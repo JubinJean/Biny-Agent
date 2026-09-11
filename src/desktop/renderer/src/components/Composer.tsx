@@ -7,6 +7,7 @@
  */
 import { ChatComposer, ChatComposerDrawer, ChatComposerInput } from "@astryxdesign/core/Chat";
 import type { ChatComposerInputHandle } from "@astryxdesign/core/Chat";
+import { useTooltip } from "@astryxdesign/core/Tooltip";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentSessionInfo, InteractiveAgentRunMode } from "../../../../agent/AgentSession.js";
 import type { AgentCapabilitySelection } from "../../../../agent/capabilitySelection.js";
@@ -21,14 +22,13 @@ import type { PendingAttachment } from "./composer/AttachmentList.js";
 import { ComposerActionButton } from "./composer/ComposerActionButton.js";
 import { CapabilitiesMenu } from "./composer/CapabilitiesMenu.js";
 import { explicitCapabilityCount } from "./composer/capabilitySelectionView.js";
-import { AddMenu } from "./composer/ComposerMenus.js";
 import { ModelPickerMenu } from "./composer/ModelPickerMenu.js";
 import { thinkingLabel } from "./composer/composerLabels.js";
 import { Icon } from "./Icon.js";
+import { CrystalDock } from "./CrystalDock.js";
 import { ProviderBrandGlyph } from "./ProviderBrandGlyph.js";
 import { SendOrStopButton } from "./composer/SendOrStopButton.js";
 import { useBreathingCaret } from "./composer/useBreathingCaret.js";
-import { useTypedPlaceholder } from "./composer/useTypedPlaceholder.js";
 import { isSkillSlashCommand, normalizeSkillSlashCommand } from "./composer/desktopSlashCommands.js";
 import { createDesktopSlashTrigger } from "./composer/desktopSlashTrigger.js";
 
@@ -53,8 +53,8 @@ interface ComposerProps {
   prefillInput?: string;
   /** 建议 pill 直达提交：nonce 变化时以该文本走统一提交路径（首页 pill 点击即发送）。 */
   submitDraft?: { text: string; nonce: number };
-  /** submitDraft 被领取后回调清掉源头——draft 是单次信号，不清的话 Composer 每次重挂载（过场落地、新建任务回首页）都会把旧草稿再发一遍。 */
-  onSubmitDraftConsumed?(): void;
+  /** 领取单次提交信号；由 App 跨 Composer 重挂载保证同一 nonce 只消费一次。 */
+  onSubmitDraftConsumed?(nonce: number): boolean;
   capabilityDefaults: DesktopCapabilityDefaults;
   skills: DesktopSkillCatalogEntry[];
   toolCatalog: DesktopToolCatalogEntry[];
@@ -78,7 +78,7 @@ interface ComposerProps {
   onWarning(message: string): void;
 }
 
-type ComposerMenu = "model" | "add" | "capabilities" | null;
+type ComposerMenu = "model" | "capabilities" | null;
 type PendingModelSelection = { alias: string; thinking: ThinkingSelection };
 
 const MAX_COMPOSER_ATTACHMENTS = 8;
@@ -140,7 +140,6 @@ export const Composer = memo(function Composer({
   const breathingCaretRef = useRef<HTMLDivElement>(null);
   useBreathingCaret(editorWrapRef, breathingCaretRef);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const addAnchorRef = useRef<HTMLDivElement>(null);
   const capabilityAnchorRef = useRef<HTMLDivElement>(null);
   const modelAnchorRef = useRef<HTMLDivElement>(null);
   const modelSwitchQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -198,7 +197,10 @@ export const Composer = memo(function Composer({
       if (!isInsideOpenMenu(event.target)) setMenu(null);
     };
     const escape = (event: KeyboardEvent): void => {
-      if (event.key === "Escape") setMenu(null);
+      if (event.key !== "Escape") return;
+      setMenu(null);
+      const anchor = menu === "capabilities" ? capabilityAnchorRef : modelAnchorRef;
+      anchor.current?.querySelector<HTMLButtonElement>("button")?.focus();
     };
     window.addEventListener("pointerdown", close);
     window.addEventListener("keydown", escape);
@@ -288,10 +290,10 @@ export const Composer = memo(function Composer({
   };
 
   // 建议 pill 直达提交：nonce 每次自增，文本走与手动输入完全相同的提交路径。
-  // 先领走再提交：draft 是单次信号，App 侧不清掉的话每次重挂载都会重复发送。
+  // 先在 App 侧领取再提交：欢迎态切到聊天态会让 Composer 重挂载，组件内 ref 无法跨实例去重。
   useEffect(() => {
     if (!submitDraft) return;
-    onSubmitDraftConsumed?.();
+    if (onSubmitDraftConsumed && !onSubmitDraftConsumed(submitDraft.nonce)) return;
     void submit(undefined, submitDraft.text);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 只对 nonce 变化响应，submit 取当帧闭包
   }, [submitDraft]);
@@ -410,6 +412,12 @@ export const Composer = memo(function Composer({
     startModelSwitch(alias, nextThinking);
   };
   const usage = formatContextUsage(contextUsage);
+  const contextUsageTooltip = useTooltip({
+    alignment: "end",
+    delay: 400,
+    isEnabled: Boolean(usage),
+    placement: "above"
+  });
   const inputDisabled = sessionWriterConflict || busy;
   const attachmentCount = attachments.length + pendingAttachments.length;
   const sendDisabled = memoryToggleBusy || (running
@@ -433,9 +441,7 @@ export const Composer = memo(function Composer({
           : !input.trim() && !attachments.length
             ? "输入消息或添加附件后发送。"
             : undefined;
-  const placeholder = running ? "可以继续补充要求…" : "随便说点什么…";
-  // 空输入时 placeholder 逐字打出，让输入框保持「活」的感觉
-  const typedPlaceholder = useTypedPlaceholder(placeholder, input.trim().length === 0);
+  const placeholder = running ? "补充要求…" : "输入消息…";
   const modelSwitchPending = Boolean(optimisticModel);
   const modelSwitchDisabled = sessionWriterConflict || running || runtimeBusy || busy;
   const modelSwitchDisabledReason = !project
@@ -455,19 +461,15 @@ export const Composer = memo(function Composer({
     : sessionWriterConflict
       ? "会话已在另一个应用中打开。"
       : running
-        ? "当前对话正在运行，请等待结束后再选择能力。"
+        ? "回复结束后可切换工具"
         : runtimeBusy
-          ? "Runtime 正在处理其他操作，请稍候再选择能力。"
+          ? "正在处理其他操作，请稍候"
           : busy
             ? "当前附件或命令正在处理，请稍候。"
             : undefined;
   useEffect(() => {
     if (capabilitySwitchDisabled && menu === "capabilities") setMenu(null);
   }, [capabilitySwitchDisabled, menu]);
-
-  const handleInputChange = (value: string): void => {
-    setInput(value);
-  };
 
   return (
     <div
@@ -482,7 +484,7 @@ export const Composer = memo(function Composer({
       {editing ? (
         <div className="composer-edit-banner" role="status">
           <Icon name="edit" size={13} />
-          <span>正在编辑历史消息，发送后替换原消息并重新生成回复</span>
+          <span>编辑消息 · 发送后重新生成回复</span>
           <button
             aria-label="取消编辑"
             onClick={() => {
@@ -521,28 +523,17 @@ export const Composer = memo(function Composer({
               ref={fileInputRef}
               type="file"
             />
-            <div className="composer-menu-anchor" ref={addAnchorRef}>
+            <div className="composer-menu-anchor">
               <ComposerActionButton
-                aria-expanded={menu === "add"}
-                aria-haspopup="menu"
                 className="biny-composer-add"
-                data-composer-menu="add"
                 disabled={!project || busy || running}
-                disabledReason={!project ? "请先打开一个项目。" : running ? "当前对话正在运行，请等待结束后再添加附件。" : busy ? "当前附件或命令正在处理，请稍候。" : undefined}
+                disabledReason={!project ? "请先打开项目" : running ? "回复结束后可添加附件" : busy ? "正在处理附件，请稍候" : undefined}
                 label="添加附件"
-                onClick={() => setMenu(menu === "add" ? null : "add")}
-                tooltip="添加文件或目录"
+                onClick={() => { setMenu(null); fileInputRef.current?.click(); }}
+                tooltip="添加附件"
               >
                 <Icon name="add" size={15} />
               </ComposerActionButton>
-              <AddMenu
-                anchorRef={addAnchorRef}
-                onPickFiles={() => {
-                  setMenu(null);
-                  fileInputRef.current?.click();
-                }}
-                open={menu === "add"}
-              />
             </div>
             {/* 规划模式激活后显示为可退出的模式 pill。 */}
             {mode === "plan" ? (
@@ -551,7 +542,7 @@ export const Composer = memo(function Composer({
                 className="biny-plan-pill"
                 label="退出规划模式"
                 onClick={() => setMode("chat")}
-                tooltip="规划模式已启用，点击关闭"
+                tooltip="退出规划模式"
               >
                 <Icon name="chart" size={13} />
                 <span>规划</span>
@@ -566,9 +557,9 @@ export const Composer = memo(function Composer({
                 data-composer-menu="capabilities"
                 disabled={capabilitySwitchDisabled}
                 disabledReason={capabilitySwitchDisabledReason}
-                label="能力"
+                label="工具与技能"
                 onClick={() => setMenu(menu === "capabilities" ? null : "capabilities")}
-                tooltip={menu === "capabilities" ? undefined : "能力：选择本条消息可用的工具、Skill 与规划模式"}
+                tooltip={menu === "capabilities" ? undefined : "工具与技能"}
               >
                 <Icon name="sliders" size={15} />
                 {/* 有显式选择时展示数量，auto / all 不计数，保持图标简洁。 */}
@@ -651,19 +642,23 @@ export const Composer = memo(function Composer({
           </div>
         )}
         isDisabled={inputDisabled}
-        onChange={handleInputChange}
+        onChange={setInput}
         onSubmit={(value) => void submit(undefined, value)}
-        placeholder={typedPlaceholder}
+        placeholder={placeholder}
         status={running && input.trim()
-          ? { message: "按 Enter 将补充要求排入当前会话；⌘ Enter 立即转向", type: "warning" }
+          ? { message: "Enter 排队发送 · ⌘ Enter 立即转向", type: "warning" }
           : resourceState === "loading"
-            ? { message: "正在准备 MCP / Skill 能力，输入会保留在编辑框中。", type: "warning" }
+            ? { message: "正在准备工具与技能，输入已保留", type: "warning" }
             : resourceState === "degraded"
-              ? { message: "部分 MCP / Skill 能力不可用，普通对话仍可发送。", type: "warning" }
+              ? { message: "部分工具不可用，仍可发送消息", type: "warning" }
               : undefined}
         statusPosition="bottom"
         sendActions={(
           <div className="biny-composer-footer-end">
+            <CrystalDock sessionId={runtimeInfo?.sessionId} onInsert={(reference) => {
+              setInput((current) => `${current}${current && !/\s$/u.test(current) ? " " : ""}${reference} `);
+              window.requestAnimationFrame(() => inputRef.current?.focus());
+            }} />
             <div className="composer-menu-anchor">
               <ComposerActionButton
                 aria-pressed={memoryState === "unknown" ? undefined : memoryState === "enabled"}
@@ -678,23 +673,54 @@ export const Composer = memo(function Composer({
                 onClick={() => { void onToggleMemory(); }}
                 tooltip={memoryState === "unknown"
                   ? undefined
-                  : memoryState === "enabled" ? "当前聊天会使用记忆 - 点击关闭" : "当前聊天未使用记忆 - 点击开启"}
+                  : memoryState === "enabled" ? "关闭聊天记忆" : "开启聊天记忆"}
               >
                 <Icon name={memoryState === "unknown" ? "brain" : memoryState === "enabled" ? "brain-spark" : "brain-off"} size={20} />
               </ComposerActionButton>
             </div>
             {usage ? (
-              <span className="context-usage" role="status">
-                <Icon name="timer" size={12} /><span>{usage.percent}%</span>
-                <span className="context-usage-tip">
-                  <span>上下文使用量</span>
-                  <strong>{usage.percent}% 已占用</strong>
-                  <strong>{usage.used} / {usage.max} tokens</strong>
-                  {usage.reserved ? (
-                    <span>模型窗口 {usage.window}，其中 {usage.reserved} 为输出等预留</span>
-                  ) : null}
+              <>
+                <span
+                  aria-describedby={contextUsageTooltip.describedBy}
+                  aria-label={`上下文已使用 ${usage.percent}%`}
+                  className="context-usage"
+                  ref={contextUsageTooltip.ref}
+                  role="status"
+                  tabIndex={0}
+                >
+                  <svg className="context-usage-ring" viewBox="0 0 20 20" aria-hidden="true">
+                    <circle className="context-usage-ring-track" cx="10" cy="10" r="7.5" />
+                    <circle className="context-usage-ring-fill" cx="10" cy="10" r="7.5" pathLength="100" strokeDasharray={`${usage.fillPercent} 100`} />
+                  </svg>
+                  <span>{usage.percent}%</span>
                 </span>
-              </span>
+                {contextUsageTooltip.renderTooltip(
+                  <span className="context-usage-tip">
+                    <span className="context-usage-tip-heading">
+                      <strong>上下文容量</strong>
+                      <span>{usage.estimated ? "≈ " : ""}{usage.compactUsed} / {usage.compactMax} <span>({usage.percent}%)</span></span>
+                    </span>
+                    <span className="context-usage-bar" aria-label={`已用 ${usage.used} / ${usage.max} tokens`}>
+                      {usage.categories.length ? usage.categories.map((category) => (
+                        <span key={category.id} className={`context-category-${category.id}`} style={{ width: `${category.width}%` }} />
+                      )) : <span className="context-category-messages" style={{ width: `${usage.fillPercent}%` }} />}
+                    </span>
+                    <span className="context-usage-categories">
+                      {usage.categories.map((category) => (
+                        <span key={category.id} className="context-usage-row">
+                          <span><i className={`context-category-${category.id}`} aria-hidden="true" />{category.label}</span>
+                          <strong>{category.percent}%</strong>
+                        </span>
+                      ))}
+                    </span>
+                    <span className="context-usage-note">
+                      {usage.categories.length ? "分类占已用上下文，按发送内容估算" : "发送消息后更新上下文组成"}
+                      {usage.contextWindowIsFallback ? " · 容量为估算值" : ""}
+                    </span>
+                    <span className="context-usage-row context-usage-cache"><span>平均缓存命中率</span><strong>{usage.cacheHitRate}</strong></span>
+                  </span>
+                )}
+              </>
             ) : null}
           </div>
         )}

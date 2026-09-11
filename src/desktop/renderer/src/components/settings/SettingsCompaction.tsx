@@ -64,49 +64,35 @@ export function SettingsCompaction(): React.JSX.Element {
   return (
     <div className="settings-sections compaction-settings">
       <section id="compaction-enable" tabIndex={-1}>
-        <div className="section-heading-row">
-          <div><h3>自动压缩</h3><p>上下文接近上限时自动总结历史消息。</p></div>
-          <span className="settings-scope-badge">全局</span>
-        </div>
-        <SettingsSwitch checked={compaction.enabled} detail="关闭后上下文写满会直接报错，需手动 /compact" label="启用自动压缩" onChange={(enabled) => update({ enabled })} />
-      </section>
-
-      <section id="compaction-threshold" tabIndex={-1}>
-        <h3>触发阈值</h3>
+        <SettingsSwitch checked={compaction.enabled} detail="上下文接近上限时总结历史；关闭后需手动压缩。" label="自动压缩" onChange={(enabled) => update({ enabled })} />
         <label className="compaction-threshold-field">
-          <span><strong>压缩阈值</strong><em>{percent}%</em></span>
+          <span><strong>触发阈值</strong><em>{percent}%</em></span>
           <input aria-label="压缩阈值" disabled={!compaction.enabled} max={95} min={50} onChange={(event) => update({ triggerPercent: Number(event.target.value) / 100 })} style={{ "--range-progress": thresholdProgress } as React.CSSProperties} type="range" value={percent} />
         </label>
-      </section>
-
-      <section id="compaction-keep" tabIndex={-1}>
-        <h3>保留策略</h3>
         <OptionalNumberField hint="留空按 token 预算自动推导。" id="compaction-keep-messages" label="保留最近消息数" max={500} min={1} onCommit={(keepRecentMessages) => update({ keepRecentMessages })} unit="条" value={compaction.keepRecentMessages} />
-      </section>
+        <div className="setting-row">
+          <span><strong>摘要模型</strong></span>
+          <SettingsModelPicker
+            ariaLabel="压缩模型"
+            disabled={!compaction.enabled}
+            groups={modelPickerGroups(modelChoices)}
+            inheritLabel="跟随当前模型"
+            onChange={(summaryModel) => update({ summaryModel })}
+            placeholder="跟随当前模型"
+            value={compaction.summaryModel}
+          />
+        </div>
 
-      <section id="compaction-model" tabIndex={-1}>
-        <h3>压缩模型</h3>
-        <p>生成压缩摘要所用的模型。</p>
-        <SettingsModelPicker
-          ariaLabel="压缩模型"
-          disabled={!compaction.enabled}
-          groups={modelPickerGroups(modelChoices)}
-          inheritLabel="跟随当前模型"
-          onChange={(summaryModel) => update({ summaryModel })}
-          placeholder="跟随当前模型"
-          value={compaction.summaryModel}
-        />
+        <details className="compaction-advanced">
+          <summary>高级</summary>
+          <section id="compaction-advanced-tokens" tabIndex={-1}>
+            <p>留空时按当前模型上下文窗口自动推导。</p>
+            <OptionalNumberField hint="为模型输出预留；配置后优先于触发阈值。" id="compaction-reserve" label="预留 token" max={262_144} min={256} onCommit={(reserveTokens) => update({ reserveTokens })} unit="tokens" value={compaction.reserveTokens} />
+            <OptionalNumberField id="compaction-keep-tokens" label="保留段 token 上限" max={1_000_000} min={256} onCommit={(keepRecentTokens) => update({ keepRecentTokens })} unit="tokens" value={compaction.keepRecentTokens} />
+            <OptionalNumberField id="compaction-summary-tokens" label="摘要最大 token" max={32_768} min={256} onCommit={(maxSummaryTokens) => update({ maxSummaryTokens })} unit="tokens" value={compaction.maxSummaryTokens} />
+          </section>
+        </details>
       </section>
-
-      <details className="compaction-advanced">
-        <summary>高级</summary>
-        <section id="compaction-advanced-tokens" tabIndex={-1}>
-          <p>留空时按当前模型上下文窗口自动推导。</p>
-          <OptionalNumberField hint="为模型输出预留；配置后优先于触发阈值。" id="compaction-reserve" label="预留 token" max={262_144} min={256} onCommit={(reserveTokens) => update({ reserveTokens })} unit="tokens" value={compaction.reserveTokens} />
-          <OptionalNumberField id="compaction-keep-tokens" label="保留段 token 上限" max={1_000_000} min={256} onCommit={(keepRecentTokens) => update({ keepRecentTokens })} unit="tokens" value={compaction.keepRecentTokens} />
-          <OptionalNumberField id="compaction-summary-tokens" label="摘要最大 token" max={32_768} min={256} onCommit={(maxSummaryTokens) => update({ maxSummaryTokens })} unit="tokens" value={compaction.maxSummaryTokens} />
-        </section>
-      </details>
     </div>
   );
 }

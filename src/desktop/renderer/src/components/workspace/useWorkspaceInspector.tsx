@@ -13,10 +13,12 @@ import {
   MAX_FILE_PANEL_WIDTH,
   MIN_FILE_PANEL_WIDTH
 } from "../../../../filePanelSizing.js";
+import type { SessionFileChange } from "../../sessionChanges.js";
 import { Icon, type IconName } from "../Icon.js";
 import { TerminalView } from "../TerminalView.js";
 import { useClosingPresence } from "../../useClosingPresence.js";
 import { FilePreviewPanel, type FileDirectoryState, type FilePreviewState } from "./FilePreviewPanel.js";
+import { SessionChangesPanel } from "./SessionChangesPanel.js";
 import {
   InspectorReview,
   InspectorSideChat,
@@ -24,6 +26,8 @@ import {
 } from "./InspectorToolLauncher.js";
 
 interface UseWorkspaceInspectorOptions {
+  /** 当前会话 Agent 改过的文件（「变更」视图数据 + tab/rail 徽标计数）。 */
+  changes: SessionFileChange[];
   filePanelResizing: boolean;
   filePanelWidth: number;
   projectId?: string;
@@ -40,10 +44,11 @@ interface UseWorkspaceInspectorOptions {
   onWarning(message: string): void;
 }
 
-type InspectorView = "files" | "terminal" | "review" | "side-chat";
+type InspectorView = "files" | "changes" | "terminal" | "review" | "side-chat";
 
 const inspectorViewMetadata: Record<InspectorView, { icon: IconName; label: string }> = {
   files: { icon: "folder", label: "文件" },
+  changes: { icon: "diff", label: "变更" },
   terminal: { icon: "terminal", label: "终端" },
   review: { icon: "shield", label: "审阅" },
   "side-chat": { icon: "message", label: "侧聊" }
@@ -52,7 +57,11 @@ const inspectorViewMetadata: Record<InspectorView, { icon: IconName; label: stri
 /** rail 上「审阅」先打开面板再触发 /review，其余面板视图直接切换；浏览器是纯动作。 */
 type RailAction = InspectorView | "browser";
 
+/** 面板宽度低于该值时 tab 收成纯图标（对齐 alma dock 的 compact tabs）。 */
+const COMPACT_TABS_WIDTH = 420;
+
 export function useWorkspaceInspector({
+  changes,
   filePanelResizing,
   filePanelWidth,
   projectId,
@@ -270,6 +279,11 @@ export function useWorkspaceInspector({
         openRailAction("review");
         return;
       }
+      if (event.shiftKey && !event.altKey && event.code === "KeyD") {
+        event.preventDefault();
+        openRailAction("changes");
+        return;
+      }
       if (!event.shiftKey && !event.altKey && event.code === "KeyT") {
         event.preventDefault();
         openRailAction("browser");
@@ -301,8 +315,13 @@ export function useWorkspaceInspector({
         preview={activePreview}
         projectId={projectId}
       />
-    ) : inspectorView === "review" ? <InspectorReview onRetry={runReview} state={reviewState} />
-      : <InspectorSideChat onSend={runSideChat} state={sideChatState} />;
+    ) : inspectorView === "changes" ? <SessionChangesPanel changes={changes} onPreviewFile={previewFile} />
+      : inspectorView === "review" ? <InspectorReview onRetry={runReview} state={reviewState} />
+        : <InspectorSideChat onSend={runSideChat} state={sideChatState} />;
+
+  // 变更数同时挂在 tab 和 rail 徽标上；99+ 封顶，与 alma 的徽标口径一致。
+  const changeCount = changes.length;
+  const compactTabs = filePanelWidth < COMPACT_TABS_WIDTH;
 
   const inspector = inspectorPresence.present && projectId ? (
     <div
@@ -316,29 +335,31 @@ export function useWorkspaceInspector({
       />
       <aside aria-label="工作区工具" className="desktop-inspector" role="complementary">
         <header className="desktop-inspector-header">
-          <span className="biny-inspector-title">{inspectorViewMetadata[inspectorView].label}</span>
+          <nav aria-label="工具切换" className="biny-inspector-tabs">
+            {(Object.keys(inspectorViewMetadata) as InspectorView[]).map((view) => {
+              const active = inspectorView === view;
+              const badge = view === "changes" && changeCount > 0 ? (changeCount > 99 ? "99+" : String(changeCount)) : undefined;
+              return (
+                <button
+                  aria-current={active ? "page" : undefined}
+                  aria-label={inspectorViewMetadata[view].label}
+                  className={`biny-inspector-tab${active ? " is-active" : ""}${compactTabs ? " is-compact" : ""}`}
+                  key={view}
+                  onClick={() => openInspector(view)}
+                  title={inspectorViewMetadata[view].label}
+                  type="button"
+                >
+                  <Icon name={inspectorViewMetadata[view].icon} size={13} />
+                  {!compactTabs ? <span>{inspectorViewMetadata[view].label}</span> : null}
+                  {badge !== undefined ? <span className="biny-inspector-badge">{badge}</span> : null}
+                </button>
+              );
+            })}
+          </nav>
           <button aria-label="收起工作区工具" className="desktop-inspector-close" onClick={() => setInspectorOpen(false)} title="收起工作区工具" type="button">
             <Icon name="panel-right" size={15} />
           </button>
         </header>
-        <nav aria-label="工具切换" className="biny-inspector-tabs">
-          {(Object.keys(inspectorViewMetadata) as InspectorView[]).map((view) => {
-            const active = inspectorView === view;
-            return (
-              <button
-                aria-current={active ? "page" : undefined}
-                aria-label={inspectorViewMetadata[view].label}
-                className={`biny-inspector-tab${active ? " is-active" : ""}`}
-                key={view}
-                onClick={() => openInspector(view)}
-                type="button"
-              >
-                <Icon name={inspectorViewMetadata[view].icon} size={13} />
-                <span>{inspectorViewMetadata[view].label}</span>
-              </button>
-            );
-          })}
-        </nav>
         <div className="desktop-inspector-body" id="desktop-inspector-panel">
           <div className="biny-inspector-view-content" key={inspectorView}>{toolContent}</div>
         </div>
@@ -352,6 +373,7 @@ export function useWorkspaceInspector({
       {(Object.keys(inspectorViewMetadata) as InspectorView[]).map((view) => (
         <RailButton
           active={inspectorOpen && inspectorView === view}
+          badge={view === "changes" && changeCount > 0 ? (changeCount > 99 ? "99+" : String(changeCount)) : undefined}
           icon={inspectorViewMetadata[view].icon}
           key={view}
           label={inspectorViewMetadata[view].label}
@@ -380,7 +402,7 @@ export function useWorkspaceInspector({
   };
 }
 
-function RailButton({ active, icon, label, onClick }: { active: boolean; icon: IconName; label: string; onClick(): void }): React.JSX.Element {
+function RailButton({ active, badge, icon, label, onClick }: { active: boolean; badge?: string; icon: IconName; label: string; onClick(): void }): React.JSX.Element {
   return (
     <button
       aria-label={label}
@@ -391,6 +413,7 @@ function RailButton({ active, icon, label, onClick }: { active: boolean; icon: I
       type="button"
     >
       <Icon name={icon} size={16} />
+      {badge !== undefined ? <span className="biny-inspector-badge is-corner">{badge}</span> : null}
     </button>
   );
 }

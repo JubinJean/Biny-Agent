@@ -12,19 +12,12 @@ import {
   classifyTool,
   currentTurnActivity,
   finishReasonTone,
-  firstLine,
   formatDuration,
   formatLatencySeconds,
   formatMessageClock,
-  formatRunDuration,
   formatTokens,
   formatTokensPerSecond,
-  humanizeRunError,
-  isRetryTargetError,
-  isRunErrorRetryable,
   isRunErrorStatus,
-  runErrorPresentation,
-  runErrorRecovery,
   toolRowState,
   turnMetrics,
   VARIANT_TITLES,
@@ -51,6 +44,15 @@ test("classifyTool 把已知工具分类到对应变体", () => {
   assert.equal(classifyTool("Skill"), "skill");
   assert.equal(classifyTool("unknown_tool"), "others");
 });
+test("sessionTimeline 将历史删除工具显示为当前 edit_file", () => {
+  const timeline = buildSessionTimeline([
+    { type: "user_message", content: "编辑" },
+    { type: "tool_call", tool: "multi_edit", toolCallId: "legacy-edit", args: { path: "a.ts", edits: [] } },
+    { type: "tool_result", tool: "multi_edit", toolCallId: "legacy-edit", result: { path: "a.ts", status: "completed" } }
+  ] as never[], []);
+  assert.equal(timeline[0]?.tools[0]?.tool, "edit_file");
+  assert.equal(timeline[0]?.tools[0]?.display?.kind, "file_io");
+});
 test("VARIANT_TITLES 使用 DSH figma 字面量", () => {
   assert.equal(VARIANT_TITLES.bash, "Bash");
   assert.equal(VARIANT_TITLES.search, "Search");
@@ -68,11 +70,6 @@ test("toolRowState 从时间线状态派生行状态语义", () => {
   assert.equal(toolRowState({ ...base, status: "unknown" }), "error");
   assert.equal(toolRowState({ ...base, status: "cancelled" }), "stopped");
   assert.equal(toolRowState({ ...base, status: "aborted" }), "stopped");
-});
-
-test("firstLine 取首行，无换行时原样返回", () => {
-  assert.equal(firstLine("error: boom"), "error: boom");
-  assert.equal(firstLine("line1\nline2\n"), "line1");
 });
 
 test("行内路径保持灰色代码样式且不触发文件预览", () => {
@@ -96,11 +93,41 @@ test("formatTokens 紧凑计数", () => {
   assert.equal(formatTokens(1_234_567), "1.2M");
 });
 
-test("formatDuration / formatRunDuration 紧凑时长", () => {
+test("formatDuration 紧凑时长", () => {
   assert.equal(formatDuration(45_200), "45.2s");
   assert.equal(formatDuration(162_000), "2m42s");
-  assert.equal(formatRunDuration(15_000), "15s");
-  assert.equal(formatRunDuration(125_000), "2m05s");
+  assert.equal(formatDuration(3_381), "3.4s");
+  assert.equal(formatDuration(15_000), "15s");
+  assert.equal(formatDuration(125_000), "2m05s");
+});
+
+test("sessionTimeline 忽略审计消息，不污染相邻回合的耗时", () => {
+  const timeline = buildSessionTimeline([
+    { type: "user_message", content: "问题", messageId: "u1", time: "2026-09-10T10:00:00.000Z" },
+    {
+      type: "agent_message",
+      message: { role: "assistant", content: [{ type: "text", text: "回答" }] },
+      messageId: "a1",
+      parentMessageId: "u1",
+      slotId: "u1",
+      time: "2026-09-10T10:00:03.370Z"
+    },
+    {
+      type: "assistant_message",
+      content: "回答",
+      messageId: "a1",
+      replyToMessageId: "u1",
+      slotId: "u1",
+      time: "2026-09-10T10:00:03.381Z"
+    },
+    { type: "turn_status", status: "completed", stopReason: "model_stop", steps: 1, time: "2026-09-10T10:00:03.390Z" },
+    { type: "user_message", content: "审计输入", auditOnly: true, time: "2026-09-10T10:05:00.000Z" },
+    { type: "assistant_message", content: "审计结果", auditOnly: true, time: "2026-09-10T10:05:30.000Z" }
+  ] as never[], []);
+
+  assert.equal(timeline.length, 1);
+  assert.equal(timeline[0]?.assistant, "回答");
+  assert.equal(timeline[0]?.durationMs, 3_381);
 });
 
 test("formatLatencySeconds / formatTokensPerSecond 数字格式化", () => {
@@ -228,6 +255,27 @@ test("增量投影：追加实时事件时历史轮次与未触及工具引用�
   assert.equal(third[1]?.tools[0]?.command?.stdout, "out\n");
 });
 
+test("增量投影：auditOnly 历史用户消息不占用实时消息序号", () => {
+  const events = [
+    { type: "user_message", content: "审计输入", auditOnly: true, time: "2026-05-15T09:00:00.000Z" },
+    { type: "user_message", content: "历史问题", time: "2026-05-15T09:01:00.000Z" }
+  ];
+  const liveEvents = [{
+    sessionId: "s1",
+    runId: "r1",
+    type: "message.user" as const,
+    timestamp: "2026-05-15T10:00:00.000Z",
+    messageId: "m1",
+    content: "实时问题"
+  }];
+  const full = buildSessionTimeline(events, liveEvents);
+  const projector = createSessionTimelineProjector();
+  const projected = projector.update({ sessionId: "s1", events, liveEvents });
+  assert.deepEqual(projected, full);
+  assert.equal(projected.find((turn) => turn.user === "历史问题")?.userMessageIndex, 0);
+  assert.equal(projected.find((turn) => turn.user === "实时问题")?.userMessageIndex, 1);
+});
+
 test("增量投影：events 引用变化或实时流收缩时整体重置", () => {
   const base = { sessionId: "s1", runId: "r1", timestamp: "2026-05-15T10:00:00.000Z" };
   const events = [
@@ -253,31 +301,6 @@ test("增量投影：events 引用变化或实时流收缩时整体重置", () =
   assert.deepEqual(other, []);
 });
 
-test("runErrorPresentation 按终态区分标题与语义色", () => {
-  assert.deepEqual(runErrorPresentation("blocked"), { title: "任务被阻塞", variant: "warning" });
-  assert.deepEqual(runErrorPresentation("cancelled"), { title: "已取消", variant: "warning" });
-  assert.deepEqual(runErrorPresentation("aborted"), { title: "已中止", variant: "warning" });
-  assert.deepEqual(runErrorPresentation("incomplete"), { title: "本轮运行未完成", variant: "error" });
-  assert.deepEqual(runErrorPresentation("failed"), { title: "本轮运行失败", variant: "error" });
-});
-
-test("重试目标脱离当前分支时给出可理解的错误与下一步", () => {
-  const message = "Error: Retry target is not on the active conversation path.";
-  assert.equal(isRetryTargetError(message), true);
-  assert.equal(isRunErrorRetryable(message), false);
-  assert.equal(humanizeRunError(message), "这条消息已不在当前对话分支中，不能直接重新生成。");
-  assert.deepEqual(runErrorPresentation("failed", message), { title: "这条回复已无法重试", variant: "error" });
-  assert.equal(
-    runErrorRecovery("failed", message),
-    "请关闭提示后发送新消息；如果刚切换过回复版本，请先切回当前版本。"
-  );
-});
-
-test("需要外部处理的任务不再提示断点续跑按钮", () => {
-  assert.equal(runErrorRecovery("blocked", "Need a target."), "请完成必要操作后，在输入框发送新消息。");
-  assert.equal(runErrorRecovery("incomplete", "The step limit was reached."), "本轮已停止，请检查上方输出后发送新消息。");
-});
-
 test("isRunErrorStatus 五种错误终态为真，运行/完成态为假", () => {
   for (const status of ["failed", "blocked", "incomplete", "cancelled", "aborted"] as const) {
     assert.equal(isRunErrorStatus(status), true, status);
@@ -285,31 +308,6 @@ test("isRunErrorStatus 五种错误终态为真，运行/完成态为假", () =>
   for (const status of ["idle", "running", "waiting_permission", "completed"] as const) {
     assert.equal(isRunErrorStatus(status), false, status);
   }
-});
-
-test("humanizeRunError 把网络/运行时错误码映射成人话", () => {
-  // 连接 / 响应超时（undici 原始码）
-  assert.equal(humanizeRunError("TypeError: fetch failed (UND_ERR_CONNECT_TIMEOUT)"), "网络连接超时，请检查代理或网络后重试。");
-  assert.equal(humanizeRunError("UND_ERR_HEADERS_TIMEOUT"), "服务器响应超时，请稍后重试。");
-  // 连接中断 / 拒绝 / 域名解析
-  assert.equal(humanizeRunError("Error: read ECONNRESET"), "连接被中断，请检查网络或代理后重试。");
-  assert.equal(humanizeRunError("connect ECONNREFUSED 127.0.0.1:443"), "无法连接到服务器，请确认服务可用或代理配置正确。");
-  assert.equal(humanizeRunError("getaddrinfo ENOTFOUND api.example.com"), "域名解析失败，请检查网络或代理设置。");
-  // 通用网络失败兜底
-  assert.equal(humanizeRunError("TypeError: fetch failed"), "网络请求失败，请检查网络或代理后重试。");
-});
-
-test("humanizeRunError 映射鉴权/限流/服务端/上下文/取消", () => {
-  assert.equal(humanizeRunError("HTTP 401 Unauthorized"), "鉴权失败，请检查 API Key 是否正确。");
-  assert.equal(humanizeRunError("429 Too Many Requests"), "请求过于频繁或额度不足，请稍后重试。");
-  assert.equal(humanizeRunError("500 Internal Server Error"), "服务端暂时不可用，请稍后重试。");
-  assert.equal(humanizeRunError("This model's maximum context length is 200000 tokens"), "超出模型上下文长度，请压缩上下文或开启新会话。");
-  assert.equal(humanizeRunError("The operation was aborted"), "操作已被取消。");
-});
-
-test("humanizeRunError 可读文案保留首行，空串原样返回", () => {
-  assert.equal(humanizeRunError("Something unexpected happened.\nMore detail here."), "Something unexpected happened.");
-  assert.equal(humanizeRunError("   "), "");
 });
 
 test("buildUsageDetailRows 汇总 token 与延迟指标，latest* 口径优先", () => {
@@ -475,4 +473,258 @@ test("currentTurnActivity 等待授权时展示待授权工具", () => {
   ]);
   assert.equal(timeline[0]?.status, "waiting_permission");
   assert.deepEqual(currentTurnActivity(timeline[0]), { label: "等待授权：Bash", orbState: "listening" });
+});
+
+/* ============ 活动相位模型（聚合组头部/轨道行） ============ */
+
+import { activityPhaseKindOf, activityToolRow, buildActivityPhases, countActivityUnits, parseCompactionNotice, phaseLabel, phaseSettled, type ActivityPhaseItem } from "../src/desktop/renderer/src/chatModel.js";
+import type { TimelineReasoningStep, TimelineToolStep } from "../src/desktop/renderer/src/sessionTimeline.js";
+
+function toolStep(id: string, tool: string, status: TimelineTool["status"] = "success", extra: Partial<TimelineTool> = {}): TimelineToolStep {
+  const item: TimelineTool = { id, tool, args: extra.args ?? {}, status, updates: [] };
+  return { kind: "tool", id, tool: { ...item, ...extra } };
+}
+
+function reasoningStep(id: string, extra: Partial<TimelineReasoningStep> = {}): TimelineReasoningStep {
+  return { kind: "reasoning", id, content: "分析中", completed: true, ...extra };
+}
+
+function itemsOf(...steps: Array<TimelineToolStep | TimelineReasoningStep>): ActivityPhaseItem[] {
+  return steps.map((step, index) => ({ step, index }));
+}
+
+test("buildActivityPhases 把连续同相位步骤收成一相", () => {
+  const phases = buildActivityPhases(itemsOf(
+    reasoningStep("r1"),
+    toolStep("t1", "Read"),
+    toolStep("t2", "Grep"),
+    toolStep("t3", "edit_file"),
+  ));
+  assert.deepEqual(phases.map((phase) => phase.kind), ["thinking", "exploring", "making"]);
+  assert.deepEqual(phases.map((phase) => phase.items.length), [1, 2, 1]);
+  assert.deepEqual(phases.map((phase) => phase.startIndex), [0, 1, 3]);
+});
+
+test("activityPhaseKindOf 覆盖探索/修改/运行/通用四类工具", () => {
+  assert.equal(activityPhaseKindOf(toolStep("a", "WebSearch")), "exploring");
+  assert.equal(activityPhaseKindOf(toolStep("a", "Write")), "making");
+  assert.equal(activityPhaseKindOf(toolStep("a", "Bash")), "running");
+  assert.equal(activityPhaseKindOf(toolStep("a", "Skill")), "generic");
+});
+
+test("phaseLabel 按相位与活体态给中文动宾", () => {
+  const exploring = buildActivityPhases(itemsOf(toolStep("t1", "Read"), toolStep("t2", "Read")))[0]!;
+  assert.deepEqual(phaseLabel(exploring, false), { verb: "已探索", rest: "2 个文件" });
+  assert.deepEqual(phaseLabel(exploring, true), { verb: "探索中", rest: "2 个文件" });
+  const running = buildActivityPhases(itemsOf(toolStep("t1", "Bash"), toolStep("t2", "Bash")))[0]!;
+  assert.deepEqual(phaseLabel(running, false), { verb: "已执行", rest: "2 条命令" });
+  const making = buildActivityPhases(itemsOf(toolStep("t1", "Write"), toolStep("t2", "edit_file")))[0]!;
+  assert.deepEqual(phaseLabel(making, false), { verb: "已修改", rest: "新建 1, 编辑 1" });
+  const thinking = buildActivityPhases(itemsOf(reasoningStep("r1", { durationMs: 4200 })))[0]!;
+  assert.deepEqual(phaseLabel(thinking, false, 4), { verb: "已思考", rest: "4 秒" });
+});
+
+test("countActivityUnits 思考相位记 1，工具逐个计数", () => {
+  const phases = buildActivityPhases(itemsOf(reasoningStep("r1"), toolStep("t1", "Read"), toolStep("t2", "Read")));
+  assert.equal(countActivityUnits(phases), 3);
+});
+
+test("phaseSettled 运行中相位为假，落定为真", () => {
+  const running = buildActivityPhases(itemsOf(toolStep("t1", "Read", "running")))[0]!;
+  assert.equal(phaseSettled(running), false);
+  const settled = buildActivityPhases(itemsOf(toolStep("t1", "Read", "success"), reasoningStep("r1")))[0]!;
+  assert.equal(phaseSettled(settled), true);
+});
+
+test("activityToolRow 输出动宾行与 ± 行数", () => {
+  const read = activityToolRow(toolStep("t", "Read", "success", { args: { path: "/Users/x/proj/src/app/main.ts" } }).tool);
+  assert.deepEqual(read, { verb: "读取", object: "src/app/main.ts", running: false, error: false });
+
+  const edit = activityToolRow(toolStep("t", "edit_file", "success", {
+    args: { path: "a/b.ts", oldText: "1\n2\n3", newText: "1\n2\n3\n4" },
+  }).tool);
+  assert.equal(edit.verb, "编辑");
+  assert.equal(edit.plus, 4);
+  assert.equal(edit.minus, 3);
+
+  const skill = activityToolRow(toolStep("t", "Skill", "success", { args: { skill: "write-tui" } }).tool);
+  assert.deepEqual({ verb: skill.verb, object: skill.object }, { verb: "使用技能", object: "write-tui" });
+
+  const failed = activityToolRow(toolStep("t", "Bash", "failed", { args: { command: "pnpm build" } }).tool);
+  assert.equal(failed.error, true);
+  assert.equal(failed.verb, "执行");
+});
+
+test("activityToolRow 覆盖记忆/技能/浏览器/任务工具", () => {
+  const recall = activityToolRow(toolStep("t", "recall_memory", "success", { args: { query: "Biny 工具冒烟测试" } }).tool);
+  assert.deepEqual({ verb: recall.verb, object: recall.object }, { verb: "检索记忆", object: "Biny 工具冒烟测试" });
+  const save = activityToolRow(toolStep("t", "save_memory", "success", { args: { topic: "workflow/toolchain" } }).tool);
+  assert.deepEqual({ verb: save.verb, object: save.object }, { verb: "保存记忆", object: "workflow/toolchain" });
+  const search = activityToolRow(toolStep("t", "skill_search", "success", { args: { query: "tui" } }).tool);
+  assert.equal(search.verb, "搜索技能");
+  const open = activityToolRow(toolStep("t", "BrowserOpen", "success", { args: { url: "https://example.com" } }).tool);
+  assert.deepEqual({ verb: open.verb, object: open.object }, { verb: "打开", object: "https://example.com" });
+  const task = activityToolRow(toolStep("t", "Task", "success", { args: { description: "梳理构建产物" } }).tool);
+  assert.deepEqual({ verb: task.verb, object: task.object }, { verb: "派发任务", object: "梳理构建产物" });
+});
+
+test("activityPhaseKindOf 记忆检索归探索、记忆保存归修改", () => {
+  assert.equal(activityPhaseKindOf(toolStep("a", "recall_memory")), "exploring");
+  assert.equal(activityPhaseKindOf(toolStep("a", "skill_search")), "exploring");
+  assert.equal(activityPhaseKindOf(toolStep("a", "save_memory")), "making");
+  assert.equal(activityPhaseKindOf(toolStep("a", "skill_install")), "making");
+});
+
+test("parseCompactionNotice 解析压缩条数与节省 token", () => {
+  const live = parseCompactionNotice("已压缩 117 条消息，正在恢复请求");
+  assert.equal(live.count, 117);
+  assert.equal(live.savedTokens, undefined);
+  const full = parseCompactionNotice("已压缩 12 条消息，节省约 824,069 tokens");
+  assert.equal(full.count, 12);
+  assert.equal(full.savedTokens, 824069);
+  assert.deepEqual(parseCompactionNotice(undefined), {});
+});
+
+/* ============ 聊天展示组件静态渲染冒烟（活动段 / 技能指示器 / 压缩分隔条） ============ */
+
+import { ActivitySegment } from "../src/desktop/renderer/src/components/chat/ActivitySegment.js";
+import { RecipeReadyBanner } from "../src/desktop/renderer/src/components/RecipeReadyBanner.js";
+import { CompactionDivider } from "../src/desktop/renderer/src/components/chat/CompactionDivider.js";
+import { SkillsIndicator } from "../src/desktop/renderer/src/components/chat/SkillsIndicator.js";
+
+const noopAsync = (): Promise<void> => Promise.resolve();
+
+test("ActivitySegment 渲染相位头像串与「用了 N 个工具」摘要", () => {
+  const markup = renderToStaticMarkup(createElement(ActivitySegment, {
+    steps: [
+      reasoningStep("r1", { durationMs: 3200 }),
+      toolStep("t1", "Read", "success", { args: { path: "src/app/main.ts" } }),
+      toolStep("t2", "Read", "success", { args: { path: "src/app/other.ts" } }),
+      toolStep("t3", "edit_file", "success", { args: { path: "src/app/main.ts", oldText: "a\nb", newText: "a\nb\nc" } }),
+    ],
+    running: false,
+    thinkingSeconds: 3,
+    projectId: "p1",
+    onPreviewFile: () => undefined,
+    onOpenExternal: () => undefined,
+    onResolvePermission: noopAsync,
+  }));
+  assert.match(markup, /chat-activity/u);
+  // 活动单元 = 1 个思考相位 + 3 个工具。
+  assert.match(markup, /用了 4 个工具/u);
+  assert.match(markup, /chat-phase-avatar/u);
+  // 多相位段提供时间线视图切换；默认收起。
+  assert.match(markup, /时间线视图/u);
+  assert.match(markup, /aria-expanded="false"/u);
+});
+
+test("ActivitySegment 多相位段提供时间线视图且思考相位独立展示", () => {
+  const markup = renderToStaticMarkup(createElement(ActivitySegment, {
+    steps: [
+      reasoningStep("r1", { durationMs: 1500 }),
+      toolStep("t1", "Read", "success", { args: { path: "a.ts" } }),
+      reasoningStep("r2", { durationMs: 800 }),
+      toolStep("t2", "Bash", "success", { args: { command: "pnpm test" } }),
+    ],
+    running: false,
+    projectId: "p1",
+    onPreviewFile: () => undefined,
+    onOpenExternal: () => undefined,
+    onResolvePermission: noopAsync,
+  }));
+  assert.match(markup, /时间线视图/u);
+  assert.match(markup, /chat-activity-collapse/u);
+});
+
+test("SkillsIndicator 渲染技能数与悬停清单", () => {
+  const markup = renderToStaticMarkup(createElement(SkillsIndicator, { skills: ["write-tui", "simplify-audit"] }));
+  assert.match(markup, /2 个技能/u);
+  assert.match(markup, /自动选择的技能：/u);
+  assert.match(markup, /write-tui/u);
+  assert.equal(renderToStaticMarkup(createElement(SkillsIndicator, { skills: [] })), "");
+});
+
+test("CompactionDivider 渲染压缩药丸并省略缺失段", () => {
+  const full = renderToStaticMarkup(createElement(CompactionDivider, { count: 117, savedTokens: 824069, summary: "讨论了工具冒烟测试" }));
+  assert.match(full, /上下文已压缩/u);
+  assert.match(full, /117 条消息已摘要/u);
+  assert.match(full, /节省约 824,069 tokens/u);
+  const minimal = renderToStaticMarkup(createElement(CompactionDivider, { count: 3 }));
+  assert.match(minimal, /3 条消息已摘要/u);
+  assert.doesNotMatch(minimal, /节省约/u);
+});
+
+test("ActivitySegment 活体态渲染 shimmer 标签、呼吸头像与收尾 orb", () => {
+  const running = renderToStaticMarkup(createElement(ActivitySegment, {
+    steps: [
+      reasoningStep("r1", { completed: false, durationMs: undefined }),
+      toolStep("t1", "Read", "success", { args: { path: "a.ts" } }),
+      toolStep("t2", "Grep", "running", { args: { pattern: "x" } }),
+    ],
+    running: true,
+    projectId: "p1",
+    onPreviewFile: () => undefined,
+    onOpenExternal: () => undefined,
+    onResolvePermission: noopAsync,
+  }));
+  // 活体标签「探索中 2 处」用 shimmer；最后一个未落定相位带呼吸光环。
+  assert.match(running, /chat-shimmer-text/u);
+  assert.match(running, /探索中/u);
+  assert.match(running, /chat-phase-avatar is-alive/u);
+  // 活体期间没有展开箭头与「用了 N 个工具」摘要（落定后才出现）。
+  assert.doesNotMatch(running, /chat-activity-chevron/u);
+  assert.doesNotMatch(running, /用了 \d+ 个工具/u);
+});
+
+test("ActivitySegment 全部落定的活体间隙出现 orb 行", () => {
+  const idle = renderToStaticMarkup(createElement(ActivitySegment, {
+    steps: [toolStep("t1", "Read", "success", { args: { path: "a.ts" } })],
+    running: true,
+    projectId: "p1",
+    onPreviewFile: () => undefined,
+    onOpenExternal: () => undefined,
+    onResolvePermission: noopAsync,
+  }));
+  assert.match(idle, /chat-activity-orb/u);
+  assert.match(idle, /Following the thread/u);
+  assert.match(idle, /已探索/u);
+});
+
+test("待授权工具的活动段自动展开行详情", () => {
+  const pending = renderToStaticMarkup(createElement(ActivitySegment, {
+    steps: [toolStep("t1", "Bash", "running", {
+      args: { command: "rm -rf build" },
+      permission: {
+        requestId: "p1",
+        request: { toolCallId: "t1", tool: "Bash", title: "允许执行命令", details: "", requireFullYes: false, actionType: "command", riskLevel: "high" },
+        resolved: false,
+      },
+    })],
+    running: true,
+    projectId: "p1",
+    onPreviewFile: () => undefined,
+    onOpenExternal: () => undefined,
+    onResolvePermission: noopAsync,
+  }));
+  assert.match(pending, /需要授权/u);
+});
+
+test("RecipeReadyBanner 渲染提取横幅（标题、槽位、提取与忽略）", () => {
+  const markup = renderToStaticMarkup(createElement(RecipeReadyBanner, {
+    notice: {
+      id: "repeatable-doc-task",
+      title: "可重复的文档/报表任务",
+      description: "从对话中沉淀的报表工作流",
+      slots: [{ key: "input", label: "输入材料", filled: true }],
+      extractPrompt: "提取",
+      sessionId: "s1"
+    },
+    onDismiss: () => undefined,
+    onExtract: () => undefined
+  }));
+  assert.match(markup, /这些材料现在可以提取成一个可重复任务/u);
+  assert.match(markup, /「可重复的文档\/报表任务」/u);
+  assert.match(markup, /输入材料/u);
+  assert.match(markup, /提取/u);
+  assert.match(markup, /忽略此提示/u);
 });

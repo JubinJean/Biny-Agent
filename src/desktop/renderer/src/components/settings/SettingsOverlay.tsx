@@ -4,15 +4,17 @@
  * 设置壳只负责导航与页面装配；跨页草稿和补偿事务由 SettingsDraftProvider 统一管理。
  * 记忆 CRUD、连接测试、Cookie 与模型下载等一次性动作仍通过明确回调即时执行。
  */
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { NativeSelect } from "../NativeSelect.js";
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Dialog } from "@astryxdesign/core/Dialog";
 import type { LocalEmbeddingModelId } from "../../../../../llm/embedding/types.js";
 import type { MemorySleepRun } from "../../../../../agent/context/memoryTypes.js";
-import type { DesktopCookieJarStatus, DesktopDailyMemoryNote, DesktopFontPreference, DesktopMemoryEmbeddingCancellationResult, DesktopMemoryEmbeddingDeleteResult, DesktopMemoryEmbeddingStatus, DesktopMemoryEntriesPage, DesktopMemoryEntry, DesktopMemoryEntryInput, DesktopMemoryEntryPatch, DesktopMemoryOriginFilter, DesktopMemoryStats, DesktopMemorySearchMatch, DesktopModelCatalogResult, DesktopModelConfigurationInput, DesktopModelConnectionTestResult, DesktopModelLoginProvider, DesktopModelLoginStartResult, DesktopSettingsCloseRequest, DesktopSettingsCloseResponse, DesktopSettingsSnapshot, DesktopThemePreference, DesktopWebSearchProvider, DesktopWorkspaceSnapshot } from "../../../../protocol.js";
+import type { DesktopCookieJarStatus, DesktopFontPreference, DesktopMemoryEmbeddingCancellationResult, DesktopMemoryEmbeddingDeleteResult, DesktopMemoryEmbeddingStatus, DesktopMemoryEntriesPage, DesktopMemoryEntry, DesktopMemoryEntryInput, DesktopMemoryEntryPatch, DesktopMemoryOriginFilter, DesktopMemoryStats, DesktopMemorySearchMatch, DesktopModelCatalogResult, DesktopModelConfigurationInput, DesktopModelConnectionTestResult, DesktopModelLoginProvider, DesktopModelLoginStartResult, DesktopSettingsCloseRequest, DesktopSettingsCloseResponse, DesktopSettingsSnapshot, DesktopThemePreference, DesktopWebSearchProvider, DesktopWorkspaceSnapshot } from "../../../../protocol.js";
 import { Icon, type IconName } from "../Icon.js";
 import { McpServersView } from "../McpServersView.js";
 import { TopToast } from "../overlays/TopToast.js";
 import { ProviderSettings } from "./ProviderSettings.js";
+import { SettingsToolModel } from "./SettingsToolModel.js";
 import { stagedModelChoices } from "./providerModelProjection.js";
 import { SettingsAbout } from "./SettingsAbout.js";
 import { SettingsAppearance } from "./SettingsAppearance.js";
@@ -23,6 +25,7 @@ import { SettingsCompaction } from "./SettingsCompaction.js";
 import { SettingsActivity } from "./SettingsActivity.js";
 import { SettingsSwitch } from "./SettingsSwitch.js";
 import { SettingsCloseGuard } from "./SettingsCloseGuard.js";
+import { SettingsDetailHostContext } from "./SettingsDetailHostContext.js";
 import { useSettingsDraft } from "./SettingsDraftContext.js";
 import { SettingsDraftProvider } from "./SettingsDraftProvider.js";
 import { SettingsMemory } from "./SettingsMemory.js";
@@ -49,9 +52,10 @@ interface SettingsOverlayProps {
   onTestModelConfiguration(configuration: DesktopModelConfigurationInput): Promise<DesktopModelConnectionTestResult>;
   onFetchModelCatalog(providerAlias: string): Promise<DesktopModelCatalogResult>;
   onFetchModelCatalogCandidate(configuration: DesktopModelConfigurationInput): Promise<DesktopModelCatalogResult>;
+  onReadModelApiKey(providerAlias: string): Promise<string | undefined>;
+  onReadWebSearchApiKey(provider: DesktopWebSearchProvider): Promise<string | undefined>;
   sessionId?: string;
   sessionRunning: boolean;
-  onLoadDailyNote(date?: string): Promise<DesktopDailyMemoryNote>;
   onLoadMemoryStats(filter?: DesktopMemoryOriginFilter): Promise<DesktopMemoryStats>;
   onLoadMemoryEntries(filter: DesktopMemoryOriginFilter, offset: number, limit: number): Promise<DesktopMemoryEntriesPage>;
   onSearchMemory(filter: DesktopMemoryOriginFilter, query: string): Promise<DesktopMemorySearchMatch[]>;
@@ -85,17 +89,17 @@ interface SettingsOverlayProps {
 
 export type SettingsTab = "通用" | "聊天" | "快速对话" | "模型" | "MCP 服务器" | "技能" | "插件" | "权限" | "活动记录" | "记忆" | "联网搜索" | "关于";
 
-const settingsNav: Array<{ badge?: string; icon: IconName; tab: SettingsTab; label: string }> = [
-  { icon: "sun", tab: "通用", label: "通用" },
+const settingsNav: Array<{ icon: IconName; tab: SettingsTab; label: string; group?: string }> = [
+  { icon: "sun", tab: "通用", label: "通用", group: "偏好" },
   { icon: "message", tab: "聊天", label: "聊天" },
   { icon: "compose", tab: "快速对话", label: "快速对话" },
-  { icon: "network", tab: "模型", label: "模型供应商" },
+  { icon: "network", tab: "模型", label: "模型供应商", group: "能力与连接" },
   { icon: "plug", tab: "MCP 服务器", label: "MCP 服务器" },
   { icon: "wand", tab: "技能", label: "技能" },
   { icon: "puzzle", tab: "插件", label: "插件" },
-  { badge: "Beta", icon: "brain", tab: "记忆", label: "记忆" },
-  { badge: "Beta", icon: "search", tab: "联网搜索", label: "联网搜索" },
-  { badge: "Beta", icon: "activity", tab: "活动记录", label: "活动记录" },
+  { icon: "search", tab: "联网搜索", label: "联网搜索" },
+  { icon: "brain", tab: "记忆", label: "记忆", group: "数据与权限" },
+  { icon: "activity", tab: "活动记录", label: "活动记录" },
   { icon: "shield", tab: "权限", label: "权限" },
   { icon: "help", tab: "关于", label: "关于" }
 ];
@@ -105,21 +109,6 @@ const settingsTabValues = new Set<SettingsTab>(settingsNav.map((item) => item.ta
 function normalizeSettingsTab(value: SettingsTab | string | undefined): SettingsTab {
   return value !== undefined && settingsTabValues.has(value as SettingsTab) ? value as SettingsTab : "通用";
 }
-
-const settingsTitles: Record<SettingsTab, string> = {
-  通用: "通用",
-  聊天: "聊天",
-  权限: "权限",
-  快速对话: "快速对话",
-  模型: "模型供应商",
-  "MCP 服务器": "MCP 服务器",
-  技能: "技能",
-  插件: "插件",
-  活动记录: "活动记录器",
-  记忆: "记忆",
-  联网搜索: "联网搜索",
-  关于: "关于"
-};
 
 export function SettingsOverlay(props: SettingsOverlayProps): React.JSX.Element | null {
   const {
@@ -164,8 +153,9 @@ function SettingsOverlayContent({
   onTestModelConfiguration,
   onFetchModelCatalog,
   onFetchModelCatalogCandidate,
+  onReadModelApiKey,
+  onReadWebSearchApiKey,
   sessionRunning,
-  onLoadDailyNote,
   onLoadMemoryStats,
   onLoadMemoryEntries,
   onSearchMemory,
@@ -179,7 +169,7 @@ function SettingsOverlayContent({
   onSleepRuns,
   onPreviewMemorySleep,
   onCancelMemorySleep,
-  onClearMemory: _onClearMemory,
+  onClearMemory,
   onOpenChatDraft: _onOpenChatDraft,
   onLoadMemoryEmbeddingStatus,
   onDownloadMemoryEmbeddingModel,
@@ -205,9 +195,12 @@ function SettingsOverlayContent({
   const [message, setMessage] = useState<string>();
   const [dismissedLoadError, setDismissedLoadError] = useState<string>();
   const [closeGuardOpen, setCloseGuardOpen] = useState(false);
+  const [detailHost, setDetailHost] = useState<HTMLElement | null>(null);
   const [defaultModelSaving, setDefaultModelSaving] = useState(false);
   const activeTab = normalizeSettingsTab(tab);
+  const activePage = settingsNav.find((item) => item.tab === activeTab)!;
   const activeTabRef = useRef<SettingsTab>(activeTab);
+  const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (activeTab !== tab) {
       activeTabRef.current = activeTab;
@@ -225,6 +218,17 @@ function SettingsOverlayContent({
   useEffect(() => {
     if (closeRequest) setCloseGuardOpen(true);
   }, [closeRequest]);
+  useEffect(() => {
+    if (!open) return;
+    const handleSelectKeys = (event: KeyboardEvent): void => {
+      if (event.key !== "Escape" && event.key !== "Tab") return;
+      if (!(event.target instanceof Element) || !event.target.closest(".desktop-settings-dialog select:open")) return;
+      // 原生 picker 比设置详情层更靠上；保留浏览器默认关闭/焦点行为，不让外层弹窗抢走按键。
+      event.stopImmediatePropagation();
+    };
+    window.addEventListener("keydown", handleSelectKeys, true);
+    return () => window.removeEventListener("keydown", handleSelectKeys, true);
+  }, [open]);
   // 由 Composer 直达模型设置时，在浏览器绘制前同步分页，避免先闪过上次打开的内容。
   useLayoutEffect(() => {
     if (!open) return;
@@ -249,6 +253,7 @@ function SettingsOverlayContent({
     activeTabRef.current = nextTab;
     setTab(nextTab);
     setMessage(undefined);
+    scrollRef.current?.scrollTo({ top: 0 });
     if (nextTab === "记忆") setMemoryVisited(true);
   };
   const discardAndClose = async (): Promise<void> => {
@@ -278,38 +283,39 @@ function SettingsOverlayContent({
         onOpenChange={(isOpen) => { if (!isOpen) requestCancel(); }}
         padding={0}
         purpose="info"
-        variant="fullscreen"
+        width={1040}
+        maxHeight="calc(100dvh - 80px)"
       >
-      <section className={`settings-modal is-full-page${extensionSettings ? " is-extension-settings" : ""}`}>
+      <SettingsDetailHostContext.Provider value={detailHost}>
+      <section className={`settings-modal${extensionSettings ? " is-extension-settings" : ""}`} ref={setDetailHost}>
         <aside className="settings-tabs">
           <div className="settings-sidebar-strip">
-            <button aria-label="返回应用" className="settings-back-button" onClick={requestCancel} type="button">
-              <Icon name="arrow-left" size={16} />
-              <strong>设置</strong>
-            </button>
+            <strong>设置</strong>
+            <span>Biny</span>
           </div>
           <nav aria-label="设置分类" className="settings-nav-list">
             {settingsNav.map((item) => (
-              <button aria-current={activeTab === item.tab ? "page" : undefined} className={activeTab === item.tab ? "is-selected" : ""} key={item.tab} onClick={() => selectTab(item.tab)} type="button">
-                <span aria-hidden="true" className="settings-nav-icon"><Icon name={item.icon} size={18} /></span>
-                <span className="settings-nav-label">{item.label}</span>
-                {item.badge ? <em className="settings-nav-badge">{item.badge}</em> : null}
-              </button>
+              <Fragment key={item.tab}>
+                {item.group ? <h3 className="settings-nav-group">{item.group}</h3> : null}
+                <button aria-current={activeTab === item.tab ? "page" : undefined} className={activeTab === item.tab ? "is-selected" : ""} onClick={() => selectTab(item.tab)} type="button">
+                  <span aria-hidden="true" className="settings-nav-icon"><Icon name={item.icon} size={18} /></span>
+                  <span className="settings-nav-label">{item.label}</span>
+                </button>
+              </Fragment>
             ))}
           </nav>
         </aside>
         <main className={`settings-content${extensionSettings ? " is-extension-settings" : ""}`}>
           <header className="settings-titlebar">
-            <h2>
-              <span aria-hidden="true" className="settings-titlebar-icon"><Icon name={settingsNav.find((item) => item.tab === activeTab)?.icon ?? "sun"} size={18} /></span>
-              {settingsTitles[activeTab]}
-            </h2>
-            {settingsDraft.dirtyCount > 0 ? <span aria-live="polite" className="settings-header-unsaved" role="status">
-              <span>未保存的更改</span>
-              <span aria-hidden="true" className="settings-unsaved-dot" />
-            </span> : null}
+            <div>
+              <h2>{activePage.label}</h2>
+            </div>
+            <button aria-label="关闭设置" className="icon-button settings-close-button" onClick={requestCancel} title="关闭设置 · Esc" type="button">
+              <Icon name="close" size={18} />
+            </button>
           </header>
-          <div className={`settings-scroll${extensionSettings ? " is-extension" : activeTab === "模型" ? " is-providers" : ""}`}>
+          <div className={`settings-scroll${extensionSettings ? " is-extension" : activeTab === "模型" ? " is-providers" : ""}`} ref={scrollRef}>
+          {activeTab === "通用" ? <SettingsToolModel onTest={onTestModelConfiguration} /> : null}
           {activeTab === "模型" ? <ProviderSettings
             active={open}
             loading={!settingsDraft.snapshot && !settingsDraft.loadError}
@@ -319,6 +325,7 @@ function SettingsOverlayContent({
             projectId={workspace?.project.id}
             onFetchCatalog={onFetchModelCatalog}
             onFetchCatalogCandidate={onFetchModelCatalogCandidate}
+            onReadModelApiKey={onReadModelApiKey}
             onOpenExternal={onOpenExternal}
             onStartLogin={onStartModelLogin}
             onCompleteLogin={(provider, authRequestId, pastedAuthorization) =>
@@ -367,7 +374,6 @@ function SettingsOverlayContent({
             embeddingModels={settingsDraft.snapshot?.models.embeddingModels ?? []}
             hidden={activeTab !== "记忆"}
             workspaceAvailable={workspace !== undefined}
-            onLoadDailyNote={onLoadDailyNote}
             onLoadStats={onLoadMemoryStats}
             onLoadEntries={onLoadMemoryEntries}
             onSearch={onSearchMemory}
@@ -381,6 +387,8 @@ function SettingsOverlayContent({
             onSleepRuns={onSleepRuns}
             onPreviewSleep={onPreviewMemorySleep}
             onCancelSleep={onCancelMemorySleep}
+            onClearMemory={onClearMemory}
+            onTestModelConfiguration={onTestModelConfiguration}
             onLoadEmbeddingStatus={onLoadMemoryEmbeddingStatus}
             onDownloadEmbeddingModel={onDownloadMemoryEmbeddingModel}
             onCancelEmbeddingDownload={onCancelMemoryEmbeddingDownload}
@@ -394,6 +402,7 @@ function SettingsOverlayContent({
           {activeTab === "插件" ? <SettingsExtensionsView kind="plugins" onError={_onNotify} projectId={workspace?.project.id} /> : null}
           {activeTab === "关于" ? <SettingsAbout version={version} /> : null}
           {activeTab === "联网搜索" ? <SettingsWebSearch
+            onReadApiKey={onReadWebSearchApiKey}
             onNotify={(nextMessage) => notifyForTab("联网搜索", nextMessage)}
             onOpenExternal={onOpenExternal}
             onLoadCookieJarStatus={onLoadCookieJarStatus}
@@ -428,6 +437,7 @@ function SettingsOverlayContent({
           onDiscard={() => { void discardAndClose(); }}
         />
       ) : null}
+      </SettingsDetailHostContext.Provider>
       </Dialog>
     </ActivityRuntimeProvider>
   );
@@ -444,10 +454,11 @@ const webSearchProviderOptions: Array<{ value: DesktopWebSearchProvider; title: 
 /**
  * 联网搜索设置。
  *
- * key 从不回填到输入框：主进程只回报「是否已配置」，不返回明文。因此输入框为空意为
- * 「不改动」，要清空已存的 key 需要显式勾选 `clearKey`。
+ * 已保存的 API Key 在打开联网搜索设置时按需回填，输入框保持可直接查看和编辑。
+ * 要清空已存的 key 仍需显式勾选 `clearKey`。
  */
-function SettingsWebSearch({ onNotify, onOpenExternal, onLoadCookieJarStatus, onOpenBrowser, onExportCookies, onImportCookies, onClearCookies, sessionRunning }: {
+function SettingsWebSearch({ onReadApiKey, onNotify, onOpenExternal, onLoadCookieJarStatus, onOpenBrowser, onExportCookies, onImportCookies, onClearCookies, sessionRunning }: {
+  onReadApiKey(provider: DesktopWebSearchProvider): Promise<string | undefined>;
   onNotify(message: string): void;
   onOpenExternal(url: string): Promise<void>;
   onLoadCookieJarStatus(): Promise<DesktopCookieJarStatus>;
@@ -459,6 +470,7 @@ function SettingsWebSearch({ onNotify, onOpenExternal, onLoadCookieJarStatus, on
 }): React.JSX.Element {
   const { draft, setWebSearch, snapshot } = useSettingsDraft();
   const [apiKeyInput, setApiKeyInput] = useState("");
+  const [apiKeyLoading, setApiKeyLoading] = useState(false);
   const [clearKey, setClearKey] = useState(false);
   const [cookieJar, setCookieJar] = useState<DesktopCookieJarStatus>();
   const [cookieLoadError, setCookieLoadError] = useState<string>();
@@ -482,12 +494,33 @@ function SettingsWebSearch({ onNotify, onOpenExternal, onLoadCookieJarStatus, on
 
   const settings = snapshot?.webSearch;
   const webSearch = draft?.webSearch;
+  const provider = webSearch?.provider;
+  const option = webSearchProviderOptions.find((candidate) => candidate.value === provider);
+  const requiresKey = provider === "tavily" || provider === "brave";
+  const sameProviderSaved = Boolean(settings && webSearch && settings.provider === webSearch.provider);
+  const envKeyName = (sameProviderSaved ? settings?.envKeyName : undefined) ?? option?.envKeyName;
+  const savedHasApiKey = settings?.hasApiKey === true;
+  const envKeyDetected = settings?.envKeyDetected === true;
+  useEffect(() => {
+    let cancelled = false;
+    setApiKeyInput("");
+    setApiKeyLoading(false);
+    if (!sameProviderSaved || !provider || (!savedHasApiKey && !envKeyDetected)) return;
+    setApiKeyLoading(true);
+    void onReadApiKey(provider)
+      .then((value) => {
+        if (cancelled) return;
+        setApiKeyInput(value ?? "");
+        setApiKeyLoading(false);
+      })
+      .catch(() => {
+        if (!cancelled) setApiKeyLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [envKeyDetected, onReadApiKey, provider, sameProviderSaved, savedHasApiKey]);
   if (!settings || !webSearch) return <div className="settings-sections"><section><p>正在加载设置…</p></section></div>;
-
-  const option = webSearchProviderOptions.find((candidate) => candidate.value === webSearch.provider);
-  const requiresKey = webSearch.provider === "tavily" || webSearch.provider === "brave";
-  const sameProviderSaved = settings.provider === webSearch.provider;
-  const envKeyName = (sameProviderSaved ? settings.envKeyName : undefined) ?? option?.envKeyName;
   const keyStatus = clearKey
     ? "保存后将清除已保存的密钥。"
     : sameProviderSaved && settings.hasApiKey
@@ -554,7 +587,7 @@ function SettingsWebSearch({ onNotify, onOpenExternal, onLoadCookieJarStatus, on
             <button aria-checked={webSearch.provider === candidate.value} className="permission-setting-row" key={candidate.value} onClick={() => { setWebSearch({ ...webSearch, provider: candidate.value, apiKey: undefined, apiKeyHandle: undefined }); setApiKeyInput(""); setClearKey(false); }} role="radio" type="button">
               <span className={`radio${webSearch.provider === candidate.value ? " is-selected" : ""}`} />
               <span><strong>{candidate.title}</strong><small>{candidate.detail}</small></span>
-              <em className="settings-nav-badge">{candidate.value === "duckduckgo" ? "免密钥" : candidate.value === "anysearch" ? "可匿名" : candidate.value === "google" ? "浏览器登录" : "API Key"}</em>
+              <em className="settings-search-auth">{candidate.value === "duckduckgo" ? "免密钥" : candidate.value === "anysearch" ? "可匿名" : candidate.value === "google" ? "浏览器登录" : "API Key"}</em>
             </button>
           ))}
         </div>
@@ -566,11 +599,11 @@ function SettingsWebSearch({ onNotify, onOpenExternal, onLoadCookieJarStatus, on
             <input
               autoCapitalize="none"
               autoComplete="off"
-              disabled={clearKey}
+              disabled={clearKey || apiKeyLoading}
               onChange={(event) => { setApiKeyInput(event.target.value); setWebSearch({ ...webSearch, apiKey: event.target.value || undefined, apiKeyHandle: undefined }); }}
-              placeholder={requiresKey ? `${option?.title ?? ""} API Key` : "可选，用于提升 AnySearch 额度"}
+              placeholder={apiKeyLoading ? "正在读取 API Key…" : requiresKey ? `${option?.title ?? ""} API Key` : "可选，用于提升 AnySearch 额度"}
               spellCheck={false}
-              type="password"
+              type="text"
               value={clearKey ? "" : apiKeyInput}
             />
             {sameProviderSaved && settings.hasApiKey ? (
@@ -587,15 +620,15 @@ function SettingsWebSearch({ onNotify, onOpenExternal, onLoadCookieJarStatus, on
         <h3>结果偏好</h3>
         <div className="setting-row">
           <span><strong>返回结果数</strong></span>
-          <select className="web-search-select" onChange={(event) => setWebSearch({ ...webSearch, maxResults: Number(event.target.value) })} value={webSearch.maxResults}>
+          <NativeSelect className="web-search-select" onChange={(event) => setWebSearch({ ...webSearch, maxResults: Number(event.target.value) })} value={webSearch.maxResults}>
             {[...new Set([3, 5, 8, 10, webSearch.maxResults])].sort((a, b) => a - b).map((count) => <option key={count} value={count}>{count} 条</option>)}
-          </select>
+          </NativeSelect>
         </div>
         <div className="setting-row">
           <span><strong>请求超时</strong></span>
-          <select className="web-search-select" onChange={(event) => setWebSearch({ ...webSearch, timeoutMs: Number(event.target.value) })} value={webSearch.timeoutMs}>
+          <NativeSelect className="web-search-select" onChange={(event) => setWebSearch({ ...webSearch, timeoutMs: Number(event.target.value) })} value={webSearch.timeoutMs}>
             {[...new Set([5_000, 10_000, 20_000, 30_000, webSearch.timeoutMs])].sort((a, b) => a - b).map((duration) => <option key={duration} value={duration}>{duration / 1_000} 秒</option>)}
-          </select>
+          </NativeSelect>
         </div>
       </section>
       <section id="web-search-cookies" tabIndex={-1}>

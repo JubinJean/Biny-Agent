@@ -9,25 +9,14 @@
 
 /* ============ 动画 ============ */
 
-@keyframes chat-breath-halo {
-  0% { transform: scale(0.55); opacity: 0.55; }
-  70% { transform: scale(1.5); opacity: 0; }
-  100% { transform: scale(1.5); opacity: 0; }
-}
-
 @keyframes chat-breath-core {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.5; }
 }
 
-@keyframes chat-breath-glow {
-  0%, 100% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--biny-focus) 45%, transparent), 0 0 6px 0 color-mix(in srgb, var(--biny-focus) 25%, transparent); }
-  50% { box-shadow: 0 0 0 1px color-mix(in srgb, var(--biny-focus) 15%, transparent), 0 0 12px 2px color-mix(in srgb, var(--biny-focus) 40%, transparent); }
-}
-
 @keyframes chat-shimmer {
-  0% { background-position: 200% 0; }
-  100% { background-position: -200% 0; }
+  0% { background-position: -100% 0; }
+  100% { background-position: 250% 0; }
 }
 
 @keyframes chat-spin {
@@ -39,68 +28,34 @@
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* 用户消息入场：alma userMessageFloatIn（18px 浮入 + 2% 回弹），随后的扫光高亮划过气泡。 */
 @keyframes chat-user-message-enter {
-  from { opacity: 0; transform: translateY(8px) scale(0.98); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  0% { opacity: 0; transform: translate3d(0, 18px, 0) scale(0.95); box-shadow: 0 24px 36px rgb(0 0 0 / 15%); }
+  70% { opacity: 1; transform: translate3d(0, -4px, 0) scale(1.02); box-shadow: 0 16px 24px rgb(0 0 0 / 10%); }
+  100% { opacity: 1; transform: translate3d(0, 0, 0) scale(1); }
 }
 
-/* 微光文字：流式进行中的标题（「正在思考」「正在搜索」等）。 */
+@keyframes chat-user-sheen {
+  0% { opacity: 0; transform: translateX(-120%) skewX(-12deg); }
+  30% { opacity: 0.55; }
+  100% { opacity: 0; transform: translateX(140%) skewX(-12deg); }
+}
+
+/* 微光文字：流式进行中的标题（「思考中」「探索中」等）。高亮带扫过整段文字（alma 签名动效）。 */
 .biny-chat-scroll .chat-shimmer-text,
 .biny-thinking-status .chat-shimmer-text {
-  background: linear-gradient(90deg, var(--biny-text-tertiary) 25%, var(--biny-text) 50%, var(--biny-text-tertiary) 75%);
-  background-size: 200% 100%;
+  --shimmer-base: color-mix(in oklch, var(--biny-text) 45%, transparent);
+  --shimmer-highlight: color-mix(in oklch, var(--biny-text) 90%, transparent);
+  background-color: var(--shimmer-base);
+  background-image: linear-gradient(to right, transparent 0%, var(--shimmer-highlight) 40%, var(--shimmer-highlight) 60%, transparent 100%);
+  background-size: 50% 200%;
+  background-repeat: no-repeat;
+  background-position: -100% 0;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: chat-shimmer 1.8s linear infinite;
-}
-
-/* ============ 呼吸灯状态点 ============ */
-
-.chat-breath-dot {
-  position: relative;
-  flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--biny-focus);
-}
-
-.chat-breath-dot.is-success { background: var(--biny-success); }
-.chat-breath-dot.is-danger { background: var(--biny-danger); }
-.chat-breath-dot.is-warning { background: var(--biny-warning); }
-.chat-breath-dot.is-muted { background: var(--biny-text-tertiary); }
-
-.chat-breath-dot.is-breathing { animation: chat-breath-core 2.2s ease-in-out infinite; }
-
-.chat-breath-dot.is-breathing::before {
-  content: "";
-  position: absolute;
-  inset: -4px;
-  border-radius: 50%;
-  background: inherit;
-  animation: chat-breath-halo 2.2s ease-out infinite;
-}
-
-/* ============ 折叠容器（高度动画） ============ */
-
-.chat-collapse {
-  display: grid;
-  grid-template-rows: 0fr;
-  opacity: 0;
-  transition:
-    grid-template-rows 280ms cubic-bezier(0.2, 0.8, 0.2, 1),
-    opacity 200ms ease;
-}
-
-.chat-collapse.is-open {
-  grid-template-rows: 1fr;
-  opacity: 1;
-}
-
-.chat-collapse-inner {
-  min-height: 0;
-  overflow: hidden;
+  display: inline-block;
+  animation: chat-shimmer 2s steps(48, end) infinite;
 }
 
 /* ============ 行基元（思考/工具/通知共享） ============ */
@@ -138,10 +93,8 @@
   transition: background var(--biny-motion-quick, 120ms) ease;
 }
 
-/* 思考行不铺 hover 底色（对齐参考实现的思考触发行：hover 只提亮文字），其余行保留轻底。 */
-.biny-chat-scroll .chat-row-header:hover:not(:disabled):not(.chat-thinking-header) {
-  background: var(--biny-surface-hover);
-}
+/* 行头不做 hover 药丸/底色（对齐 ZCode：行是否可点由 chevron 与文案表达）；
+   只保留 focus 描边与思考行 hover 提亮文字。 */
 
 .biny-chat-scroll .chat-row-header:disabled {
   cursor: default;
@@ -164,7 +117,7 @@
 
 .chat-row-meta {
   flex: none;
-  font-size: calc(11.5px * var(--font-scale, 1));
+  font-size: calc(11px * var(--font-scale, 1));
   color: var(--biny-text-tertiary);
   font-variant-numeric: tabular-nums;
 }
@@ -186,56 +139,225 @@
   transform: rotate(180deg);
 }
 
-/* ============ 思考链 ============ */
+/* ============ 活动段（相位头像 + 摘要行 + 左导轨展开体） ============
+   对齐 alma ActivitySegment：头部 32px 行 = 相位头像串 + 摘要 + 展开控件；
+   落定后 hover 整行出现弱底色；展开体是左导轨分相列表，工具行是动宾紧凑行。 */
 
-.biny-chat-scroll .chat-thinking {
+.biny-chat-scroll {
+  /* 相位头像 hover / 头部 hover 的底色（alma --activity-hover-bg 的 Biny token 等价物）。 */
+  --activity-hover-bg: var(--biny-surface-hover);
+}
+
+.biny-chat-scroll .chat-activity {
+  min-width: 300px;
+  max-width: 36em;
   margin-block: 2px;
 }
 
-.chat-thinking-label {
-  font-size: calc(13px * var(--font-scale, 1));
-  font-weight: 500;
-  color: var(--biny-text-secondary);
+.biny-chat-scroll .chat-activity-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  margin-inline: -8px;
+  padding-inline: 8px;
+  border-radius: 6px;
+  transition: background 150ms ease;
 }
 
-.chat-thinking.is-running .chat-thinking-label {
-  font-weight: 500;
+.biny-chat-scroll .chat-activity:not([data-running]) .chat-activity-header:hover {
+  background: var(--activity-hover-bg);
 }
 
-.chat-thinking .chat-row-leading {
+/* 相位头像串：24px 圆形图标，重叠堆叠，背景色描边环隔开；打开的相位反色。 */
+.chat-activity-avatars {
+  display: flex;
+  align-items: center;
+  flex: none;
+}
+
+.chat-phase-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--biny-border);
+  border-radius: 50%;
+  background: var(--bg, var(--biny-surface));
   color: var(--biny-text-tertiary);
+  cursor: pointer;
+  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
 }
 
-.chat-thinking.is-running .chat-row-leading {
-  color: var(--biny-focus);
+.chat-phase-avatar + .chat-phase-avatar {
+  margin-left: -7px;
 }
 
-/* 思考行 hover：只提升标题/图标/箭头亮度，不出现整行方块；运行中已是焦点色 + shimmer，不参与。 */
-.chat-thinking:not(.is-running) .chat-thinking-header:hover .chat-thinking-label {
+/* 堆叠头像之间的隔离环：与消息背景同色的 2px 环。 */
+.chat-activity-avatars .chat-phase-avatar {
+  box-shadow: 0 0 0 2px var(--bg, var(--biny-surface));
+}
+
+.chat-phase-avatar:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--biny-text) 60%, transparent);
+  color: var(--biny-text);
+  z-index: 50;
+}
+
+.chat-phase-avatar.is-active {
+  border-color: color-mix(in srgb, var(--biny-text) 35%, transparent);
+  background: var(--biny-surface-hover);
   color: var(--biny-text);
 }
 
-.chat-thinking:not(.is-running) .chat-thinking-header:hover .chat-row-leading,
-.chat-thinking:not(.is-running) .chat-thinking-header:hover .chat-row-chevron {
-  color: var(--biny-text-secondary);
+.chat-phase-avatar:disabled {
+  cursor: default;
 }
 
-.chat-thinking-rest {
+/* 运行中的最后一个未落定相位：呼吸光环（alma activity-avatar-breathe）。 */
+.chat-phase-avatar.is-alive {
+  animation: chat-avatar-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes chat-avatar-breathe {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--biny-text-tertiary) 35%, transparent), 0 0 0 2px var(--bg, var(--biny-surface)); }
+  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--biny-text-tertiary) 12%, transparent), 0 0 0 2px var(--bg, var(--biny-surface)); }
+}
+
+/* 超过 8 个相位时的「+N」溢出徽标（椭圆胶囊）。 */
+.chat-phase-avatar.is-overflow {
+  width: auto;
+  min-width: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: calc(10px * var(--font-scale, 1));
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 摘要文案：verb 加重前景、rest 弱化；占满头部剩余宽度，长文案截断。 */
+.chat-activity-summary {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: calc(13px * var(--font-scale, 1));
+  text-align: left;
+  cursor: pointer;
+}
+
+.chat-activity-verb {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--biny-text);
+}
+
+/* 运行中的实时摘要（非按钮）：与 .chat-activity-summary 同一套排版规格。 */
+.chat-activity-label {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  font-size: calc(13px * var(--font-scale, 1));
+  text-align: left;
+}
+
+.chat-activity-rest {
+  flex: none;
   color: var(--biny-text-tertiary);
-  font-size: 12.5px;
+  white-space: nowrap;
 }
 
-.chat-thinking-body {
-  max-height: 300px;
-  overflow-y: auto;
-  margin-top: 2px;
+/* 时间线视图切换（多相位时出现的小按钮）。 */
+.chat-activity-mode {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: color-mix(in srgb, var(--biny-text-tertiary) 70%, transparent);
+  cursor: pointer;
+  transition: color 150ms ease, background 150ms ease;
+}
+
+.chat-activity-mode:hover,
+.chat-activity-mode.is-active {
+  color: var(--biny-text);
+}
+
+.chat-activity-mode.is-active {
+  background: var(--biny-surface-hover);
+}
+
+/* 展开箭头：24px 方位区，打开旋转 180°。 */
+.chat-activity-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: color-mix(in srgb, var(--biny-text-tertiary) 70%, transparent);
+  cursor: pointer;
+  transition: color 150ms ease;
+}
+
+.chat-activity-chevron > svg {
+  transition: transform 200ms ease;
+}
+
+.chat-activity.is-open .chat-activity-chevron > svg {
+  transform: rotate(180deg);
+}
+
+.chat-activity-chevron:hover {
+  color: var(--biny-text);
+}
+
+/* 展开体：左导轨。相位之间留 6px；思考相位自带标题行。 */
+.chat-activity-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
   margin-left: 12px;
-  padding: 6px 0 6px 16px;
+  padding: 6px 0 4px 16px;
   border-left: 1px solid color-mix(in srgb, var(--biny-border) 70%, transparent);
-  scrollbar-width: thin;
 }
 
-.chat-thinking-text {
+.chat-activity-phase-label {
+  display: flex;
+  align-items: baseline;
+  gap: 2px;
+  margin-bottom: 2px;
+  font-size: calc(13px * var(--font-scale, 1));
+}
+
+.chat-activity-phase-label .chat-activity-verb {
+  color: color-mix(in srgb, var(--biny-text) 85%, transparent);
+}
+
+.chat-activity-thinking {
   font-size: calc(12.5px * var(--font-scale, 1));
   line-height: 1.65;
   color: var(--biny-text-tertiary);
@@ -243,124 +365,36 @@
   overflow-wrap: break-word;
 }
 
-.chat-thinking.is-running .chat-thinking-text {
-  color: var(--biny-text-secondary);
-}
+/* ---- 轨道里的工具动宾行 ---- */
 
-/* ============ 工具调用 ============ */
-
-.biny-chat-scroll .chat-tool {
-  margin-block: 2px;
-}
-
-/* 扁平线条图标：运行中由呼吸灯点替换，终态只换颜色。 */
-.chat-tool-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 16px;
-  height: 16px;
-  color: var(--biny-text-tertiary);
-}
-
-.chat-tool[data-state="running"] .chat-tool-icon {
-  color: var(--biny-focus);
-}
-
-.chat-tool[data-state="error"] .chat-tool-icon {
-  color: var(--biny-danger);
-}
-
-.chat-tool[data-state="stopped"] .chat-tool-icon {
-  color: var(--biny-warning);
-}
-
-.chat-tool-title {
-  flex: none;
-  font-weight: 500;
-  color: var(--biny-text);
-}
-
-.chat-tool-summary {
-  flex: 1;
+.chat-tool-row-wrap {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-family: var(--font-mono);
-  font-size: calc(12px * var(--font-scale, 1));
-  color: var(--biny-text-tertiary);
 }
 
-.chat-tool-summary.is-error {
-  color: var(--biny-danger);
-}
-
-.chat-tool[data-state="running"] .chat-tool-summary {
-  color: var(--biny-text-secondary);
-}
-
-.chat-tool-body {
+.chat-tool-row {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 4px 0 8px 24px;
-}
-
-/* 聚合组导轨里的紧凑工具行：无图标芯片，动词 + 弱化宾语，hover 才有底色，
-   失败动词染红；密度与整体导轨对齐（Alma ActivityToolRow 的呈现）。
-   宽度补偿必须和负 margin 成对（+12px / -6px），否则行会溢出容器，
-   右侧 hover 底色顶到窗口边、chevron 被裁掉。 */
-.chat-tool.is-row { margin-block: 0; }
-
-.chat-tool.is-row .chat-tool-header {
-  /* Alma 行是 items-baseline：动词与宾语共用文字基线，图标再单独回中。 */
+  align-items: baseline;
   gap: 6px;
-  width: fit-content;
+  width: 100%;
   max-width: calc(100% + 12px);
   margin-inline: -6px;
-  align-items: baseline;
-  padding-block: 2px;
-  padding-inline: 6px;
-  border-radius: 4px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: calc(13px * var(--font-scale, 1));
+  text-align: left;
+  cursor: pointer;
+  transition: background 150ms ease;
 }
 
-.chat-tool.is-row .chat-tool-summary {
-  font-family: inherit;
-  font-size: inherit;
-  color: var(--biny-text-secondary);
+.chat-tool-row:hover {
+  background: color-mix(in srgb, var(--biny-surface-hover) 72%, transparent);
 }
 
-/* 动词用 85% 前景（Alma text-foreground/85），失败态整词染红覆盖。 */
-.chat-tool.is-row .chat-tool-title {
-  color: color-mix(in srgb, var(--biny-text) 85%, transparent);
-}
-
-.chat-tool.is-row[data-state="error"] .chat-tool-title {
-  color: var(--biny-danger);
-}
-
-.chat-tool.is-row .chat-tool-body { padding-left: 0; }
-
-.chat-tool.is-row .chat-row-chevron {
-  align-self: center;
-  color: color-mix(in srgb, var(--biny-text-tertiary) 72%, transparent);
-}
-
-.chat-tool-status-icon {
-  display: inline-flex;
-  width: 12px;
-  height: 12px;
-  flex: none;
-  align-self: center;
-  align-items: center;
-  justify-content: center;
-  color: color-mix(in srgb, var(--biny-danger) 80%, transparent);
-}
-
-.chat-tool.is-row[data-state="stopped"] .chat-tool-status-icon { color: var(--biny-warning); }
-
+/* 运行中的琥珀脉冲点（自回中，不随 baseline）。 */
 .chat-tool-run-dot {
   width: 6px;
   height: 6px;
@@ -373,9 +407,251 @@
 
 @keyframes chat-tool-run-pulse { 50% { opacity: 0.5; } }
 
-/* 执行时间线里工具行的错误首行即摘要，无需额外容器样式。 */
-.tool-activity {
+.chat-tool-row-error {
+  display: inline-flex;
+  width: 12px;
+  height: 12px;
+  flex: none;
+  align-self: center;
+  align-items: center;
+  justify-content: center;
+  color: color-mix(in srgb, var(--biny-danger) 80%, transparent);
+}
+
+/* 动词：85% 前景加重；失败染红。 */
+.chat-tool-row-verb {
+  flex: none;
+  overflow: hidden;
+  font-weight: 500;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--biny-text) 85%, transparent);
+}
+
+.chat-tool-row-verb.is-error {
+  color: var(--biny-danger);
+}
+
+/* 宾语：弱化、截断。 */
+.chat-tool-row-object {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+  color: var(--biny-text-tertiary);
+}
+
+/* ± 行数：等宽、表格数字；绿增红删（alma 的 60% 透明度语义色）。 */
+.chat-tool-row-diff {
+  flex: none;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: calc(12px * var(--font-scale, 1));
+  font-variant-numeric: tabular-nums;
+}
+
+.chat-tool-row-diff.is-add { color: color-mix(in srgb, var(--biny-success) 75%, transparent); }
+.chat-tool-row-diff.is-del { color: color-mix(in srgb, var(--biny-danger) 75%, transparent); }
+
+.chat-tool-row-chevron {
+  display: inline-flex;
+  flex: none;
+  align-self: center;
+  color: color-mix(in srgb, var(--biny-text-tertiary) 50%, transparent);
+  transition: transform 150ms ease;
+}
+
+.chat-tool-row.is-open .chat-tool-row-chevron {
+  transform: rotate(180deg);
+}
+
+.chat-tool-row-detail {
+  padding-top: 4px;
+}
+
+/* ---- 活动段收尾 orb：运行中但相位全部落定的间隙状态 ---- */
+
+.chat-activity-orb {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  height: 32px;
+  color: var(--biny-text-tertiary);
+  animation: chat-orb-appear 0.3s ease-out 0.8s both;
+}
+
+.chat-activity-orb-icon {
+  flex: none;
+  opacity: 0.8;
+}
+
+.chat-activity-orb-label {
+  font-size: calc(13px * var(--font-scale, 1));
+  font-weight: 500;
+}
+
+@keyframes chat-orb-appear {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ============ 结果落定入场（指标/技能指示器出现时的一次轻沉降） ============ */
+
+@keyframes chat-result-settle-in {
+  from { opacity: 0; transform: translateY(2px); }
+  to { opacity: 1; transform: none; }
+}
+
+.chat-result-settle-in {
+  animation: chat-result-settle-in 0.24s cubic-bezier(0.2, 0.7, 0.3, 1) 90ms both;
+}
+
+/* ============ 上下文压缩分隔条（居中药丸） ============ */
+
+.biny-chat-scroll .chat-compaction {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 16px 16px;
+}
+
+.biny-chat-scroll .chat-compaction-pill {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  border: 1px solid color-mix(in srgb, var(--biny-border) 50%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--biny-surface-hover) 50%, transparent);
+  color: var(--biny-text-tertiary);
+  font: inherit;
+  font-size: calc(12px * var(--font-scale, 1));
+  cursor: default;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.biny-chat-scroll .chat-compaction-pill.is-expandable {
+  cursor: pointer;
+}
+
+.biny-chat-scroll .chat-compaction-pill.is-expandable:hover {
+  background: color-mix(in srgb, var(--biny-surface-hover) 80%, transparent);
+  color: color-mix(in srgb, var(--biny-text) 80%, transparent);
+}
+
+.chat-compaction-segment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-compaction-segment > svg {
+  color: var(--biny-focus);
+}
+
+.chat-compaction-dot {
+  color: var(--biny-border);
+}
+
+.chat-compaction-chevron {
+  display: inline-flex;
+  color: var(--biny-text-tertiary);
+}
+
+.chat-compaction-chevron > svg {
+  transition: transform 150ms ease;
+}
+
+.chat-compaction-chevron.is-open > svg {
+  transform: rotate(180deg);
+}
+
+/* 压缩摘要正文：药丸下方居中铺开的可滚动卡。 */
+.chat-compaction-body {
+  width: 100%;
+  max-width: 42rem;
+  max-height: 20rem;
+  margin-top: 8px;
+  overflow-y: auto;
+  padding: 12px 16px;
+  border: 1px solid color-mix(in srgb, var(--biny-border) 50%, transparent);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--biny-surface-hover) 20%, transparent);
+  color: var(--biny-text-secondary);
+  font-size: calc(12.5px * var(--font-scale, 1));
+  line-height: 1.65;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  text-align: left;
+}
+
+/* ============ 技能指示器（弱化小字 + 悬停技能清单气泡） ============ */
+
+.biny-chat-scroll .chat-meta-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  color: color-mix(in srgb, var(--biny-text-tertiary) 70%, transparent);
+  font-size: calc(12px * var(--font-scale, 1));
+}
+
+.biny-chat-scroll .chat-meta-trigger {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: help;
+  transition: color 150ms ease;
+}
+
+.biny-chat-scroll .chat-meta-trigger:hover,
+.biny-chat-scroll .chat-meta-trigger:focus-visible {
+  color: var(--biny-text-tertiary);
+  outline: none;
+}
+
+/* 悬停气泡：向上浮出；列表用 disc 对齐 alma TooltipContent。 */
+.chat-meta-tooltip {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: -10px;
+  z-index: 60;
+  display: none;
+  min-width: 160px;
+  max-width: 320px;
+  padding: 10px 12px;
+  border: 1px solid var(--biny-border);
+  border-radius: 10px;
+  background: var(--biny-surface-elevated);
+  box-shadow: 0 1px 2px var(--biny-shadow-soft), 0 6px 16px var(--biny-shadow-soft);
+  color: var(--biny-text-secondary);
+  font-size: calc(12px * var(--font-scale, 1));
+  text-align: left;
+  cursor: default;
+}
+
+.chat-meta-trigger:hover .chat-meta-tooltip,
+.chat-meta-trigger:focus-visible .chat-meta-tooltip {
+  display: block;
+}
+
+.chat-meta-tooltip-title {
+  display: block;
+  margin-bottom: 4px;
+  font-weight: 500;
+  color: var(--biny-text);
+}
+
+.chat-meta-tooltip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: disc inside;
+  color: var(--biny-text-tertiary);
 }
 
 .tool-details {
@@ -450,7 +726,7 @@
 .biny-chat-scroll .copy-button {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   padding: 3px 5px;
   border: none;
   border-radius: 6px;
@@ -502,8 +778,9 @@
 .tool-output-header {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
+  min-height: 34px;
   padding: 6px 8px 6px 12px;
   border-bottom: 1px solid var(--biny-border);
 }
@@ -552,6 +829,9 @@
 }
 
 .tool-output-empty {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 10px 12px;
   font-size: calc(12px * var(--font-scale, 1));
   color: var(--biny-text-tertiary);
@@ -793,7 +1073,8 @@
   align-items: center;
   gap: 6px;
   width: 100%;
-  padding: 6px 12px;
+  min-height: 34px;
+  padding: 6px 8px 6px 12px;
   border: none;
   border-bottom: 1px solid var(--biny-border);
   background: transparent;
@@ -894,7 +1175,7 @@
   align-items: center;
   gap: 6px;
   min-height: 34px;
-  padding: 4px 8px 4px 12px;
+  padding: 6px 8px 6px 12px;
   border-bottom: 1px solid var(--biny-border);
 }
 
@@ -1083,7 +1364,6 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  margin-top: 4px;
   padding: 6px 10px;
   border: 1px solid color-mix(in srgb, var(--biny-success) 22%, var(--biny-border));
   border-radius: var(--biny-radius-card, 10px);
@@ -1111,10 +1391,10 @@
 .chat-changes-file {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   width: 100%;
   min-width: 0;
-  padding: 3px 6px;
+  padding: 2px 6px;
   border: none;
   border-radius: 6px;
   background: none;
@@ -1154,11 +1434,11 @@
 
 .chat-changes-badge {
   flex: none;
-  padding: 1px 7px;
-  border-radius: 4px;
+  padding: 1px 8px;
+  border-radius: 999px;
   background: color-mix(in srgb, var(--biny-text) 7%, transparent);
   color: var(--biny-text-tertiary);
-  font-size: calc(10.5px * var(--font-scale, 1));
+  font-size: calc(11px * var(--font-scale, 1));
 }
 
 /* ============ 同文件编辑合并行 ============ */
@@ -1193,7 +1473,7 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: var(--font-mono);
-  font-size: calc(11.5px * var(--font-scale, 1));
+  font-size: calc(11px * var(--font-scale, 1));
   color: var(--biny-text-tertiary);
 }
 
@@ -1207,39 +1487,35 @@
   font-weight: 500;
 }
 
-.merged-edits-ops {
-  display: inline-flex;
-  gap: 2px;
-  flex: none;
-  opacity: 0;
-  transition: opacity var(--biny-motion-quick, 120ms) ease;
+/* 展开体头部：预览与复制合并 diff 常显（行上不再放 hover 浮现按钮）。 */
+.merged-edits-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
 }
 
-.merged-edits-row:hover .merged-edits-ops,
-.merged-edits-ops:focus-within {
-  opacity: 1;
-}
-
-.merged-edits-op {
+.biny-chat-scroll .merged-edits-preview {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
+  gap: 5px;
+  padding: 0;
   border: none;
-  border-radius: 6px;
   background: none;
-  color: var(--biny-text-tertiary);
+  font-size: calc(11.5px * var(--font-scale, 1));
+  color: var(--biny-focus);
   cursor: pointer;
 }
 
-.merged-edits-op:hover {
-  background: color-mix(in srgb, var(--biny-text) 8%, transparent);
-  color: var(--biny-text-secondary);
+.biny-chat-scroll .merged-edits-preview:hover {
+  text-decoration: underline;
 }
 
-.merged-edits-op.is-copied {
-  color: var(--biny-success);
+/* copy-button 默认 hover 才浮现；这里的常显、位置在头部行尾。 */
+.merged-edits-head .copy-button {
+  position: static;
+  margin-left: auto;
+  opacity: 1;
 }
 
 .merged-edits-stats {
@@ -1307,7 +1583,7 @@
 
 .merged-diff-sign {
   flex: none;
-  width: 12px;
+  width: 10px;
   user-select: none;
 }
 
@@ -1442,7 +1718,7 @@
   width: 100%;
   padding: 8px;
   border: none;
-  border-radius: var(--biny-radius-control, 8px);
+  border-radius: 6px;
   background: transparent;
   text-align: left;
   cursor: pointer;
@@ -1457,7 +1733,6 @@
   flex: none;
   width: 16px;
   height: 16px;
-  margin-top: 2px;
   border-radius: 4px;
   object-fit: cover;
 }
@@ -1486,6 +1761,8 @@
   align-items: baseline;
   gap: 8px;
   min-width: 0;
+  /* 首行行高锁成 favicon 高度：图标顶部与标题行盒顶对齐，不再靠 margin 手工下沉。 */
+  line-height: 16px;
 }
 
 .web-search-result-title {
@@ -1541,6 +1818,7 @@
 
 .chat-io-section {
   display: flex;
+  align-items: baseline;
   gap: 10px;
   padding: 8px 12px;
   min-width: 0;
@@ -1549,11 +1827,10 @@
 .chat-io-label {
   flex: none;
   width: 28px;
-  font-size: calc(10.5px * var(--font-scale, 1));
-  font-weight: 700;
-  letter-spacing: 0.05em;
+  font-size: calc(11px * var(--font-scale, 1));
+  font-weight: 600;
+  letter-spacing: 0.04em;
   color: var(--biny-text-tertiary);
-  padding-top: 2px;
 }
 
 .chat-io-text {
@@ -1586,244 +1863,6 @@
 
 .tool-error-output {
   margin: 0;
-}
-
-/* ============ 通知行（错误 / 压缩） ============ */
-
-.biny-chat-scroll .chat-notice {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-block: 2px;
-  padding: 5px 8px;
-  margin-inline: -8px;
-  border-radius: var(--biny-radius-control, 8px);
-  font-size: calc(13px * var(--font-scale, 1));
-}
-
-.chat-notice[data-variant="error"] .chat-notice-title { color: var(--biny-danger); }
-.chat-notice[data-variant="warning"] .chat-notice-title { color: var(--biny-warning); }
-
-.chat-notice-leading {
-  display: inline-flex;
-  align-items: center;
-  flex: none;
-  width: 16px;
-  justify-content: center;
-  color: var(--biny-text-tertiary);
-}
-
-.chat-notice-title {
-  flex: none;
-  font-weight: 500;
-}
-
-.chat-notice-summary {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--biny-text-tertiary);
-  font-size: calc(12px * var(--font-scale, 1));
-}
-
-/* 折叠通知容器只做布局分组，hover/点击高亮由内层行头按钮负责（贴合内容宽度）。 */
-.chat-notice.is-compaction {
-  display: block;
-  margin-inline: 0;
-  padding: 0;
-}
-
-.chat-notice-body {
-  margin: 2px 0 4px 24px;
-  padding: 6px 0 6px 12px;
-  border-left: 2px solid var(--biny-border);
-  font-size: calc(12.5px * var(--font-scale, 1));
-  line-height: 1.6;
-  color: var(--biny-text-tertiary);
-  white-space: pre-wrap;
-  overflow-wrap: break-word;
-}
-
-/* 轮次级失败/未完成卡片：随轮次内联渲染在助手消息区，与思考行、正文、footer 同列。
-   宽度随内容收缩：通栏会让「重试」按钮飘到 900px 外，动作与文案脱节。 */
-.biny-chat-scroll .run-error-card {
-  position: relative;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  width: fit-content;
-  max-width: 100%;
-  margin: 2px 0 0;
-  padding: 11px 36px 11px 12px;
-  border: 1px solid color-mix(in srgb, var(--biny-danger) 30%, transparent);
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--biny-danger) 4%, transparent);
-  animation: chat-step-enter 200ms ease both;
-}
-
-.run-error-card[data-variant="warning"] {
-  border-color: color-mix(in srgb, var(--biny-warning) 35%, transparent);
-  background: color-mix(in srgb, var(--biny-warning) 4%, transparent);
-}
-
-/* 历史错误折叠行：行内布局/悬停沿用 chat-notice，这里只给图标和标题补语义色。 */
-.chat-notice[data-variant="error"] .run-error-row-icon { color: var(--biny-danger); }
-.chat-notice[data-variant="warning"] .run-error-row-icon { color: var(--biny-warning); }
-
-.run-error-card-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  width: 18px;
-  height: 18px;
-  margin-top: 1px;
-  color: var(--biny-danger);
-}
-
-.run-error-card[data-variant="warning"] .run-error-card-icon {
-  color: var(--biny-warning);
-}
-
-/* 关闭按钮沿用时间线的 hover 揭示语言：常驻一个 × 在历史错误堆里太吵。 */
-.biny-chat-scroll .run-error-card-dismiss {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 20px;
-  height: 20px;
-  padding: 0;
-  border: none;
-  border-radius: var(--biny-radius-control, 6px);
-  background: transparent;
-  color: var(--biny-text-tertiary, var(--biny-text-secondary));
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity var(--biny-motion-quick, 120ms) ease, background var(--biny-motion-quick, 120ms) ease;
-}
-
-.biny-chat-scroll .run-error-card:hover .run-error-card-dismiss,
-.biny-chat-scroll .run-error-card-dismiss:focus-visible {
-  opacity: 0.6;
-}
-
-.biny-chat-scroll .run-error-card-dismiss:hover {
-  opacity: 1;
-  background: color-mix(in srgb, var(--biny-text) 8%, transparent);
-  color: var(--biny-text);
-}
-
-.run-error-card-body {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  flex: 1;
-  min-width: 0;
-}
-
-.run-error-card-heading {
-  display: flex;
-  min-width: 0;
-  align-items: baseline;
-  gap: 8px;
-}
-
-.run-error-card-title {
-  font-size: calc(13px * var(--font-scale, 1));
-  font-weight: 600;
-  color: var(--biny-text);
-}
-
-.run-error-card-kind {
-  flex: none;
-  color: var(--biny-danger);
-  font-size: calc(11px * var(--font-scale, 1));
-}
-
-.run-error-card[data-variant="warning"] .run-error-card-kind {
-  color: var(--biny-warning);
-}
-
-.run-error-card-message {
-  font-size: calc(12.5px * var(--font-scale, 1));
-  line-height: 1.5;
-  color: var(--biny-text-secondary);
-  overflow-wrap: break-word;
-}
-
-.run-error-card-recovery {
-  color: var(--biny-text-tertiary);
-  font-size: calc(12px * var(--font-scale, 1));
-  line-height: 1.5;
-}
-
-.run-error-card-details {
-  margin-top: 3px;
-  border-top: 1px solid color-mix(in srgb, var(--biny-danger) 18%, transparent);
-}
-
-.run-error-card-details summary {
-  width: fit-content;
-  padding-top: 7px;
-  color: var(--biny-text-tertiary);
-  cursor: pointer;
-  font-size: calc(11px * var(--font-scale, 1));
-  list-style-position: inside;
-}
-
-.run-error-card-details pre {
-  max-height: 96px;
-  overflow: auto;
-  margin: 7px 0 0;
-  padding: 8px 9px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--biny-text) 7%, transparent);
-  color: var(--biny-text-tertiary);
-  font: calc(10px * var(--font-scale, 1)) / 1.5 var(--font-mono);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.run-error-card-actions {
-  display: flex;
-  flex: none;
-  align-items: flex-start;
-  gap: 8px;
-  padding-top: 1px;
-}
-
-.biny-chat-scroll .run-error-card-action {
-  min-height: 28px;
-  padding: 0 12px;
-  border: 1px solid var(--biny-border);
-  border-radius: var(--biny-radius-control, 8px);
-  background: var(--biny-surface-elevated);
-  color: var(--biny-text);
-  font-size: calc(12.5px * var(--font-scale, 1));
-  cursor: pointer;
-  transition: background var(--biny-motion-quick, 120ms) ease;
-}
-
-.biny-chat-scroll .run-error-card-action:hover {
-  background: var(--biny-surface-hover);
-}
-
-.biny-chat-scroll .run-error-card-action.is-primary {
-  border-color: var(--biny-danger);
-  background: var(--biny-danger);
-  color: var(--biny-selection-text);
-}
-
-.biny-chat-scroll .run-error-card-action:focus-visible,
-.biny-chat-scroll .run-error-card-dismiss:focus-visible,
-.run-error-card-details summary:focus-visible {
-  outline: 2px solid var(--biny-focus);
-  outline-offset: 2px;
 }
 
 /* ============ 消息时钟 ============ */
@@ -1883,7 +1922,7 @@
 .biny-chat-scroll .execution-timeline {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 8px;
 }
 
 .biny-chat-scroll .execution-step {
@@ -1891,23 +1930,9 @@
   min-width: 0;
 }
 
-/* 技能行 */
-.biny-chat-scroll .execution-skills {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 5px 8px;
-  margin-inline: -8px;
-  font-size: calc(12.5px * var(--font-scale, 1));
-  color: var(--biny-text-tertiary);
-}
-
-.execution-skills-list {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--biny-text-tertiary);
+/* 助手正文步骤：上下各留呼吸（对齐 alma 文本 part 的 py-2，扣除容器 gap）。 */
+.biny-chat-scroll .execution-assistant-step {
+  padding-block: 4px;
 }
 
 /* ============ 用户消息与操作条 ============ */
@@ -1919,12 +1944,33 @@
   align-items: flex-end;
 }
 
-/* 首条消息先以临时投影进入时间线，真实事件接管后保持同一段轻量入场。 */
+/* 首条消息先以临时投影进入时间线，真实事件接管后保持同一段轻量入场；
+   气泡上再划过一道高光扫光（alma userMessageSheen）。 */
 .biny-chat-scroll .user-message.is-pending-entry,
 .biny-chat-scroll .timeline-turn.is-running > .user-message,
 .biny-chat-scroll .timeline-turn.is-waiting_permission > .user-message {
-  animation: chat-user-message-enter var(--motion-enter, 250ms) var(--motion-ease-out, cubic-bezier(0.16, 1, 0.3, 1)) both;
+  animation: chat-user-message-enter 450ms cubic-bezier(0.22, 1, 0.36, 1) both;
   will-change: transform, opacity;
+}
+
+.biny-chat-scroll .user-message.is-pending-entry .user-bubble::after,
+.biny-chat-scroll .timeline-turn.is-running > .user-message .user-bubble::after,
+.biny-chat-scroll .timeline-turn.is-waiting_permission > .user-message .user-bubble::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(120deg, rgb(255 255 255 / 35%), transparent);
+  opacity: 0;
+  animation: chat-user-sheen 0.9s ease-out 0.1s forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .biny-chat-scroll .user-message.is-pending-entry .user-bubble::after,
+  .biny-chat-scroll .timeline-turn.is-running > .user-message .user-bubble::after,
+  .biny-chat-scroll .timeline-turn.is-waiting_permission > .user-message .user-bubble::after {
+    animation: none;
+  }
 }
 
 .biny-chat-scroll .user-message.is-editing {
@@ -1934,6 +1980,7 @@
 /* 用户气泡：非对称圆角 24px/4px、85% 宽、
    同色系中间层底 + 白字、极轻阴影；不用黑白反转强反差）。 */
 .biny-chat-scroll .user-bubble {
+  position: relative;
   min-width: 0;
   max-width: 85%;
   overflow: hidden;
@@ -1969,6 +2016,9 @@
 }
 
 .biny-chat-scroll .user-message-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   justify-content: flex-end;
 }
 
@@ -1976,14 +2026,93 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-top: 8px;
+}
+
+/* 失败属于这一轮消息：保持轻量、重试常显，原始错误按需展开。 */
+.biny-chat-scroll .chat-run-notice {
+  padding-block: 4px;
+  color: var(--biny-text-secondary);
+  font-size: calc(13px * var(--font-scale, 1));
+  line-height: 1.6;
+}
+
+.biny-chat-scroll .chat-run-notice-summary,
+.biny-chat-scroll .chat-run-notice-label,
+.biny-chat-scroll .chat-run-retry {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.biny-chat-scroll .chat-run-notice-summary {
+  flex-wrap: wrap;
+  column-gap: 14px;
+}
+
+.biny-chat-scroll .chat-run-notice-label > svg {
+  flex-shrink: 0;
+  color: var(--biny-text-tertiary);
+}
+
+.biny-chat-scroll .chat-run-notice.is-failed .chat-run-notice-label > svg {
+  color: var(--biny-danger);
+}
+
+.biny-chat-scroll .chat-run-retry {
+  padding: 3px 9px;
+  border: 1px solid var(--biny-border);
+  border-radius: var(--biny-radius-control);
+  background: transparent;
+  color: var(--biny-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.biny-chat-scroll .chat-run-retry:hover:not(:disabled) {
+  background: var(--biny-surface-hover);
+  border-color: var(--biny-border-strong);
+}
+
+.biny-chat-scroll .chat-run-retry:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.biny-chat-scroll .chat-run-details {
+  margin-top: 4px;
+  font-size: calc(12px * var(--font-scale, 1));
+  color: var(--biny-text-tertiary);
+}
+
+.biny-chat-scroll .chat-run-details > summary {
+  width: fit-content;
+  cursor: pointer;
+}
+
+.biny-chat-scroll .chat-run-retry:focus-visible,
+.biny-chat-scroll .chat-run-details > summary:focus-visible {
+  outline: 2px solid var(--biny-focus);
+  outline-offset: 3px;
+}
+
+.biny-chat-scroll .chat-run-details > pre {
+  max-height: 160px;
+  overflow: auto;
+  margin: 6px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--biny-radius-control);
+  background: var(--biny-surface-soft);
+  color: var(--biny-text-secondary);
+  font: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 /* 左侧常显：运行时长的波形图标 + 文本，始终可见。 */
 .biny-chat-scroll .assistant-actions-duration {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: 4px;
   font-size: calc(11px * var(--font-scale, 1));
   color: var(--biny-text-tertiary);
   font-variant-numeric: tabular-nums;
@@ -2007,7 +2136,7 @@
 }
 
 .biny-chat-scroll .message-version-button {
-  font-size: 17px;
+  font-size: calc(17px * var(--font-scale, 1));
   line-height: 1;
 }
 
@@ -2022,7 +2151,7 @@
 }
 
 .biny-chat-scroll .message-version-count {
-  width: 40px;
+  min-width: 40px;
   text-align: center;
 }
 
@@ -2036,7 +2165,7 @@
 .biny-chat-scroll .assistant-actions-buttons {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
 }
 
 .biny-chat-scroll .user-message:hover .user-message-actions,
@@ -2056,7 +2185,7 @@
   width: 26px;
   height: 26px;
   border: none;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   color: var(--biny-text-tertiary);
   cursor: pointer;
@@ -2127,7 +2256,7 @@
   width: 100%;
   min-height: 44px;
   max-height: 40vh;
-  padding: 13px 14px 6px;
+  padding: 12px 14px 6px;
   border: 0;
   background: transparent;
   color: var(--biny-text);
@@ -2157,7 +2286,7 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 4px 10px 10px 14px;
+  padding: 4px 14px 10px;
 }
 
 .user-message-editor-hint {
@@ -2353,11 +2482,15 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 5px 8px 5px 12px;
+  min-height: 34px;
+  padding: 6px 8px 6px 12px;
   border-bottom: 1px solid var(--biny-border);
 }
 
 .markdown-code-language {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-family: var(--font-mono);
   font-size: calc(11px * var(--font-scale, 1));
   color: var(--biny-text-tertiary);
@@ -2380,6 +2513,80 @@
   background: transparent;
   padding: 0;
   border: none;
+}
+
+/* ============ 文件链接卡片（消息内指向本地路径的 Markdown 链接） ============ */
+/* 对齐 alma 的资源卡：类型角标方块 + 文件名 + 目录副标题 + 右上箭头；hover 提亮。 */
+
+.markdown-file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  max-width: 100%;
+  margin: 2px 0;
+  padding: 8px 12px;
+  border: 1px solid var(--biny-border);
+  border-radius: 10px;
+  background: var(--biny-surface-soft);
+  font: inherit;
+  text-align: left;
+  vertical-align: middle;
+  cursor: pointer;
+  transition: background var(--biny-motion-quick, 120ms) ease, border-color var(--biny-motion-quick, 120ms) ease;
+}
+
+.markdown-file-link:hover {
+  background: var(--biny-surface-hover);
+}
+
+.markdown-file-link-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--biny-surface-hover);
+}
+
+.markdown-file-link-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.markdown-file-link-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(13px * var(--font-scale, 1));
+  font-weight: 500;
+  line-height: 1.3;
+  color: var(--biny-text);
+}
+
+.markdown-file-link-dir {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(11px * var(--font-scale, 1));
+  line-height: 1.3;
+  color: var(--biny-text-tertiary);
+}
+
+.markdown-file-link-open {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--biny-text-tertiary);
+  opacity: 0.55;
+  transition: opacity var(--biny-motion-quick, 120ms) ease, color var(--biny-motion-quick, 120ms) ease;
+}
+
+.markdown-file-link:hover .markdown-file-link-open {
+  color: var(--biny-text-secondary);
+  opacity: 1;
 }
 
 /* ============ 代码高亮配色（Shiki 双主题） ============ */
@@ -2410,9 +2617,7 @@
 /* ============ 动效降级 ============ */
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-breath-dot.is-breathing,
-  .chat-breath-dot.is-breathing::before,
-  .chat-tool[data-state="running"] .chat-tool-icon,
+  .chat-phase-avatar.is-alive,
   .permission-strip-dot,
   .biny-chat-scroll .chat-shimmer-text,
   .biny-thinking-status .chat-shimmer-text,
@@ -2424,10 +2629,6 @@
   .biny-thinking-status .chat-shimmer-text {
     background: none;
     color: var(--biny-text-secondary);
-  }
-
-  .chat-collapse {
-    transition: none !important;
   }
 }
 
@@ -2446,273 +2647,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .with-streaming-cursor .markdown-body > :last-child::after {
-    animation: none;
-  }
-}
-
-/* ============ 执行聚合组（相位头像堆叠 + 导轨展开体） ============ */
-
-.biny-chat-scroll .chat-activity {
-  margin-block: 2px;
-}
-
-.chat-activity-header {
-  display: flex;
-  height: 32px;
-  align-items: center;
-  gap: 10px;
-}
-
-/* 相位头像堆叠：24px 圆形，-7px 叠放，ring 用表面色分隔。 */
-.chat-activity-avatars {
-  display: flex;
-  flex: none;
-  align-items: center;
-}
-
-.chat-activity-avatar {
-  position: relative;
-  display: flex;
-  width: 24px;
-  height: 24px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid var(--biny-border);
-  border-radius: 50%;
-  background: var(--biny-surface);
-  box-shadow: 0 0 0 2px var(--biny-surface);
-  color: var(--biny-text-tertiary);
-  cursor: pointer;
-  transition: border-color 150ms ease, color 150ms ease, background 150ms ease;
-}
-
-.chat-activity-avatar + .chat-activity-avatar,
-.chat-activity-overflow + .chat-activity-avatar {
-  margin-left: -7px;
-}
-
-.chat-activity-avatar:hover:not(:disabled):not(.is-selected) {
-  z-index: 50;
-  border-color: var(--biny-text-tertiary);
-  color: var(--biny-text);
-}
-
-.chat-activity-avatar:disabled {
-  cursor: default;
-}
-
-.chat-activity-avatar.is-selected {
-  z-index: 51;
-  border-color: color-mix(in srgb, var(--biny-text) 35%, transparent);
-  background: var(--biny-surface-hover);
-  color: var(--biny-text);
-}
-
-.chat-activity-avatar[data-status="failed"],
-.chat-activity-avatar[data-status="denied"],
-.chat-activity-avatar[data-status="unknown"] {
-  border-color: color-mix(in srgb, var(--biny-danger) 40%, transparent);
-  color: var(--biny-danger);
-}
-
-/* 活体相位：头像外圈光环脉冲。 */
-.chat-activity-avatar.is-alive {
-  z-index: 51;
-  border-color: color-mix(in srgb, var(--biny-focus) 45%, transparent);
-  color: var(--biny-focus);
-}
-
-.chat-activity-avatar.is-alive::after {
-  position: absolute;
-  inset: -3px;
-  border: 1.5px solid color-mix(in srgb, var(--biny-focus) 45%, transparent);
-  border-radius: 50%;
-  content: "";
-  pointer-events: none;
-  animation: chat-activity-halo 1.8s ease-out infinite;
-}
-
-@keyframes chat-activity-halo {
-  0% { opacity: 0.8; transform: scale(0.72); }
-  100% { opacity: 0; transform: scale(1.42); }
-}
-
-/* 「+N」溢出 pill：展开时宽度动画收为 0。 */
-.chat-activity-overflow {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  height: 24px;
-  max-width: 56px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  padding: 0 8px;
-  overflow: hidden;
-  border: 1px solid var(--biny-border);
-  border-radius: 999px;
-  background: var(--biny-surface);
-  box-shadow: 0 0 0 2px var(--biny-surface);
-  color: var(--biny-text-tertiary);
-  cursor: pointer;
-  font-size: 10px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
-  transition: max-width 300ms ease, opacity 200ms ease, padding 300ms ease;
-}
-
-.chat-activity-overflow:hover {
-  border-color: var(--biny-text-tertiary);
-  color: var(--biny-text);
-}
-
-.chat-activity-overflow.is-hidden {
-  max-width: 0;
-  padding: 0;
-  border-color: transparent;
-  box-shadow: none;
-  opacity: 0;
-  pointer-events: none;
-}
-
-/* 汇总按钮：点了整体开合。 */
-.biny-chat-scroll .chat-activity-summary {
-  display: flex;
-  min-width: 0;
-  flex: 1 1 auto;
-  align-items: center;
-  gap: 8px;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: var(--biny-text);
-  font: inherit;
-  font-size: 13px;
-  text-align: left;
-  cursor: pointer;
-}
-
-.chat-activity-summary-text {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  overflow: hidden;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.chat-activity-failed-dot {
-  width: 6px;
-  height: 6px;
-  flex: none;
-  border-radius: 50%;
-  background: var(--biny-danger);
-}
-
-.chat-activity-live {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  font-weight: 500;
-}
-
-/* 头部右侧小图标按钮（时间线切换 / chevron）。 */
-.chat-activity-icon-btn {
-  display: flex;
-  width: 24px;
-  height: 24px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--biny-text-tertiary);
-  cursor: pointer;
-  transition: background 150ms ease, color 150ms ease;
-}
-
-.chat-activity-icon-btn:hover {
-  color: var(--biny-text);
-}
-
-.chat-activity-icon-btn.is-active {
-  background: var(--biny-surface-hover);
-  color: var(--biny-text);
-}
-
-.chat-activity-chevron svg {
-  transition: transform 150ms ease;
-}
-
-.chat-activity.is-open .chat-activity-chevron svg {
-  transform: rotate(180deg);
-}
-
-/* 展开体：左导轨。 */
-.chat-activity-rail {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-left: 12px;
-  padding: 6px 0 4px 16px;
-  border-left: 1px solid color-mix(in srgb, var(--biny-border) 70%, transparent);
-}
-
-.chat-activity-phase-title {
-  font-size: 13px;
-  line-height: 1.5;
-}
-
-.chat-activity-phase-verb {
-  font-weight: 500;
-  color: color-mix(in srgb, var(--biny-text) 85%, transparent);
-}
-
-.chat-activity-phase-rest {
-  color: var(--biny-text-secondary);
-}
-
-.chat-activity-thinking-text {
-  color: var(--biny-text-tertiary);
-  font-size: 12.5px;
-  line-height: 1.65;
-  overflow-wrap: break-word;
-  white-space: pre-wrap;
-}
-
-/* 活体点阵徽章：2 列 × 4 行，列优先错峰呼吸。 */
-.chat-working-dots {
-  display: inline-grid;
-  flex: none;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 2.5px;
-  padding: 2px 0;
-}
-
-.chat-working-dots > span {
-  width: 3px;
-  height: 3px;
-  border-radius: 50%;
-  background: var(--biny-text-tertiary);
-  animation: chat-working-dot 1.6s ease-in-out infinite;
-}
-
-@keyframes chat-working-dot {
-  0%, 100% { opacity: 0.25; transform: scale(0.8); }
-  50% { opacity: 1; transform: scale(1); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .chat-activity-avatar.is-alive::after,
-  .chat-working-dots > span {
     animation: none;
   }
 }

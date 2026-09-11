@@ -7,6 +7,7 @@
  * 阶梯弹入。发送后的消息展示和聊天布局切换由时间线的临时消息负责。
  */
 import { AppIcon } from "./AppIcon.js";
+import { useEffect, useState } from "react";
 import { Icon } from "./Icon.js";
 
 const SUGGESTIONS: string[] = [
@@ -31,6 +32,15 @@ export function WelcomeState({
   onPickSuggestion(prompt: string): void;
   children?: React.ReactNode;
 }): React.JSX.Element {
+  const [suggestions, setSuggestions] = useState(SUGGESTIONS);
+  useEffect(() => {
+    if (!hasProject) return;
+    let active = true;
+    void window.biny.activitySuggestions().then((items) => {
+      if (active && items.length) setSuggestions(items);
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [hasProject]);
   return (
     <section aria-label="新任务" className="biny-welcome-state">
       <div className="biny-welcome-hero">
@@ -41,7 +51,7 @@ export function WelcomeState({
       {children}
       {hasProject ? (
         <div className="biny-welcome-pills">
-          {SUGGESTIONS.map((suggestion, index) => (
+          {suggestions.map((suggestion, index) => (
             <button
               className="biny-welcome-pill biny-hero-pop"
               key={suggestion}

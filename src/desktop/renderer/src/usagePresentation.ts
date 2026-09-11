@@ -5,23 +5,16 @@
  * 金额与 token 的显示精度，避免不同入口展示出互相矛盾的数字。
  */
 import { summarizeUsage } from "../../../observability/usage.js";
-import type { SessionUsage, UsageSummary } from "../../../session/metadata.js";
+import type { ContextTokenBreakdown, SessionUsage, UsageSummary } from "../../../session/metadata.js";
 import type { TimelineTurn } from "./sessionTimeline.js";
 
 export interface ContextUsage {
   usedTokens: number;
-  /** 模型官方声明的完整上下文窗口（含预留），仅在 tooltip 里解释用，主展示分母用 inputBudgetTokens。 */
   contextWindow: number;
-  /** 上下文窗口未由模型元数据声明时为 true；此时界面不能把数值称为官方窗口。 */
   contextWindowIsFallback?: boolean;
-  /** 按模型有效窗口比例与 provider/用户上限收敛后的可用输入预算。 */
-  inputBudgetTokens?: number;
-  /** 原始窗口中的 Codex 风格 headroom；不计入已使用 token。 */
-  reservedTokens?: number;
-  /** 工具 schema 的解释性预留，不计入已使用 token。 */
-  toolTokens?: number;
-  /** 除工具 schema 外的解释性预留，不计入已使用 token。 */
-  otherTokens?: number;
+  source?: "estimated" | "provider";
+  breakdown?: ContextTokenBreakdown;
+  cacheHitRate?: number;
 }
 
 export function summarizeTimelineUsage(turns: readonly TimelineTurn[]): UsageSummary {
@@ -48,41 +41,44 @@ export function formatTokenCount(tokens: number): string {
   return tokens.toLocaleString("zh-CN");
 }
 
-export function formatContextUsage(usage?: ContextUsage): {
-  percent: number;
-  used: string;
-  /** 主展示分母：不含输出/headroom 预留的可用输入额度。 */
-  max: string;
-  /** 模型原始窗口（含预留），仅作 tooltip 解释用。 */
-  window: string;
-  contextWindowIsFallback?: boolean;
-  actual: string;
-  available: string;
-  reserved?: string;
-  tool?: string;
-  other?: string;
-} | undefined {
-  if (!usage || usage.contextWindow <= 0 || usage.usedTokens <= 0) return undefined;
-  const inputBudgetTokens = Math.max(1, Math.min(
-    usage.contextWindow,
-    usage.inputBudgetTokens ?? usage.contextWindow
-  ));
+export function formatContextUsage(usage?: ContextUsage) {
+  if (!usage || !Number.isFinite(usage.contextWindow) || usage.contextWindow <= 0 || !Number.isFinite(usage.usedTokens)) return undefined;
   const usedTokens = Math.max(0, usage.usedTokens);
-  const reservedTokens = Math.max(0, usage.reservedTokens ?? usage.contextWindow - inputBudgetTokens);
-  const toolTokens = Math.min(reservedTokens, Math.max(0, usage.toolTokens ?? 0));
-  const otherTokens = Math.max(0, Math.min(reservedTokens - toolTokens, usage.otherTokens ?? reservedTokens - toolTokens));
+  const percent = Math.round((usedTokens / usage.contextWindow) * 1_000) / 10;
+  const categories = [
+    ["messages", "消息"], ["mcpTools", "MCP 工具"], ["systemTools", "系统工具"],
+    ["skills", "技能"], ["systemPrompt", "系统提示词"], ["other", "其他"]
+  ] as const;
+  const counts = categories.map(([id]) => {
+    const value = usage.breakdown?.[id] ?? 0;
+    return Number.isFinite(value) ? Math.max(0, value) : 0;
+  });
+  const estimatedTotal = counts.reduce((total, count) => total + count, 0);
+  // 最大余数法分配到 0.1%，避免各行四舍五入后不等于 100%。容量条只填已用部分。
+  const shares = counts.map((count) => estimatedTotal ? count / estimatedTotal * 1_000 : 0);
+  const tenths = shares.map(Math.floor);
+  const remainders = shares.map((share, index) => ({ index, remainder: share - (tenths[index] ?? 0) }))
+    .sort((left, right) => right.remainder - left.remainder);
+  const missing = estimatedTotal ? 1_000 - tenths.reduce((total, value) => total + value, 0) : 0;
+  for (const { index } of remainders.slice(0, missing)) tenths[index] = (tenths[index] ?? 0) + 1;
+  const compact = new Intl.NumberFormat("zh-CN", { notation: "compact", maximumFractionDigits: 1 });
   return {
-    percent: Math.min(100, Math.round((usedTokens / inputBudgetTokens) * 100)),
-    used: usedTokens.toLocaleString("en-US"),
-    // 分母只算用户真实可用的输入额度；输出预留与 headroom 不摊开给用户看。
-    max: inputBudgetTokens.toLocaleString("en-US"),
-    window: usage.contextWindow.toLocaleString("en-US"),
+    percent,
+    fillPercent: Math.min(100, usedTokens / usage.contextWindow * 100),
+    used: usedTokens.toLocaleString("zh-CN"),
+    max: usage.contextWindow.toLocaleString("zh-CN"),
+    compactUsed: compact.format(usedTokens),
+    compactMax: compact.format(usage.contextWindow),
     contextWindowIsFallback: usage.contextWindowIsFallback,
-    actual: usedTokens.toLocaleString("en-US"),
-    available: Math.max(0, inputBudgetTokens - usedTokens).toLocaleString("en-US"),
-    reserved: reservedTokens > 0 ? reservedTokens.toLocaleString("en-US") : undefined,
-    tool: toolTokens > 0 ? toolTokens.toLocaleString("en-US") : undefined,
-    other: otherTokens > 0 ? otherTokens.toLocaleString("en-US") : undefined
+    estimated: usage.source !== "provider",
+    categories: estimatedTotal && usedTokens ? categories.map(([id, label], index) => ({
+      id, label,
+      percent: ((tenths[index] ?? 0) / 10).toFixed(1),
+      width: (shares[index] ?? 0) / 1_000 * Math.min(100, usedTokens / usage.contextWindow * 100)
+    })) : [],
+    cacheHitRate: usage.cacheHitRate === undefined || !Number.isFinite(usage.cacheHitRate)
+      ? "未提供"
+      : `${(Math.min(1, Math.max(0, usage.cacheHitRate)) * 100).toFixed(1)}%`
   };
 }
 

@@ -99,6 +99,7 @@ export function stagedModelChoices(
       thinkingLevelMap: profileThinkingLevelMap ?? inputThinkingLevelMap ?? existing?.thinkingLevelMap ?? {},
       apiBackend: input.apiBackend,
       baseUrl: input.baseUrl,
+      headers: input.headers ?? existing?.headers,
       compatibility: input.compatibility,
       showInPicker: true,
       available: true,

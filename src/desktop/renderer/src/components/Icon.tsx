@@ -4,6 +4,7 @@
  * 全部内联 SVG，不引外部图标库：图标数量有限，内联能省一个依赖，也避免网络字体/雪碧图。
  * 新增图标要同时补 `IconName` 联合类型和下面的绘制分支，漏一处会有类型错误。
  */
+import React from "react";
 import type { SVGProps } from "react";
 
 export type IconName =
@@ -14,6 +15,7 @@ export type IconName =
   | "arrow-left"
   | "arrow-right"
   | "arrow-up"
+  | "arrow-up-right"
   | "bell"
   | "branch"
   | "brain"
@@ -40,7 +42,9 @@ export type IconName =
   | "eye"
   | "eye-off"
   | "file"
+  | "file-text"
   | "flask"
+  | "fold"
   | "folder"
   | "folder-open"
   | "folder-panel"
@@ -126,6 +130,7 @@ function pathFor(name: IconName): React.JSX.Element {
     case "arrow-left": return <path {...common} d="M19 12H5m7-7-7 7 7 7" />;
     case "arrow-right": return <path {...common} d="M5 12h14m-7-7 7 7-7 7" />;
     case "arrow-up": return <path {...common} d="m6 11 6-6 6 6M12 5v14" />;
+    case "arrow-up-right": return <path {...common} d="M7 17 17 7M9 7h8v8" />;
     case "bell": return <><path {...common} d="M18 9a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9Z" /><path {...common} d="M10 21h4" /></>;
     case "branch": return <><circle {...common} cx="7" cy="5" r="2" /><circle {...common} cx="17" cy="19" r="2" /><path {...common} d="M7 7v5c0 3.9 3.1 7 7 7h1M17 5v4c0 2.2-1.8 4-4 4H7" /></>;
     case "brain": return <><path {...common} d="M9.5 5.2A3 3 0 0 0 6 7.8a3.2 3.2 0 0 0 .2 5.9A3 3 0 0 0 9 18.5c.8 1.2 2.2 2 3 2V5.1a3.5 3.5 0 0 0-2.5.1Z" /><path {...common} d="M14.5 5.2A3 3 0 0 1 18 7.8a3.2 3.2 0 0 1-.2 5.9 3 3 0 0 1-2.8 4.8c-.8 1.2-2.2 2-3 2V5.1a3.5 3.5 0 0 1 2.5.1ZM7 9.5h2M15 9.5h2M7.5 14h2M14.5 14h2" /></>;
@@ -153,7 +158,9 @@ function pathFor(name: IconName): React.JSX.Element {
     case "eye": return <><path {...common} d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" /><circle {...common} cx="12" cy="12" r="3" /></>;
     case "eye-off": return <><path {...common} d="m4 4 16 16M9.9 9.9A3 3 0 0 0 12 15a3 3 0 0 0 2.1-.9M7 7.4C4.4 8.8 2.5 12 2.5 12s3.5 6.5 9.5 6.5c1.6 0 3-.3 4.3-.9M14.1 9A3 3 0 0 0 12 9c-.4 0-.7.1-1 .2M10.6 5.2C11.1 5.1 11.5 5 12 5c6 0 9.5 6.5 9.5 6.5a16 16 0 0 1-2.1 2.8" /></>;
     case "file": return <path {...common} d="M7 3.5h6l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Zm6 0v4h4" />;
+    case "file-text": return <><path {...common} d="M7 3.5h6l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Zm6 0v4h4" /><path {...common} d="M9 12h6M9 15.5h6M9 8.5h1.5" /></>;
     case "flask": return <><path {...common} d="M9 3h6M10 3v6l-5.3 9.1A1.3 1.3 0 0 0 5.8 20h12.4a1.3 1.3 0 0 0 1.1-1.9L14 9V3" /><path {...common} d="M7.2 15h9.6" /></>;
+    case "fold": return <><path {...common} d="M2 12h20" /><path {...common} d="M12 2v6.5" /><path {...common} d="m16 7-4-4-4 4" /><path {...common} d="M12 22v-6.5" /><path {...common} d="m8 17 4 4 4-4" /></>;
     case "folder": return <path {...common} d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />;
     case "folder-open": return <path {...common} d="m6 14 1.45-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.55 6a2 2 0 0 1-1.94 1.5H4a2 2 0 0 1-2-2V5c0-1.1.9-2 2-2h3.93a2 2 0 0 1 1.66.9l.82 1.2a2 2 0 0 0 1.66.9H16a2 2 0 0 1 2 2v2" />;
     case "folder-panel": return <><path {...common} d="M7.5 5h4l2 2H19a1.5 1.5 0 0 1 1.5 1.5V16" /><path {...common} d="M3.5 9h6l2-2h7v11.5A1.5 1.5 0 0 1 17 20H5a1.5 1.5 0 0 1-1.5-1.5V9Z" /></>;

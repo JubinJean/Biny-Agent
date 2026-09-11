@@ -17,6 +17,7 @@ import remarkBreaks from "remark-breaks";
 import { useInlineImage } from "../inlineImage.js";
 import { MermaidBlock } from "./MermaidBlock.js";
 import { MarkdownCodeBlock } from "./MarkdownCodeBlock.js";
+import { FileLinkCard } from "./FileLinkCard.js";
 import { Icon } from "./Icon.js";
 
 interface MarkdownContentProps {
@@ -49,16 +50,16 @@ export const MarkdownContent = memo(function MarkdownContent({
           a({ node: _node, children, ...props }) {
             const href = props.href;
             const path = localPathFromHref(href);
-            // 主进程 deny 了所有新窗口导航，外链必须显式走 openExternal；
+            // 本地路径收成文件卡片（alma 式资源卡），不再渲染普通 <a>；
+            // 外链必须显式走 openExternal（主进程 deny 了所有新窗口导航）；
             // 页内锚点（如脚注）保留默认跳转，不能带 target=_blank 否则点击被吞。
-            const externalUrl = !path && href && /^https?:\/\//i.test(href) ? href : undefined;
-            const isAnchor = !path && !externalUrl && Boolean(href?.startsWith("#"));
-            const onClick = path
-              ? (event: React.MouseEvent) => { event.preventDefault(); onPreviewFile(path); }
-              : externalUrl
-                ? (event: React.MouseEvent) => { event.preventDefault(); onOpenExternal(externalUrl); }
-                : undefined;
-            return <a {...props} onClick={onClick} rel="noreferrer" target={path || isAnchor ? undefined : "_blank"} title={path ? "在右侧预览" : externalUrl ? "在浏览器中打开" : undefined}>{children}</a>;
+            if (path) return <FileLinkCard onPreviewFile={onPreviewFile} path={path} />;
+            const externalUrl = href && /^https?:\/\//i.test(href) ? href : undefined;
+            const isAnchor = !externalUrl && Boolean(href?.startsWith("#"));
+            const onClick = externalUrl
+              ? (event: React.MouseEvent) => { event.preventDefault(); onOpenExternal(externalUrl); }
+              : undefined;
+            return <a {...props} onClick={onClick} rel="noreferrer" target={isAnchor ? undefined : "_blank"} title={externalUrl ? "在浏览器中打开" : undefined}>{children}</a>;
           },
           code({ className, children }) {
             // 围栏代码块由下面的 pre 接管，这里只剩行内代码。

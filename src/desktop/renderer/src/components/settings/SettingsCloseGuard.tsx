@@ -9,15 +9,15 @@ export function SettingsCloseGuard({ busy, onCancel, onDiscard }: {
 }): React.JSX.Element {
   return (
     <SettingsDetailLayer onClose={onCancel}>
-      <section aria-labelledby="settings-close-title" className="settings-confirm-panel settings-discard-panel" role="dialog">
+      <section aria-describedby="settings-close-description" aria-labelledby="settings-close-title" className="settings-confirm-panel settings-discard-panel" role="dialog">
         <div className="settings-confirm-icon-frame">
           <AppIcon className="settings-confirm-icon" size={88} />
         </div>
         <h3 id="settings-close-title">有未保存的更改</h3>
-        <p className="settings-discard-desc">确定要关闭吗？未保存的更改将丢失。</p>
+        <p className="settings-discard-desc" id="settings-close-description">关闭后，未保存的更改将丢失。</p>
         <div className="settings-confirm-actions">
-          <button className="ghost-button" disabled={busy} onClick={onCancel} type="button">取消</button>
-          <button data-settings-detail-autofocus disabled={busy} onClick={onDiscard} type="button">放弃更改</button>
+          <button className="ghost-button" data-settings-detail-autofocus disabled={busy} onClick={onCancel} type="button">继续编辑</button>
+          <button disabled={busy} onClick={onDiscard} type="button">放弃更改</button>
         </div>
       </section>
     </SettingsDetailLayer>

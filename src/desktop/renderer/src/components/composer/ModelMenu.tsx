@@ -10,6 +10,8 @@ import type { PointerEventHandler, RefObject } from "react";
 import type { ModelChoice } from "../../../../../llm/ModelManager.js";
 import { catalogForConnection } from "../../providerCatalog.js";
 import { useClosingPresence } from "../../useClosingPresence.js";
+import { useFluidHoverItems } from "../../useFluidHoverItems.js";
+import { FluidHoverHighlight } from "../FluidHoverHighlight.js";
 import { Icon } from "../Icon.js";
 import { ProviderBrandGlyph } from "../ProviderBrandGlyph.js";
 import { ComposerPopover } from "./ComposerPopover.js";
@@ -46,6 +48,9 @@ export function ModelMenu({
   const presence = useClosingPresence(open);
   const menuRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  // 流动悬停：模型选项按选择器自动注册，搜索过滤后自动重注册。
+  const optionsRef = useRef<HTMLDivElement>(null);
+  const optionsHover = useFluidHoverItems(optionsRef, ".model-option");
   const [query, setQuery] = useState("");
   const allGroups = useMemo(() => groupModels(models), [models]);
   const groups = useMemo(() => filterGroups(allGroups, query), [allGroups, query]);
@@ -108,7 +113,8 @@ export function ModelMenu({
             value={query}
           />
         </label>
-        <div className="model-options-scroll">
+        <div className="model-options-scroll" ref={optionsRef} {...optionsHover.handlers}>
+          <FluidHoverHighlight hover={optionsHover} className="has-row-radius" />
           {unsetLabel ? (
             <button
               aria-checked={currentAlias === undefined}

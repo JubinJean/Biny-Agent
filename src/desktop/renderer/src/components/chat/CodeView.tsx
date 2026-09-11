@@ -5,7 +5,7 @@
  * 正文：Shiki 高亮 + 可选行号槽（等宽行高对齐，长行横向滚动不换行，保证行号不错位）；
  * 超过折叠行数时给「展开全部」按钮。
  */
-import { memo, useMemo, useState } from "react";
+import React, { memo, useMemo, useState } from "react";
 import { useHighlightedCode } from "../../useHighlightedCode.js";
 import { CopyButton } from "../CopyButton.js";
 import { Icon } from "../Icon.js";
@@ -45,13 +45,13 @@ export const CodeView = memo(function CodeView({
       <div className="chat-codeview-header">
         {filePath && onPreviewFile ? (
           <button className="chat-codeview-title is-clickable" onClick={() => onPreviewFile(filePath)} title={`在右侧预览 ${filePath}`} type="button">
-            <Icon name="file" size={12} />
+            <Icon name="file-text" size={12} />
             {fileName ? <span className="chat-codeview-filename">{fileName}</span> : null}
             {languageLabel ? <span className="chat-codeview-language">{languageLabel}</span> : null}
           </button>
         ) : (
           <span className="chat-codeview-title">
-            {filePath ? <Icon name="file" size={12} /> : null}
+            {filePath ? <Icon name="file-text" size={12} /> : null}
             {fileName ? <span className="chat-codeview-filename">{fileName}</span> : null}
             {languageLabel ? <span className="chat-codeview-language">{languageLabel}</span> : null}
           </span>

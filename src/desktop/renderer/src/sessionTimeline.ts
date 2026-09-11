@@ -17,6 +17,7 @@ import { activeSessionEventsForPath } from "../../../session/messageTree.js";
 import type { SessionEvent } from "../../../session/recorder.js";
 import type { SessionUsage } from "../../../session/metadata.js";
 import { publicUserMessage } from "../../../session/publicMessage.js";
+import { canonicalCompatibleToolName } from "../../../tools/toolNames.js";
 
 export type TimelineRunStatus =
   | "idle"
@@ -235,7 +236,7 @@ export function buildSessionTimeline(events: SessionEvent[], liveEvents: AgentHo
     ? buildVersionedHistoricalTurns(history)
     : buildHistoricalTurns(history);
   // 实时轮次的用户消息序号要接着历史的算，「编辑消息」功能依赖这个序号定位。
-  const historicalUserMessages = history.filter((event) => event.type === "user_message").length;
+  const historicalUserMessages = history.filter((event) => event.type === "user_message" && !event.auditOnly).length;
   return mergeLiveRetryTurns(historicalTurns, buildLiveTurns(liveEvents, historicalUserMessages)).filter(isVisibleTimelineTurn);
 }
 
@@ -289,6 +290,7 @@ function buildHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
   for (const event of events) {
     if (event.type === "tool_result" && event.auditOnly && event.recovered && resultString(event.result, "status") !== "skipped") continue;
     if (event.type === "user_message") {
+      if (event.auditOnly) continue;
       anonymousIndex += 1;
       current = emptyTurn(`history-${String(anonymousIndex)}`, event.time);
       current.user = publicUserMessage(event.content);
@@ -299,6 +301,7 @@ function buildHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
       continue;
     }
     if (event.type === "assistant_message") {
+      if (event.auditOnly) continue;
       const turn = ensureTurn(event.time);
       turn.assistant = event.content || turn.assistant;
       appendHistoricalReasoning(turn, event.reasoningContent);
@@ -336,13 +339,14 @@ function buildHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
     }
     if (event.type === "tool_call") {
       const turn = ensureTurn(event.time);
-      appendInvokedSkill(turn, event.tool, event.args);
-      const projection = historicalToolProjection(event.tool, event.args);
+      const toolName = canonicalCompatibleToolName(event.tool);
+      appendInvokedSkill(turn, toolName, event.args);
+      const projection = historicalToolProjection(toolName, event.args);
       appendHistoricalReasoning(turn, event.reasoningContent);
       appendHistoricalAssistant(turn, event.assistantContent, true);
       const tool: TimelineTool = {
         id: event.toolCallId ?? `history-tool-${String(turn.tools.length)}`,
-        tool: event.tool,
+        tool: toolName,
         args: event.args,
         status: "running",
         display: projection.display,
@@ -356,7 +360,8 @@ function buildHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
     }
     if (event.type === "tool_result") {
       const turn = ensureTurn(event.time);
-      const tool = [...turn.tools].reverse().find((candidate) => candidate.id === event.toolCallId || (candidate.tool === event.tool && candidate.result === undefined));
+      const toolName = canonicalCompatibleToolName(event.tool);
+      const tool = [...turn.tools].reverse().find((candidate) => candidate.id === event.toolCallId || (candidate.tool === toolName && candidate.result === undefined));
       if (tool) {
         tool.result = event.result;
         tool.status = timelineToolStatus(event.result, event.executionStatus);
@@ -471,6 +476,7 @@ function buildVersionedHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
       continue;
     }
     if (event.type === "assistant_message") {
+      if (event.auditOnly) continue;
       if (!event.content && !event.reasoningContent) continue;
       const turn = turnForEvent(event, event.time);
       turn.assistant = event.content || turn.assistant;
@@ -507,13 +513,14 @@ function buildVersionedHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
     }
     if (event.type === "tool_call") {
       const turn = turnForEvent(event, event.time);
-      appendInvokedSkill(turn, event.tool, event.args);
-      const projection = historicalToolProjection(event.tool, event.args);
+      const toolName = canonicalCompatibleToolName(event.tool);
+      appendInvokedSkill(turn, toolName, event.args);
+      const projection = historicalToolProjection(toolName, event.args);
       appendHistoricalReasoning(turn, event.reasoningContent);
       appendHistoricalAssistant(turn, event.assistantContent, true);
       const tool: TimelineTool = {
         id: event.toolCallId ?? `history-tool-${String(turn.tools.length)}`,
-        tool: event.tool,
+        tool: toolName,
         args: event.args,
         status: "running",
         display: projection.display,
@@ -527,7 +534,8 @@ function buildVersionedHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
     }
     if (event.type === "tool_result") {
       const turn = turnForEvent(event, event.time);
-      const tool = [...turn.tools].reverse().find((candidate) => candidate.id === event.toolCallId || (candidate.tool === event.tool && candidate.result === undefined));
+      const toolName = canonicalCompatibleToolName(event.tool);
+      const tool = [...turn.tools].reverse().find((candidate) => candidate.id === event.toolCallId || (candidate.tool === toolName && candidate.result === undefined));
       if (tool) {
         tool.result = event.result;
         tool.status = timelineToolStatus(event.result, event.executionStatus);
@@ -1038,7 +1046,7 @@ export function createSessionTimelineProjector(): SessionTimelineProjector {
   const rebuild = (events: SessionEvent[], liveEvents: AgentHostEvent[]): void => {
     const history = historicalPrefix(events, liveEvents);
     historyTurns = (hasVersionMetadata(history) ? buildVersionedHistoricalTurns(history) : buildHistoricalTurns(history)).filter(isVisibleTimelineTurn);
-    const historicalUserMessages = history.filter((event) => event.type === "user_message").length;
+    const historicalUserMessages = history.filter((event) => event.type === "user_message" && !event.auditOnly).length;
     const nextFold = createLiveTimelineFold(historicalUserMessages);
     for (const event of liveEvents) nextFold.apply(event);
     fold = nextFold;

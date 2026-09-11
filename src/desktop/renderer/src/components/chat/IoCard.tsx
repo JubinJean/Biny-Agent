@@ -2,7 +2,7 @@
  * 通用工具展开体的 IN/OUT 卡片：
  * IN 与 OUT 各占一个标签段，独立滚动（max-height 受限），中间发丝线分隔。
  */
-import { memo } from "react";
+import React, { memo } from "react";
 
 export const IoCard = memo(function IoCard({ input, output, outputError = false }: {
   /** 输入文本（pretty 参数）；null 不渲染 IN 段。 */

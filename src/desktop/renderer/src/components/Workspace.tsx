@@ -8,18 +8,18 @@ import type { PermissionResult } from "../../../../permission/PermissionManager.
 import { useEffect, useRef, useState } from "react";
 import { ThinkingOrb } from "thinking-orbs";
 import type { DesktopProject, DesktopRuntimeMutation, DesktopRuntimeProjection, DesktopSessionLimits, DesktopSessionWriterConflict } from "../../../protocol.js";
-import type { SkillDraftNotice } from "../app/useDesktopEventBridge.js";
-import { currentTurnActivity, humanizeRunError, type TurnActivity } from "../chatModel.js";
+import type { RecipeNotice } from "../app/useDesktopEventBridge.js";
+import { currentTurnActivity, type TurnActivity } from "../chatModel.js";
 import type { TimelineTurn } from "../sessionTimeline.js";
 import { desktopWorktreeView } from "../worktreePresentation.js";
 import { Icon } from "./Icon.js";
 import { MessageTimeline } from "./MessageTimeline.js";
 import { RuntimePanel } from "./RuntimePanel.js";
-import { SkillDraftNoticeCard } from "./SkillDraftNoticeCard.js";
+import { RecipeReadyBanner } from "./RecipeReadyBanner.js";
 import { WelcomeState } from "./WelcomeState.js";
 
-/** 首页首条消息的临时投影；真实 message.user 到达后由 App 清掉。 */
-export interface PendingHomePrompt {
+/** 新会话首条消息的临时投影；真实 message.user 到达后由 App 清掉。 */
+export interface PendingPrompt {
   id: string;
   projectId: string;
   text: string;
@@ -46,12 +46,10 @@ interface WorkspaceProps {
   thinking: boolean;
   running: boolean;
   thinkingStartedAt?: string;
-  /** 当前会话的技能草稿审核卡片；固定在输入框上方，不随消息流滚走。 */
-  skillDraftNotices?: SkillDraftNotice[];
-  /** 卡片动画收起完成后把它从列表移除。 */
-  onDismissSkillDraftNotice?(id: string): void;
-  /** 打开设置 → 技能 tab。 */
-  onOpenSkillSettings?(): void;
+  /** 当前会话的 Recipe 提示卡；固定在输入框上方，不随消息流滚走。 */
+  recipeNotices?: RecipeNotice[];
+  onDismissRecipe?(notice: RecipeNotice): void;
+  onExtractRecipe?(notice: RecipeNotice): void;
   onOpenExternal(url: string): void;
   onResolvePermission(requestId: string, result: PermissionResult): Promise<void>;
   onRetry(targetMessageId: string, input: string, idempotencyKey: string): Promise<void>;
@@ -81,8 +79,8 @@ interface WorkspaceProps {
   inspectorRail?: React.ReactNode;
   /** 项目行「新建任务」直达的空白草稿：跳过欢迎态，直接渲染空白聊天 + 底部 Composer。 */
   blankDraft?: boolean;
-  /** 首页首条消息的临时投影；真实事件到达后由 App 清掉。 */
-  pendingHomePrompt?: PendingHomePrompt;
+  /** 新会话首条消息的临时投影；真实事件到达后由 App 清掉。 */
+  pendingPrompt?: PendingPrompt;
   /** 顶部工具条：自动化/技能入口（搜索与新建任务在侧栏 chrome）。 */
   onOpenRuntime(): void;
   onOpenExtensions(): void;
@@ -108,9 +106,9 @@ export function Workspace({
   thinking,
   running,
   thinkingStartedAt,
-  skillDraftNotices,
-  onDismissSkillDraftNotice,
-  onOpenSkillSettings,
+  recipeNotices,
+  onDismissRecipe,
+  onExtractRecipe,
   onOpenExternal,
   onResolvePermission,
   onRetry,
@@ -130,18 +128,18 @@ export function Workspace({
   onRuntimeRefresh,
   onSubmitPrompt,
   blankDraft = false,
-  pendingHomePrompt,
+  pendingPrompt,
   workspaceContext,
   inspectorRail,
   onOpenRuntime: _onOpenRuntime,
   onOpenExtensions: _onOpenExtensions,
   children
 }: WorkspaceProps): React.JSX.Element {
-  const pendingPrompt = pendingHomePrompt && pendingHomePrompt.projectId === projectId
-    && (pendingHomePrompt.sessionId === undefined || pendingHomePrompt.sessionId === sessionId)
-    ? pendingHomePrompt
+  const visiblePendingPrompt = pendingPrompt && pendingPrompt.projectId === projectId
+    && (pendingPrompt.sessionId === undefined || pendingPrompt.sessionId === sessionId)
+    ? pendingPrompt
     : undefined;
-  const streaming = running || pendingPrompt !== undefined || turns.some((turn) => turn.status === "running" || turn.status === "waiting_permission");
+  const streaming = running || visiblePendingPrompt !== undefined || turns.some((turn) => turn.status === "running" || turn.status === "waiting_permission");
   // 状态行在整个运行期间常驻消息流末尾（Alma 式活动状态）：文案从最后一条轮次的
   // 实时状态派生——思考中 / 正在使用技能 X / 正在读取文件 / 等待授权……，回合结束即退场。
   const lastTurn = turns.at(-1);
@@ -155,7 +153,7 @@ export function Workspace({
     : runtimeProjection?.worktrees.find((worktree) => worktree.sessionId === sessionId);
   const worktreeView = sessionIsolation === "worktree" ? desktopWorktreeView(selectedWorktree) : undefined;
 
-  // blankDraft（项目行新建）跳过欢迎态；首页首条消息由 pendingPrompt 直接进入聊天时间线。
+  // blankDraft（项目行新建）跳过欢迎态；新会话首条消息由临时投影直接进入聊天时间线。
   const renderWelcome = !blankDraft && showWelcome;
 
   if (isHome) {
@@ -251,7 +249,7 @@ export function Workspace({
                 {writerConflict ? <SessionWriterConflictBanner onRetry={onRetryWriterConflict} /> : children}
               </div>
             </WelcomeState>
-          ) : (turns.length > 0 || thinking || pendingPrompt !== undefined) && projectId ? (
+          ) : (turns.length > 0 || thinking || visiblePendingPrompt !== undefined) && projectId ? (
             <ChatScroll sessionId={sessionId} streaming={streaming}>
               <MessageTimeline
                 onCreateBranch={onCreateBranch}
@@ -264,8 +262,8 @@ export function Workspace({
                 onRollbackFiles={onRollbackFiles}
                 onRetry={onRetry}
                 onSwitchVersion={onSwitchVersion}
-                pendingUserMessage={pendingPrompt
-                  ? { id: pendingPrompt.id, messageId: pendingPrompt.messageId, content: pendingPrompt.text }
+                pendingUserMessage={visiblePendingPrompt
+                  ? { id: visiblePendingPrompt.id, messageId: visiblePendingPrompt.messageId, content: visiblePendingPrompt.text }
                   : undefined}
                 thinking={thinking}
                 projectId={projectId}
@@ -273,7 +271,7 @@ export function Workspace({
               />
               {/* 活动状态行：消息流末尾、最后一条消息下方，运行期间常驻；
                 文案是当前真实活动（思考/工具/技能/等待授权），回合结束即退场。 */}
-              {running || pendingPrompt !== undefined ? (
+              {running || visiblePendingPrompt !== undefined ? (
                 <ThinkingStatus
                   activity={currentTurnActivity(lastTurn)}
                   key={thinkingStartedAt ?? "thinking"}
@@ -286,22 +284,17 @@ export function Workspace({
           )}
         </div>
         {renderWelcome ? null : (
-          <div className={`biny-chat-composer${pendingPrompt ? " is-entering" : ""}`}>
-            {skillDraftNotices && skillDraftNotices.length > 0 && projectId ? (
-              <div aria-label="待审核的技能" className="biny-skill-draft-notices" role="region">
-                {skillDraftNotices.map((notice) => (
-                  <SkillDraftNoticeCard
-                    key={notice.id}
-                    notice={notice}
-                    onDismiss={(id) => onDismissSkillDraftNotice?.(id)}
-                    onError={onRuntimeError}
-                    onOpenSkillSettings={() => onOpenSkillSettings?.()}
-                    projectId={projectId}
-                  />
-                ))}
+          <div className={`biny-chat-composer${visiblePendingPrompt ? " is-entering" : ""}`}>
+            {recipeNotices && recipeNotices.length > 0 && projectId ? (
+              <div className="biny-recipe-ready-notices">
+                <RecipeReadyBanner
+                  notice={recipeNotices[0]!}
+                  onDismiss={(notice) => onDismissRecipe?.(notice)}
+                  onExtract={(notice) => onExtractRecipe?.(notice)}
+                />
               </div>
             ) : null}
-            {generationError ? (
+            {generationError && generationError !== lastTurn?.error ? (
               <GenerationErrorBanner error={generationError} onDismiss={onDismissGenerationError} />
             ) : null}
             {writerConflict ? <SessionWriterConflictBanner onRetry={onRetryWriterConflict} /> : children}
@@ -313,14 +306,14 @@ export function Workspace({
   );
 }
 
-/** 生成错误横幅：危险色描边卡（警告图标 + 标题 + 错误文本 + 关闭），错误原文放 tooltip。 */
+/** 尚未进入消息时间线的发送错误仍靠近输入框展示；轮次错误由对应消息承载。 */
 function GenerationErrorBanner({ error, onDismiss }: { error: string; onDismiss(): void }): React.JSX.Element {
   return (
     <div className="biny-generation-error" role="alert">
       <Icon name="warning" size={14} />
       <div className="biny-generation-error-body">
         <p className="biny-generation-error-title">生成错误</p>
-        <p className="biny-generation-error-text" title={error}>{humanizeRunError(error)}</p>
+        <p className="biny-generation-error-text">{error}</p>
       </div>
       <button aria-label="关闭错误提示" onClick={onDismiss} title="关闭" type="button">
         <Icon name="close" size={13} />

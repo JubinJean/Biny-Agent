@@ -20,16 +20,15 @@ export function SettingsCapabilityDefaults(): React.JSX.Element {
     <div className="settings-sections capability-default-settings">
       <section id="chat-capability-defaults" tabIndex={-1}>
         <div className="section-heading-row">
-          <div><h3>工具与 Skill</h3><p>新消息默认暴露的能力范围，发送前可在输入框临时调整。</p></div>
-          <span className="settings-scope-badge">全局</span>
+          <div><h3>工具与技能</h3><p>默认调用范围，发送前可在输入框调整。</p></div>
         </div>
         <CapabilitySelectionField
-          label="默认工具调用"
+          label="工具"
           value={draft.chatParams.defaultToolSelection}
           onChange={(defaultToolSelection) => update({ defaultToolSelection })}
         />
         <CapabilitySelectionField
-          label="默认 Skill"
+          label="技能"
           value={draft.chatParams.defaultSkillSelection}
           onChange={(defaultSkillSelection) => update({ defaultSkillSelection })}
         />

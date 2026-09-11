@@ -14,6 +14,7 @@ import type {
   DesktopMemoryOriginFilter,
   DesktopModelConfigurationInput,
   DesktopModelLoginProvider,
+  DesktopWebSearchProvider,
   DesktopWorkspaceSnapshot
 } from "../../../protocol.js";
 import { desktopApiVersionMismatchMessage } from "./desktopApi.js";
@@ -54,6 +55,18 @@ export function useDesktopSettingsActions({
 
   const testModelConfiguration = useCallback(async (configuration: DesktopModelConfigurationInput) => {
     return await window.biny.testModelConfiguration(requireProject(projectIdRef.current), configuration);
+  }, [projectIdRef]);
+
+  const readModelApiKey = useCallback(async (providerAlias: string): Promise<string | undefined> => {
+    const readKey = window.biny.readModelApiKey;
+    if (typeof readKey !== "function") throw new Error(desktopApiVersionMismatchMessage);
+    return await readKey(requireProject(projectIdRef.current), providerAlias);
+  }, [projectIdRef]);
+
+  const readWebSearchApiKey = useCallback(async (provider: DesktopWebSearchProvider): Promise<string | undefined> => {
+    const readKey = window.biny.readWebSearchApiKey;
+    if (typeof readKey !== "function") throw new Error(desktopApiVersionMismatchMessage);
+    return await readKey(requireProject(projectIdRef.current), provider);
   }, [projectIdRef]);
 
   const fetchModelCatalog = useCallback(async (providerAlias: string, force = false) => {
@@ -222,6 +235,8 @@ export function useDesktopSettingsActions({
     loadMemoryStats,
     loadMemoryEntries,
     openBrowser,
+    readModelApiKey,
+    readWebSearchApiKey,
     rebuildMemoryEmbeddingIndex,
     searchMemory,
     startModelLogin,

@@ -5,7 +5,7 @@
  * （日期感知时钟、用时、首 token 延迟、解码吞吐）。全部为纯函数，不依赖 React，便于单测。
  */
 import type { OrbState } from "thinking-orbs";
-import type { TimelineRunStatus, TimelineTool, TimelineTurn } from "./sessionTimeline.js";
+import type { TimelineReasoningStep, TimelineRunStatus, TimelineTool, TimelineToolStep, TimelineTurn } from "./sessionTimeline.js";
 import { executionToolLabel } from "./sessionTimeline.js";
 import type { SessionUsage } from "../../../session/metadata.js";
 import type { IconName } from "./components/Icon.js";
@@ -16,10 +16,10 @@ export type ToolRowVariant = "search" | "read" | "bash" | "write" | "edit" | "gi
 /** 行状态语义；驱动工具行图标芯片的着色与呼吸光环。 */
 export type ToolRowState = "running" | "ok" | "error" | "stopped";
 
-/** 变体 leading 图标名（Biny Icon 名；DSH figma 表：search/read/bash/write/edit/code/others）。 */
+/** 变体 leading 图标名（Biny Icon 名；对齐 alma/lucide 的语义：read=带正文的文件、bash=终端、write/edit=笔）。 */
 export const VARIANT_ICON_NAMES: Record<ToolRowVariant, IconName> = {
   search: "search",
-  read: "file",
+  read: "file-text",
   bash: "terminal",
   write: "edit",
   edit: "edit",
@@ -51,8 +51,6 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   Grep: "search",
   Write: "write",
   edit_file: "edit",
-  multi_edit: "edit",
-  apply_patch: "edit",
   delete_file: "edit",
   move_file: "edit",
   git_diff: "git",
@@ -144,81 +142,13 @@ export function firstLine(text: string): string {
   return newline === -1 ? text : text.slice(0, newline);
 }
 
-/** 轮次级失败/未完成的卡片呈现：标题（区分语义）+ 语义色（error 红 / warning 琥珀）。 */
-export function runErrorPresentation(status: TimelineRunStatus, message?: string): { title: string; variant: "error" | "warning" } {
-  // 重试目标失效是操作上下文问题，不是模型本身失败；标题要直接告诉用户为什么不能继续点「重试」。
-  if (message && isRetryTargetError(message)) return { title: "这条回复已无法重试", variant: "error" };
-  switch (status) {
-    // blocked 是「运行被阻塞」（如 max-tokens）而非失败：琥珀警示。
-    case "blocked": return { title: "任务被阻塞", variant: "warning" };
-    case "cancelled": return { title: "已取消", variant: "warning" };
-    case "aborted": return { title: "已中止", variant: "warning" };
-    case "incomplete": return { title: "本轮运行未完成", variant: "error" };
-    case "failed":
-    default: return { title: "本轮运行失败", variant: "error" };
-  }
-}
-
-/** 失败/阻塞/未完成/取消/中止：这些终态属于「本轮失败」，由输入框上方的生成错误横幅统一呈现。 */
+/** 需要在对应消息旁呈现原因或重试入口的非成功终态；取消使用中性提示。 */
 export function isRunErrorStatus(status: TimelineRunStatus): boolean {
   return status === "failed"
     || status === "blocked"
     || status === "incomplete"
     || status === "cancelled"
     || status === "aborted";
-}
-
-/**
- * 把轮次级原始错误（多为网络/运行时错误码，如 UND_ERR_*、ECONNRESET、HTTP 5xx）映射成人话。
- * 已是可读文案的保留首行；命中已知模式时给出可操作的提示。完整原文由调用方放 tooltip。
- */
-export function humanizeRunError(message: string): string {
-  const text = message.trim();
-  if (!text) return "";
-  const lower = text.toLowerCase();
-  const has = (...patterns: RegExp[]): boolean => patterns.some((pattern) => pattern.test(lower));
-  // 消息版本/分支已经变化时，继续重试只会再次失败；把实现层错误翻译成下一步操作。
-  if (isRetryTargetError(text)) return "这条消息已不在当前对话分支中，不能直接重新生成。";
-  // 网络 / 连接（undici、Node、fetch）
-  if (has(/und_err_connect_timeout/, /\betimedout\b/, /esockettimedout/, /connect(?:ion)? timeout/)) return "网络连接超时，请检查代理或网络后重试。";
-  if (has(/und_err_headers_timeout/, /und_err_body_timeout/)) return "服务器响应超时，请稍后重试。";
-  if (has(/und_err_socket/, /socket hang up/, /\beconnreset\b/)) return "连接被中断，请检查网络或代理后重试。";
-  if (has(/\beconnrefused\b/)) return "无法连接到服务器，请确认服务可用或代理配置正确。";
-  if (has(/\benotfound\b/, /\beai_again\b/)) return "域名解析失败，请检查网络或代理设置。";
-  if (has(/und_err_/, /fetch failed/, /network ?error/, /failed to fetch/)) return "网络请求失败，请检查网络或代理后重试。";
-  // 鉴权 / 限流 / 服务端
-  if (has(/\b401\b/, /unauthorized/, /invalid[_ ]api[_ ]?key/, /incorrect api key/, /authentication failed/)) return "鉴权失败，请检查 API Key 是否正确。";
-  if (has(/\b403\b/, /forbidden/, /permission denied/)) return "没有访问权限，请检查账号权限或模型配额。";
-  if (has(/\b429\b/, /rate limit/, /too many requests/, /quota/, /insufficient/)) return "请求过于频繁或额度不足，请稍后重试。";
-  if (has(/\b5\d{2}\b/, /internal server error/, /bad gateway/, /service unavailable/, /overloaded/)) return "服务端暂时不可用，请稍后重试。";
-  // 上下文长度（含 max_tokens 阻塞）
-  if (has(/context length/, /maximum context/, /context window/, /too many tokens/, /prompt is too long/, /max[_ ]tokens?/)) return "超出模型上下文长度，请压缩上下文或开启新会话。";
-  // 取消 / 中止
-  if (has(/abort/, /cancel/)) return "操作已被取消。";
-  // 兜底：保留可读首行。
-  return firstLine(text);
-}
-
-/** 重试目标已脱离活动路径，通常发生在切换回答版本或会话刚被其他窗口更新之后。 */
-export function isRetryTargetError(message: string): boolean {
-  const lower = message.toLowerCase();
-  return /retry target .*active conversation path/.test(lower)
-    || /retry source user message .*active conversation path/.test(lower)
-    || /retry target message does not exist/.test(lower)
-    || /retry target (?:has no user message ancestor|has a missing message parent|is not replayable)/.test(lower);
-}
-
-/** 当前错误是否仍有意义上的「重试」动作；不可重试时只保留关闭或发送新消息。 */
-export function isRunErrorRetryable(message: string): boolean {
-  return !isRetryTargetError(message);
-}
-
-/** 特殊错误的下一步提示；普通网络/鉴权错误的可操作建议已经包含在摘要中。 */
-export function runErrorRecovery(status: TimelineRunStatus, message: string): string | undefined {
-  if (isRetryTargetError(message)) return "请关闭提示后发送新消息；如果刚切换过回复版本，请先切回当前版本。";
-  if (status === "blocked") return "请完成必要操作后，在输入框发送新消息。";
-  if (status === "incomplete") return "本轮已停止，请检查上方输出后发送新消息。";
-  return undefined;
 }
 
 /** 折叠的 token 计数：517 / 12.2K / 517K / 1.2M（一位小数仅在三位数以下）。 */
@@ -236,16 +166,6 @@ export function formatDuration(ms: number): string {
   if (s < 60) return `${Math.round(s * 10) / 10}s`;
   const whole = Math.round(s);
   return `${Math.floor(whole / 60)}m${String(whole % 60).padStart(2, "0")}s`;
-}
-
-/** 人类可读的整轮用时：`2m05s` / `15s`。 */
-export function formatRunDuration(ms: number): string {
-  const total = Math.max(0, Math.floor(ms / 1_000));
-  const minutes = Math.floor(total / 60);
-  const seconds = total % 60;
-  return minutes > 0
-    ? `${minutes}m${String(seconds).padStart(2, "0")}s`
-    : `${seconds}s`;
 }
 
 /** 亚轮延迟数字：10 秒内一位小数，以上取整（单位由调用方补）。 */
@@ -359,4 +279,343 @@ export function finishReasonTone(reason: string): FinishReasonTone {
   if (/^(content_filter|safety|recitation)$/i.test(reason)) return "filter";
   if (/^(error|aborted|cancelled|failed)$/i.test(reason)) return "error";
   return "unknown";
+}
+
+/** 压缩分隔条的数据：条数 / 节省 token / 可选摘要正文。 */
+export interface CompactionNotice {
+  count?: number;
+  savedTokens?: number;
+  summary?: string;
+}
+
+/**
+ * 从压缩标记步骤的状态文案解析药丸数据。
+ * 兼容「已压缩 N 条消息，正在恢复请求」「已压缩 N 条消息，节省约 X tokens」两种口径；
+ * 解析不出的字段省略。
+ */
+export function parseCompactionNotice(status: string | undefined): CompactionNotice {
+  if (!status) return {};
+  const notice: CompactionNotice = {};
+  const count = /已压缩\s*([\d,]+)\s*条消息/.exec(status);
+  if (count?.[1]) notice.count = Number.parseInt(count[1].replaceAll(",", ""), 10);
+  const tokens = /节省[约了]\s*([\d,]+)\s*tokens?/.exec(status);
+  if (tokens?.[1]) notice.savedTokens = Number.parseInt(tokens[1].replaceAll(",", ""), 10);
+  return notice;
+}
+
+/* ============ 活动相位模型（聚合组头部的相位头像与摘要文案） ============ *//** 聚合组里的一个步骤项：步骤本身 + 它在步骤数组里的下标（用作 key）。 */
+export interface ActivityPhaseItem {
+  step: TimelineToolStep | TimelineReasoningStep;
+  index: number;
+}
+
+/** 相位语义：思考 / 探索（只读）/ 修改（写入）/ 运行（命令）/ 通用。 */
+export type ActivityPhaseKind = "thinking" | "exploring" | "making" | "running" | "generic";
+
+export interface ActivityPhase {
+  kind: ActivityPhaseKind;
+  items: ActivityPhaseItem[];
+  startIndex: number;
+}
+
+/** 只读类工具：归入「探索」相位。 */
+const EXPLORING_TOOLS = new Set([
+  "Read", "Glob", "Grep", "WebSearch", "WebFetch",
+  "read_tool_result", "read_skill_resource",
+  "mcp_list_resources", "mcp_read_resource",
+  "git_diff", "git_status",
+  "activity_search", "activity_search_semantic", "activity_sessions", "activity_session_show",
+  "activity_report", "activity_digest",
+  "recall_memory", "skill_search", "BrowserReadDom",
+]);
+
+/** 写入类工具：归入「修改」相位。 */
+const MAKING_TOOLS = new Set(["Write", "edit_file", "delete_file", "move_file", "TodoWrite", "git_commit", "save_memory", "skill_install"]);
+
+/** 命令类工具：归入「运行」相位。 */
+const RUNNING_TOOLS = new Set(["Bash", "start_process", "stop_process", "process_status", "read_process_output", "list_processes"]);
+
+/** 步骤的相位语义：思考步骤 → thinking；工具按工具名分箱；其余 → generic。 */
+export function activityPhaseKindOf(step: TimelineToolStep | TimelineReasoningStep): ActivityPhaseKind {
+  if (step.kind === "reasoning") return "thinking";
+  if (EXPLORING_TOOLS.has(step.tool.tool)) return "exploring";
+  if (MAKING_TOOLS.has(step.tool.tool)) return "making";
+  if (RUNNING_TOOLS.has(step.tool.tool)) return "running";
+  return "generic";
+}
+
+/** 把连续同相位的步骤收成一相；相位序列驱动头部的头像串与展开体分相。 */
+export function buildActivityPhases(items: ActivityPhaseItem[]): ActivityPhase[] {
+  const phases: ActivityPhase[] = [];
+  for (const item of items) {
+    const kind = activityPhaseKindOf(item.step);
+    const last = phases.at(-1);
+    if (last && last.kind === kind) {
+      last.items.push(item);
+    } else {
+      phases.push({ kind, items: [item], startIndex: item.index });
+    }
+  }
+  return phases;
+}
+
+/** 相位里的思考耗时：累计 reasoning 步骤的 durationMs，至少 1 秒。 */
+export function phaseThinkingSeconds(phase: ActivityPhase): number | undefined {
+  let ms = 0;
+  let found = false;
+  for (const { step } of phase.items) {
+    if (step.kind !== "reasoning") continue;
+    const d = step.durationMs;
+    if (typeof d === "number" && Number.isFinite(d) && d >= 0) {
+      ms += d;
+      found = true;
+    }
+  }
+  return found ? Math.max(1, Math.round(ms / 1000)) : undefined;
+}
+
+/** 活动单元数 = 每个思考相位算 1，工具逐个计数；驱动「用了 N 个工具」。 */
+export function countActivityUnits(phases: ActivityPhase[]): number {
+  return phases.reduce((sum, phase) => sum + (phase.kind === "thinking" ? 1 : phase.items.length), 0);
+}
+
+/** 相位是否整体落定（思考完成、工具离开运行态）；活体 shimmer 只给最后一个未落定相位。 */
+export function phaseSettled(phase: ActivityPhase): boolean {
+  return phase.items.every(({ step }) => {
+    if (step.kind === "reasoning") return Boolean(step.completed);
+    const status = step.tool.status;
+    return status !== "running" && status !== "waiting";
+  });
+}
+
+/** 相位摘要的动宾结构：verb 是加重前景词，rest 是弱化补语（数量/对象）。 */
+export interface ActivityPhaseLabel {
+  verb: string;
+  rest: string;
+}
+
+/** 相位的摘要文案（对齐 alma activity.phase.* 中文语料）。 */
+export function phaseLabel(phase: ActivityPhase, live: boolean, thinkingSeconds?: number): ActivityPhaseLabel {
+  const n = phase.items.length;
+  switch (phase.kind) {
+    case "thinking":
+      if (live) return { verb: "思考中", rest: "" };
+      return { verb: "已思考", rest: thinkingSeconds ? `${String(thinkingSeconds)} 秒` : "" };
+    case "exploring": {
+      const reads = phase.items.filter(({ step }) => step.kind === "tool" && step.tool.tool === "Read").length;
+      const rest = reads === n ? `${String(n)} 个文件` : `${String(n)} 处`;
+      return { verb: live ? "探索中" : "已探索", rest };
+    }
+    case "making": {
+      let creates = 0;
+      let edits = 0;
+      for (const { step } of phase.items) {
+        if (step.kind === "tool" && step.tool.tool === "Write") creates += 1;
+        else edits += 1;
+      }
+      const pieces: string[] = [];
+      if (creates) pieces.push(`新建 ${String(creates)}`);
+      if (edits) pieces.push(`编辑 ${String(edits)}`);
+      return { verb: live ? "修改中" : "已修改", rest: pieces.join(", ") };
+    }
+    case "running":
+      return { verb: live ? "执行中" : "已执行", rest: `${String(n)} 条命令` };
+    default: {
+      const names = new Set(phase.items.flatMap(({ step }) => step.kind === "tool" ? [step.tool.tool] : []));
+      if (names.size === 1) {
+        const name = [...names][0]?.replace(/[_-]+/g, " ") ?? "tool";
+        return { verb: live ? "使用中" : "已使用", rest: n === 1 ? name : `${name} ×${String(n)}` };
+      }
+      return { verb: live ? "进行中" : "已完成", rest: `${String(n)} 步` };
+    }
+  }
+}
+
+/* ---- 工具行（轨道里的紧凑动宾行） ---- */
+
+/** 展开轨道里一个工具的动宾行：verb 加重、object 弱化截断、± 行数统计。 */
+export interface ActivityToolRowModel {
+  verb: string;
+  object: string;
+  plus?: number;
+  minus?: number;
+  running: boolean;
+  error: boolean;
+}
+
+/** 路径收窄：超过 3 段只保留最后 3 段（对齐 alma shortenPath）。 */
+function shortenPath(path: string): string {
+  const parts = path.split("/").filter(Boolean);
+  return parts.length <= 3 ? path.replace(/^\//, "") : parts.slice(-3).join("/");
+}
+
+function countLines(value: unknown): number | undefined {
+  if (typeof value !== "string" || value.length === 0) return undefined;
+  return value.split("\n").length;
+}
+
+function stringArg(tool: TimelineTool, key: string): string | undefined {
+  const args = typeof tool.args === "object" && tool.args !== null ? tool.args as Record<string, unknown> : undefined;
+  const value = args?.[key];
+  return typeof value === "string" && value ? value : undefined;
+}
+
+/** 工具的动宾行模型；措辞对齐 alma activity.verb.* 中文语料，未识别工具回退工具名。 */
+export function activityToolRow(tool: TimelineTool): ActivityToolRowModel {
+  const display = tool.display?.kind === "file_io" ? tool.display : undefined;
+  const args = typeof tool.args === "object" && tool.args !== null ? tool.args as Record<string, unknown> : undefined;
+  const argPath = typeof args?.path === "string" ? args.path : undefined;
+  const filePath = shortenPath(display?.path ?? tool.path ?? argPath ?? "");
+  const running = tool.status === "running" || tool.status === "waiting";
+  const error = tool.status === "failed" || tool.status === "denied" || tool.status === "unknown";
+  const row: ActivityToolRowModel = { verb: "", object: "", running, error };
+  switch (tool.tool) {
+    case "Read":
+    case "read_tool_result":
+    case "read_skill_resource":
+    case "mcp_read_resource":
+      row.verb = "读取";
+      row.object = filePath || display?.detail || stringArg(tool, "uri") || stringArg(tool, "name") || "…";
+      return row;
+    case "Glob":
+      row.verb = "匹配";
+      row.object = display?.detail ?? stringArg(tool, "pattern") ?? stringArg(tool, "path") ?? "…";
+      return row;
+    case "Grep":
+    case "activity_search":
+    case "activity_search_semantic":
+      row.verb = "搜索";
+      row.object = display?.detail ?? stringArg(tool, "pattern") ?? stringArg(tool, "query") ?? "…";
+      return row;
+    case "WebSearch":
+      row.verb = "搜索网页";
+      row.object = stringArg(tool, "query") ?? tool.description ?? "…";
+      return row;
+    case "WebFetch":
+      row.verb = "抓取";
+      row.object = stringArg(tool, "url") ?? tool.description ?? "…";
+      return row;
+    case "edit_file": {
+      row.verb = "编辑";
+      row.object = filePath || "…";
+      row.minus = countLines(display?.before ?? stringArg(tool, "oldText"));
+      row.plus = countLines(display?.after ?? stringArg(tool, "newText"));
+      return row;
+    }
+    case "Write": {
+      row.verb = "写入";
+      row.object = filePath || "…";
+      row.plus = countLines(display?.content ?? stringArg(tool, "content"));
+      return row;
+    }
+    case "delete_file":
+      row.verb = "删除";
+      row.object = filePath || "…";
+      return row;
+    case "move_file":
+      row.verb = "移动";
+      row.object = filePath || "…";
+      return row;
+    case "TodoWrite":
+      row.verb = "更新";
+      row.object = "待办事项";
+      return row;
+    case "Bash": {
+      row.verb = "执行";
+      row.object = tool.description ?? (stringArg(tool, "command") ?? "").slice(0, 80) ?? "…";
+      return row;
+    }
+    case "start_process": {
+      row.verb = "执行";
+      row.object = tool.description ?? (stringArg(tool, "command") ?? "").slice(0, 80) ?? "…";
+      return row;
+    }
+    case "stop_process":
+      row.verb = "终止";
+      row.object = stringArg(tool, "processId") ?? stringArg(tool, "id") ?? "进程";
+      return row;
+    case "process_status":
+    case "read_process_output":
+      row.verb = "查看";
+      row.object = stringArg(tool, "processId") ?? stringArg(tool, "id") ?? "进程输出";
+      return row;
+    case "list_processes":
+      row.verb = "查看";
+      row.object = "进程列表";
+      return row;
+    case "Skill":
+    case "skill_call":
+      row.verb = "使用技能";
+      row.object = stringArg(tool, "skill") ?? stringArg(tool, "name") ?? "…";
+      return row;
+    case "git_diff":
+      row.verb = "查看";
+      row.object = "git 变更";
+      return row;
+    case "git_status":
+      row.verb = "查看";
+      row.object = "git 状态";
+      return row;
+    case "git_commit":
+      row.verb = "提交";
+      row.object = stringArg(tool, "message") ?? "…";
+      return row;
+    case "mcp_list_resources":
+      row.verb = "列出";
+      row.object = stringArg(tool, "server") ?? "资源";
+      return row;
+    case "recall_memory":
+      row.verb = "检索记忆";
+      row.object = stringArg(tool, "query") ?? tool.description ?? "…";
+      return row;
+    case "save_memory":
+      row.verb = "保存记忆";
+      row.object = stringArg(tool, "topic") ?? stringArg(tool, "title") ?? "…";
+      return row;
+    case "skill_search":
+      row.verb = "搜索技能";
+      row.object = stringArg(tool, "query") ?? "…";
+      return row;
+    case "skill_install":
+      row.verb = "安装技能";
+      row.object = stringArg(tool, "slug") ?? stringArg(tool, "name") ?? stringArg(tool, "id") ?? "…";
+      return row;
+    case "BrowserOpen":
+      row.verb = "打开";
+      row.object = stringArg(tool, "url") ?? tool.description ?? "…";
+      return row;
+    case "BrowserClick":
+      row.verb = "点击";
+      row.object = stringArg(tool, "element") ?? stringArg(tool, "target") ?? tool.description ?? "…";
+      return row;
+    case "BrowserType":
+      row.verb = "输入";
+      row.object = stringArg(tool, "text") ?? tool.description ?? "…";
+      return row;
+    case "BrowserPress":
+      row.verb = "按键";
+      row.object = stringArg(tool, "key") ?? tool.description ?? "…";
+      return row;
+    case "BrowserReadDom":
+      row.verb = "读取页面";
+      row.object = tool.description ?? "";
+      return row;
+    case "update_emotion":
+      row.verb = "更新情绪";
+      row.object = "";
+      return row;
+    case "Task":
+      row.verb = "派发任务";
+      row.object = stringArg(tool, "description") ?? stringArg(tool, "prompt")?.slice(0, 80) ?? "…";
+      return row;
+    default: {
+      row.verb = tool.tool.replace(/[_-]+/g, " ");
+      row.object = tool.description ?? "";
+      if (!row.object && args) {
+        const first = Object.values(args).find((value) => typeof value === "string" && value.length > 0 && value.length < 200);
+        if (typeof first === "string") row.object = first;
+      }
+      return row;
+    }
+  }
 }

@@ -12,17 +12,14 @@ import type {
   DesktopSessionDocument,
   DesktopSessionWriterConflict,
   DesktopSessionSummary,
+  DesktopRecipeSuggestion,
   DesktopWorkspaceSnapshot
 } from "../../../protocol.js";
 import { liveTimelineEvents } from "../sessionTimeline.js";
 import { applyUpdatesToSidebarSessions, applyUpdatesToWorkspace, hasContextStatus } from "./desktopState.js";
 
-/** 聊天内技能草稿审核卡片的最小数据；从 `skill.draft_created` host event 提取。 */
-export interface SkillDraftNotice {
-  id: string;
-  name: string;
-  description: string;
-  toolCalls: number;
+/** 聊天内 Recipe 提示卡的数据；从 `recipe.ready` host event 提取。 */
+export interface RecipeNotice extends DesktopRecipeSuggestion {
   sessionId: string;
 }
 
@@ -33,8 +30,8 @@ interface DesktopEventBridgeOptions {
   onError(error: unknown): void;
   setContextBudget: Dispatch<SetStateAction<ContextBudgetStatus | undefined>>;
   setDocument: Dispatch<SetStateAction<DesktopSessionDocument | undefined>>;
-  /** 收集当前选中会话的技能草稿通知；事件不进消息时间线，只驱动聊天内的审核卡片。 */
-  setSkillDraftNotices: Dispatch<SetStateAction<SkillDraftNotice[]>>;
+  /** 收集当前选中会话的 Recipe 通知；事件不进消息时间线，只驱动聊天内提示卡。 */
+  setRecipeNotices: Dispatch<SetStateAction<RecipeNotice[]>>;
   setWriterConflict: Dispatch<SetStateAction<DesktopSessionWriterConflict | undefined>>;
   setSidebarSessions: Dispatch<SetStateAction<DesktopSessionSummary[]>>;
   setWorkspace: Dispatch<SetStateAction<DesktopWorkspaceSnapshot | undefined>>;
@@ -51,7 +48,7 @@ export function useDesktopEventBridge({
   onError,
   setContextBudget,
   setDocument,
-  setSkillDraftNotices,
+  setRecipeNotices,
   setWriterConflict,
   setSidebarSessions,
   setWorkspace,
@@ -100,19 +97,19 @@ export function useDesktopEventBridge({
           const currentEvents = projectBatch
             .map((envelope) => envelope.event)
             .filter((event): event is AgentHostEvent => event !== undefined && event.sessionId === currentSessionId);
-          // skill.draft_created 是审核通知而非对话内容：不进消息时间线，单独收集成聊天内草稿卡。
-          const draftNotices = currentEvents.filter((event) => event.type === "skill.draft_created");
-          if (draftNotices.length) {
-            setSkillDraftNotices((current) => {
+          // recipe.ready 是提示通知而非对话内容：不进消息时间线，单独收集成聊天内卡片。
+          const recipeNotices = currentEvents.filter((event) => event.type === "recipe.ready");
+          if (recipeNotices.length) {
+            setRecipeNotices((current) => {
               const seen = new Set(current.map((notice) => notice.id));
-              const fresh = draftNotices
-                .filter((event) => !seen.has(event.draft.id))
-                .map((event) => ({ ...event.draft, sessionId: currentSessionId }));
+              const fresh = recipeNotices
+                .filter((event) => !seen.has(event.recipe.id))
+                .map((event) => ({ ...event.recipe, sessionId: currentSessionId }));
               return fresh.length ? [...current, ...fresh] : current;
             });
           }
-          const timelineSource = draftNotices.length
-            ? currentEvents.filter((event) => event.type !== "skill.draft_created")
+          const timelineSource = recipeNotices.length
+            ? currentEvents.filter((event) => event.type !== "recipe.ready")
             : currentEvents;
           const timelineEvents = liveTimelineEvents(timelineSource);
           if (timelineEvents.length) {
@@ -139,8 +136,9 @@ export function useDesktopEventBridge({
 
       const completedProjects = new Map<string, string>();
       for (const envelope of batch) {
-        if (isTerminalRunEvent(envelope.event)) {
-          completedProjects.set(envelope.projectId, envelope.event.sessionId);
+        const event = envelope.event;
+        if (event && (isTerminalRunEvent(event) || event.type === "session.title")) {
+          completedProjects.set(envelope.projectId, event.sessionId);
         }
       }
       for (const [projectId, sessionId] of completedProjects) scheduleRefresh(projectId, sessionId);
@@ -156,5 +154,5 @@ export function useDesktopEventBridge({
       for (const timer of refreshTimers.values()) clearTimeout(timer);
       refreshTimers.clear();
     };
-  }, [activeProjectIdRef, mergeProjectSnapshot, onError, selectedSessionIdRef, setContextBudget, setDocument, setSkillDraftNotices, setSidebarSessions, setWorkspace, setWriterConflict, onGenerationError, onGenerationStarted]);
+  }, [activeProjectIdRef, mergeProjectSnapshot, onError, selectedSessionIdRef, setContextBudget, setDocument, setRecipeNotices, setSidebarSessions, setWorkspace, setWriterConflict, onGenerationError, onGenerationStarted]);
 }

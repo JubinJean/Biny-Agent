@@ -1,22 +1,23 @@
 /**
  * 右侧 Inspector 的文件面板。
  *
- * 预览按文件类型分三路：文本/代码走高亮 + 行号 gutter；图片走主进程 data URL
- * 内联显示；二进制/超限给「使用系统应用打开」兜底。文件树支持懒加载展开和名称
- * 过滤。这里只做展示与本地交互，数据请求全部由 useWorkspaceInspector 的回调注入。
+ * 复刻 ArtifactSidebar Files tab 的分栏人体工学：左侧文件树（可收起、宽度可拖拽），
+ * 右侧预览。预览按文件类型分三路：文本/代码走高亮 + 行号 gutter；图片走主进程
+ * data URL 内联显示；二进制/超限给「使用系统应用打开」兜底。文件树支持懒加载展开
+ * 和名称过滤。这里只做展示与本地交互，数据请求全部由 useWorkspaceInspector 的回调注入。
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { IconButton } from "@astryxdesign/core/IconButton";
 import { TextInput } from "@astryxdesign/core/TextInput";
 import type {
   DesktopWorkspaceDirectoryEntry,
   DesktopWorkspaceFilePreview
 } from "../../../../protocol.js";
-import { workspaceFileMarker } from "../../workspaceFileMarker.js";
 import { useHighlightedCode } from "../../useHighlightedCode.js";
 import { useInlineImage } from "../../inlineImage.js";
 import { CopyButton } from "../CopyButton.js";
 import { Icon } from "../Icon.js";
+import { FileTypeMarker } from "./FileTypeMarker.js";
 
 export interface FilePreviewState {
   source: string;
@@ -32,6 +33,12 @@ export interface FileDirectoryState {
   error?: string;
 }
 
+/** 文件树宽度约束（对齐 alma explorer 的 120–400、默认 200）；预览区最小保留宽度。 */
+const MIN_TREE_WIDTH = 120;
+const MAX_TREE_WIDTH = 400;
+const DEFAULT_TREE_WIDTH = 200;
+const MIN_PREVIEW_WIDTH = 160;
+
 export function FilePreviewPanel({ preview, directoryStates, expandedDirectories, projectId, onOpenFile, onPreviewFile, onShowFiles, onToggleDirectory }: {
   preview?: FilePreviewState;
   directoryStates: ReadonlyMap<string, FileDirectoryState>;
@@ -46,8 +53,44 @@ export function FilePreviewPanel({ preview, directoryStates, expandedDirectories
   const path = file?.path ?? preview?.path;
   const [query, setQuery] = useState("");
   const [fileTreeOpen, setFileTreeOpen] = useState(true);
+  const [treeWidth, setTreeWidth] = useState(DEFAULT_TREE_WIDTH);
+  const [resizing, setResizing] = useState(false);
   const browserOnly = !preview;
   const treeVisible = browserOnly || fileTreeOpen;
+  const bodyRef = useRef<HTMLDivElement>(null);
+  // dock 被拖窄时树宽必须跟着收敛（clamp 是「面板宽 − 预览最小宽」），否则预览会被挤没。
+  useEffect(() => {
+    const body = bodyRef.current;
+    if (!body) return;
+    const observer = new ResizeObserver(() => {
+      const available = Math.max(MIN_TREE_WIDTH, body.clientWidth - MIN_PREVIEW_WIDTH);
+      setTreeWidth((current) => Math.min(current, available));
+    });
+    observer.observe(body);
+    return () => observer.disconnect();
+  }, []);
+  const startTreeResize = (event: React.PointerEvent<HTMLDivElement>): void => {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setResizing(true);
+    const startX = event.clientX;
+    const startWidth = treeWidth;
+    // 上限用拖拽起点的面板宽算一次；拖树期间面板宽不变，每帧重算反而白费。
+    const maxWidth = Math.min(MAX_TREE_WIDTH, Math.max(MIN_TREE_WIDTH, (bodyRef.current?.clientWidth ?? 0) - MIN_PREVIEW_WIDTH));
+    const move = (moveEvent: PointerEvent): void => {
+      setTreeWidth(Math.min(maxWidth, Math.max(MIN_TREE_WIDTH, startWidth + moveEvent.clientX - startX)));
+    };
+    const stop = (): void => {
+      setResizing(false);
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", stop, { once: true });
+    window.addEventListener("pointercancel", stop, { once: true });
+  };
   return (
     <aside aria-label={preview ? "文件预览" : "文件浏览器"} className="file-preview-panel file-browser-panel">
       <header className="file-browser-path">
@@ -68,9 +111,8 @@ export function FilePreviewPanel({ preview, directoryStates, expandedDirectories
           ) : null}
         </div>
       </header>
-      <div className={`file-browser-body${treeVisible ? "" : " is-tree-hidden"}${browserOnly ? " is-browser-only" : ""}`}>
-        {preview ? <div className="file-browser-content"><FilePreviewContent preview={preview} projectId={projectId} onOpenFile={onOpenFile} /></div> : null}
-        <div aria-hidden={treeVisible ? undefined : true} className="file-browser-tree" inert={treeVisible ? undefined : true}>
+      <div className={`file-browser-body${resizing ? " is-resizing" : ""}${treeVisible ? "" : " is-tree-hidden"}${browserOnly ? " is-browser-only" : ""}`} ref={bodyRef}>
+        <div aria-hidden={treeVisible ? undefined : true} className="file-browser-tree" inert={treeVisible ? undefined : true} style={treeVisible && !browserOnly ? { width: treeWidth } : undefined}>
           <TextInput hasClear isLabelHidden label="筛选文件" onChange={setQuery} placeholder="筛选文件…" size="sm" startIcon={<Icon name="search" size={13} />} value={query} width="100%" />
           <FileTree
             directoryStates={directoryStates}
@@ -80,6 +122,10 @@ export function FilePreviewPanel({ preview, directoryStates, expandedDirectories
             path="."
             query={query}
           />
+        </div>
+        {treeVisible && !browserOnly ? <div aria-label="调整文件树宽度" aria-orientation="vertical" className="file-browser-tree-resizer" onPointerDown={startTreeResize} role="separator" /> : null}
+        <div className="file-browser-content">
+          {preview ? <FilePreviewContent preview={preview} projectId={projectId} onOpenFile={onOpenFile} /> : null}
         </div>
       </div>
     </aside>
@@ -201,7 +247,7 @@ function FileTree({ path, query, directoryStates, expandedDirectories, onToggleD
           <div key={entry.path}>
             <button className={`file-tree-row${isDirectory ? " is-directory" : ""}`} onClick={() => isDirectory ? onToggleDirectory(entry.path) : onPreviewFile(entry.path)} style={{ paddingLeft: `${8 + depth * 16}px` }} title={entry.path} type="button">
               {isDirectory ? <span className={`file-tree-disclosure${isExpanded ? " is-expanded" : ""}`}><Icon name="chevron" size={13} /></span> : <span aria-hidden="true" className="file-tree-disclosure is-file-slot" />}
-              {isDirectory ? <Icon className="file-tree-folder-icon" name="folder" size={14} /> : <FileTreeMarker name={entry.name} />}
+              {isDirectory ? <Icon className="file-tree-folder-icon" name="folder" size={14} /> : <FileTypeMarker name={entry.name} />}
               <span>{entry.name}</span>
             </button>
             {isDirectory && isExpanded ? <FileTree directoryStates={directoryStates} depth={depth + 1} expandedDirectories={expandedDirectories} onPreviewFile={onPreviewFile} onToggleDirectory={onToggleDirectory} path={entry.path} query={query} /> : null}
@@ -210,11 +256,6 @@ function FileTree({ path, query, directoryStates, expandedDirectories, onToggleD
       })}
     </div>
   );
-}
-
-function FileTreeMarker({ name }: { name: string }): React.JSX.Element {
-  const marker = workspaceFileMarker(name);
-  return <span aria-hidden="true" className={`file-type-marker is-${marker.tone}${marker.label.length > 2 ? " is-wide" : ""}`}>{marker.label}</span>;
 }
 
 function extensionOf(path: string): string {

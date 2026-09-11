@@ -1,8 +1,8 @@
 /**
  * 设置中的 Skill / Plugin 管理。
  *
- * 页面只调用 preload API；Skill 开关和自动抽取参数先进入设置草稿，随底部“保存”统一
- * 提交。Plugin 下载、解包和启停由主进程完成，渲染层不会接触包内容或执行 JavaScript。
+ * 页面只调用 preload API；Skill 开关先进入设置草稿，随底部“保存”统一提交。Plugin
+ * 下载、解包和启停由主进程完成，渲染层不会接触包内容或执行 JavaScript。
  */
 import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import type {
@@ -12,13 +12,13 @@ import type {
   DesktopSkillActivation,
   DesktopSkillCatalogEntry,
   DesktopSkillCatalogSnapshot,
-  DesktopSkillDraft,
   DesktopSkillFilePreview,
   DesktopSkillImportCandidate
 } from "../../../../protocol.js";
 import { errorMessage } from "../../app/desktopApi.js";
 import { Icon } from "../Icon.js";
 import { SkillImportDialog } from "../SkillImportDialog.js";
+import { SkillVersionControls } from "../SkillVersionControls.js";
 import { useSettingsDraft } from "./SettingsDraftContext.js";
 
 type SettingsExtensionKind = "plugins" | "skills";
@@ -51,7 +51,6 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
   const settingsDraft = useSettingsDraft();
   const [snapshot, setSnapshot] = useState<DesktopSkillCatalogSnapshot>(EMPTY_SNAPSHOT);
   const [registry, setRegistry] = useState<DesktopPluginRegistrySnapshot>(EMPTY_REGISTRY);
-  const [drafts, setDrafts] = useState<DesktopSkillDraft[]>([]);
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("全部");
   const [loading, setLoading] = useState(true);
@@ -72,12 +71,8 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
     setLoading(true);
     try {
       if (kind === "skills") {
-        const [next, nextDrafts] = await Promise.all([
-          window.biny.skillCatalog(projectId),
-          window.biny.skillDrafts(projectId)
-        ]);
+        const next = await window.biny.skillCatalog(projectId);
         setSnapshot({ ...next, unmanagedSkills: next.unmanagedSkills ?? [] });
-        setDrafts(nextDrafts);
       } else {
         const [next, nextRegistry] = await Promise.all([
           window.biny.skillCatalog(projectId),
@@ -98,11 +93,6 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
   }, [load]);
 
   const normalizedQuery = query.trim().toLocaleLowerCase();
-  // 草稿区只显示仍可操作的草稿：rejected/approved 已收口，不再占位（审核动作也会直接移除）。
-  const visibleDrafts = useMemo(
-    () => drafts.filter((draft) => draft.status === "pending" || draft.status === "failed"),
-    [drafts]
-  );
   const visibleSkills = useMemo(() => snapshot.skills.filter((skill) => {
     if (!normalizedQuery) return true;
     return `${skill.name} ${skill.description} ${skill.absolutePath}`.toLocaleLowerCase().includes(normalizedQuery);
@@ -124,8 +114,7 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
     const state = activationFor(skill, current.globalDefaults, current.projectOverrides);
     settingsDraft.setSkills({
       globalDefaults: { ...current.globalDefaults },
-      projectOverrides: { ...current.projectOverrides, [skill.ref]: !state.enabled },
-      extraction: { ...current.extraction }
+      projectOverrides: { ...current.projectOverrides, [skill.ref]: !state.enabled }
     });
   }, [settingsDraft]);
 
@@ -136,8 +125,7 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
     delete projectOverrides[skill.ref];
     settingsDraft.setSkills({
       globalDefaults: { ...current.globalDefaults },
-      projectOverrides,
-      extraction: { ...current.extraction }
+      projectOverrides
     });
   }, [settingsDraft]);
 
@@ -149,18 +137,7 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
     delete projectOverrides[skill.ref];
     settingsDraft.setSkills({
       globalDefaults: { ...current.globalDefaults, [skill.ref]: state.enabled },
-      projectOverrides,
-      extraction: { ...current.extraction }
-    });
-  }, [settingsDraft]);
-
-  const setExtraction = useCallback((enabled: boolean, minToolCalls: number): void => {
-    const current = settingsDraft.draft?.skills;
-    if (!current) return;
-    settingsDraft.setSkills({
-      globalDefaults: { ...current.globalDefaults },
-      projectOverrides: { ...current.projectOverrides },
-      extraction: { enabled, minToolCalls }
+      projectOverrides
     });
   }, [settingsDraft]);
 
@@ -184,26 +161,6 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
     }
   }, [expandedSkillId, onError, skillContent]);
 
-  const updateDraft = useCallback(async (draft: DesktopSkillDraft, action: "approve" | "reject" | "retry" | "edit", content?: string): Promise<void> => {
-    if (!projectId) return;
-    try {
-      const next = action === "approve"
-        ? await window.biny.approveSkillDraft(projectId, draft.id)
-        : action === "reject"
-          ? await window.biny.rejectSkillDraft(projectId, draft.id)
-        : action === "retry"
-          ? await window.biny.retrySkillDraft(projectId, draft.id)
-          : await window.biny.editSkillDraft(projectId, draft.id, content ?? draft.content);
-      // 批准/拒绝成功后草稿不再是「待审核」，直接从列表移除（rejected/approved 不再在此展示），
-      // 而不是 map 更新状态；retry/edit 仍保留在列表里，用返回的最新草稿做 map 更新。
-      setDrafts((current) => action === "approve" || action === "reject"
-        ? current.filter((candidate) => candidate.id !== next.id)
-        : current.map((candidate) => candidate.id === next.id ? next : candidate));
-      if (action === "approve") await load();
-    } catch (error) {
-      onError(errorMessage(error));
-    }
-  }, [load, onError, projectId]);
 
   const refreshPlugins = useCallback(async (): Promise<void> => {
     if (!projectId) return;
@@ -284,21 +241,16 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
   return (
     <div className={`settings-extension-view is-${kind}`} id={`settings-extensions-${kind}`}>
       {kind === "skills" ? <SkillsSettingsContent
-        drafts={visibleDrafts}
-        extraction={settingsDraft.draft?.skills.extraction ?? { enabled: true, minToolCalls: 5 }}
+        onError={onError}
+        onVersionChanged={() => { setSkillContent({}); setExpandedSkillId(undefined); void load(); }}
         expandedSkillId={expandedSkillId}
         loading={loading}
-        onApproveDraft={(draft) => void updateDraft(draft, "approve")}
-        onEditDraft={(draft, content) => void updateDraft(draft, "edit", content)}
-        onExtractionChange={setExtraction}
         onImportExisting={() => setImportDialogOpen(true)}
         onInherit={inheritSkill}
         onSetGlobal={setGlobalSkill}
         onOpenDirectory={(skill) => { void window.biny.openSkillDirectory(skill.id).catch((error: unknown) => onError(errorMessage(error))); }}
         onQuery={setQuery}
         onRefresh={() => void load()}
-        onRejectDraft={(draft) => void updateDraft(draft, "reject")}
-        onRetryDraft={(draft) => void updateDraft(draft, "retry")}
         onToggle={toggleSkill}
         onToggleContent={(skill) => void toggleSkillContent(skill)}
         query={query}
@@ -334,23 +286,18 @@ export function SettingsExtensionsView({ kind, onError, projectId }: {
 }
 
 const SkillsSettingsContent = memo(function SkillsSettingsContent({
+  onError,
+  onVersionChanged,
   contentLoadingId,
-  drafts,
-  extraction,
   expandedSkillId,
   globalDefaults,
   loading,
-  onApproveDraft,
-  onEditDraft,
-  onExtractionChange,
   onImportExisting,
   onInherit,
   onSetGlobal,
   onOpenDirectory,
   onQuery,
   onRefresh,
-  onRejectDraft,
-  onRetryDraft,
   onToggle,
   onToggleContent,
   projectOverrides,
@@ -359,23 +306,18 @@ const SkillsSettingsContent = memo(function SkillsSettingsContent({
   skills,
   unmanagedSkills
 }: {
+  onError(message: string): void;
+  onVersionChanged(): void;
   contentLoadingId?: string;
-  drafts: DesktopSkillDraft[];
-  extraction: { enabled: boolean; minToolCalls: number };
   expandedSkillId?: string;
   globalDefaults: Record<string, boolean>;
   loading: boolean;
-  onApproveDraft(draft: DesktopSkillDraft): void;
-  onEditDraft(draft: DesktopSkillDraft, content: string): void;
-  onExtractionChange(enabled: boolean, minToolCalls: number): void;
   onImportExisting(): void;
   onInherit(skill: DesktopSkillCatalogEntry): void;
   onSetGlobal(skill: DesktopSkillCatalogEntry): void;
   onOpenDirectory(skill: DesktopSkillCatalogEntry): void;
   onQuery(query: string): void;
   onRefresh(): void;
-  onRejectDraft(draft: DesktopSkillDraft): void;
-  onRetryDraft(draft: DesktopSkillDraft): void;
   onToggle(skill: DesktopSkillCatalogEntry): void;
   onToggleContent(skill: DesktopSkillCatalogEntry): void;
   projectOverrides: Record<string, boolean>;
@@ -386,24 +328,6 @@ const SkillsSettingsContent = memo(function SkillsSettingsContent({
 }): React.JSX.Element {
   return (
     <>
-      <section className="settings-skill-auto-card" aria-labelledby="settings-skill-auto-title">
-        <div>
-          <h3 id="settings-skill-auto-title">自动技能提取</h3>
-          <p>自动从对话中提取技能草稿，审核后安装。</p>
-        </div>
-        <button aria-checked={extraction.enabled} aria-label="切换自动技能提取" className={`settings-extension-switch${extraction.enabled ? " is-on" : ""}`} onClick={() => onExtractionChange(!extraction.enabled, extraction.minToolCalls)} role="switch" type="button"><span /></button>
-        <label className="settings-skill-threshold">
-          <div className="settings-skill-threshold-label"><strong>最少工具调用次数</strong><output>{extraction.minToolCalls}</output></div>
-          <input aria-label="最少工具调用次数" max={64} min={1} onChange={(event) => onExtractionChange(extraction.enabled, Number(event.target.value))} style={{ "--range-progress": `${((extraction.minToolCalls - 1) / 63) * 100}%` } as React.CSSProperties} type="range" value={extraction.minToolCalls} />
-          <p>达到该次数的对话才会被提取。</p>
-        </label>
-      </section>
-
-      {drafts.length ? <section className="settings-skill-drafts" aria-labelledby="settings-skill-drafts-title">
-        <div className="settings-extension-group-title"><Icon name="wand" size={19} /><strong id="settings-skill-drafts-title">待审核草稿</strong><span>{drafts.length}</span></div>
-        {drafts.map((draft) => <SkillDraftCard key={draft.id} draft={draft} onApprove={onApproveDraft} onEdit={onEditDraft} onReject={onRejectDraft} onRetry={onRetryDraft} />)}
-      </section> : null}
-
       <div className="settings-extension-list-heading">
         <span>{skills.length} 个技能可用</span>
         <div>
@@ -422,6 +346,8 @@ const SkillsSettingsContent = memo(function SkillsSettingsContent({
         {loading && !skills.length ? <ExtensionSettingsLoading /> : !skills.length ? <ExtensionSettingsEmpty icon="wand" title="没有匹配的技能" detail="换一个搜索词或刷新技能目录试试。" /> : skills.map((skill) => {
           const activation = activationFor(skill, globalDefaults, projectOverrides);
           return <SkillSettingsCard
+            onError={onError}
+            onVersionChanged={onVersionChanged}
             activation={activation}
             contentLoading={contentLoadingId === skill.id}
             expanded={expandedSkillId === skill.id}
@@ -440,7 +366,9 @@ const SkillsSettingsContent = memo(function SkillsSettingsContent({
   );
 });
 
-const SkillSettingsCard = memo(function SkillSettingsCard({ activation, contentLoading, expanded, onInherit, onSetGlobal, onOpenDirectory, onToggle, onToggleContent, preview, skill }: {
+const SkillSettingsCard = memo(function SkillSettingsCard({ onError, onVersionChanged, activation, contentLoading, expanded, onInherit, onSetGlobal, onOpenDirectory, onToggle, onToggleContent, preview, skill }: {
+  onError(message: string): void;
+  onVersionChanged(): void;
   activation: DesktopSkillActivation;
   contentLoading: boolean;
   expanded: boolean;
@@ -460,7 +388,7 @@ const SkillSettingsCard = memo(function SkillSettingsCard({ activation, contentL
         <div className="settings-skill-card-heading"><h4>{skill.name}</h4><span>{skill.scope === "builtin" ? "内置" : skill.scope === "global" ? "全局" : "项目"} · {sourceLabel}</span></div>
         <p>{skill.description || "暂无描述"}</p>
         <div className="settings-skill-card-footer">
-          <button aria-expanded={expanded} className="settings-skill-content-toggle" onClick={onToggleContent} type="button"><Icon name="chevron" size={16} />查看内容</button>
+          <button aria-expanded={expanded} className="settings-skill-content-toggle" onClick={onToggleContent} type="button"><Icon name="chevron" size={15} />查看内容</button>
           <button className="settings-skill-content-toggle" onClick={onOpenDirectory} type="button"><Icon name="folder-open" size={15} />目录</button>
           {activation.projectOverride !== undefined ? <button className="settings-skill-content-toggle" onClick={onInherit} type="button">恢复继承</button> : null}
           {activation.projectOverride !== undefined ? <button className="settings-skill-content-toggle" onClick={onSetGlobal} type="button">设为全局默认</button> : null}
@@ -469,52 +397,9 @@ const SkillSettingsCard = memo(function SkillSettingsCard({ activation, contentL
       </div>
       <button aria-checked={activation.enabled} aria-label={`${activation.enabled ? "停用" : "启用"}技能 ${skill.name}`} className={`settings-extension-switch${activation.enabled ? " is-on" : ""}`} onClick={onToggle} role="switch" type="button"><span /></button>
       {expanded ? <div className="settings-skill-content" aria-label={`${skill.name} 内容`}>
+        <SkillVersionControls key={`version:${skill.id}`} skillId={skill.id} disabled={false} onChanged={onVersionChanged} onError={onError} />
         {contentLoading ? <span>正在读取内容…</span> : preview?.binary ? <span>无法预览二进制文件。</span> : <pre>{content || "暂无可显示内容。"}</pre>}
       </div> : null}
-    </article>
-  );
-});
-
-const SkillDraftCard = memo(function SkillDraftCard({ draft, onApprove, onEdit, onReject, onRetry }: { draft: DesktopSkillDraft; onApprove(draft: DesktopSkillDraft): void; onEdit(draft: DesktopSkillDraft, content: string): void; onReject(draft: DesktopSkillDraft): void; onRetry(draft: DesktopSkillDraft): void }): React.JSX.Element {
-  const [editing, setEditing] = useState(false);
-  const [expanded, setExpanded] = useState(false);
-  const [content, setContent] = useState(draft.content);
-  useEffect(() => {
-    if (!editing) setContent(draft.content);
-  }, [draft.content, editing]);
-  const statusLabel = draft.status === "pending" ? "待审核" : draft.status === "failed" ? "提取失败" : draft.status === "approved" ? "已安装" : "已拒绝";
-  // 默认折叠：只露标题行 + 一行描述 + 操作按钮，全文「查看内容」按需展开，避免长草稿把技能列表挤没。
-  return (
-    <article className={`settings-skill-draft-card${expanded ? " is-expanded" : ""}`}>
-      <div>
-        <div className="settings-skill-card-heading"><h4>{draft.name}</h4><span>{draft.toolCalls} 次工具调用 · {statusLabel}</span></div>
-        <p>{draft.description}</p>
-        {draft.error ? <p className="settings-skill-draft-error">{draft.error}</p> : null}
-        {editing ? (
-          <textarea aria-label={`${draft.name} 草稿正文`} className="settings-skill-draft-editor" onChange={(event) => setContent(event.target.value)} value={content} />
-        ) : expanded ? (
-          <pre>{stripFrontmatter(draft.content)}</pre>
-        ) : null}
-      </div>
-      <div className="settings-skill-draft-actions">
-        {editing ? (
-          <>
-            <button onClick={() => { onEdit(draft, content); setEditing(false); }} type="button">保存编辑</button>
-            <button onClick={() => { setContent(draft.content); setEditing(false); }} type="button">取消</button>
-          </>
-        ) : (
-          <>
-            <button aria-expanded={expanded} className="settings-skill-content-toggle" onClick={() => setExpanded((value) => !value)} type="button"><Icon name="chevron" size={15} />{expanded ? "收起内容" : "查看内容"}</button>
-            {draft.status === "pending" ? <button onClick={() => setEditing(true)} type="button">编辑</button> : null}
-            {draft.status === "pending" ? (
-              <>
-                <button className="is-primary" onClick={() => onApprove(draft)} type="button">批准并安装</button>
-                <button onClick={() => onReject(draft)} type="button">拒绝</button>
-              </>
-            ) : draft.status === "failed" ? <button onClick={() => onRetry(draft)} type="button">重试</button> : null}
-          </>
-        )}
-      </div>
     </article>
   );
 });

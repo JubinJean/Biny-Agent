@@ -37,9 +37,8 @@ export const ComposerActionButton = forwardRef<HTMLButtonElement, ComposerAction
   const content = disabled ? disabledReason ?? tooltip : tooltip;
   const keepFocusable = disabled && Boolean(disabledReason);
   const tooltipApi = useTooltip({
-    delay: 200,
+    delay: 400,
     focusTrigger: "auto",
-    hideDelay: 0,
     isEnabled: Boolean(content),
     placement: "above"
   });
@@ -73,6 +72,7 @@ export const ComposerActionButton = forwardRef<HTMLButtonElement, ComposerAction
     <>
       <button
         {...rest}
+        aria-describedby={content ? [rest["aria-describedby"], tooltipApi.describedBy].filter(Boolean).join(" ") : rest["aria-describedby"]}
         aria-busy={loading || undefined}
         aria-disabled={keepFocusable || undefined}
         aria-label={rest["aria-label"] ?? label}

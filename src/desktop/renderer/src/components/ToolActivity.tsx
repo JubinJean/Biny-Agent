@@ -1,51 +1,36 @@
 /**
- * 单个工具调用的展示卡片：折叠行（状态图标芯片 + 标题 + 摘要 + 用时），
- * 展开体保留权限询问、命令日志、文件变更、diff、网页搜索等卡片。
+ * 工具调用详情体（headless）。
  *
- * 展开状态是「自动 + 手动覆盖」的组合：等待权限、失败、被拒时默认展开，其余（包括运行中）
- * 保持折叠，运行状态由图标芯片的呼吸光环表达；用户手动切换后 `override` 记住该选择，
- * 直到工具状态发生变化再回到自动策略。
+ * 活动段里工具动宾行内嵌的完整详情：权限询问、命令日志、文件变更、diff、网页搜索、
+ * 通用 IN/OUT 卡与错误输出。折叠行/标题由活动段的活动行承载，这里只渲染正文。
  */
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import React, { memo, useEffect, useMemo, useRef, useState } from "react";
 import { isFullYesConfirmation } from "../../../../permission/confirmation.js";
 import type { PermissionAction, PermissionResult } from "../../../../permission/PermissionManager.js";
 import { permissionScopeForAlways } from "../../../../permission/permissionScope.js";
 import { tokenizeCommand } from "../commandHighlight.js";
-import { classifyTool, firstLine, toolRowState, VARIANT_TITLES } from "../chatModel.js";
 import { collapseContext, computeLineDiff } from "../lineDiff.js";
 import type { TimelineCommand, TimelineTool } from "../sessionTimeline.js";
 import { projectWebSearchView, type WebSearchResultView, type WebSearchView } from "../webSearchPresentation.js";
 import { CopyButton } from "./CopyButton.js";
 import { Icon } from "./Icon.js";
 import { CodeView } from "./chat/CodeView.js";
-import { ToolCallBlock } from "./chat/ToolCallBlock.js";
 import { IoCard } from "./chat/IoCard.js";
 
-interface ToolActivityProps {
+interface ToolActivityDetailProps {
   projectId: string;
   tool: TimelineTool;
-  /** row：聚合组导轨里的紧凑行；card（默认）：独立工具卡片。 */
-  presentation?: "card" | "row";
   onPreviewFile(path: string): void;
   onOpenExternal(url: string): void;
   onResolvePermission(requestId: string, result: PermissionResult): Promise<void>;
 }
 
-export const ToolActivity = memo(function ToolActivity({ projectId, tool, presentation, onPreviewFile, onOpenExternal, onResolvePermission }: ToolActivityProps): React.JSX.Element {
-  const permissionPending = Boolean(tool.permission && !tool.permission.resolved);
-  const auto = permissionPending || tool.status === "failed" || tool.status === "denied" || tool.status === "unknown" || tool.status === "cancelled";
-  // override 连同当时的状态一起记：状态一变（比如从 running 变 success）就作废，回到自动策略。
-  const [override, setOverride] = useState<{ status: TimelineTool["status"]; expanded: boolean }>();
-  const expanded = override?.status === tool.status ? override.expanded : auto;
+export const ToolActivityDetail = memo(function ToolActivityDetail({ projectId, tool, onPreviewFile, onOpenExternal, onResolvePermission }: ToolActivityDetailProps): React.JSX.Element {
   const [resolving, setResolving] = useState(false);
   const command = useMemo(() => commandDetails(tool), [tool]);
   const diff = useMemo(() => tool.diff ? analyzeDiff(tool.diff) : undefined, [tool.diff]);
   const fileChange = useMemo(() => fileChangeDetails(tool), [tool]);
   const webSearch = useMemo(() => tool.tool === "WebSearch" ? projectWebSearchView(tool.args, tool.result) : undefined, [tool.args, tool.result, tool.tool]);
-  const variant = classifyTool(tool.tool);
-  const rowState = toolRowState(tool);
-  const summary = toolSummary(tool, command, diff, webSearch);
-  const durationMs = useLiveDuration(tool);
   const errorText = meaningfulError(tool, command);
 
   const resolve = async (result: PermissionResult): Promise<void> => {
@@ -59,41 +44,25 @@ export const ToolActivity = memo(function ToolActivity({ projectId, tool, presen
   };
 
   return (
-    <article className={`execution-step tool-activity is-${tool.status}`} data-project-id={projectId}>
-      <ToolCallBlock
-        compact={presentation === "row"}
-        durationLabel={durationMs !== undefined ? formatDuration(durationMs) : undefined}
-        errorSummary={errorText ? firstLine(errorText) : null}
-        expandable
-        expanded={expanded}
-        onToggle={() => setOverride({ status: tool.status, expanded: !expanded })}
-        state={rowState}
-        summary={summary}
-        // 无法分类的工具（others）回退显示原始工具名，避免出现无信息的「Tool call」。
-        title={variant === "others" ? tool.tool : VARIANT_TITLES[variant]}
-        variant={variant}
-      >
-        <div className="tool-details">
-          {tool.permission ? (
-            <PermissionCard disabled={resolving} permission={tool.permission} onResolve={resolve} />
-          ) : null}
-          {command ? <CommandLog command={command} running={tool.status === "running"} /> : null}
-          {fileChange ? <FileChangeView change={fileChange} onPreviewFile={onPreviewFile} /> : null}
-          {diff && tool.diff ? <DiffView diff={tool.diff} info={diff} onPreviewFile={onPreviewFile} /> : null}
-          {webSearch ? <WebSearchLog onOpenExternal={onOpenExternal} tool={tool} view={webSearch} /> : null}
-          {!command && !diff && !webSearch && !fileChange ? <ToolPayload onPreviewFile={onPreviewFile} tool={tool} /> : null}
-          {errorText ? (
-            <section className="tool-section">
-              <h4 className="tool-section-label">错误</h4>
-              <div className="copyable-code-block is-error">
-                <CopyButton className="copy-button" label="复制错误" value={errorText} />
-                <pre className="tool-error-output"><code>{errorText}</code></pre>
-              </div>
-            </section>
-          ) : null}
-        </div>
-      </ToolCallBlock>
-    </article>
+    <div className="tool-details" data-project-id={projectId}>
+      {tool.permission ? (
+        <PermissionCard disabled={resolving} permission={tool.permission} onResolve={resolve} />
+      ) : null}
+      {command ? <CommandLog command={command} running={tool.status === "running"} /> : null}
+      {fileChange ? <FileChangeView change={fileChange} onPreviewFile={onPreviewFile} /> : null}
+      {diff && tool.diff ? <DiffView diff={tool.diff} info={diff} onPreviewFile={onPreviewFile} /> : null}
+      {webSearch ? <WebSearchLog onOpenExternal={onOpenExternal} tool={tool} view={webSearch} /> : null}
+      {!command && !diff && !webSearch && !fileChange ? <ToolPayload onPreviewFile={onPreviewFile} tool={tool} /> : null}
+      {errorText ? (
+        <section className="tool-section">
+          <h4 className="tool-section-label">错误</h4>
+          <div className="copyable-code-block is-error">
+            <CopyButton className="copy-button" label="复制错误" value={errorText} />
+            <pre className="tool-error-output"><code>{errorText}</code></pre>
+          </div>
+        </section>
+      ) : null}
+    </div>
   );
 });
 
@@ -471,37 +440,6 @@ function ToolPayload({ tool, onPreviewFile }: { tool: TimelineTool; onPreviewFil
   );
 }
 
-// 运行中的工具没有 durationMs，用事件时间戳实时递增，结束后回落到权威时长。
-function useLiveDuration(tool: TimelineTool): number | undefined {
-  const running = tool.durationMs === undefined && (tool.status === "running" || tool.status === "waiting");
-  const [now, setNow] = useState(() => Date.now());
-  useEffect(() => {
-    if (!running) return;
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1_000);
-    return () => clearInterval(timer);
-  }, [running]);
-  if (tool.durationMs !== undefined) return tool.durationMs;
-  if (!running || !tool.timestamp) return undefined;
-  const startedAt = Date.parse(tool.timestamp);
-  return Number.isNaN(startedAt) ? undefined : Math.max(0, now - startedAt);
-}
-
-// 行首状态由工具行的图标芯片与呼吸光环表达，这里只保留摘要派生。
-
-function toolSummary(tool: TimelineTool, command: TimelineCommand | undefined, diff: DiffInfo | undefined, webSearch: WebSearchView | undefined): string {
-  if (command?.command) return command.command;
-  if (diff) return `${String(diff.files.length)} 个文件，+${String(diff.additions)} -${String(diff.deletions)}`;
-  if (webSearch?.query) return tool.status === "success" ? `${webSearch.query} · ${String(webSearch.results.length)} 条结果` : webSearch.query;
-  if (tool.path) return tool.path;
-  if (tool.display?.kind === "file_io") return tool.display.path ?? tool.display.detail ?? tool.display.operation;
-  if (tool.display?.kind === "generic") return tool.display.summary;
-  if (tool.description) return tool.description;
-  const args = tool.args as Record<string, unknown> | undefined;
-  const candidate = args && [args.path, args.query, args.pattern, args.command].find((value) => typeof value === "string");
-  return typeof candidate === "string" ? candidate : "";
-}
-
 function commandDetails(tool: TimelineTool): TimelineCommand | undefined {
   if (tool.command) return tool.command;
   const args = typeof tool.args === "object" && tool.args !== null ? tool.args as Record<string, unknown> : undefined;
@@ -598,12 +536,6 @@ function riskLabel(risk: string): string {
   if (risk === "medium") return "中风险";
   if (risk === "low") return "低风险";
   return "需确认";
-}
-
-function formatDuration(durationMs: number): string {
-  if (durationMs < 1_000) return `${String(durationMs)} ms`;
-  if (durationMs < 60_000) return `${(durationMs / 1_000).toFixed(durationMs < 10_000 ? 1 : 0)}s`;
-  return `${String(Math.floor(durationMs / 60_000))}m${String(Math.round((durationMs % 60_000) / 1_000))}s`;
 }
 
 function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {

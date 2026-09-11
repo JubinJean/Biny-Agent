@@ -9,7 +9,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { InteractiveAgentRunMode } from "../../../agent/AgentSession.js";
 import type { AgentCapabilitySelection } from "../../../agent/capabilitySelection.js";
 import type { ContextBudgetStatus } from "../../../agent/context/types.js";
-import { defaultEffectiveContextWindowPercent } from "../../../ai/capabilities.js";
 import type { PermissionResult } from "../../../permission/PermissionManager.js";
 import { defaultChatPersonalizationOverride, resolveChatPersonalization } from "../../../personalization/index.js";
 import { activeRun, pendingPermission } from "../../../runtime/agentEvents.js";
@@ -48,6 +47,7 @@ import {
   type DesktopNavigationState,
   type DesktopNavigationTarget
 } from "./navigationHistory.js";
+import { collectSessionChanges } from "./sessionChanges.js";
 import { listChangedFiles, type TimelineTurn } from "./sessionTimeline.js";
 import { splitAttachmentReferences } from "../../attachmentReferences.js";
 import { desktopApiVersionMismatchMessage, errorMessage } from "./app/desktopApi.js";
@@ -63,7 +63,7 @@ import {
   syntheticSession
 } from "./app/desktopState.js";
 import { useDesktopEventBridge } from "./app/useDesktopEventBridge.js";
-import type { SkillDraftNotice } from "./app/useDesktopEventBridge.js";
+import type { RecipeNotice } from "./app/useDesktopEventBridge.js";
 import { useSessionTimeline } from "./app/useSessionTimeline.js";
 import { useDesktopSettingsActions } from "./app/useDesktopSettingsActions.js";
 import { useSidebarLayout } from "./app/useSidebarLayout.js";
@@ -73,7 +73,7 @@ import { type ContextUsage } from "./usagePresentation.js";
 import { DesktopShell } from "./components/DesktopShell.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { SkillHubView } from "./components/SkillHubView.js";
-import { Workspace, type PendingHomePrompt } from "./components/Workspace.js";
+import { Workspace, type PendingPrompt } from "./components/Workspace.js";
 import { DesktopToast } from "./components/overlays/DesktopToast.js";
 import { RenameOverlay } from "./components/overlays/RenameOverlay.js";
 import { SearchOverlay } from "./components/overlays/SearchOverlay.js";
@@ -123,8 +123,10 @@ function DesktopApp(): React.JSX.Element {
   const [composerDraft, setComposerDraft] = useState<string>();
   /** 建议 pill 直达提交（nonce 变化触发 Composer 统一提交路径）。 */
   const [composerSubmitDraft, setComposerSubmitDraft] = useState<{ text: string; nonce: number }>();
-  /** 首页首条消息的乐观投影；真实 message.user 到达后按 messageId 移除。 */
-  const [pendingHomePrompt, setPendingHomePrompt] = useState<PendingHomePrompt>();
+  const composerSubmitNonceRef = useRef(0);
+  const composerSubmitClaimRef = useRef<number | undefined>(undefined);
+  /** 发送前的乐观用户消息；真实 message.user 到达后按 messageId 移除。 */
+  const [pendingPrompt, setPendingPrompt] = useState<PendingPrompt>();
   /** 项目行「新建任务」直达的空白草稿：true 时 Workspace 渲染空白聊天而非首页欢迎态。 */
   const [blankDraft, setBlankDraft] = useState(false);
   /** 未发送草稿的目标项目；只改变输入框归属，不提前切换工作区。 */
@@ -145,8 +147,8 @@ function DesktopApp(): React.JSX.Element {
   const [slashResult, setSlashResult] = useState<DesktopSlashResult>();
   const [toast, setToast] = useState<string>();
   const [warning, setWarning] = useState<string>();
-  /** 当前选中会话的技能草稿审核卡片（聊天内）；换会话清空，由事件桥按 sessionId 重新收集。 */
-  const [skillDraftNotices, setSkillDraftNotices] = useState<SkillDraftNotice[]>([]);
+  /** 当前选中会话的 Recipe 提示卡；换会话清空，事件桥和历史读取共同填充。 */
+  const [recipeNotices, setRecipeNotices] = useState<RecipeNotice[]>([]);
   const selectedRef = useRef<string | undefined>(undefined);
   const projectRef = useRef<string | undefined>(undefined);
   const permissionModeRequestRef = useRef(0);
@@ -216,10 +218,27 @@ function DesktopApp(): React.JSX.Element {
     projectRef.current = workspace?.project.id;
   }, [selectedSessionId, workspace?.project.id]);
 
-  // 换会话时清掉上一会话的草稿审核卡片；新会话的卡片由事件桥按 sessionId 重新收集。
+  // 换会话时清掉上一会话的 Recipe 卡片；新会话的卡片由历史读取和事件桥共同收集。
   useEffect(() => {
-    setSkillDraftNotices([]);
+    setRecipeNotices([]);
   }, [selectedSessionId]);
+
+  useEffect(() => {
+    const projectId = workspace?.project.id;
+    const sessionId = selectedSessionId;
+    if (!projectId || !sessionId || page !== "chat") return;
+    let cancelled = false;
+    void window.biny.recipeSuggestions(projectId, sessionId).then((recipes) => {
+      if (cancelled) return;
+      setRecipeNotices((current) => {
+        const seen = new Set(current.map((notice) => notice.id));
+        return [...current, ...recipes.filter((recipe) => !seen.has(recipe.id)).map((recipe) => ({ ...recipe, sessionId }))];
+      });
+    }).catch((error: unknown) => {
+      if (!cancelled) setWarning(errorMessage(error));
+    });
+    return () => { cancelled = true; };
+  }, [page, selectedSessionId, workspace?.project.id]);
 
   const selectedSession = workspace?.sessions.find((session) => session.id === selectedSessionId)
     ?? (document?.session.id === selectedSessionId ? document?.session : undefined);
@@ -378,6 +397,8 @@ function DesktopApp(): React.JSX.Element {
     loadMemoryEntries,
     loadMemoryEmbeddingStatus,
     openBrowser,
+    readModelApiKey,
+    readWebSearchApiKey,
     rebuildMemoryEmbeddingIndex,
     searchMemory,
     startModelLogin,
@@ -636,7 +657,7 @@ function DesktopApp(): React.JSX.Element {
     onError: reportEventError,
     setContextBudget,
     setDocument,
-    setSkillDraftNotices,
+    setRecipeNotices,
     setWriterConflict,
     setSidebarSessions,
     setWorkspace,
@@ -939,31 +960,42 @@ function DesktopApp(): React.JSX.Element {
     }
   }, [openSession]);
 
-  // 首页首条消息直接进入聊天布局；临时用户消息覆盖 IPC/事件桥的空窗，真实事件到达后自动替换。
-  // 空白草稿本就在底部停靠，不需要额外投影。
+  // 发送直接进入聊天布局；临时用户消息覆盖 IPC/事件桥的空窗，真实事件到达后自动替换。
   const sendPromptWithTransition = useCallback(async (input: string, mode: InteractiveAgentRunMode, attachments: DesktopAttachment[], delivery?: "steer" | "followUp", idempotencyKey?: string, capabilitySelection?: AgentCapabilitySelection): Promise<void> => {
-    const homeProjectId = projectRef.current;
-    const isHomeSubmit = Boolean(homeProjectId)
-      && selectedRef.current === undefined
-      && !blankDraft
-      && (draftProjectId === undefined || draftProjectId === homeProjectId);
+    const pendingProjectId = selectedRef.current === undefined ? draftProjectId ?? projectRef.current : undefined;
     const pendingId = idempotencyKey ?? globalThis.crypto.randomUUID();
-    if (isHomeSubmit && homeProjectId) setPendingHomePrompt({ id: pendingId, projectId: homeProjectId, text: input });
+    if (pendingProjectId) {
+      setPendingPrompt({
+        id: pendingId,
+        projectId: pendingProjectId,
+        sessionId: selectedRef.current,
+        text: input
+      });
+    }
     try {
       const receipt = await sendPrompt(input, mode, attachments, delivery, idempotencyKey, capabilitySelection);
-      if (isHomeSubmit && homeProjectId) {
-        setPendingHomePrompt((current) => current?.id === pendingId
+      if (pendingProjectId) {
+        setPendingPrompt((current) => current?.id === pendingId
           ? { ...current, sessionId: receipt.sessionId, messageId: receipt.messageId }
           : current);
       }
     } catch (error) {
-      if (isHomeSubmit) setPendingHomePrompt((current) => current?.id === pendingId ? undefined : current);
+      if (pendingProjectId) setPendingPrompt((current) => current?.id === pendingId ? undefined : current);
       throw error;
     }
-  }, [blankDraft, draftProjectId, sendPrompt]);
+  }, [draftProjectId, sendPrompt]);
 
   const submitComposerPrompt = useCallback((prompt: string): void => {
-    setComposerSubmitDraft({ text: prompt, nonce: Date.now() });
+    const nonce = composerSubmitNonceRef.current + 1;
+    composerSubmitNonceRef.current = nonce;
+    setComposerSubmitDraft({ text: prompt, nonce });
+  }, []);
+
+  const consumeComposerSubmitDraft = useCallback((nonce: number): boolean => {
+    if (composerSubmitClaimRef.current === nonce) return false;
+    composerSubmitClaimRef.current = nonce;
+    setComposerSubmitDraft((current) => current?.nonce === nonce ? undefined : current);
+    return true;
   }, []);
 
   const runSlashCommand = useCallback(async (command: string): Promise<void> => {
@@ -1261,7 +1293,12 @@ function DesktopApp(): React.JSX.Element {
     void window.biny.openWorkspaceFile(projectId, path).catch((error) => setWarning(errorMessage(error)));
   }, []);
 
+  // 增量时间线：历史段按 events 引用记忆、实时段只折叠新增事件，未变化轮次保持引用稳定。
+  const turns = useSessionTimeline(document);
+  // 「变更」视图数据：从时间线收集 Agent 改过的文件；轮次引用稳定时 useMemo 不重算。
+  const sessionChanges = useMemo(() => collectSessionChanges(turns), [turns]);
   const inspector = useWorkspaceInspector({
+    changes: sessionChanges,
     filePanelResizing,
     filePanelWidth,
     onFilePanelResizeEnd: (width) => {
@@ -1280,10 +1317,8 @@ function DesktopApp(): React.JSX.Element {
     source: `${workspace?.project.id ?? "none"}:${document?.session.id ?? "draft"}`
   });
 
-  // 增量时间线：历史段按 events 引用记忆、实时段只折叠新增事件，未变化轮次保持引用稳定。
-  const turns = useSessionTimeline(document);
   useEffect(() => {
-    const pending = pendingHomePrompt;
+    const pending = pendingPrompt;
     if (!pending) return;
     const stillSelected = pending.projectId === workspace?.project.id
       && (pending.sessionId === undefined
@@ -1292,9 +1327,9 @@ function DesktopApp(): React.JSX.Element {
     const hasRealMessage = pending.messageId !== undefined
       && turns.some((turn) => turn.userMessageId === pending.messageId);
     if (!stillSelected || hasRealMessage) {
-      setPendingHomePrompt((current) => current?.id === pending.id ? undefined : current);
+      setPendingPrompt((current) => current?.id === pending.id ? undefined : current);
     }
-  }, [pendingHomePrompt, selectedSessionId, turns, workspace?.project.id]);
+  }, [pendingPrompt, selectedSessionId, turns, workspace?.project.id]);
   // 以下三个回调会一路传到 MessageTimeline 的 Turn（React.memo）；内联箭头会让引用每帧变化、
   // memo 失效，所以这里用 useCallback 固定下来，配合轮次引用稳定让流式期间只重渲染变化的轮次。
   const retryTimelinePrompt = useCallback(async (targetMessageId: string, input: string, idempotencyKey: string): Promise<void> => {
@@ -1353,63 +1388,36 @@ function DesktopApp(): React.JSX.Element {
     if (replaced) setEditInFlight(undefined);
   }, [editInFlight, visibleTurns]);
 
-  // 原始模型窗口只作为主展示分母；实际输入、有效输入预算和 Codex 风格 headroom 分开
-  // 投影，不能把预留伪装成已使用。优先使用当前运行时预算，重开会话或刚启动时再回退到
-  // Runtime 信息和模型目录。
-  const contextUsage = useMemo<ContextUsage | undefined>(() => {
-    const info = workspace?.runtime?.info;
-    const models = workspace?.models ?? [];
-    // 没有匹配到 Runtime 当前 alias 时不能退回列表第一项；第一项可能属于另一个 provider，
-    // 会把错误模型的上下文窗口投影到当前会话。预算自身带有 modelAlias，是更可靠的来源。
-    const activeModelAlias = contextBudget?.modelAlias ?? info?.modelAlias;
-    const selectedModel = activeModelAlias === undefined
-      ? undefined
-      : models.find((model) => model.alias === activeModelAlias);
-    const contextWindow = contextBudget?.contextWindow ?? info?.contextWindow ?? selectedModel?.contextWindow;
-    const contextWindowIsFallback = contextBudget?.contextWindowIsFallback
-      ?? info?.contextWindowIsFallback
-      ?? selectedModel?.contextWindowIsFallback
-      ?? false;
-    const usedTokens = contextBudget?.usedTokens ?? lastReportedInputTokens(document);
-    const displayContextWindow = contextWindow
-      ?? contextBudget?.maxTokens
-      ?? info?.maxInputTokens
-      ?? selectedModel?.inputBudgetTokens;
-    if (!displayContextWindow || !usedTokens) return undefined;
-    const effectiveContextWindow = contextBudget?.effectiveContextWindow
-      ?? info?.effectiveContextWindow
-      ?? selectedModel?.effectiveContextWindow;
-    // 展示口径：分母是「可用输入额度」，不含输出预留与 headroom；拿不到预算元数据时
-    // 按统一有效窗口比例从原始窗口折算，避免把预留摊进用户看到的额度。
-    const inputBudgetTokens = Math.min(displayContextWindow, contextBudget?.maxTokens
-      ?? info?.maxInputTokens
-      ?? selectedModel?.inputBudgetTokens
-      ?? effectiveContextWindow
-      ?? Math.max(1, Math.floor((displayContextWindow * defaultEffectiveContextWindowPercent) / 100)));
-    const reservedTokens = contextBudget?.contextReserveTokens
-      ?? info?.contextReserveTokens
-      ?? selectedModel?.contextReserveTokens
-      ?? Math.max(0, displayContextWindow - inputBudgetTokens);
-    const toolTokens = contextBudget?.toolSchemaReserveTokens ?? selectedModel?.toolSchemaReserveTokens;
-    const otherTokens = Math.max(0, reservedTokens - Math.min(reservedTokens, toolTokens ?? 0));
-    return {
-      usedTokens,
-      contextWindow: displayContextWindow,
-      contextWindowIsFallback,
-      inputBudgetTokens,
-      reservedTokens,
-      toolTokens,
-      otherTokens
-    };
-  }, [contextBudget, document, workspace?.models, workspace?.runtime?.info]);
-  const clearToast = useCallback(() => setToast(undefined), []);
-  const sessionSummary = workspace?.sessions.find((session) => session.id === selectedSessionId) ?? document?.session;
   // 并行池化后按「选中会话自己的 runtime」取运行态；主 runtime 只有在确实绑定该会话时
   // 才能作为回退，避免切换会话时把上一个会话的 thinking 状态带进当前页面。
   const selectedRuntimeSnapshot = selectedSessionId !== undefined
     ? workspace?.sessionRuntimes?.[selectedSessionId]
       ?? (workspace?.runtime?.info.sessionId === selectedSessionId ? workspace.runtime : undefined)
     : workspace?.runtime;
+  // 展示最近请求的完整输入 / 模型完整窗口；压缩预算继续由后端独立控制。
+  const contextUsage = useMemo<ContextUsage | undefined>(() => {
+    const info = selectedRuntimeSnapshot?.info;
+    const persisted = document?.events.slice().reverse().find((event) => (
+      (event.type === "assistant_message" || event.type === "user_message") && !event.auditOnly && event.contextState !== undefined
+    ));
+    const budget = contextBudget ?? (persisted && "contextState" in persisted ? persisted.contextState?.budget : undefined);
+    const activeModelAlias = info?.modelAlias ?? budget?.modelAlias;
+    const selectedModel = workspace?.models.find((model) => model.alias === activeModelAlias);
+    const sameModel = !info?.modelAlias || !budget?.modelAlias || info.modelAlias === budget.modelAlias;
+    const contextWindow = (sameModel ? budget?.contextWindow : undefined) ?? info?.contextWindow ?? selectedModel?.contextWindow;
+    if (!contextWindow) return undefined;
+    return {
+      usedTokens: (sameModel ? budget?.usedTokens : budget?.estimatedTokens) ?? lastReportedInputTokens(document) ?? 0,
+      contextWindow,
+      contextWindowIsFallback: (sameModel ? budget?.contextWindowIsFallback : undefined)
+        ?? info?.contextWindowIsFallback ?? selectedModel?.contextWindowIsFallback ?? true,
+      source: sameModel ? budget?.source : "estimated",
+      breakdown: budget?.breakdown,
+      cacheHitRate: budget?.cacheHitRate
+    };
+  }, [contextBudget, document, selectedRuntimeSnapshot?.info, workspace?.models]);
+  const clearToast = useCallback(() => setToast(undefined), []);
+  const sessionSummary = workspace?.sessions.find((session) => session.id === selectedSessionId) ?? document?.session;
   const activeRunSnapshot = activeRun(selectedRuntimeSnapshot);
   const pendingPermissionSnapshot = pendingPermission(selectedRuntimeSnapshot);
   const activeSessionId = activeRunSnapshot?.sessionId ?? pendingPermissionSnapshot?.sessionId;
@@ -1500,6 +1508,26 @@ function DesktopApp(): React.JSX.Element {
     setComposerDraft(input);
     setFocusToken((value) => value + 1);
   }, []);
+  const dismissRecipe = useCallback((notice: RecipeNotice): void => {
+    setRecipeNotices((current) => current.filter((candidate) => candidate.id !== notice.id));
+    const projectId = projectRef.current;
+    const sessionId = selectedRef.current;
+    if (projectId && sessionId) {
+      void window.biny.setRecipeState(projectId, sessionId, notice.id, "dismissed")
+        .catch((error: unknown) => setWarning(errorMessage(error)));
+    }
+  }, []);
+  const extractRecipe = useCallback((notice: RecipeNotice): void => {
+    setRecipeNotices((current) => current.filter((candidate) => candidate.id !== notice.id));
+    prefillComposer(notice.extractPrompt);
+    const projectId = projectRef.current;
+    const sessionId = selectedRef.current;
+    if (projectId && sessionId) {
+      void window.biny.setRecipeState(projectId, sessionId, notice.id, "extracted")
+        .catch((error: unknown) => setWarning(errorMessage(error)));
+    }
+    setToast("提取指令已填入输入框 — 确认后发送");
+  }, [prefillComposer]);
   // 顶栏的项目/分支选择器胶囊：会话内外常驻；未进入会话时切换项目只影响草稿归属。
   const workspaceContext = composerProject ? (
     <WorkspaceContextBar
@@ -1525,7 +1553,7 @@ function DesktopApp(): React.JSX.Element {
       focusToken={focusToken}
       prefillInput={composerDraft}
       submitDraft={composerSubmitDraft}
-      onSubmitDraftConsumed={() => setComposerSubmitDraft(undefined)}
+      onSubmitDraftConsumed={consumeComposerSubmitDraft}
       capabilityDefaults={workspace?.capabilityDefaults ?? { tools: "auto", skills: "auto" }}
       skills={composerSkills}
       toolCatalog={composerTools}
@@ -1588,6 +1616,8 @@ function DesktopApp(): React.JSX.Element {
             onExportCookies={async () => await window.biny.exportCookies()}
             onFetchModelCatalog={fetchModelCatalog}
             onFetchModelCatalogCandidate={fetchModelCatalogCandidate}
+            onReadModelApiKey={readModelApiKey}
+            onReadWebSearchApiKey={readWebSearchApiKey}
             onFontPreference={changeFontPreference}
             onSettingsCommitted={settingsCommitted}
             onResolveCloseRequest={resolveSettingsCloseRequest}
@@ -1596,7 +1626,6 @@ function DesktopApp(): React.JSX.Element {
             onLoadCookieJarStatus={loadCookieJarStatus}
             onLoadMemoryStats={loadMemoryStats}
             onLoadMemoryEntries={loadMemoryEntries}
-            onLoadDailyNote={async (date) => await window.biny.dailyMemoryNote(date)}
             onLoadMemoryEmbeddingStatus={loadMemoryEmbeddingStatus}
             onDownloadMemoryEmbeddingModel={downloadMemoryEmbeddingModel}
             onDeleteMemoryEmbeddingModel={deleteMemoryEmbeddingModel}
@@ -1715,9 +1744,9 @@ function DesktopApp(): React.JSX.Element {
         sessionIsolation={sessionSummary?.isolation}
         sessionLimits={document?.limits}
         sessionTitle={sessionSummary?.title}
-        skillDraftNotices={skillDraftNotices}
-        onDismissSkillDraftNotice={(id) => setSkillDraftNotices((current) => current.filter((notice) => notice.id !== id))}
-        onOpenSkillSettings={() => openSettings("技能")}
+        recipeNotices={recipeNotices}
+        onDismissRecipe={dismissRecipe}
+        onExtractRecipe={extractRecipe}
         thinking={selectedThinking}
         running={selectedRunning}
         thinkingStartedAt={selectedActiveRun?.startedAt}
@@ -1729,7 +1758,7 @@ function DesktopApp(): React.JSX.Element {
         onSubmitPrompt={submitComposerPrompt}
         workspaceContext={workspaceContext}
         inspectorRail={inspector.rail}
-        pendingHomePrompt={pendingHomePrompt}
+        pendingPrompt={pendingPrompt}
         onOpenRuntime={openRuntimePanel}
         onOpenExtensions={openExtensions}
       >

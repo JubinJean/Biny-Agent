@@ -4,7 +4,7 @@
  * 数据由 `buildSessionTimeline` 算好，这里只做渲染和局部交互（展开思考、复制、编辑重发、
  * 回滚文件等）。整体用 memo 包住，因为流式输出期间父组件会高频重渲染。
  */
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
 import { ThinkingOrb } from "thinking-orbs";
 import type { PermissionResult } from "../../../../permission/PermissionManager.js";
@@ -12,21 +12,26 @@ import type { SessionUsage } from "../../../../session/metadata.js";
 import { splitAttachmentReferences, type AttachmentReference } from "../../../attachmentReferences.js";
 import { copyToClipboard } from "../copyToClipboard.js";
 import { useInlineImage } from "../inlineImage.js";
-import { listChangedFiles, type TimelineReasoningStep, type TimelineStep, type TimelineTurn } from "../sessionTimeline.js";
-import { reasoningDetailText } from "../reasoningPresentation.js";
-import { buildUsageDetailRows, finishReasonTone, formatDuration, formatMessageClock, formatRunDuration, isRunErrorRetryable, isRunErrorStatus, turnMetrics, type TurnMetrics } from "../chatModel.js";
+import { listChangedFiles, type TimelineStep, type TimelineTurn } from "../sessionTimeline.js";
+import { buildUsageDetailRows, finishReasonTone, formatDuration, formatMessageClock, isRunErrorStatus, parseCompactionNotice, turnMetrics, type TurnMetrics } from "../chatModel.js";
 import { speak, speechSupported } from "../speech.js";
 import { CopyButton } from "./CopyButton.js";
 import { Icon } from "./Icon.js";
 import { MarkdownContent } from "./MarkdownContent.js";
 import { useTypewriter } from "./useTypewriter.js";
-import { ToolActivity } from "./ToolActivity.js";
-import { CompactionRow } from "./chat/NoticeRow.js";
+import { ActivitySegment, type ActivitySegmentStep } from "./chat/ActivitySegment.js";
+import { CompactionDivider } from "./chat/CompactionDivider.js";
 import { MessageClock } from "./chat/MessageClock.js";
-import { ThinkingBlock } from "./chat/ThinkingBlock.js";
-import { ExecutionGroup, type ExecutionGroupStep } from "./chat/ExecutionGroup.js";
+import { SkillsIndicator } from "./chat/SkillsIndicator.js";
 import { ChangesSummary } from "./chat/ChangesSummary.js";
-import { RunErrorCard, RunErrorRow } from "./chat/RunErrorCard.js";
+
+const RUN_STATUS_LABELS: Partial<Record<TimelineTurn["status"], string>> = {
+  failed: "回复生成失败",
+  incomplete: "回复未完成",
+  blocked: "生成受阻",
+  cancelled: "已停止生成",
+  aborted: "生成已中断"
+};
 
 interface MessageTimelineProps {
   projectId: string;
@@ -158,18 +163,8 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, turns,
     }, pending.user)];
   }, [rewrite, turns]);
 
-  // 失败不在消息流里展示：最近一次失败由 Workspace 的生成错误横幅（输入框上方）承载，
-  // 重试入口在消息操作条的「重新生成」，与 Alma 的失败呈现一致。
-  // 只有最近的失败/未完成轮次展开完整错误卡；更早的错误折叠成一行，避免历史错误长期占据时间线。
-  const latestFailedTurnId = useMemo(() => {
-    for (let index = displayedTurns.length - 1; index >= 0; index -= 1) {
-      const turn = displayedTurns[index];
-      if (turn && turn.error && isRunErrorStatus(turn.status)) return turn.id;
-    }
-    return undefined;
-  }, [displayedTurns]);
-
-  // 失败/未完成轮次在消息流内展示错误（卡片/一行式），输入框上方的生成错误横幅只承载最近一次。
+  const busy = thinking || Boolean(rewrite) || displayedTurns.some((turn) => turn.status === "running" || turn.status === "waiting_permission");
+  // 失败状态跟随对应消息，切会话、重启后仍可定位和重试。
   return (
     <div className="message-timeline">
       {pendingUserMessage && !hasRealPendingMessage ? (
@@ -183,8 +178,8 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, turns,
       ) : null}
       {displayedTurns.map((turn) => (
         <Turn
+          busy={busy}
           key={turn.id}
-          errorExpanded={turn.id === latestFailedTurnId}
           onCreateBranch={onCreateBranch}
           onDeleteUserMessage={onDeleteUserMessage}
           onEditRequest={onEditRequest}
@@ -255,9 +250,9 @@ function optimisticRewriteTurn(turn: TimelineTurn, user: string): TimelineTurn {
 }
 
 const Turn = memo(function Turn({
+  busy,
   projectId,
   turn,
-  errorExpanded,
   onPreviewFile,
   onOpenExternal,
   onResolvePermission,
@@ -270,10 +265,9 @@ const Turn = memo(function Turn({
   onRollbackFiles,
   onDeleteUserMessage
 }: {
+  busy: boolean;
   projectId: string;
   turn: TimelineTurn;
-  /** 是否为最近的失败轮次：驱动错误展示默认展开还是折叠。 */
-  errorExpanded: boolean;
   onPreviewFile(path: string): void;
   onOpenExternal(url: string): void;
   onResolvePermission(requestId: string, result: PermissionResult): Promise<void>;
@@ -287,19 +281,10 @@ const Turn = memo(function Turn({
   onDeleteUserMessage(turnId: string): void;
 }): React.JSX.Element {
   const running = turn.status === "running" || turn.status === "waiting_permission";
-  // 失败/未完成的轮次和正常结束一样渲染完整收尾：错误展示落在模型消息位置（卡片或一行式），
-  // footer 照常出现，重试入口同时在错误卡和操作条里。
   const runFailed = !running && isRunErrorStatus(turn.status);
-  // 完整错误卡只给「当场发生的失败」：挂载期间经历过运行态再落败才算当场；
-  // 重新打开会话时看到的旧失败（哪怕是最新的那条）一律默认折叠成一行，避免旧错误长期占着时间线。
-  const [sawRunning, setSawRunning] = useState(running);
-  useEffect(() => {
-    if (running && !sawRunning) setSawRunning(true);
-  }, [running, sawRunning]);
-  const liveFailure = runFailed && sawRunning;
   const retryPromiseRef = useRef<Promise<void> | undefined>(undefined);
   const retry = useCallback((): Promise<void> => {
-    if (running) return Promise.resolve();
+    if (running || busy) return Promise.resolve();
     const targetMessageId = turn.assistantMessageId ?? turn.userMessageId;
     if (!turn.user || !targetMessageId) return Promise.resolve();
     const existing = retryPromiseRef.current;
@@ -318,13 +303,18 @@ const Turn = memo(function Turn({
       }
     );
     return pending;
-  }, [onRetry, onRetrySettled, onRetryStart, running, turn]);
+  }, [busy, onRetry, onRetrySettled, onRetryStart, running, turn]);
   const switchVersion = useCallback((direction: "prev" | "next"): Promise<void> => {
     if (!turn.assistantMessageId) return Promise.resolve();
     return onSwitchVersion(turn.assistantMessageId, direction);
   }, [onSwitchVersion, turn.assistantMessageId]);
-  const canRetry = !running && Boolean(turn.user && (turn.assistantMessageId ?? turn.userMessageId));
-  const executionSteps = turn.steps.length ? turn.steps : fallbackExecutionSteps(turn);
+  const canRetry = !running && !busy && Boolean(turn.user && (turn.assistantMessageId ?? turn.userMessageId));
+  // reasoning.started 只是等待模型的计时起点，不证明收到过思考。结束后仅保留真实内容和通知。
+  const executionSteps = turn.steps.filter((step) => {
+    if (step.kind === "reasoning") return step.notice || step.content.trim() || (running && !step.completed);
+    if (step.kind === "assistant") return step.content.trim();
+    return true;
+  });
   // 收尾的「修改文件」卡：只在本轮真正落定（非运行态）且存在完成写入/编辑时出现。
   const completedChangedFiles = useMemo(
     () => running ? [] : listChangedFiles(turn).filter((file) => file.status === "completed"),
@@ -349,7 +339,8 @@ const Turn = memo(function Turn({
       ) : null}
       <article className="chat-message desktop-assistant-message" data-sender="assistant">
         <div className="agent-response">
-        {executionSteps.length || turn.skills.length ? (
+        {turn.skills.length ? <SkillsIndicator skills={turn.skills} /> : null}
+        {executionSteps.length ? (
           <ExecutionTimeline
             onPreviewFile={onPreviewFile}
             onOpenExternal={onOpenExternal}
@@ -357,28 +348,33 @@ const Turn = memo(function Turn({
             projectId={projectId}
             running={running}
             steps={executionSteps}
-            skills={turn.skills}
+            thinkingSeconds={turn.reasoningDurationMs !== undefined ? Math.max(1, Math.round(turn.reasoningDurationMs / 1000)) : undefined}
           />
         ) : null}
         {!executionSteps.some((step) => step.kind === "assistant") && turn.assistant ? <TypewriterMarkdown active={running} content={turn.assistant} onOpenExternal={onOpenExternal} onPreviewFile={onPreviewFile} projectId={projectId} /> : null}
 
-        {runFailed && turn.error ? (
-          <TurnRunError
-            expandedByDefault={errorExpanded && liveFailure}
-            message={turn.error}
-            onRetry={retry}
-            retryable={canRetry && !turn.resumable && isRunErrorRetryable(turn.error)}
-            status={turn.status}
-          />
+        {runFailed ? (
+          <div className={`chat-run-notice is-${turn.status}`}>
+            <div className="chat-run-notice-summary">
+              <span className="chat-run-notice-label" role="status"><Icon name={turn.status === "cancelled" ? "stop" : "warning"} size={15} />{RUN_STATUS_LABELS[turn.status]}</span>
+              {turn.user && (turn.assistantMessageId ?? turn.userMessageId) ? (
+                <button className="chat-run-retry" disabled={!canRetry} onClick={() => { void retry().catch(() => undefined); }} type="button"><Icon name="refresh" size={14} />重试</button>
+              ) : null}
+              {!turn.assistant.trim() && turn.versionCount && turn.versionCount > 1 && turn.versionIndex !== undefined ? (
+                <VersionSwitcher onSwitchVersion={switchVersion} versionCount={turn.versionCount} versionIndex={turn.versionIndex} />
+              ) : null}
+            </div>
+            {turn.error ? <details className="chat-run-details"><summary>查看详情</summary><pre>{turn.error}</pre></details> : null}
+          </div>
         ) : null}
 
-        {turn.assistant || runFailed ? (
+        {!running && turn.assistant.trim() ? (
           <AssistantActions
             content={turn.assistant}
             finishReason={turn.finishReason}
             metrics={turnMetrics(turn)}
             onCreateBranch={onCreateBranch}
-            onRegenerate={canRetry ? retry : undefined}
+            onRegenerate={canRetry && !runFailed ? retry : undefined}
             onSwitchVersion={turn.versionCount && turn.versionCount > 1 ? switchVersion : undefined}
             runMs={turn.durationMs}
             timestamp={turn.timestamp}
@@ -396,50 +392,6 @@ const Turn = memo(function Turn({
       </article>
     </section>
   );
-});
-
-function fallbackExecutionSteps(turn: TimelineTurn): TimelineStep[] {
-  if (!turn.reasoningStatus && !turn.reasoning && turn.durationMs === undefined) return [];
-  return [{
-    kind: "reasoning",
-    id: `${turn.id}:reasoning:fallback`,
-    content: turn.reasoning,
-    status: turn.reasoningStatus,
-    durationMs: turn.reasoningDurationMs ?? (turn.status === "running" || turn.status === "waiting_permission" ? undefined : turn.durationMs),
-    completed: turn.status !== "running" && turn.status !== "waiting_permission"
-  }];
-}
-
-/**
- * 轮次内联的错误展示：默认展开与否由「是否为当场发生且仍是最近的失败」决定，
- * 重开历史会话时一律折叠成一行。用户点行可展开、点 × 收起，之后以用户操作为准。
- */
-const TurnRunError = memo(function TurnRunError({
-  expandedByDefault,
-  message,
-  onRetry,
-  retryable,
-  status
-}: {
-  expandedByDefault: boolean;
-  message: string;
-  onRetry(): Promise<void>;
-  retryable: boolean;
-  status: TimelineTurn["status"];
-}): React.JSX.Element | null {
-  // undefined = 跟随默认值；用户点过行/×后以用户操作为准。重试期间组件会卸载，重挂载即恢复默认。
-  const [override, setOverride] = useState<boolean>();
-  if (override ?? expandedByDefault) {
-    return (
-      <RunErrorCard
-        message={message}
-        onDismiss={() => setOverride(false)}
-        onRetry={retryable ? onRetry : undefined}
-        status={status}
-      />
-    );
-  }
-  return <RunErrorRow message={message} onExpand={() => setOverride(true)} status={status} />;
 });
 
 /** 流式打字机版 Markdown：仅 reveal 新增量，历史/完结内容直出 */
@@ -464,61 +416,56 @@ function ExecutionTimeline({
   onResolvePermission,
   projectId,
   running,
-  skills,
-  steps
+  steps,
+  thinkingSeconds
 }: {
   onPreviewFile(path: string): void;
   onOpenExternal(url: string): void;
   onResolvePermission(requestId: string, result: PermissionResult): Promise<void>;
   projectId: string;
   running: boolean;
-  skills: string[];
   steps: TimelineStep[];
+  /** 轮次级思考耗时（秒）；纯思考段的「已思考 N 秒」兜底。 */
+  thinkingSeconds?: number;
 }): React.JSX.Element {
   return (
     <div className="execution-timeline">
-      {skills.length ? (
-        <div className="execution-step execution-skills">
-          <Icon name="wand" size={14} />
-          <span>使用 {String(skills.length)} 个技能</span>
-          <span className="execution-skills-list">{skills.join(" · ")}</span>
-        </div>
-      ) : null}
       {groupExecutionSteps(steps).map((entry) => {
-        // 连续的工具 + 思考步骤聚合成一个可展开块；单个步骤不套聚合壳。
+        // 思考 + 工具（无论几个）一律进活动段：单步骤呈现为一枚相位头像 + 一行摘要。
         if (Array.isArray(entry)) {
-          if (entry.length === 1) {
-            const only = entry[0];
-            // noUncheckedIndexedAccess：entry[0] 类型含 undefined，先收窄再判 kind。
-            if (!only) return null;
-            if (only.kind === "tool") {
-              return <ToolActivity key={only.id} onOpenExternal={onOpenExternal} onPreviewFile={onPreviewFile} onResolvePermission={onResolvePermission} projectId={projectId} tool={only.tool} />;
-            }
-            return <ReasoningStepView key={only.id} running={running} step={only} />;
-          }
           return (
-            <ExecutionGroup
-              key={entry[0]?.id ?? "execution-group"}
+            <ActivitySegment
+              key={entry[0]?.id ?? "activity-segment"}
               onOpenExternal={onOpenExternal}
               onPreviewFile={onPreviewFile}
               onResolvePermission={onResolvePermission}
               projectId={projectId}
               running={running}
               steps={entry}
+              thinkingSeconds={thinkingSeconds}
             />
           );
         }
         const step = entry;
         if (step.kind === "reasoning") {
-          // 上下文压缩标记渲染为独立的压缩通知行。
+          // 上下文压缩标记渲染为独立的压缩分隔条（居中药丸）。
           if (step.notice === "compaction") {
-            return (
-              <section className="execution-step" key={step.id}>
-                <CompactionRow summary={step.status ?? ""} title="上下文已压缩" />
-              </section>
-            );
+            const notice = parseCompactionNotice(step.status);
+            return <CompactionDivider count={notice.count} key={step.id} savedTokens={notice.savedTokens} summary={step.content || undefined} />;
           }
-          return <ReasoningStepView key={step.id} running={running} step={step} />;
+          // 孤立思考也走活动段（纯思考段：一枚头像 + 「已思考 N 秒」）。
+          return (
+            <ActivitySegment
+              key={step.id}
+              onOpenExternal={onOpenExternal}
+              onPreviewFile={onPreviewFile}
+              onResolvePermission={onResolvePermission}
+              projectId={projectId}
+              running={running}
+              steps={[step]}
+              thinkingSeconds={thinkingSeconds}
+            />
+          );
         }
         if (step.kind === "user") {
           return (
@@ -546,13 +493,14 @@ function ExecutionTimeline({
 }
 
 /**
- * 把连续的可聚合步骤（工具调用 + 非压缩通知的思考）收成一组；其余步骤原样保留顺序。
+ * 把连续的可聚合步骤（工具调用 + 思考）收成一组；其余步骤原样保留顺序。
  *
- * 思考不再把工具组切断：reasoning 步骤与相邻 tool 步骤进同一个聚合块。压缩标记
+ * 思考不把工具组切断：reasoning 步骤与相邻 tool 步骤进同一个活动段。压缩标记
  * （notice === "compaction"）、assistant 正文/摘要、用户插话仍然是分组断点。
+ * 与 alma 不同：这里单步骤也成段（一枚头像 + 一行摘要），保持视觉节奏一致。
  */
-function groupExecutionSteps(steps: TimelineStep[]): Array<TimelineStep | ExecutionGroupStep[]> {
-  const grouped: Array<TimelineStep | ExecutionGroupStep[]> = [];
+function groupExecutionSteps(steps: TimelineStep[]): Array<TimelineStep | ActivitySegmentStep[]> {
+  const grouped: Array<TimelineStep | ActivitySegmentStep[]> = [];
   for (const step of steps) {
     if (!isGroupableStep(step)) {
       grouped.push(step);
@@ -565,7 +513,7 @@ function groupExecutionSteps(steps: TimelineStep[]): Array<TimelineStep | Execut
   return grouped;
 }
 
-function isGroupableStep(step: TimelineStep): step is ExecutionGroupStep {
+function isGroupableStep(step: TimelineStep): step is ActivitySegmentStep {
   if (step.kind === "tool") return true;
   return step.kind === "reasoning" && step.notice !== "compaction";
 }
@@ -580,25 +528,6 @@ function ActivitySummaryStep({ content, onOpenExternal, onPreviewFile, projectId
     <div className="execution-step execution-assistant-step execution-summary-step">
       <MarkdownContent content={content} onOpenExternal={onOpenExternal} onPreviewFile={onPreviewFile} projectId={projectId} />
     </div>
-  );
-}
-
-function ReasoningStepView({ running, step }: {
-  running: boolean;
-  step: TimelineReasoningStep;
-}): React.JSX.Element {
-  // The status is a label for the disclosure row, not the model's reasoning
-  // content. Providers that do not return reasoning deltas must not make
-  // statuses such as “分析完成” look like generated content.
-  const text = reasoningDetailText(step);
-  return (
-    <section className="execution-step execution-reasoning">
-      <ThinkingBlock
-        durationMs={step.durationMs}
-        running={running && !step.completed}
-        text={text}
-      />
-    </section>
   );
 }
 
@@ -771,7 +700,7 @@ function AssistantActions({ content, timestamp, metrics, runMs, usage, finishRea
       parts.push(formatMessageClock(Date.parse(timestamp)));
     }
     if (runMs !== undefined) {
-      parts.push(`Worked for ${formatRunDuration(runMs)}`);
+      parts.push(`Worked for ${formatDuration(runMs)}`);
     } else if (metrics?.llmMs !== undefined) {
       parts.push(`LLM ${formatDuration(metrics.llmMs)}`);
     }

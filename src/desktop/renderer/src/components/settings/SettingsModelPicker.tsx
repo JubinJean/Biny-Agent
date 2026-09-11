@@ -5,7 +5,9 @@
  * grouped combobox 形态：触发器显示当前模型和 provider，展开后支持搜索、分组
  * 和 provider 图标。选项仍然是普通 button，避免引入一套新的菜单依赖。
  */
-import { useState } from "react";
+import { useRef, useState } from "react";
+import { useFluidHoverItems } from "../../useFluidHoverItems.js";
+import { FluidHoverHighlight } from "../FluidHoverHighlight.js";
 import { Icon } from "../Icon.js";
 import { ProviderBrandGlyph } from "../ProviderBrandGlyph.js";
 import type { SettingsModelPickerGroup } from "./settingsModelPickerData.js";
@@ -29,6 +31,9 @@ export function SettingsModelPicker({
 }): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  // 流动悬停：选项列表按选择器自动注册；未配置的禁用项对悬停不可见。
+  const listRef = useRef<HTMLDivElement>(null);
+  const hover = useFluidHoverItems(listRef, ".settings-model-picker-option");
   const selected = groups.flatMap((group) => group.options).find((option) => option.value === value);
   const normalizedQuery = query.trim().toLocaleLowerCase();
   const visibleGroups = groups
@@ -93,7 +98,8 @@ export function SettingsModelPicker({
             value={query}
           />
         </label>
-        <div className="settings-model-picker-options" role="listbox" aria-label={ariaLabel}>
+        <div className="settings-model-picker-options" ref={listRef} {...hover.handlers} role="listbox" aria-label={ariaLabel}>
+          <FluidHoverHighlight hover={hover} className="has-row-radius" />
           {inheritLabel ? (
             <button
               aria-selected={value === undefined}
@@ -103,7 +109,7 @@ export function SettingsModelPicker({
               type="button"
             >
               <span className="settings-model-picker-option-check">{value === undefined ? <Icon name="check" size={13} /> : null}</span>
-              <span className="settings-model-picker-option-copy"><strong>{inheritLabel}</strong><small>使用当前会话模型</small></span>
+              <span className="settings-model-picker-option-copy"><strong>{inheritLabel}</strong></span>
             </button>
           ) : null}
           {visibleGroups.map((group) => (

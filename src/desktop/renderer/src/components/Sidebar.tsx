@@ -12,7 +12,11 @@ import { clampSidebarWidth, MAX_SIDEBAR_WIDTH, MIN_SIDEBAR_WIDTH } from "../../.
 import type { DesktopProject, DesktopSessionMenuAction, DesktopSessionSummary, DesktopSessionTreePage } from "../../../protocol.js";
 import type { SidebarPeekHandlers, SidebarResizeHandlers } from "../app/useSidebarLayout.js";
 import { useClosingPresence } from "../useClosingPresence.js";
+import { useFluidHover, useRegisterFluidHoverItem, type UseFluidHoverReturn } from "../useFluidHover.js";
+import { Collapse } from "./Collapse.js";
+import { FluidHoverHighlight } from "./FluidHoverHighlight.js";
 import { Icon, type IconName } from "./Icon.js";
+import { WorkingIndicator } from "./WorkingIndicator.js";
 
 const PROJECT_SESSION_COLLAPSE_LIMIT = 5;
 const DIALOGUE_SESSION_COLLAPSE_LIMIT = 10;
@@ -336,11 +340,11 @@ export const Sidebar = memo(function Sidebar({
           onReveal={() => { setProjectMenuOpen(undefined); onRevealProject(project.id); }}
           onSelect={selectOrToggleProject}
           project={project}
-          running={project.id === activeProjectId && hasRunningSession(projectSessions)}
           selected={project.id === activeProjectId && !selectedSessionId}
           sessionsExpanded={expanded}
         />
-        {expanded ? (
+        {/* 会话列表常驻挂载，展开/收起走高度动画；inert 保证收起后不可交互。 */}
+        <Collapse open={expanded}>
           <ProjectSessions
             limit={PROJECT_SESSION_COLLAPSE_LIMIT}
             onSelectSession={onSelectSession}
@@ -354,7 +358,7 @@ export const Sidebar = memo(function Sidebar({
             onToggleSession={toggleSession}
             onLoadMoreSessionChildren={loadMoreSessionChildren}
           />
-        ) : null}
+        </Collapse>
       </div>
     );
   };
@@ -435,7 +439,7 @@ export const Sidebar = memo(function Sidebar({
                   title="添加项目"
                   type="button"
                 >
-                  <Icon name="add" size={15} />
+                  <Icon name="add" size={14} />
                 </button>
                 <SidebarOrganizationMenu
                   anchorRef={projectOrganizationButtonRef}
@@ -460,7 +464,7 @@ export const Sidebar = memo(function Sidebar({
             {!unpinnedProjects.length ? <div className="biny-sidebar-empty-row">暂无项目，点击 + 添加</div> : null}
           </SidebarSection>
 
-          <SidebarSection expanded={expandedSections.dialogue} icon="message" label="对话" onToggle={() => toggleSection("dialogue")}>
+          {dialogueSessions.length > 0 ? <SidebarSection expanded={expandedSections.dialogue} icon="message" label="对话" onToggle={() => toggleSection("dialogue")}>
             <CollapsibleSessionList
               limit={DIALOGUE_SESSION_COLLAPSE_LIMIT}
               onSelectSession={onSelectSession}
@@ -473,8 +477,7 @@ export const Sidebar = memo(function Sidebar({
               onToggleSession={toggleSession}
               onLoadMoreSessionChildren={loadMoreSessionChildren}
             />
-            {!dialogueSessions.length ? <p className="biny-sidebar-empty-row">暂无未归类对话</p> : null}
-          </SidebarSection>
+          </SidebarSection> : null}
         </div>
       </div>
 
@@ -604,7 +607,7 @@ function SidebarSection({ label, icon, expanded, actions, onToggle, children }: 
     <section aria-label={label} className={`biny-sidebar-section${expanded ? " is-expanded" : ""}${icon ? " has-compact-icon" : ""}`}>
       <div className="biny-sidebar-section-header">
         <button aria-expanded={expanded} aria-label={label} className="biny-sidebar-section-trigger" onClick={onToggle} type="button">
-          {icon ? <span aria-hidden="true" className="biny-sidebar-section-icon"><Icon name={icon} size={17} /></span> : null}
+          {icon ? <span aria-hidden="true" className="biny-sidebar-section-icon"><Icon name={icon} size={16} /></span> : null}
           <span className="biny-sidebar-section-label">{label}</span>
           <span className="biny-sidebar-section-chevron"><Icon name="chevron" size={13} /></span>
         </button>
@@ -677,69 +680,134 @@ function SessionList({ flat = false, projectId, sessions, selectedSessionId, onS
     siblings.push(session);
     byParent.set(parent, siblings);
   }
+  // Fluid Functionalism 悬停：列表容器是指针作用域和定位上下文，行背景由
+  // FluidHoverHighlight 统一绘制；注册索引即可见行的渲染顺序。
+  // 收起的子会话树仍保持挂载（保住高度退场动画），inert 行对命中测试隐藏。
+  const listRef = useRef<HTMLDivElement>(null);
+  const hover = useFluidHover(listRef, {
+    isItemDisabled: (element) => element.closest("[inert]") !== null
+  });
+  let rowIndex = 0;
   const renderNode = (session: DesktopSessionSummary, depth: number, ancestors: Set<string>): React.JSX.Element[] => {
     if (ancestors.has(session.id)) return [];
     const nextAncestors = new Set(ancestors).add(session.id);
-    const expandable = !flat && session.hasChildren;
+    const expandable = !flat && Boolean(session.hasChildren);
     const expanded = expandable && expandedSessionIds.has(session.id);
     const loading = expandable && loadingSessionIds.has(session.id);
-    const children = expanded ? (byParent.get(session.id) ?? []).flatMap((child) => renderNode(child, depth + 1, nextAncestors)) : [];
+    // 子树常驻挂在 Collapse 里，收起是收放高度而不是卸载；未懒加载过的父节点
+    // 没有子行，首次展开时 Collapse 已在（open 从一开始就过渡），内容随数据到位撑开。
+    const children = (byParent.get(session.id) ?? []).flatMap((child) => renderNode(child, depth + 1, nextAncestors));
     const nextCursor = sessionNextCursors.get(session.id);
-    const running = isSessionRunning(session);
-    const title = session.title || session.firstUserMessage || "新对话";
-    const preview = session.firstUserMessage && session.firstUserMessage !== title ? session.firstUserMessage : undefined;
-    const meta = sidebarSessionMeta(session, running);
-    const metaTitle = meta ? sidebarSessionUpdatedAt(session.updatedAt) : undefined;
-    const worktree = session.isolation === "worktree";
-    const accessibleLabel = worktree
-      ? [title, "Git 工作树", metaTitle].filter((value): value is string => Boolean(value)).join(" · ")
-      : undefined;
     return [
-      <div className={`biny-sidebar-session-tree-row${session.id === selectedSessionId ? " is-selected" : ""}`} data-worktree={worktree ? "true" : undefined} key={`${session.projectId}:${session.id}`}>
-        <button
-          aria-expanded={expandable ? expanded : undefined}
-          aria-label={expandable ? (expanded ? "收起子会话" : "展开子会话") : undefined}
-          className={`biny-sidebar-session-toggle${expandable ? "" : " is-empty"}`}
-          disabled={!expandable || loading}
-          onClick={() => onToggleSession(session)}
-          style={{ marginLeft: `${depth * 16}px` }}
-          type="button"
-        >
-          {loading ? "…" : expandable ? <Icon name="chevron" size={12} /> : null}
-        </button>
-        <div className={`biny-sidebar-session-entry${session.id === selectedSessionId ? " is-selected" : ""}${session.archived ? " is-archived" : ""}${running ? " is-running" : ""}`}>
-          <button
-            aria-current={session.id === selectedSessionId ? "page" : undefined}
-            aria-label={accessibleLabel}
-            className="biny-sidebar-session-item"
-            onClick={() => onSelectSession(projectId ?? session.projectId, session.id)}
-            onContextMenu={(event) => {
-              event.preventDefault();
-              onSessionContextMenu(session, { x: event.clientX, y: event.clientY });
-            }}
-            title={session.firstUserMessage || session.title}
-            type="button"
-          >
-            <span className="biny-sidebar-session-line">
-              {running ? <span aria-hidden="true" className={`biny-sidebar-session-running${session.status === "waiting_permission" ? " is-waiting" : ""}`} /> : session.unread ? <span aria-label="未读" className="biny-sidebar-session-unread" /> : null}
-              <span className="biny-sidebar-session-title">{title}</span>
-              {meta && metaTitle ? <span aria-label={`上次活动：${metaTitle}`} className="biny-sidebar-session-meta" title={metaTitle}>{meta}</span> : null}
-            </span>
-            {preview ? <span className="biny-sidebar-session-preview">{preview}</span> : null}
-          </button>
-        </div>
-      </div>,
-      ...children,
-      ...(expanded && nextCursor ? [
-        <button className="biny-sidebar-session-expand" key={`${session.projectId}:${session.id}:more`} onClick={() => onLoadMoreSessionChildren(session)} type="button">
-          显示更多
-        </button>
+      <SessionTreeRow
+        depth={depth}
+        expandable={expandable}
+        expanded={expanded}
+        index={rowIndex++}
+        key={`${session.projectId}:${session.id}`}
+        loading={loading}
+        onContextMenu={onSessionContextMenu}
+        onSelect={onSelectSession}
+        onToggle={onToggleSession}
+        projectId={projectId}
+        registerItem={hover.registerItem}
+        selected={session.id === selectedSessionId}
+        session={session}
+      />,
+      ...(expandable ? [
+        <Collapse className="biny-sidebar-session-children" key={`${session.projectId}:${session.id}:tree`} open={expanded}>
+          {children}
+          {nextCursor ? (
+            <button className="biny-sidebar-session-expand" onClick={() => onLoadMoreSessionChildren(session)} type="button">
+              显示更多
+            </button>
+          ) : null}
+        </Collapse>
       ] : [])
     ];
   };
   return (
-    <div className={`biny-sidebar-session-list${projectId ? " is-indented" : ""}`}>
+    <div ref={listRef} className={`biny-sidebar-session-list${projectId ? " is-indented" : ""}`} {...hover.handlers}>
+      <FluidHoverHighlight hover={hover} className="has-row-radius" />
       {(byParent.get(undefined) ?? []).flatMap((session) => renderNode(session, 0, new Set()))}
+    </div>
+  );
+}
+
+// 会话行。注册必须走 useRegisterFluidHoverItem（内部是依赖稳定的 useEffect）：
+// 内联 ref 回调会在每次渲染时先注销再注册，hook 的“高亮行被注销”分支会把
+// 点亮状态立刻清掉，高亮永远出不来，因此行拆成独立组件。
+function SessionTreeRow({
+  depth,
+  expandable,
+  expanded,
+  index,
+  loading,
+  projectId,
+  registerItem,
+  selected,
+  session,
+  onContextMenu,
+  onSelect,
+  onToggle
+}: {
+  depth: number;
+  expandable: boolean;
+  expanded: boolean;
+  index: number;
+  loading: boolean;
+  projectId: string | undefined;
+  registerItem: UseFluidHoverReturn["registerItem"];
+  selected: boolean;
+  session: DesktopSessionSummary;
+  onContextMenu(session: DesktopSessionSummary, point: { x: number; y: number }): void;
+  onSelect(projectId: string, sessionId: string): void;
+  onToggle(session: DesktopSessionSummary): void;
+}): React.JSX.Element {
+  const ref = useRef<HTMLDivElement>(null);
+  useRegisterFluidHoverItem(registerItem, index, ref);
+  const running = isSessionRunning(session);
+  const title = session.title || session.firstUserMessage || "新对话";
+  // 运行中时右侧位置让给 spinner，不再显示相对时间。
+  const meta = running ? undefined : sidebarSessionMeta(session);
+  const metaTitle = meta ? sidebarSessionUpdatedAt(session.updatedAt) : undefined;
+  const worktree = session.isolation === "worktree";
+  const accessibleLabel = worktree
+    ? [title, "Git 工作树", metaTitle].filter((value): value is string => Boolean(value)).join(" · ")
+    : undefined;
+  return (
+    <div ref={ref} className={`biny-sidebar-session-tree-row${selected ? " is-selected" : ""}`} data-worktree={worktree ? "true" : undefined}>
+      <button
+        aria-expanded={expandable ? expanded : undefined}
+        aria-label={expandable ? (expanded ? "收起子会话" : "展开子会话") : undefined}
+        className={`biny-sidebar-session-toggle${expandable ? "" : " is-empty"}`}
+        disabled={!expandable || loading}
+        onClick={() => onToggle(session)}
+        style={{ marginLeft: `${depth * 16}px` }}
+        type="button"
+      >
+        {loading ? "…" : expandable ? <Icon name="chevron" size={12} /> : null}
+      </button>
+      <div className={`biny-sidebar-session-entry${selected ? " is-selected" : ""}${session.archived ? " is-archived" : ""}`}>
+        <button
+          aria-current={selected ? "page" : undefined}
+          aria-label={accessibleLabel}
+          className="biny-sidebar-session-item"
+          onClick={() => onSelect(projectId ?? session.projectId, session.id)}
+          onContextMenu={(event) => {
+            event.preventDefault();
+            onContextMenu(session, { x: event.clientX, y: event.clientY });
+          }}
+          title={session.title}
+          type="button"
+        >
+          <span className="biny-sidebar-session-line">
+            {session.pinned ? <span aria-hidden="true" className="biny-sidebar-session-pin"><Icon name="pin" size={12} /></span> : session.unread ? <span aria-label="未读" className="biny-sidebar-session-unread" /> : null}
+            <span className="biny-sidebar-session-title">{title}</span>
+            {running ? <WorkingIndicator waiting={session.status === "waiting_permission"} /> : meta && metaTitle ? <span aria-label={`上次活动：${metaTitle}`} className="biny-sidebar-session-meta" title={metaTitle}>{meta}</span> : null}
+          </span>
+        </button>
+      </div>
     </div>
   );
 }
@@ -748,7 +816,6 @@ const ProjectRow = memo(function ProjectRow({
   project,
   selected,
   sessionsExpanded,
-  running,
   dragActive,
   menuOpen,
   onSelect,
@@ -768,7 +835,6 @@ const ProjectRow = memo(function ProjectRow({
   project: DesktopProject;
   selected: boolean;
   sessionsExpanded: boolean;
-  running: boolean;
   dragActive: boolean;
   menuOpen: boolean;
   onSelect(projectId: string): void;
@@ -824,7 +890,7 @@ const ProjectRow = memo(function ProjectRow({
       >
         <Icon name={sessionsExpanded ? "folder-open" : "folder"} size={16} />
         <span className="biny-project-row-label">{project.name}</span>
-        {project.missing ? <span className="biny-project-status is-failed" title="路径不可用" /> : running ? <span className="biny-project-status is-running" title="正在运行" /> : null}
+        {project.missing ? <span className="biny-project-status is-failed" title="路径不可用" /> : null}
       </div>
       <div className={`biny-project-row-actions${menuOpen ? " is-open" : ""} biny-sidebar-menu-anchor`}>
         <button aria-label={`新建任务 ${project.name}`} className="biny-project-row-action" onClick={onNewTask} title="新建任务" type="button"><Icon name="compose" size={14} /></button>
@@ -838,7 +904,7 @@ const ProjectRow = memo(function ProjectRow({
 function ProjectMenu({ anchorRef, project, open, onPin, onRefresh, onReveal, onOpenTerminal, onRename, onRemove, onImportSession }: { anchorRef: FloatingMenuAnchor; project: DesktopProject; open: boolean; onPin(): void; onRefresh(): void; onReveal(): void; onOpenTerminal(): void; onRename(): void; onRemove(): void; onImportSession(): void }): React.JSX.Element {
   return (
     <FloatingSidebarMenu anchorRef={anchorRef} ariaLabel="项目操作菜单" open={open}>
-      <button onClick={onPin} role="menuitem" type="button"><Icon name="pin" size={16} /><span>{project.pinned ? "取消置顶项目" : "置顶项目"}</span></button>
+      <button onClick={onPin} role="menuitem" type="button"><Icon name="pin" size={15} /><span>{project.pinned ? "取消置顶项目" : "置顶项目"}</span></button>
       <button onClick={onImportSession} role="menuitem" type="button"><Icon name="download" size={15} /><span>导入会话…</span></button>
       <button onClick={onRefresh} role="menuitem" type="button"><Icon name="refresh" size={15} /><span>刷新项目状态</span></button>
       <button onClick={onReveal} role="menuitem" type="button"><Icon name="external" size={15} /><span>在 Finder 中显示</span></button>
@@ -974,17 +1040,12 @@ function reorderSectionProjectIds(fullIds: string[], sectionIds: string[], sourc
   return fullIds.map((projectId) => sectionMembers.has(projectId) ? nextSection[sectionIndex++]! : projectId);
 }
 
-function hasRunningSession(sessions: DesktopSessionSummary[]): boolean {
-  return sessions.some(isSessionRunning);
-}
-
 function isSessionRunning(session: DesktopSessionSummary): boolean {
   return session.status === "running" || session.status === "waiting_permission";
 }
 
-/** 会话右侧只保留 Codex 风格的短状态，完整时间仍通过悬停标题提供。 */
-function sidebarSessionMeta(session: DesktopSessionSummary, running: boolean): string | undefined {
-  if (running) return session.status === "waiting_permission" ? "待确认" : "运行中";
+/** 会话右侧只保留相对时间；运行中时该位置由 WorkingIndicator 占据。悬停标题提供完整时间。 */
+function sidebarSessionMeta(session: DesktopSessionSummary): string | undefined {
   const updatedAt = Date.parse(session.updatedAt);
   if (!Number.isFinite(updatedAt)) return undefined;
   const elapsedMs = Math.max(0, Date.now() - updatedAt);

@@ -170,9 +170,9 @@ type ProviderOption = ProviderCatalogItem;
 /**
  * 「API 格式」：用户面对的概念，一条格式 = 传输协议 + 具体适配器。
  *
- * 配置层把格式拆成两个字段持久化：provider 级 `protocol`（anthropic / openai-compatible，
- * 决定鉴权头与 /models 目录端点）和模型级 `apiBackend`（四种 adapter 之一，决定实际请求
- * 形状）。两者都从显式选择写出，不依赖运行时的隐式推断，这样改格式后重放行为是确定的。
+ * 配置层把格式拆成两层持久化：provider 级 `protocol` + `apiBackend` 是连接默认值，模型级
+ * `apiBackend` 是单模型覆盖（四种 adapter 之一，决定实际请求形状）。`protocol` 仍负责鉴权
+ * 头与 `/models` 目录端点；两层都从显式选择写出，不依赖运行时的隐式推断。
  */
 export type ApiFormatId = "chat_completions" | "responses" | "anthropic_messages" | "google_generative_ai";
 
@@ -228,6 +228,26 @@ export const apiFormatOptions: ApiFormatOption[] = [
 
 export function apiFormatOption(id: ApiFormatId): ApiFormatOption {
   return apiFormatOptions.find((option) => option.id === id) ?? chatCompletionsFormat;
+}
+
+/**
+ * 返回某个已知连接允许切换的格式。
+ *
+ * Provider 类型决定鉴权与默认端点，模型格式决定请求体；设置页必须把两层边界
+ * 一起呈现。Anthropic 官方连接不能把原生端点误切成 OpenAI 请求，普通兼容连接则
+ * 至少应能在 Chat Completions 与 Responses 之间切换；自定义兼容端点额外开放原生
+ * Anthropic / Gemini，交给用户用地址和密钥完成配对。
+ */
+export function apiFormatOptionsForConnection(
+  providerType: string,
+  protocol?: string,
+  baseUrl?: string
+): ApiFormatOption[] {
+  if (providerType === "anthropic") return [apiFormatOption("anthropic_messages")];
+  if (providerType === "gemini") return [chatCompletionsFormat, apiFormatOption("google_generative_ai")];
+  if (providerType === "openai-compatible" && !baseUrl) return apiFormatOptions;
+  if (protocol === "anthropic") return [apiFormatOption("anthropic_messages"), chatCompletionsFormat, apiFormatOption("responses")];
+  return [chatCompletionsFormat, apiFormatOption("responses")];
 }
 
 /**

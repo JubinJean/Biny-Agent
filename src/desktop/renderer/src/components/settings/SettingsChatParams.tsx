@@ -17,10 +17,7 @@ export function SettingsChatParams(): React.JSX.Element {
   return (
     <div className="settings-sections chat-params-settings">
       <section id="chat-params-temperature" tabIndex={-1}>
-        <div className="section-heading-row">
-          <div><h3>聊天参数</h3><p>控制每次回复的采样行为。</p></div>
-          <span className="settings-scope-badge">全局</span>
-        </div>
+        <h3>回复</h3>
         <label className="compaction-threshold-field">
           <span>
             <strong>温度</strong>
@@ -42,14 +39,10 @@ export function SettingsChatParams(): React.JSX.Element {
             <button className="chat-temperature-reset" onClick={() => update({ temperature: undefined })} type="button">恢复模型默认</button>
           </small>
         ) : null}
-      </section>
-
-      <section id="chat-params-max-tokens" tabIndex={-1}>
-        <h3>输出额度</h3>
-        <p>单次回复允许生成的最大 token 数。</p>
         <OptionalNumberField
           id="chat-max-output-tokens"
-          label="最大令牌数"
+          label="输出上限"
+          hint="单次回复的最大 token 数，留空使用模型默认值。"
           max={131_072}
           min={256}
           onCommit={(maxOutputTokens) => update({ maxOutputTokens })}

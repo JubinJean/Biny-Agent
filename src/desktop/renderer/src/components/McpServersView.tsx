@@ -4,6 +4,7 @@
  * 页面只保存当前编辑中的临时表单值；已保存的环境变量和请求头由主进程脱敏投影，
  * 保存时通过一次性 IPC 传入并落到 Keychain，渲染层不会把凭据写入配置或快照。
  */
+import { NativeSelect } from "./NativeSelect.js";
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   DesktopMcpCatalogEntry,
@@ -17,8 +18,10 @@ import type {
 } from "../../../protocol.js";
 import { errorMessage } from "../app/desktopApi.js";
 import { EMPTY_DRAFT, parameterValues, parseClipboardConfig, toProtocolDraft, type FieldRow, type McpDraftForm } from "../mcpFormDraft.js";
+import { McpOAuthControls } from "./McpOAuthControls.js";
 import { Icon } from "./Icon.js";
 import { TopToast } from "./overlays/TopToast.js";
+import { SettingsDetailLayer } from "./settings/SettingsDetailLayer.js";
 
 type McpTab = "market" | "installed";
 
@@ -34,7 +37,7 @@ interface McpMarketInstallSelection {
 }
 
 export function McpServersView({ projectId, onError, onSuccess }: McpServersViewProps): React.JSX.Element {
-  const [tab, setTab] = useState<McpTab>("market");
+  const [tab, setTab] = useState<McpTab>("installed");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("");
   const [snapshot, setSnapshot] = useState<DesktopMcpSnapshot>();
@@ -44,7 +47,8 @@ export function McpServersView({ projectId, onError, onSuccess }: McpServersView
     entries: [],
     categories: []
   });
-  const [loading, setLoading] = useState(true);
+  const [snapshotLoading, setSnapshotLoading] = useState(true);
+  const [catalogLoading, setCatalogLoading] = useState(false);
   const [busyName, setBusyName] = useState<string>();
   const [formOpen, setFormOpen] = useState(false);
   const [editingName, setEditingName] = useState<string>();
@@ -55,35 +59,52 @@ export function McpServersView({ projectId, onError, onSuccess }: McpServersView
   const [deleteTarget, setDeleteTarget] = useState<string>();
   const [marketInstall, setMarketInstall] = useState<McpMarketInstallSelection>();
   const [dismissedCatalogNotice, setDismissedCatalogNotice] = useState<string>();
-  const requestRef = useRef(0);
+  const snapshotRequestRef = useRef(0);
+  const catalogRequestRef = useRef(0);
 
   const applySnapshot = useCallback((next: DesktopMcpSnapshot): void => {
     setSnapshot(next);
     setCatalog(next.catalog);
   }, []);
 
-  const load = useCallback(async (refreshCatalog: boolean): Promise<void> => {
-    const nextRequestId = requestRef.current + 1;
-    requestRef.current = nextRequestId;
-    setLoading(true);
+  const loadSnapshot = useCallback(async (): Promise<void> => {
+    const nextRequestId = snapshotRequestRef.current + 1;
+    snapshotRequestRef.current = nextRequestId;
+    setSnapshotLoading(true);
     try {
-      const [nextSnapshot, nextCatalog] = await Promise.all([
-        window.biny.mcpSnapshot(projectId),
-        refreshCatalog ? window.biny.mcpRefreshCatalog() : window.biny.mcpCatalog()
-      ]);
-      if (nextRequestId !== requestRef.current) return;
+      const nextSnapshot = await window.biny.mcpSnapshot(projectId);
+      if (nextRequestId !== snapshotRequestRef.current) return;
       applySnapshot(nextSnapshot);
-      setCatalog(nextCatalog);
     } catch (error) {
-      if (nextRequestId === requestRef.current) onError(errorMessage(error));
+      if (nextRequestId === snapshotRequestRef.current) onError(errorMessage(error));
     } finally {
-      if (nextRequestId === requestRef.current) setLoading(false);
+      if (nextRequestId === snapshotRequestRef.current) setSnapshotLoading(false);
     }
   }, [applySnapshot, onError, projectId]);
 
   useEffect(() => {
-    void load(true);
-  }, [load]);
+    void loadSnapshot();
+  }, [loadSnapshot]);
+
+  const refreshCatalog = useCallback(async (): Promise<void> => {
+    const nextRequestId = catalogRequestRef.current + 1;
+    catalogRequestRef.current = nextRequestId;
+    setCatalogLoading(true);
+    try {
+      const nextCatalog = await window.biny.mcpRefreshCatalog();
+      if (nextRequestId === catalogRequestRef.current) setCatalog(nextCatalog);
+    } catch (error) {
+      if (nextRequestId === catalogRequestRef.current) onError(errorMessage(error));
+    } finally {
+      if (nextRequestId === catalogRequestRef.current) setCatalogLoading(false);
+    }
+  }, [onError]);
+
+  const selectTab = useCallback((nextTab: McpTab): void => {
+    setTab(nextTab);
+    // 配置快照已带上内存中的市场缓存；只有首次进入且没有缓存时才访问网络。
+    if (nextTab === "market" && catalog.status === "idle") void refreshCatalog();
+  }, [catalog.status, refreshCatalog]);
 
   // 市场加载失败以顶部浮层 toast 提示，可手动叉掉，也会自动消失。
   // 错误被清除（如下次刷新成功）后重置 dismiss，保证同样的错误再次出现时仍会提示。
@@ -127,6 +148,10 @@ export function McpServersView({ projectId, onError, onSuccess }: McpServersView
       stderr: server.stderr ?? "ignore",
       url: server.transport === "remote" ? server.commandOrUrl : "",
       remoteProtocol: server.remoteProtocol ?? "streamable-http",
+      oauthEnabled: server.oauth !== undefined,
+      oauthClientId: server.oauth?.clientId ?? "",
+      oauthScopes: server.oauth?.scopes?.join(" ") ?? "",
+      oauthRedirectPort: server.oauth?.redirectPort === undefined ? "" : String(server.oauth.redirectPort),
       timeoutMs: server.timeoutMs === undefined ? "" : String(server.timeoutMs),
       env: server.environmentKeys.map((key) => ({ key, value: "", action: "keep" })),
       headers: server.headerNames.map((key) => ({ key, value: "", action: "keep" })),
@@ -304,8 +329,8 @@ export function McpServersView({ projectId, onError, onSuccess }: McpServersView
 
   const tabSwitcher = (
     <div className="biny-mcp-tabs settings-plugin-tabs" role="tablist" aria-label="MCP 服务器列表">
-      <button aria-selected={tab === "market"} className={tab === "market" ? "is-active" : ""} onClick={() => setTab("market")} role="tab" type="button"><Icon name="site" size={15} />应用市场</button>
-      <button aria-selected={tab === "installed"} className={tab === "installed" ? "is-active" : ""} onClick={() => setTab("installed")} role="tab" type="button"><Icon name="server" size={15} />已安装 <span>{snapshot?.servers.length ?? 0}</span></button>
+      <button aria-selected={tab === "market"} className={tab === "market" ? "is-active" : ""} onClick={() => selectTab("market")} role="tab" type="button"><Icon name="site" size={15} />应用市场</button>
+      <button aria-selected={tab === "installed"} className={tab === "installed" ? "is-active" : ""} onClick={() => selectTab("installed")} role="tab" type="button"><Icon name="server" size={15} />已安装 <span>{snapshot?.servers.length ?? 0}</span></button>
     </div>
   );
 
@@ -316,7 +341,7 @@ export function McpServersView({ projectId, onError, onSuccess }: McpServersView
         <>
           <div className="settings-plugin-toolbar biny-mcp-toolbar">
             {tabSwitcher}
-            <button className="settings-plugin-action" disabled={loading} onClick={() => void load(true)} type="button"><Icon name="refresh" size={16} />刷新</button>
+            <button className="settings-plugin-action" disabled={catalogLoading} onClick={() => void refreshCatalog()} type="button"><Icon name="refresh" size={15} />刷新</button>
           </div>
           <div className="biny-mcp-filter-row">
             <label className="biny-mcp-search settings-extension-search">
@@ -324,15 +349,15 @@ export function McpServersView({ projectId, onError, onSuccess }: McpServersView
               <input aria-label="搜索 MCP 服务器" onChange={(event) => setQuery(event.target.value)} placeholder="搜索 MCP 服务器…" value={query} />
               {query ? <button aria-label="清空搜索" onClick={() => setQuery("")} type="button"><Icon name="close" size={13} /></button> : null}
             </label>
-            <label className="biny-mcp-category"><span className="sr-only">筛选分类</span><select aria-label="筛选分类" onChange={(event) => setCategory(event.target.value)} value={category}><option value="">所有分类</option>{catalog.categories.map((item) => <option key={item} value={item}>{item}</option>)}</select><Icon name="chevron" size={14} /></label>
+            <label className="biny-mcp-category"><span className="sr-only">筛选分类</span><NativeSelect aria-label="筛选分类" onChange={(event) => setCategory(event.target.value)} value={category}><option value="">所有分类</option>{catalog.categories.map((item) => <option key={item} value={item}>{item}</option>)}</NativeSelect></label>
           </div>
         </>
       ) : (
         <div className="settings-plugin-toolbar biny-mcp-toolbar">
           {tabSwitcher}
           <div className="biny-mcp-toolbar-actions">
-            <button className="settings-plugin-install-button biny-mcp-add-button" onClick={openNew} type="button"><Icon name="add" size={16} />添加服务器</button>
-            <button className="settings-plugin-action" disabled={loading} onClick={() => void load(true)} type="button"><Icon name="refresh" size={16} />刷新</button>
+            <button className="settings-plugin-install-button biny-mcp-add-button" onClick={openNew} type="button"><Icon name="add" size={15} />添加服务器</button>
+            <button className="settings-plugin-action" disabled={snapshotLoading} onClick={() => void loadSnapshot()} type="button"><Icon name="refresh" size={15} />刷新</button>
           </div>
         </div>
       )}
@@ -341,10 +366,12 @@ export function McpServersView({ projectId, onError, onSuccess }: McpServersView
         <TopToast icon="warning" key={catalogNotice} message={catalogNotice} onDismiss={() => setDismissedCatalogNotice(catalogNotice)} />
       ) : null}
       <main className="biny-mcp-body">
-        {tab === "market" ? <McpMarketContent entries={visibleEntries} loading={loading} onInstall={openMarketInstall} onOpenExternal={(url) => void window.biny.openExternal(url).catch((error) => onError(errorMessage(error)))} /> : <McpInstalledContent
+        {tab === "market" ? <McpMarketContent entries={visibleEntries} loading={catalogLoading} onInstall={openMarketInstall} onOpenExternal={(url) => void window.biny.openExternal(url).catch((error) => onError(errorMessage(error)))} /> : <McpInstalledContent
+          projectId={projectId}
+          onAuthenticated={updateSnapshot}
           details={details}
           detailsLoading={detailsLoading}
-          loading={loading}
+          loading={snapshotLoading}
           servers={filterInstalled(snapshot?.servers ?? [], "")}
           busyName={busyName}
           onDelete={setDeleteTarget}
@@ -416,25 +443,24 @@ function installationLabel(installation: DesktopMcpCatalogInstallation): string 
   return installation.name;
 }
 
-const McpInstalledContent = memo(function McpInstalledContent({ servers, loading, busyName, details, detailsLoading, onDelete, onDetails, onEdit, onReconnect, onSetEnabled, onCloseDetails }: { servers: DesktopMcpServerSummary[]; loading: boolean; busyName?: string; details?: DesktopMcpServerDetails; detailsLoading: boolean; onDelete(name: string): void; onDetails(server: DesktopMcpServerSummary): void; onEdit(server: DesktopMcpServerSummary): void; onReconnect(server: DesktopMcpServerSummary): void; onSetEnabled(server: DesktopMcpServerSummary): void; onCloseDetails(): void }): React.JSX.Element {
+const McpInstalledContent = memo(function McpInstalledContent({ projectId, onAuthenticated, servers, loading, busyName, details, detailsLoading, onDelete, onDetails, onEdit, onReconnect, onSetEnabled, onCloseDetails }: { projectId?: string; onAuthenticated(snapshot: DesktopMcpSnapshot): void; servers: DesktopMcpServerSummary[]; loading: boolean; busyName?: string; details?: DesktopMcpServerDetails; detailsLoading: boolean; onDelete(name: string): void; onDetails(server: DesktopMcpServerSummary): void; onEdit(server: DesktopMcpServerSummary): void; onReconnect(server: DesktopMcpServerSummary): void; onSetEnabled(server: DesktopMcpServerSummary): void; onCloseDetails(): void }): React.JSX.Element {
   if (loading && !servers.length) return <McpEmpty icon="refresh" title="正在读取已安装服务器" detail="正在同步配置和运行状态…" />;
   if (!servers.length) return <McpEmpty icon="server" title="还没有安装 MCP 服务器" detail="可以从应用市场安装，或点击右上角添加自定义 Stdio / Remote 服务器。" />;
   return (
     <div className={`biny-mcp-installed-layout${details || detailsLoading ? " has-details" : ""}`}>
-      <div className="biny-mcp-installed-list">{servers.map((server) => <McpInstalledCard busy={busyName === server.name} key={server.name} onDelete={onDelete} onDetails={onDetails} onEdit={onEdit} onReconnect={onReconnect} onSetEnabled={onSetEnabled} server={server} />)}</div>
+      <div className="biny-mcp-installed-list">{servers.map((server) => <McpInstalledCard projectId={projectId} onAuthenticated={onAuthenticated} busy={busyName === server.name} key={server.name} onDelete={onDelete} onDetails={onDetails} onEdit={onEdit} onReconnect={onReconnect} onSetEnabled={onSetEnabled} server={server} />)}</div>
       {details || detailsLoading ? <McpDetailsPanel details={details} loading={detailsLoading} onClose={onCloseDetails} /> : null}
     </div>
   );
 });
 
-const McpInstalledCard = memo(function McpInstalledCard({ server, busy, onSetEnabled, onReconnect, onDetails, onEdit, onDelete }: { server: DesktopMcpServerSummary; busy: boolean; onSetEnabled(server: DesktopMcpServerSummary): void; onReconnect(server: DesktopMcpServerSummary): void; onDetails(server: DesktopMcpServerSummary): void; onEdit(server: DesktopMcpServerSummary): void; onDelete(name: string): void }): React.JSX.Element {
-  const statusLabel = server.state === "connected" ? "已连接" : server.state === "disabled" ? "已禁用" : server.state === "not-started" ? "未启动" : "未连接";
-  const statusIcon = server.state === "connected" ? "check" : server.state === "disabled" ? "power" : "server";
+const McpInstalledCard = memo(function McpInstalledCard({ projectId, onAuthenticated, server, busy, onSetEnabled, onReconnect, onDetails, onEdit, onDelete }: { projectId?: string; onAuthenticated(snapshot: DesktopMcpSnapshot): void; server: DesktopMcpServerSummary; busy: boolean; onSetEnabled(server: DesktopMcpServerSummary): void; onReconnect(server: DesktopMcpServerSummary): void; onDetails(server: DesktopMcpServerSummary): void; onEdit(server: DesktopMcpServerSummary): void; onDelete(name: string): void }): React.JSX.Element {
+  const statusLabel = mcpStatusLabel(server);
   return (
     <article className={`biny-mcp-installed-card is-${server.state}`}>
       <div className="biny-mcp-installed-heading">
         <div className="biny-mcp-card-heading">
-          <h2><span className="biny-mcp-card-name">{server.name}</span><span className={`biny-mcp-status is-${server.state}`}><Icon name={statusIcon} size={11} />{statusLabel}</span></h2>
+          <h2><span className="biny-mcp-card-name">{server.name}</span><span className={`biny-mcp-status is-${server.state}`}>{statusLabel}</span></h2>
           {server.description ? <p className="biny-mcp-card-desc">{server.description}</p> : null}
         </div>
       </div>
@@ -445,20 +471,30 @@ const McpInstalledCard = memo(function McpInstalledCard({ server, busy, onSetEna
         </code>
         <div className="biny-mcp-row-actions">
           <button aria-label={server.enabled ? `禁用 ${server.name}` : `启用 ${server.name}`} className={server.enabled ? undefined : "is-off"} disabled={busy} onClick={() => onSetEnabled(server)} title={server.enabled ? "禁用" : "启用"} type="button"><Icon name="power" size={14} /></button>
-          {server.state !== "connected" && server.state !== "disabled" ? <button aria-label={`连接 ${server.name}`} disabled={busy} onClick={() => onReconnect(server)} title="连接" type="button"><Icon name="plug" size={14} /></button> : null}
+          {server.state !== "connected" && server.state !== "connecting" && server.state !== "disabled" ? <button aria-label={`连接 ${server.name}`} disabled={busy} onClick={() => onReconnect(server)} title="连接" type="button"><Icon name="plug" size={14} /></button> : null}
           <button aria-label={`查看 ${server.name} 详情`} disabled={busy} onClick={() => onDetails(server)} title="详情" type="button"><Icon name="database" size={14} /></button>
           <button aria-label={`编辑 ${server.name}`} disabled={busy} onClick={() => onEdit(server)} title="编辑" type="button"><Icon name="settings" size={14} /></button>
           <button aria-label={`删除 ${server.name}`} className="is-danger" disabled={busy} onClick={() => onDelete(server.name)} title="删除" type="button"><Icon name="trash" size={14} /></button>
         </div>
       </div>
+      {server.oauth ? <McpOAuthControls key={`${projectId ?? "global"}:${server.name}`} projectId={projectId} name={server.name} enabled={server.enabled} onChange={onAuthenticated} /> : null}
       {server.lastError ? <p className="biny-mcp-card-error"><Icon name="warning" size={13} />{server.lastError}</p> : null}
     </article>
   );
 });
 
 const McpDetailsPanel = memo(function McpDetailsPanel({ details, loading, onClose }: { details?: DesktopMcpServerDetails; loading: boolean; onClose(): void }): React.JSX.Element {
-  return <aside aria-label="MCP 服务器详情" className="biny-mcp-details" role="dialog"><div className="biny-mcp-details-header"><h2>{details?.server.name ?? "MCP 服务器"}</h2><button aria-label="关闭详情" className="biny-mcp-icon-button" onClick={onClose} type="button"><Icon name="close" size={15} /></button></div>{loading ? <p className="biny-mcp-details-empty">正在读取工具、提示和资源…</p> : details ? <div className="biny-mcp-details-body"><div className="biny-mcp-detail-summary"><span className={`biny-mcp-status is-${details.server.state}`}><i />{details.server.state === "connected" ? "已连接" : "未连接"}</span><span>{details.server.toolNames.length} 个工具</span><span>{details.server.promptNames.length} 个提示</span></div><CapabilityList label="工具" values={details.server.toolNames} /><CapabilityList label="提示" values={details.server.promptNames} /><ResourceList resources={details.resources} /></div> : null}</aside>;
+  return <aside aria-label="MCP 服务器详情" className="biny-mcp-details" role="dialog"><div className="biny-mcp-details-header"><h2>{details?.server.name ?? "MCP 服务器"}</h2><button aria-label="关闭详情" className="biny-mcp-icon-button" onClick={onClose} type="button"><Icon name="close" size={15} /></button></div>{loading ? <p className="biny-mcp-details-empty">正在读取工具、提示和资源…</p> : details ? <div className="biny-mcp-details-body"><div className="biny-mcp-detail-summary"><span className={`biny-mcp-status is-${details.server.state}`}>{mcpStatusLabel(details.server)}</span><span>{details.server.toolNames.length} 个工具</span><span>{details.server.promptNames.length} 个提示</span></div><CapabilityList label="工具" values={details.server.toolNames} /><CapabilityList label="提示" values={details.server.promptNames} /><ResourceList resources={details.resources} /></div> : null}</aside>;
 });
+
+function mcpStatusLabel(server: DesktopMcpServerSummary): string {
+  if (server.authRequired && server.enabled) return "需要登录";
+  if (server.state === "connected") return "已连接";
+  if (server.state === "connecting") return "连接中";
+  if (server.state === "disabled") return "已禁用";
+  if (server.state === "not-started") return "待本项目启动";
+  return "未连接";
+}
 
 const CapabilityList = memo(function CapabilityList({ label, values }: { label: string; values: string[] }): React.JSX.Element {
   return <section className="biny-mcp-detail-section"><h3>{label} <small>{values.length}</small></h3>{values.length ? <ul>{values.map((value) => <li key={value}>{value}</li>)}</ul> : <p>暂无{label}</p>}</section>;
@@ -491,8 +527,8 @@ const McpMarketInstallDialog = memo(function McpMarketInstallDialog({ entry, ini
   };
 
   return (
-    <div aria-label={`安装 ${entry.name}`} className="biny-mcp-dialog-backdrop is-market-install" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} role="presentation">
-      <form aria-labelledby="mcp-market-install-title" className="biny-mcp-install-dialog" onSubmit={submit}>
+    <SettingsDetailLayer onClose={onClose}>
+      <form aria-labelledby="mcp-market-install-title" aria-modal="true" className="biny-mcp-install-dialog" onSubmit={submit} role="dialog">
         <section className="biny-mcp-install-summary">
           <div className="biny-mcp-install-summary-icon"><Icon name="server" size={28} /></div>
           <div className="biny-mcp-install-summary-main">
@@ -504,16 +540,16 @@ const McpMarketInstallDialog = memo(function McpMarketInstallDialog({ entry, ini
         </section>
         <div className="biny-mcp-install-fields">
           <label className="biny-mcp-install-label" htmlFor="mcp-install-method">安装方式</label>
-          <select id="mcp-install-method" onChange={(event) => selectInstallation(event.target.value)} value={installation.name}>
+          <NativeSelect id="mcp-install-method" onChange={(event) => selectInstallation(event.target.value)} value={installation.name}>
             {entry.installations.map((item) => <option key={item.name} value={item.name}>{installationLabel(item)}</option>)}
-          </select>
+          </NativeSelect>
           {installation.tags.length ? <div className="biny-mcp-install-prerequisites"><strong>前置条件</strong><div>{installation.tags.map((tag) => <span key={tag}>{tag}</span>)}</div></div> : null}
           {installation.parameters.length ? <div className="biny-mcp-install-parameters"><span>可选参数</span>{installation.parameters.map((parameter) => <label key={parameter.key}><strong>{parameter.name}{parameter.required ? " *" : ""}</strong><input onChange={(event) => setValues((current) => ({ ...current, [parameter.key]: event.target.value }))} placeholder={parameter.placeholder} required={parameter.required} value={values[parameter.key] ?? ""} /></label>)}</div> : null}
           {validationError ? <p className="biny-mcp-install-validation"><Icon name="warning" size={15} />{validationError}</p> : null}
         </div>
         <footer className="biny-mcp-install-footer"><button className="biny-mcp-secondary-button" onClick={onClose} type="button">取消</button><button className="biny-mcp-primary-button" disabled={saving} type="submit"><Icon name="download" size={16} />{saving ? "安装中…" : "安装"}</button></footer>
       </form>
-    </div>
+    </SettingsDetailLayer>
   );
 });
 
@@ -521,13 +557,13 @@ const McpServerDialog = memo(function McpServerDialog({ draft, editing, saving, 
   const setValue = (key: keyof McpDraftForm, value: string): void => onChange({ ...draft, [key]: value });
   const submit = (event: React.FormEvent<HTMLFormElement>): void => { event.preventDefault(); onSave(); };
   return (
-    <div aria-label="添加 MCP 服务器" className="biny-mcp-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} role="presentation">
-      <form aria-labelledby="mcp-dialog-title" className="biny-mcp-dialog" onSubmit={submit}>
+    <SettingsDetailLayer onClose={onClose}>
+      <form aria-labelledby="mcp-dialog-title" aria-modal="true" className="biny-mcp-dialog" onSubmit={submit} role="dialog">
         <header className="biny-mcp-dialog-header"><span className="biny-mcp-title-icon"><Icon name="server" size={21} /></span><div><h2 id="mcp-dialog-title">{editing ? "编辑服务器" : "添加服务器"}</h2><p>{editing ? "更新 MCP 服务器配置" : "添加自定义 MCP 服务器配置"}</p></div><button aria-label="关闭" className="biny-mcp-icon-button" onClick={onClose} type="button"><Icon name="close" size={17} /></button></header>
         <div className="biny-mcp-dialog-scroll">
           <button className="biny-mcp-clipboard-button" onClick={onImportClipboard} type="button"><Icon name="copy" size={16} />从剪贴板导入</button>
           <McpFormSection icon="settings" title="Basic Information"><div className="biny-mcp-form-grid"><McpInput label="服务器名称" required onChange={(value) => setValue("name", value)} placeholder="例如：filesystem" value={draft.name} /><McpInput label="描述" onChange={(value) => setValue("description", value)} placeholder="可选描述" value={draft.description} wide /></div><div className="biny-mcp-form-label">传输类型</div><div className="biny-mcp-segmented"><button className={draft.transport === "stdio" ? "is-active" : ""} onClick={() => onChange({ ...draft, transport: "stdio" })} type="button"><Icon name="terminal" size={16} />Stdio</button><button className={draft.transport === "remote" ? "is-active" : ""} onClick={() => onChange({ ...draft, transport: "remote" })} type="button"><Icon name="remote" size={16} />Remote</button></div></McpFormSection>
-          {draft.transport === "stdio" ? <McpFormSection icon="terminal" title="Command Configuration"><McpInput label="命令" required onChange={(value) => setValue("command", value)} placeholder="npx -y @modelcontextprotocol/server-filesystem" value={draft.command} /><McpInput label="参数" hint="每行一个参数；也支持空格分隔" multiline onChange={(value) => setValue("argsText", value)} placeholder="/Users/think/Documents" value={draft.argsText} /><div className="biny-mcp-form-grid"><McpInput label="工作目录" onChange={(value) => setValue("cwd", value)} placeholder="默认使用项目目录" value={draft.cwd} /><label className="biny-mcp-field"><span>stderr</span><select onChange={(event) => onChange({ ...draft, stderr: event.target.value as McpDraftForm["stderr"] })} value={draft.stderr}><option value="ignore">忽略</option><option value="inherit">继承到终端</option><option value="pipe">捕获</option></select></label></div></McpFormSection> : <McpFormSection icon="remote" title="Remote Configuration"><McpInput label="URL" required onChange={(value) => setValue("url", value)} placeholder="https://api.example.com/mcp/" value={draft.url} /><div className="biny-mcp-form-label">传输协议</div><div className="biny-mcp-segmented"><button className={draft.remoteProtocol === "streamable-http" ? "is-active" : ""} onClick={() => onChange({ ...draft, remoteProtocol: "streamable-http" })} type="button">Streamable HTTP</button><button className={draft.remoteProtocol === "sse" ? "is-active" : ""} onClick={() => onChange({ ...draft, remoteProtocol: "sse" })} type="button">SSE</button></div><p className="biny-mcp-form-hint">推荐使用 Streamable HTTP；对于不支持的服务，请选择 SSE。</p><div className="biny-mcp-oauth-note"><Icon name="shield" size={16} /><div><strong>需要 OAuth</strong><span>OAuth 2.1 授权流程暂未启用，请使用请求头或环境变量引用。</span></div><button aria-label="需要 OAuth（暂未启用）" disabled type="button"><span /></button></div></McpFormSection>}
+          {draft.transport === "stdio" ? <McpFormSection icon="terminal" title="Command Configuration"><McpInput label="命令" required onChange={(value) => setValue("command", value)} placeholder="npx -y @modelcontextprotocol/server-filesystem" value={draft.command} /><McpInput label="参数" hint="每行一个参数；也支持空格分隔" multiline onChange={(value) => setValue("argsText", value)} placeholder="/Users/think/Documents" value={draft.argsText} /><div className="biny-mcp-form-grid"><McpInput label="工作目录" onChange={(value) => setValue("cwd", value)} placeholder="默认使用项目目录" value={draft.cwd} /><label className="biny-mcp-field"><span>stderr</span><NativeSelect onChange={(event) => onChange({ ...draft, stderr: event.target.value as McpDraftForm["stderr"] })} value={draft.stderr}><option value="ignore">忽略</option><option value="inherit">继承到终端</option><option value="pipe">捕获</option></NativeSelect></label></div></McpFormSection> : <McpFormSection icon="remote" title="Remote Configuration"><McpInput label="URL" required onChange={(value) => setValue("url", value)} placeholder="https://api.example.com/mcp/" value={draft.url} /><div className="biny-mcp-form-label">传输协议</div><div className="biny-mcp-segmented"><button className={draft.remoteProtocol === "streamable-http" ? "is-active" : ""} onClick={() => onChange({ ...draft, remoteProtocol: "streamable-http" })} type="button">Streamable HTTP</button><button className={draft.remoteProtocol === "sse" ? "is-active" : ""} onClick={() => onChange({ ...draft, remoteProtocol: "sse" })} type="button">SSE</button></div><p className="biny-mcp-form-hint">推荐使用 Streamable HTTP；对于不支持的服务，请选择 SSE。</p><label className="biny-mcp-field"><span><input type="checkbox" checked={draft.oauthEnabled ?? false} onChange={(event) => onChange({ ...draft, oauthEnabled: event.target.checked })} /> 使用 OAuth 登录</span><small>保存后点击“登录授权”；凭据保存在系统 Keychain。</small></label>{draft.oauthEnabled ? <><McpInput label="Client ID" hint="留空时使用服务端动态客户端注册" value={draft.oauthClientId ?? ""} onChange={(value) => setValue("oauthClientId", value)} /><McpInput label="Scopes" hint="可选，以空格分隔；留空由服务器声明" value={draft.oauthScopes ?? ""} onChange={(value) => setValue("oauthScopes", value)} /><McpInput label="回调端口" hint="预注册客户端可以指定端口；留空分配空闲端口。回调路径为 /mcp/callback。" value={draft.oauthRedirectPort ?? ""} onChange={(value) => setValue("oauthRedirectPort", value)} /></> : null}</McpFormSection>}
           <McpSecretFields label="环境变量" location="env" rows={draft.env} onAdd={onAddField} onRemove={onRemoveField} onUpdate={onUpdateField} />
           {draft.transport === "remote" ? <McpSecretFields label="请求头" location="headers" rows={draft.headers} onAdd={onAddField} onRemove={onRemoveField} onUpdate={onUpdateField} /> : null}
           <McpInput label="连接超时（毫秒）" hint="留空使用默认值" onChange={(value) => setValue("timeoutMs", value)} placeholder="30000" value={draft.timeoutMs} />
@@ -535,7 +571,7 @@ const McpServerDialog = memo(function McpServerDialog({ draft, editing, saving, 
         </div>
         <footer className="biny-mcp-dialog-footer"><button className="biny-mcp-secondary-button" onClick={onClose} type="button">取消</button><button className="biny-mcp-secondary-button" disabled={saving} onClick={onTest} type="button"><Icon name="network" size={15} />测试连接</button><button className="biny-mcp-primary-button" disabled={saving} type="submit"><Icon name={editing ? "check" : "add"} size={15} />{saving ? "保存中…" : editing ? "保存" : "添加"}</button></footer>
       </form>
-    </div>
+    </SettingsDetailLayer>
   );
 });
 
@@ -552,7 +588,7 @@ const McpSecretFields = memo(function McpSecretFields({ label, location, rows, o
 });
 
 const McpDeleteDialog = memo(function McpDeleteDialog({ name, onCancel, onConfirm }: { name: string; onCancel(): void; onConfirm(): void }): React.JSX.Element {
-  return <div className="biny-mcp-dialog-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) onCancel(); }} role="presentation"><section aria-label="确认删除 MCP 服务器" className="biny-mcp-confirm-dialog" role="alertdialog"><span className="biny-mcp-confirm-icon"><Icon name="warning" size={21} /></span><h2>删除 MCP 服务器？</h2><p>“{name}”的配置和凭据引用将被移除，此操作无法撤销。</p><div className="biny-mcp-dialog-actions"><button className="biny-mcp-secondary-button" onClick={onCancel} type="button">取消</button><button className="biny-mcp-danger-button" onClick={onConfirm} type="button">删除</button></div></section></div>;
+  return <SettingsDetailLayer onClose={onCancel}><section aria-label="确认删除 MCP 服务器" aria-modal="true" className="biny-mcp-confirm-dialog" role="alertdialog"><span className="biny-mcp-confirm-icon"><Icon name="warning" size={21} /></span><h2>删除 MCP 服务器？</h2><p>“{name}”的配置和凭据引用将被移除，此操作无法撤销。</p><div className="biny-mcp-dialog-actions"><button className="biny-mcp-secondary-button" onClick={onCancel} type="button">取消</button><button className="biny-mcp-danger-button" onClick={onConfirm} type="button">删除</button></div></section></SettingsDetailLayer>;
 });
 
 function McpEmpty({ icon, title, detail }: { icon: "refresh" | "search" | "server"; title: string; detail: string }): React.JSX.Element {

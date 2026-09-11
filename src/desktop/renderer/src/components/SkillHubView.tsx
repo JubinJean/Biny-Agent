@@ -15,6 +15,7 @@ import type {
 import { Icon } from "./Icon.js";
 import { SkillDiscoveryView } from "./SkillDiscoveryView.js";
 import { SkillImportDialog } from "./SkillImportDialog.js";
+import { SkillVersionControls } from "./SkillVersionControls.js";
 
 type SkillHubTab = "plugins" | "skills";
 
@@ -201,6 +202,7 @@ export function SkillHubView({ onError, onOpenRuntime }: { onError(message: stri
         {successMessage ? <div className="biny-extension-success" role="status"><Icon name="check" size={15} />{successMessage}<button aria-label="关闭提示" onClick={() => setSuccessMessage(undefined)} type="button"><Icon name="close" size={13} /></button></div> : null}
         {tab === "skills" ? (
           <SkillCatalogContent
+            onChanged={() => void loadCatalog()}
             skills={visibleSkills}
             managedSources={snapshot.managedSources}
             selectedSkill={selectedSkill}
@@ -281,6 +283,7 @@ const ExtensionHeader = memo(function ExtensionHeader({
 });
 
 const SkillCatalogContent = memo(function SkillCatalogContent({
+  onChanged,
   skills,
   managedSources,
   selectedSkill,
@@ -301,6 +304,7 @@ const SkillCatalogContent = memo(function SkillCatalogContent({
   onSave,
   onInstallSource
 }: {
+  onChanged(): void;
   skills: DesktopSkillCatalogEntry[];
   managedSources: DesktopSkillCatalogSnapshot["managedSources"];
   selectedSkill?: DesktopSkillCatalogEntry;
@@ -338,6 +342,7 @@ const SkillCatalogContent = memo(function SkillCatalogContent({
           </div>
           {selectedSkill ? (
             <SkillDetail
+              onChanged={onChanged}
               skill={selectedSkill}
               onError={onError}
               selectedFilePath={selectedFilePath}
@@ -395,6 +400,7 @@ const ManagedSkillSources = memo(function ManagedSkillSources({
 });
 
 const SkillDetail = memo(function SkillDetail({
+  onChanged,
   skill,
   onError,
   selectedFilePath,
@@ -410,6 +416,7 @@ const SkillDetail = memo(function SkillDetail({
   onDraft,
   onSave
 }: {
+  onChanged(): void;
   skill: DesktopSkillCatalogEntry;
   onError(message: string): void;
   selectedFilePath: string;
@@ -441,6 +448,7 @@ const SkillDetail = memo(function SkillDetail({
       </div>
       <div className="biny-skill-detail-path" title={skill.absolutePath}>{skill.absolutePath}</div>
       {skill.parseError ? <div className="biny-skill-parse-error"><Icon name="warning" size={14} />{skill.parseError}</div> : null}
+      <SkillVersionControls key={`version:${skill.id}`} skillId={skill.id} disabled={editing || saving} onChanged={onChanged} onError={onError} />
       <div className="biny-skill-detail-body">
         <aside className="biny-skill-files">
           <h3>文件</h3>

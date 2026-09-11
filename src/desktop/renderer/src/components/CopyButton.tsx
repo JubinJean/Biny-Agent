@@ -4,7 +4,7 @@
  * 复制成功后图标临时变成对勾再自动复原，复制失败则不给成功反馈。
  * `resolveValue` 用于内容会变的场景（如实时渲染的代码块），点击时才取当前文本。
  */
-import { useState } from "react";
+import React, { useState } from "react";
 import { copyToClipboard } from "../copyToClipboard.js";
 import { Icon } from "./Icon.js";
 
