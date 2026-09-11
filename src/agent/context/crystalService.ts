@@ -48,6 +48,7 @@ export interface CrystalServiceOptions {
   embedText?: (text: string, signal?: AbortSignal) => Promise<Float32Array | undefined>;
   readAnchorText?: (anchor: { threadId?: string; anchorId: string }) => Promise<string | undefined>;
   getConfig?: () => CrystalConfig;
+  allowActivity?: () => boolean;
   now?: () => Date;
   onEvent?: (event: CrystalServiceEvent) => void;
 }
@@ -95,7 +96,7 @@ export class CrystalService {
   private readonly now: () => Date;
   private readonly onEvent: (event: CrystalServiceEvent) => void;
 
-  constructor(options: CrystalServiceOptions = {}) {
+  constructor(private readonly options: CrystalServiceOptions = {}) {
     this.storage = options.storage ?? new CrystalStorage();
     this.getModel = options.getModel ?? (() => undefined);
     this.customExtractTerms = options.extractTerms;
@@ -372,28 +373,40 @@ export class CrystalService {
     return crystal;
   }
 
+  /** 预览与模型补全共用来源读取；材料组只读取其明确关联的锚点。 */
+  async readMaterialText(material: CrystalMaterial): Promise<string | undefined> {
+    if (typeof material.ref !== "object" || material.ref === null || Array.isArray(material.ref)) return undefined;
+    const ref = material.ref as Record<string, unknown>;
+    if (material.kind === "note") return typeof ref.text === "string" ? redactSecrets(ref.text) : undefined;
+    if (!this.readAnchorText) return undefined;
+    if (material.kind === "turn" && typeof ref.threadId === "string" && typeof ref.anchorId === "string") {
+      const text = await this.readAnchorText({ threadId: ref.threadId, anchorId: ref.anchorId }).catch(() => undefined);
+      return text === undefined ? undefined : redactSecrets(text);
+    }
+    if (material.kind === "bundle" && typeof ref.bundleId === "string") {
+      const bundle = this.storage.getBundle(ref.bundleId);
+      if (!bundle) return undefined;
+      const texts = await Promise.all(bundle.anchorIds.slice(0, 30).map(async (anchorId) =>
+        await this.readAnchorText!({ threadId: bundle.threadId, anchorId }).catch(() => undefined)));
+      return redactSecrets(texts.filter((text) => text?.trim()).join("\n\n")) || undefined;
+    }
+    return undefined;
+  }
+
   async prefill(id: string, signal?: AbortSignal): Promise<Crystal> {
     const crystal = this.requireCrystal(id);
     if (!crystal.type) throw new CrystalNotReadyError({ ready: false, missing: ["type"], conflicted: [] });
     const materials = this.storage.listMaterials(id).slice(0, 30);
     if (!materials.length) throw new Error("No materials to draw from.");
+    if (this.options.allowActivity?.() === false && this.hasActivityMaterials(id)) {
+      throw new Error("当前活动权限不允许将这些材料用于模型补全。");
+    }
     const sources: Array<{ tag: string; text: string }> = [];
     for (const material of materials) {
-      const ref = material.ref;
-      if (typeof ref !== "object" || ref === null || Array.isArray(ref)) continue;
-      const record = ref as Record<string, unknown>;
-      const directText = material.kind === "note" && typeof record.text === "string" ? record.text : undefined;
-      if (directText) {
-        sources.push({ tag: `${material.kind}:${String(material.id)}`, text: directText.slice(0, 400) });
-        continue;
-      }
-      if (material.kind === "turn" && typeof record.threadId === "string" && typeof record.anchorId === "string" && this.readAnchorText) {
-        const text = await this.readAnchorText({
-          threadId: record.threadId,
-          anchorId: record.anchorId
-        }).catch(() => undefined);
-        if (text?.trim()) sources.push({ tag: `turn:${record.anchorId}`, text: text.slice(0, 400) });
-      }
+      const text = await this.readMaterialText(material);
+      if (!text || (material.kind !== "note" && !text.trim())) continue;
+      const tag = material.kind === "turn" ? `turn:${String((material.ref as { anchorId: string }).anchorId)}` : `${material.kind}:${String(material.id)}`;
+      sources.push({ tag, text: text.slice(0, 400) });
     }
     if (!sources.length) throw new Error("Materials have no readable text.");
     const fields = crystalTypeFields[crystal.type];
@@ -488,6 +501,13 @@ export class CrystalService {
         if (earlier.size === 16) break;
       }
     }
+    if (this.options.allowActivity?.() === false) {
+      for (const entries of [references, earlier]) {
+        for (const id of entries.keys()) {
+          if (this.hasActivityMaterials(id)) entries.delete(id);
+        }
+      }
+    }
     const formatCard = ([id, label]: [string, string], compact: boolean): string => {
       const crystal = this.storage.getCrystal(id);
       const lines = [`- @${label} → biny://crystal/${id} [crystal]${crystal ? "" : " (MISSING)"}`];
@@ -518,6 +538,16 @@ export class CrystalService {
     if (earlier.size) rows.push("\nReferenced earlier in this thread (resolve if relevant):", ...[...earlier].map((reference) => formatCard(reference, true)));
     const result = rows.join("\n");
     return result.length <= maxChars ? result : `${result.slice(0, Math.max(0, maxChars - 1))}…`;
+  }
+
+  private hasActivityMaterials(id: string): boolean {
+    return this.storage.listMaterials(id).some((material) => {
+      if (typeof material.ref !== "object" || material.ref === null || Array.isArray(material.ref)) return false;
+      const ref = material.ref as Record<string, unknown>;
+      const threadId = material.kind === "bundle" && typeof ref.bundleId === "string"
+        ? this.storage.getBundle(ref.bundleId)?.threadId : ref.threadId;
+      return ref.source === "activity" || (typeof threadId === "string" && threadId.startsWith("activity:"));
+    });
   }
 
   private requireCrystal(id: string): Crystal {

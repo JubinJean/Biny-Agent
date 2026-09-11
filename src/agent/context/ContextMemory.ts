@@ -1,6 +1,7 @@
+import { estimateContextBreakdown, estimateMessageTokens, estimateTokens, messageTokenCost, type ContextTokenInput } from "./tokenUsage.js";
 import type { AgentMessage, AgentModel, AgentTool, AgentToolResultMessage, AgentUsage, AgentUserMessage, ModelRequestContext, ModelRequestObserver } from "../core/types.js";
 import { generateNativeText } from "../../llm/nativeJson.js";
-import { cloneAgentMessages, messageReasoning, messageText, messageToolName } from "../modelMessages.js";
+import { cloneAgentMessages, messageText, messageToolName } from "../modelMessages.js";
 import { formatProjectContext } from "../../project/ProjectContext.js";
 import { LocalMemory, formatMemoryMatches, redactSecrets } from "./LocalMemory.js";
 import { formatRepoMapCandidates, WorkspaceContext } from "./WorkspaceContext.js";
@@ -14,10 +15,13 @@ import type { PersonalizationMetadata } from "../../session/metadata.js";
 import { canonicalToolSchemaHash, type PromptEpochReason } from "../../llm/promptCache.js";
 import type { MemoryOrigin, MemoryOriginCounts, MemoryRecallReport } from "./memoryTypes.js";
 import type { HybridMemoryRetriever } from "./HybridMemoryRetriever.js";
+import type { PromptBundle } from "../prompts.js";
+import { stripTransientTurnContext } from "../prompts.js";
 
 const piReserveTokens = 16_384;
 const piKeepRecentTokens = 20_000;
 const defaultSummaryTokens = 4_096;
+const turnContextEndMarker = "<!-- biny-turn-context:end -->";
 
 export interface ContextCompactionOptions {
   enabled?: boolean;
@@ -116,11 +120,13 @@ export class ContextMemory {
 
   async prepareTurn(
     input: string,
-    systemPrompt: string,
+    prompt: PromptBundle | string,
     signal?: AbortSignal,
     attachments: AgentAttachment[] = [],
     useMemories = true
   ): Promise<PreparedAgentContext> {
+    const systemPrompt = typeof prompt === "string" ? prompt : prompt.systemPrompt;
+    const turnContext = typeof prompt === "string" ? "" : prompt.turnContext;
     this.memoryUseEnabled = useMemories;
     signal?.throwIfAborted();
     const workspacePerfStartedAt = perfNow();
@@ -137,6 +143,7 @@ export class ContextMemory {
     const limits = this.compactionLimits();
     let assembly = assembleContext(
       systemPrompt,
+      turnContext,
       input,
       this.history,
       workspace,
@@ -161,6 +168,7 @@ export class ContextMemory {
       if (compaction.compacted) {
         assembly = assembleContext(
           systemPrompt,
+          turnContext,
           input,
           this.history,
           workspace,
@@ -176,6 +184,7 @@ export class ContextMemory {
     this.memoryRecall = memoryRecallForAssembly(recalled.report, recalled.entries, assembly.budget.components);
     this.lastBudget = {
       ...assembly.budget,
+      cacheHitRate: this.lastBudget.cacheHitRate,
       contextWindow: budget.contextWindow,
       contextWindowIsFallback: budget.contextWindowIsFallback,
       effectiveContextWindow: budget.effectiveContextWindow,
@@ -240,8 +249,9 @@ export class ContextMemory {
     return cloneBudget(this.lastBudget);
   }
 
-  recordProviderUsage(usage: AgentUsage): void {
-    if (usage.inputTokens === undefined) return;
+  recordProviderUsage(usage: AgentUsage, cacheHitRate?: number): void {
+    this.lastBudget = { ...this.lastBudget, cacheHitRate };
+    if (usage.inputTokens === undefined || !Number.isFinite(usage.inputTokens) || usage.inputTokens < 0) return;
     this.lastBudget = {
       ...this.lastBudget,
       usedTokens: Math.max(0, usage.inputTokens),
@@ -373,7 +383,7 @@ export class ContextMemory {
     this.promptModel = contextState?.promptModel;
     this.toolSchemaHash = contextState?.toolSchemaHash;
     this.lastBudget = budget === undefined ? estimateRestoredBudget(this.history, this.currentBudget()) : normalizeRestoredBudget(budget, this.currentBudget());
-    if (this.checkpoint) this.refreshEstimatedBudget();
+    if (this.checkpoint && (!this.lastBudget.measuredAt || this.lastBudget.measuredAt <= this.checkpoint.createdAt)) this.refreshEstimatedBudget();
     this.workspace.restoreFromHistory(messages);
   }
 
@@ -408,33 +418,27 @@ export class ContextMemory {
     };
   }
 
-  /** 记录当前模型步骤会额外携带的工具 schema；该部分由模型预算单独预留。 */
-  recordToolSchema(tools: readonly AgentTool[]): void {
-    const nextToolSchemaHash = canonicalToolSchemaHash(tools);
-    if (this.toolSchemaHash !== undefined && this.toolSchemaHash !== nextToolSchemaHash) {
-      this.advancePromptEpoch("tool_schema_changed");
-    }
-    this.toolSchemaHash = nextToolSchemaHash;
-    const requestedTokens = tools.length
-      ? estimateTokens(JSON.stringify(tools.map((tool) => ({
-        name: tool.name,
-        description: tool.description,
-        parameters: tool.parameters
-      })))) + 4
-      : 0;
-    const components = (this.lastBudget.components ?? []).filter((component) => component.id !== "tool_schema");
-    if (requestedTokens > 0) {
-      components.push({
-        id: "tool_schema",
-        requestedTokens,
-        usedTokens: requestedTokens,
-        disposition: "included"
-      });
-    }
+  /** 在投影、剪枝和动态工具刷新之后采样，每一步替换上一请求的用量。 */
+  recordRequest(input: ContextTokenInput): void {
+    this.syncBudgetMetadata();
+    const breakdown = estimateContextBreakdown(input);
+    const estimatedTokens = Object.values(breakdown).reduce((total, tokens) => total + tokens, 0);
     this.lastBudget = {
       ...this.lastBudget,
-      components: components.length ? components : undefined
+      breakdown,
+      estimatedTokens,
+      usedTokens: estimatedTokens,
+      providerInputTokens: undefined,
+      source: "estimated",
+      measuredAt: new Date().toISOString()
     };
+  }
+
+  /** 工具变化必须在构建 requestContext 前推进缓存 epoch；token 只在 recordRequest 统计。 */
+  recordToolSchema(tools: readonly AgentTool[]): void {
+    const next = canonicalToolSchemaHash(tools);
+    if (this.toolSchemaHash !== undefined && this.toolSchemaHash !== next) this.advancePromptEpoch("tool_schema_changed");
+    this.toolSchemaHash = next;
   }
 
   formatCompaction(result: CompactionResult): string {
@@ -533,7 +537,7 @@ export class ContextMemory {
       64,
       this.inputBudget() - this.compactionLimits().reserveTokens - promptOverhead - 8
     );
-    const transcript = boundedCompactionTranscript(plan.compacted, transcriptBudget);
+    const transcript = boundedCompactionTranscript(stripTransientTurnContext(plan.compacted), transcriptBudget);
     const prompt = buildCompactionPrompt(transcript, previousSummary, hint, plan.splitTurn);
     // 摘要模型可独立配置（如便宜的快模型）；未配置时跟随当前对话模型。
     const summaryModel = this.compactionOptions.resolveSummaryModel?.() ?? this.getModel();
@@ -633,6 +637,7 @@ export class ContextMemory {
       modelAlias: budget.modelAlias,
       reserveTokens: this.compactionLimits().reserveTokens,
       estimatedTokens: usedTokens,
+      breakdown: undefined,
       providerInputTokens: undefined,
       outputReserveTokens: budget.outputReserveTokens,
       reasoningReserveTokens: budget.reasoningReserveTokens,
@@ -647,6 +652,15 @@ export class ContextMemory {
 
   private syncBudgetMetadata(): void {
     const budget = this.currentBudget();
+    if (this.lastBudget.modelAlias !== budget.modelAlias) {
+      this.lastBudget = {
+        ...this.lastBudget,
+        usedTokens: this.lastBudget.estimatedTokens ?? this.lastBudget.usedTokens,
+        providerInputTokens: undefined,
+        source: "estimated",
+        measuredAt: undefined
+      };
+    }
     this.lastBudget = {
       ...this.lastBudget,
       maxTokens: budget.maxInputTokens,
@@ -894,7 +908,7 @@ function summaryFileList(summary: string, tag: "read-files" | "modified-files"):
 }
 
 const readToolNames = new Set(["Read", "Glob", "Grep", "git_status", "git_diff", "read_tool_result"]);
-const modifiedToolNames = new Set(["Write", "edit_file", "multi_edit", "delete_file", "apply_patch", "move_file"]);
+const modifiedToolNames = new Set(["Write", "edit_file", "delete_file", "move_file"]);
 
 function extractSummaryPaths(value: unknown): string[] {
   const serialized = safeJson(value);
@@ -950,6 +964,7 @@ function cloneBudget(budget: ContextBudgetStatus): ContextBudgetStatus {
   return {
     ...budget,
     omitted: [...budget.omitted],
+    breakdown: budget.breakdown === undefined ? undefined : { ...budget.breakdown },
     components: budget.components?.map((component) => ({ ...component }))
   };
 }
@@ -1011,7 +1026,7 @@ function memoryRecallForAssembly(
 }
 
 function normalizeRestoredBudget(budget: ContextBudgetStatus, limits: ModelContextBudget): ContextBudgetStatus {
-  const source = budget.source ?? "estimated";
+  const source = budget.modelAlias === limits.modelAlias ? budget.source ?? "estimated" : "estimated";
   return {
     ...budget,
     maxTokens: limits.maxInputTokens,
@@ -1023,10 +1038,11 @@ function normalizeRestoredBudget(budget: ContextBudgetStatus, limits: ModelConte
     autoCompactTokenLimit: limits.autoCompactTokenLimit,
     maxOutputTokens: limits.maxOutputTokens,
     modelAlias: limits.modelAlias,
-    usedTokens: source === "provider" ? Math.max(0, budget.usedTokens) : Math.min(limits.maxInputTokens, Math.max(0, budget.usedTokens)),
+    usedTokens: Math.max(0, source === "provider" ? budget.usedTokens : budget.estimatedTokens ?? budget.usedTokens),
     estimatedTokens: budget.estimatedTokens === undefined ? undefined : Math.max(0, budget.estimatedTokens),
-    providerInputTokens: budget.providerInputTokens === undefined ? undefined : Math.max(0, budget.providerInputTokens),
+    providerInputTokens: source !== "provider" || budget.providerInputTokens === undefined ? undefined : Math.max(0, budget.providerInputTokens),
     omitted: [...budget.omitted],
+    breakdown: budget.breakdown === undefined ? undefined : { ...budget.breakdown },
     components: budget.components?.map((component) => ({ ...component })),
     source,
     measuredAt: budget.measuredAt
@@ -1086,6 +1102,7 @@ export interface RunContextCompaction {
 
 function assembleContext(
   systemPrompt: string,
+  turnContext: string,
   input: string,
   history: AgentMessage[],
   workspace: WorkspaceTurnData,
@@ -1172,6 +1189,7 @@ function assembleContext(
   const requestedHistoryTokens = estimateMessageTokens(history);
   const requestedTokens = requestedHistoryTokens + requestedTaskTokens + [
     systemPrompt,
+    turnContext,
     projectInstructions,
     conversationSummary,
     explicitPaths,
@@ -1203,6 +1221,36 @@ function assembleContext(
     });
   }
 
+  // 每轮上下文必须先于 recalled memory，且不能挤掉用户原文；超长的日报/Activity
+  // 只在本轮截断，不写回 history。这样模型能看到 Alma 式的动态顺序，历史仍保持干净。
+  let includedTurnContext = "";
+  if (turnContext) {
+    const requestedTurnContextTokens = estimateTokens(turnContext) + 4;
+    const contextCap = Math.max(1, Math.floor(usableTokens * 0.2));
+    const available = Math.min(Math.max(0, remaining - 4), contextCap);
+    const closeMarkerBudget = estimateTokens(turnContextEndMarker) + 4;
+    if (available > closeMarkerBudget) {
+      const selected = requestedTurnContextTokens <= available
+        ? turnContext
+        : truncateTextToTokens(turnContext, available - closeMarkerBudget);
+      includedTurnContext = selected.includes(turnContextEndMarker)
+        ? selected
+        : `${selected.trimEnd()}\n\n${turnContextEndMarker}`;
+      const usedTokens = estimateTokens(includedTurnContext) + 4;
+      components.push({
+        id: "turn context",
+        requestedTokens: requestedTurnContextTokens,
+        usedTokens,
+        disposition: includedTurnContext === turnContext ? "included" : "trimmed"
+      });
+      if (includedTurnContext !== turnContext) omitted.push("turn context (trimmed)");
+      remaining -= usedTokens;
+    } else {
+      omitted.push("turn context");
+      components.push({ id: "turn context", requestedTokens: requestedTurnContextTokens, usedTokens: 0, disposition: "omitted" });
+    }
+  }
+
   // 记忆不是 system instruction，而是本轮 user message 前的参考资料。只有完整块能放进
   // 剩余预算时才注入，避免把记忆截成半句话；没有命中时 user message 保持原样。
   let includedMemory = "";
@@ -1229,7 +1277,7 @@ function assembleContext(
     }
   }
 
-  const userMessage = withRecalledMemory(userContent, includedMemory);
+  const userMessage = withUserContext(userContent, includedTurnContext, includedMemory);
 
   const messages: AgentMessage[] = [...selectedHistory, userMessage];
   const assembledSystemPrompt = systemParts.join("\n\n") || undefined;
@@ -1252,25 +1300,30 @@ function assembleContext(
   };
 }
 
-function withRecalledMemory(
+function withUserContext(
   content: AgentUserMessage["content"],
+  turnContext: string,
   memory: string
 ): AgentUserMessage {
-  if (!memory) return { role: "user", content };
+  const memoryBlock = memory ? ["<!-- biny-recalled-memory:start -->", memory, "<!-- biny-recalled-memory:end -->"].join("\n") : "";
+  const prefix = [turnContext, memoryBlock].filter(Boolean).join("\n\n");
+  if (!prefix) return { role: "user", content };
   const separator = "\n\n";
   if (typeof content === "string") {
-    return { role: "user", content: `${memory}${separator}${content}` };
+    return { role: "user", content: `${prefix}${separator}${content}`, originalContent: content };
   }
   const first = content[0];
   if (first?.type === "text") {
     return {
       role: "user",
-      content: [{ ...first, text: `${memory}${separator}${first.text}` }, ...content.slice(1)]
+      originalContent: content,
+      content: [{ ...first, text: `${prefix}${separator}${first.text}` }, ...content.slice(1)]
     };
   }
   return {
     role: "user",
-    content: [{ type: "text", text: memory }, ...content]
+    originalContent: content,
+    content: [{ type: "text", text: prefix }, ...content]
   };
 }
 
@@ -1308,14 +1361,6 @@ function formatRecentActivity(activity: RecentWorkspaceActivity): string {
 function selectHistory(history: AgentMessage[], maxTokens: number): AgentMessage[] {
   if (!maxTokens || !history.length) return [];
   return takeRecentMessages(history, maxTokens);
-}
-
-export function estimateTokens(value: string): number {
-  return Math.ceil(Buffer.byteLength(value, "utf8") / 3);
-}
-
-export function estimateMessageTokens(messages: AgentMessage[]): number {
-  return messages.reduce((total, message) => total + messageTokenCost(message), 0);
 }
 
 export function truncateTextToTokens(value: string, maxTokens: number): string {
@@ -1392,18 +1437,4 @@ function prunedToolResultMessage(message: ToolMessage): ToolMessage {
     ...message,
     content: [{ type: "text", text: replacement }]
   };
-}
-
-function messageTokenCost(message: AgentMessage): number {
-  return estimateTokens(messageText(message)) + estimateTokens(messageReasoning(message)) + estimateMediaTokens(message) + 4;
-}
-
-function estimateMediaTokens(message: AgentMessage): number {
-  if (message.role === "assistant" || typeof message.content === "string") return 0;
-  return message.content.reduce((total, part) => {
-    if (part.type !== "image" && part.type !== "audio") return total;
-    if (part.mimeType.startsWith("image/")) return total + 1_024;
-    if (part.mimeType.startsWith("audio/")) return total + 2_048;
-    return total + 512;
-  }, 0);
 }

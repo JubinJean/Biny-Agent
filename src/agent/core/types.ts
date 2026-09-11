@@ -36,6 +36,8 @@ export type AgentMessage =
 export interface AgentUserMessage {
   role: "user";
   content: string | Array<AgentTextContent | AgentImageContent | AgentAudioContent>;
+  /** 仅宿主注入瞬态上下文时保存原文；清理和遥测不能靠用户可输入的文本标记识别来源。 */
+  originalContent?: AgentUserMessage["content"];
   timestamp?: number;
 }
 
@@ -247,6 +249,8 @@ export interface AgentLoopConfig {
   tools: AgentTool[];
   modelOptions?: ModelStreamOptions;
   maxSteps: number;
+  /** 观察最终送入模型的上下文，不改变请求；每个 provider step 在剪枝后调用。 */
+  onRequestContext?: (context: ModelStreamContext) => Promise<void> | void;
   transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
   getSteeringMessages?: () => Promise<AgentMessage[]>;
   getFollowUpMessages?: () => Promise<AgentMessage[]>;

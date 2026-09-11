@@ -137,6 +137,8 @@ export function summarizeUsage(records: SessionUsage[]): UsageSummary {
       weightedInputTokens += record.inputTokens;
       if (record.cacheReadTokens === undefined) weightedCacheMetricsComplete = false;
       else weightedCacheReadTokens += record.cacheReadTokens;
+    } else {
+      weightedCacheMetricsComplete = false;
     }
     if (record.promptEpochId !== undefined) {
       const epoch = epochUsage.get(record.promptEpochId) ?? { inputTokens: 0, cacheReadTokens: 0, cacheReadKnown: true };
@@ -229,7 +231,9 @@ export function sumSessionUsage(records: readonly SessionUsage[]): SessionUsage 
     outputTokens: sumDefined(records, "outputTokens"),
     totalTokens: sumDefined(records, "totalTokens"),
     reasoningTokens: sumDefined(records, "reasoningTokens"),
-    cacheReadTokens: sumDefined(records, "cacheReadTokens"),
+    cacheReadTokens: records.every((record) => record.inputTokens !== undefined && record.cacheReadTokens !== undefined)
+      ? sumDefined(records, "cacheReadTokens")
+      : undefined,
     cacheWriteTokens: sumDefined(records, "cacheWriteTokens"),
     cacheMissTokens: sumDefined(records, "cacheMissTokens"),
     promptEpochId: records.every((record) => record.promptEpochId === last.promptEpochId) ? last.promptEpochId : undefined,

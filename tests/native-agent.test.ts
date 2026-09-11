@@ -1006,7 +1006,7 @@ async function testQueuedFollowUp(): Promise<void> {
       for await (const event of agent.prompt("first question")) events.push(event);
     })();
     await firstRequestStarted.promise;
-    agent.queueFollowUp("queued-message", "second question");
+    await agent.queueFollowUp("queued-message", "second question");
     releaseFirstRequest.resolve();
     await run;
 
@@ -1018,11 +1018,11 @@ async function testQueuedFollowUp(): Promise<void> {
     assert.equal(events.find((event) => event.type === "done")?.content, "follow-up answer");
     await recorder.flush();
     const stored = (await readFile(recorder.filePath, "utf8")).trim().split("\n")
-      .map((line) => JSON.parse(line) as { type: string; content?: string; message?: { role: string; content: Array<{ type: string; text?: string }> } });
+      .map((line) => JSON.parse(line) as { type: string; auditOnly?: boolean; content?: string; message?: { role: string; content: Array<{ type: string; text?: string }> } });
     const firstAssistantIndex = stored.findIndex((event) => event.type === "agent_message"
       && event.message?.role === "assistant"
       && event.message.content.some((part) => part.type === "text" && part.text === "first answer"));
-    const queuedUserIndex = stored.findIndex((event) => event.type === "user_message" && event.content === "second question");
+    const queuedUserIndex = stored.findIndex((event) => event.type === "user_message" && !event.auditOnly && event.content === "second question");
     assert.ok(firstAssistantIndex >= 0);
     assert.ok(queuedUserIndex > firstAssistantIndex, "queued follow-up must be persisted after the completed assistant turn");
   } finally {

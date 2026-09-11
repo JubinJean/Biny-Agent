@@ -9,11 +9,12 @@ import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { completeThinkingLevelMap, effectiveThinkingSelection, isKimiAlwaysThinkingModel, isKimiK3Model, modelCapabilities, modelReasoningConfig, modelThinkingLevelMap, nativeReasoningEffort, normalizeModelMetadata, reasoningBudgetTokens, thinkingLevelMapForModel } from "../ai/capabilities.js";
 import { fetchModelCatalogSnapshot } from "../ai/modelCatalog.js";
 import { accessPathThinkingLevelMap, inferThinkingLevelMap, lookupModelMetadata, type ModelMetadata } from "../ai/modelMetadata.js";
-import { providerDefinition, providerProtocol } from "../ai/provider.js";
+import { providerDefinition } from "../ai/provider.js";
 import type { ModelCatalogEntry, ProviderDefinition } from "../ai/types.js";
 import type { AgentConfig, ModelAliasConfig, ModelApiBackend, ModelCompatibility, ModelProfile, ProviderConfig, ThinkingLevelMap } from "../config/schema.js";
 import { createNativeModel } from "./nativeModel.js";
 import { createVercelLanguageModel } from "./vercelModel.js";
+import { resolveProviderRequestRoute } from "./providerRequest.js";
 import { openAiCodexHeaders, refreshSubscriptionOAuthTokens } from "./subscriptionAuth.js";
 import { AiRegistry } from "./AiRegistry.js";
 import { modelCatalogCacheKey, readProviderCatalog, type ModelsStore } from "./ModelsStore.js";
@@ -215,17 +216,12 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
     const apiKey = this.resolveApiKey();
     const baseUrl = normalizedModel.baseUrl ?? this.config.baseUrl ?? this.definition.baseUrl;
     if (!baseUrl) throw new Error(`No model endpoint configured. Set providers.${this.id}.baseUrl.`);
-    const protocol = nativeProtocolForModel(normalizedModel, this.config, this.definition);
-    const api = normalizedModel.apiBackend
-      ?? this.config.apiBackend
-      ?? this.definition.api
-      ?? (this.config.type === "openai-codex"
-        ? "responses"
-        : protocol === "anthropic" ? "anthropic_messages" : "chat_completions");
+    const route = resolveProviderRequestRoute(normalizedModel, this.config, this.definition);
+    const { apiBackend: api, protocol } = route;
     const reasoningProtocol = this.definition.reasoningProtocol
-      ?? (api === "anthropic_messages"
+      ?? (protocol === "anthropic" || api === "anthropic_messages"
         ? "anthropic"
-        : api === "responses" || this.config.type === "openai-compatible" ? "openai" : undefined);
+        : protocol === "openai-compatible" || api === "responses" ? "openai" : undefined);
     const compatibility = normalizedModel.compatibility;
     const capabilities = modelCapabilities(normalizedModel);
     const selection = effectiveThinkingSelection(normalizedModel, agentConfig.thinking);
@@ -272,6 +268,7 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
         api,
         modelId: normalizedModel.model,
         supportsReasoning: capabilities.reasoning,
+        compatibility,
         baseUrl,
         apiKey,
         headers,
@@ -449,16 +446,6 @@ export class ProviderRegistry {
       return models.length ? [[id, models] as [string, ModelCatalogEntry[]]] : [];
     });
   }
-}
-
-function nativeProtocolForModel(
-  model: ModelAliasConfig,
-  provider: ProviderConfig,
-  definition: ProviderDefinition
-): "anthropic" | "openai-compatible" {
-  if (model.apiBackend === "anthropic_messages") return "anthropic";
-  if (model.apiBackend === "chat_completions") return "openai-compatible";
-  return providerProtocol(provider, definition);
 }
 
 function missingKeyMessage(providerAlias: string, configuredEnv: string | undefined, defaultEnv: string | undefined): string {

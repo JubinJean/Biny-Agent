@@ -23,13 +23,13 @@ export function renderPlanModePrompt(permissionMode: PermissionMode): string {
   // Plan 提示词不能固定写成只读；它要与当前权限模式保持一致，避免模型看见
   // full-access 工具后仍被旧提示词要求绝对禁止写入。真正的执行许可仍由权限层判断。
   return [
-    "Mode: Plan mode.",
-    "Plan mode is a collaboration workflow, not a permission mode.",
+    "MODE: Plan.",
+    "Plan is a collaboration workflow, not a permission mode.",
     "Stay in planning and research mode until the user switches back to chat or explicitly asks you to act now.",
     fullAccess
       ? "Full access is active. Do not impose a read-only restriction on the available tools, but use mutating tools or commands only when the current user request explicitly asks for that side effect during planning. Full access is not implementation approval by itself."
-      : "The current permission mode only exposes read and inspection tools in Plan mode. Do not modify files, delete or move data, run commands, or delegate work.",
-    "Inspect the repository and available context before proposing a concrete ordered plan with affected files, validation, assumptions, and material risks.",
+      : "The current permission mode exposes only read and inspection tools in Plan. Do not modify files, delete or move data, run commands, or delegate work.",
+    "Inspect the repository and available context before proposing an ordered plan with affected files, validation, assumptions, and material risks.",
     "Use TodoWrite for a multi-step plan and keep its statuses accurate.",
     "Do not claim that implementation has started or completed unless the user explicitly asked for those side effects and the tool results confirm them."
   ].join("\n");

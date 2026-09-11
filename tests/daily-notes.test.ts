@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { appendDailyMemoryEntry, writeDailyActivityNote, writeDailyMemoryNote } from "../src/activity/dailyNotes.js";
 import { appendCompletedChatDiaryEntry } from "../src/agent/context/chatDiary.js";
-import { buildSystemPrompt, systemPromptForTelemetry } from "../src/agent/prompts.js";
+import { buildPromptBundle, systemPromptForTelemetry } from "../src/agent/prompts.js";
 
 const root = await mkdtemp(path.join(os.tmpdir(), "biny-daily-note-"));
 try {
@@ -50,13 +50,14 @@ try {
   assert.match(mergedNote, /## 聊天摘要/u);
   assert.match(mergedNote, /## 活动记录/u);
   assert.match(mergedNote, /活动日报/u);
-  const prompt = buildSystemPrompt({
+  const prompt = buildPromptBundle({
     mode: "qa",
     cwd: "/tmp/biny",
     dailyNotesPrompt: "# 2026-09-02 每日摘要\n\n## 聊天摘要\n\n完成记忆系统对齐。"
   });
-  assert.match(prompt, /完成记忆系统对齐/u);
-  assert.doesNotMatch(systemPromptForTelemetry(prompt) ?? "", /完成记忆系统对齐/u);
+  assert.doesNotMatch(prompt.systemPrompt, /完成记忆系统对齐/u);
+  assert.match(prompt.turnContext, /完成记忆系统对齐/u);
+  assert.doesNotMatch(systemPromptForTelemetry(prompt.systemPrompt) ?? "", /完成记忆系统对齐/u);
   await assert.rejects(
     writeDailyMemoryNote("2026-9-1", "invalid", { configDir: root }),
     /Invalid daily memory date/u

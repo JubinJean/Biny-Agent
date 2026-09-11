@@ -17,6 +17,7 @@ import type {
   LanguageModelV4StreamPart
 } from "@ai-sdk/provider";
 import { stableSystemPromptForCache } from "../prompts.js";
+import { classifyModelRequestError } from "../../llm/nativeModel.js";
 import {
   computePromptShapeDiagnostic,
   promptShapeBudgetMs,
@@ -30,9 +31,10 @@ import type {
   ModelStreamOptions
 } from "./types.js";
 import type { VercelLoopState } from "./vercelAgentLoop.js";
-import { errorMessage, providerMetadata, stringify } from "./vercelAgentUtils.js";
+import { errorMessage, isRecord, providerMetadata, stringify } from "./vercelAgentUtils.js";
 
 export interface DirectCallDiagnostics {
+  callId: string;
   startedAtMs: number;
   promptShape?: PromptShapeDiagnostic;
   promptShapeDurationMs?: number;
@@ -58,6 +60,9 @@ export async function modelMessages(state: VercelLoopState): Promise<ModelMessag
   const messages = state.config.transformContext
     ? await state.config.transformContext(state.context.messages, state.signal)
     : state.context.messages;
+  if (state.vercelModel !== undefined) {
+    await state.config.onRequestContext?.({ systemPrompt: state.context.systemPrompt, messages, tools: state.context.tools });
+  }
   state.directPromptMessages = messages;
   return toModelMessages(messages);
 }
@@ -66,10 +71,11 @@ export async function recordDirectModelRequest(
   state: VercelLoopState,
   event: LanguageModelCallEndEvent<ToolSet>
 ): Promise<void> {
-  const diagnostics = state.directCallStarts.get(event.callId);
+  const diagnostics = state.directCall;
   const startedAtMs = diagnostics?.startedAtMs ?? Date.now() - event.performance.responseTimeMs;
-  state.directCallStarts.delete(event.callId);
-  const durationMs = Math.max(0, event.performance.responseTimeMs || Date.now() - startedAtMs);
+  const endedAtMs = Date.now();
+  state.directCall = undefined;
+  const durationMs = Math.max(0, endedAtMs - startedAtMs);
   const metrics: ModelRequestMetrics = {
     requestId: event.callId,
     provider: state.model.provider,
@@ -78,7 +84,12 @@ export async function recordDirectModelRequest(
     durationMs,
     timeToFirstEventMs: event.performance.timeToFirstOutputMs,
     timeToFirstOutputMs: event.performance.timeToFirstOutputMs,
-    attempts: [{ attempt: 1, durationMs, willRetry: false }],
+    attempts: state.directAttempts.map((attempt, index) => ({
+      attempt: index + 1,
+      durationMs: attempt.durationMs ?? Math.max(0, endedAtMs - attempt.startedAtMs),
+      error: attempt.error,
+      willRetry: index < state.directAttempts.length - 1
+    })),
     finishReason: fromVercelFinishReason(event.finishReason),
     usage: fromVercelUsage(event.usage),
     eventCount: Math.max(1, event.content.length),
@@ -95,18 +106,56 @@ export async function recordDirectModelRequest(
   }
 }
 
+/** 未收到成功结束回调的请求也必须结算；清空后再通知，避免 error/abort/finally 重复记账。 */
+export async function recordDirectModelFailure(state: VercelLoopState, error: unknown): Promise<void> {
+  const diagnostics = state.directCall;
+  state.directCall = undefined;
+  if (!diagnostics) return;
+  const endedAtMs = Date.now();
+  const failure = isRecord(error) && error.lastError !== undefined ? error.lastError : error;
+  const metrics: ModelRequestMetrics = {
+    requestId: diagnostics.callId,
+    provider: state.model.provider,
+    modelId: state.model.modelId,
+    startedAt: new Date(diagnostics.startedAtMs).toISOString(),
+    durationMs: Math.max(0, endedAtMs - diagnostics.startedAtMs),
+    attempts: state.directAttempts.map((attempt, index) => ({
+      attempt: index + 1,
+      durationMs: attempt.durationMs ?? Math.max(0, endedAtMs - attempt.startedAtMs),
+      error: attempt.error ?? errorMessage(error),
+      willRetry: index < state.directAttempts.length - 1
+    })),
+    status: isRecord(failure) && typeof failure.statusCode === "number" ? failure.statusCode : undefined,
+    error: errorMessage(error),
+    errorPhase: state.outputProducedSinceStep ? "stream" : "request",
+    eventCount: state.outputProducedSinceStep ? 1 : 0,
+    requestContext: state.modelOptions?.requestContext,
+    promptShape: diagnostics.promptShape,
+    promptShapeDurationMs: diagnostics.promptShapeDurationMs,
+    promptShapeStatus: diagnostics.promptShapeStatus,
+    promptShapeBudgetExceeded: diagnostics.promptShapeBudgetExceeded
+  };
+  metrics.errorCode = classifyModelRequestError(error, metrics, state.signal);
+  try {
+    await state.modelOptions?.onRequestMetrics?.(metrics);
+  } catch {
+    // 观测失败不覆盖 provider 原始错误或取消原因。
+  }
+}
+
 export function beginDirectModelRequest(state: VercelLoopState, callId: string): void {
   const startedAtMs = Date.now();
   const shapeStartedAt = performance.now();
   const requestContext = state.modelOptions?.requestContext;
   const promptEpoch = requestContext?.promptEpoch;
   if (state.promptShapeSkipEpoch !== undefined && state.promptShapeSkipEpoch === promptEpoch) {
-    state.directCallStarts.set(callId, {
+    state.directCall = {
+      callId,
       startedAtMs,
       promptShapeDurationMs: 0,
       promptShapeStatus: "skipped_due_to_budget",
       promptShapeBudgetExceeded: true
-    });
+    };
     return;
   }
   const promptShape = computePromptShapeDiagnostic({
@@ -127,13 +176,14 @@ export function beginDirectModelRequest(state: VercelLoopState, callId: string):
   const promptShapeBudgetExceeded = promptShapeDurationMs > promptShapeBudgetMs;
   state.previousPromptShape = promptShape;
   state.promptShapeSkipEpoch = promptShapeBudgetExceeded ? promptEpoch : undefined;
-  state.directCallStarts.set(callId, {
+  state.directCall = {
+    callId,
     startedAtMs,
     promptShape,
     promptShapeDurationMs,
     promptShapeStatus: "full",
     promptShapeBudgetExceeded
-  });
+  };
 }
 
 async function* streamModel(
@@ -162,6 +212,7 @@ async function* streamModel(
         reasoning: mapReasoning(options.reasoning) ?? state.modelOptions?.reasoning,
         providerOptions: options.providerOptions ?? state.modelOptions?.providerOptions
       };
+      await state.config.onRequestContext?.({ systemPrompt: state.context.systemPrompt, messages, tools: state.context.tools });
       const stream = await streamModel(
         {
           systemPrompt: state.context.systemPrompt,

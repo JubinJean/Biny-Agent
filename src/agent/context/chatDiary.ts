@@ -5,6 +5,8 @@
  * 会先写入一条可幂等的短摘要；每日调度再从当天全部聊天摘要（并包含 Activity section）
  * 生成一段整体回顾。这样既能立即留下事实，也能在日结时得到按天的叙事。
  */
+import { activityDerivedMarker } from "../../activity/modelContext.js";
+import type { SelfReflectionResult } from "./selfReflection.js";
 import { createHash } from "node:crypto";
 import path from "node:path";
 import type { AgentModel, ModelRequestContext, ModelRequestObserver } from "../core/types.js";
@@ -37,6 +39,7 @@ export interface CompletedChatDiaryEntry {
 }
 
 export interface ChatDiaryRefreshOptions {
+  allowActivity?: boolean;
   configDir?: string;
   agentDir?: string;
   model?: AgentModel;
@@ -48,6 +51,7 @@ export interface ChatDiaryRefreshOptions {
 }
 
 export interface ChatDiaryRefreshResult {
+  reflection?: SelfReflectionResult;
   dateKey: string;
   written: boolean;
   backfilled: number;
@@ -128,7 +132,7 @@ export async function refreshChatDailyDiary(
 
   const source = [
     readDailyMemorySection(note, "聊天摘要"),
-    readDailyMemorySection(note, "活动记录")
+    options.allowActivity === true ? readDailyMemorySection(note, "活动记录") : undefined
   ].filter((value): value is string => value !== undefined).join("\n\n").trim();
   if (!source) return { dateKey, written: false, backfilled, reason: "empty" };
 
@@ -150,7 +154,7 @@ export async function refreshChatDailyDiary(
       const result = await generateNativeText(
         options.model,
         nativeJsonMessages(
-          "You write a concise, factual daily work diary from local chat and activity notes. Use the same language as the source notes, defaulting to Chinese. Return plain text only, with 3-6 short sentences. Do not invent facts, do not mention durable memory, and do not include Markdown headings or code fences.",
+          "You write a personal first-person daily diary, with concrete events, honest reactions and observations from local chat and activity notes. Use the same language as the source notes, defaulting to Chinese. Return plain text only, with 3-6 short sentences. Do not invent facts, do not mention durable memory, and do not include Markdown headings or code fences.",
           [
             `Date: ${dateKey}`,
             "Source notes:",
@@ -178,7 +182,7 @@ export async function refreshChatDailyDiary(
   await upsertDailyMemorySection(
     dateKey,
     "每日总结",
-    [marker, `<!-- biny-daily-model:${modelId ? modelKey : "fallback"} -->`, summary].join("\n"),
+    [marker, options.allowActivity && readDailyMemorySection(note, "活动记录") ? activityDerivedMarker : "", `<!-- biny-daily-model:${modelId ? modelKey : "fallback"} -->`, summary].join("\n"),
     { configDir: options.configDir }
   );
   return { dateKey, written: true, backfilled, model: modelId };

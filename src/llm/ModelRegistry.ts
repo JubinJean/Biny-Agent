@@ -55,6 +55,8 @@ export interface ModelChoice {
   thinkingLevelMap: ThinkingLevelMap;
   apiBackend?: ModelApiBackend;
   baseUrl?: string;
+  /** 模型级自定义 Header；设置页的模型选项弹窗用它回显。 */
+  headers?: Record<string, string>;
   compatibility?: ModelCompatibility;
   pricing?: ModelAliasConfig["pricing"];
   /** Codex 风格的普通模型选择器可见性；旧 Runtime Host 未返回时按默认策略处理。 */
@@ -229,6 +231,7 @@ export class ModelRegistry {
       thinkingLevelMap,
       apiBackend: normalized.apiBackend,
       baseUrl: normalized.baseUrl ?? provider?.baseUrl ?? providerRuntime?.definition.baseUrl ?? (provider ? providerDefinition(provider.type).baseUrl : undefined),
+      headers: normalized.headers,
       compatibility: normalized.compatibility ?? provider?.compatibility,
       pricing: normalized.pricing,
       showInPicker,

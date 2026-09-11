@@ -7,6 +7,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { chmod, mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { dailyNoteForModel } from "../../activity/modelContext.js";
 import { globalConfigDir } from "../../config/paths.js";
 import { readDailyMemoryNote } from "../../activity/dailyNotes.js";
 
@@ -17,6 +18,7 @@ const maxLongTermChars = 32_000;
 
 export interface FileMemoryOptions {
   configDir?: string;
+  allowActivity?: boolean;
 }
 
 export class FileMemoryStorage {
@@ -73,11 +75,13 @@ export async function readFileMemoryPrompt(
   options: FileMemoryOptions = {}
 ): Promise<string | undefined> {
   const storage = new FileMemoryStorage(options);
-  const [longTerm, today, yesterday] = await Promise.all([
+  const [longTerm, todayRaw, yesterdayRaw] = await Promise.all([
     storage.readLongTerm(),
     readDailyMemoryNote(formatLocalDate(now), options),
     readDailyMemoryNote(formatLocalDate(new Date(now.getTime() - 86_400_000)), options)
   ]);
+  const today = todayRaw ? dailyNoteForModel(todayRaw, options.allowActivity === true) : undefined;
+  const yesterday = yesterdayRaw ? dailyNoteForModel(yesterdayRaw, options.allowActivity === true) : undefined;
   const sections = [
     longTerm ? `## Long-term Memory (${storage.longTermPath})\n${longTerm}` : undefined,
     today ? `## Today's Notes (${formatLocalDate(now)})\n${today}` : undefined,

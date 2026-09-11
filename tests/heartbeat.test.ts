@@ -96,7 +96,7 @@ async function testHeartbeatAddsEmotionAndDiaryPromptsOnce(): Promise<void> {
     });
     assert.equal(await scheduler.triggerNow(), true);
     assert.match(prompts[0] ?? "", /BASE EMOTION REFRESH/u);
-    assert.match(prompts[0] ?? "", /MISSED DIARY CATCH-UP/u);
+    assert.doesNotMatch(prompts[0] ?? "", /MISSED DIARY CATCH-UP|DAILY DIARY TIME/u);
     now = new Date(2026, 8, 6, 13);
     assert.equal(await scheduler.triggerNow(), true);
     assert.doesNotMatch(prompts[1] ?? "", /BASE EMOTION REFRESH/u);

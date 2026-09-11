@@ -5,7 +5,7 @@
  * 避免各实现文件之间循环依赖。
  */
 import type { ProjectContext } from "../../project/ProjectContext.js";
-import type { ContextComponentUsage } from "../../session/metadata.js";
+import type { SessionContextUsage } from "../../session/metadata.js";
 
 export interface LoadedInstruction {
   path: string;
@@ -47,41 +47,7 @@ export interface WorkspaceTurnData {
  * token 预算现状。`source` 区分是本地估算还是 provider 回报的真实用量，
  * `omitted` 列出因预算不足被丢掉的上下文块，便于界面解释「为什么没带上这些内容」。
  */
-export interface ContextBudgetStatus {
-  maxTokens: number;
-  usedTokens: number;
-  contextWindow?: number;
-  /** 上下文窗口未由模型元数据声明时为 true；旧 session 没有该字段时视为未知。 */
-  contextWindowIsFallback?: boolean;
-  /** 按模型有效窗口比例计算的可用输入窗口，不等于原始 contextWindow。 */
-  effectiveContextWindow?: number;
-  effectiveContextWindowPercent?: number;
-  /** 原始窗口中的 headroom；展示用，不计入 usedTokens。 */
-  contextReserveTokens?: number;
-  /** 默认自动压缩参考线；与 contextReserveTokens 不是同一个概念。 */
-  autoCompactTokenLimit?: number;
-  maxOutputTokens?: number;
-  modelAlias?: string;
-  /** 本轮所有候选上下文都保留时的估算量。 */
-  requestedTokens?: number;
-  /** 本地估算的实际组装输入量；与 provider 回报的 inputTokens 分开保存。 */
-  estimatedTokens?: number;
-  /** provider 回报的真实输入 token 数；未提供时为空。 */
-  providerInputTokens?: number;
-  /** 在可用输入预算内为下一步增长保留的安全余量。 */
-  reserveTokens?: number;
-  omitted: string[];
-  autoCompacted: boolean;
-  source?: "estimated" | "provider";
-  measuredAt?: string;
-  /** 上下文候选块的估算组成；tool schema 使用独立 reserve，不重复计入输入预算。 */
-  components?: ContextComponentUsage[];
-  outputReserveTokens?: number;
-  reasoningReserveTokens?: number;
-  toolSchemaReserveTokens?: number;
-  systemPromptReserveTokens?: number;
-  protocolSafetyMarginTokens?: number;
-}
+export type ContextBudgetStatus = SessionContextUsage;
 
 export interface CompactionStatus {
   summaryPresent: boolean;

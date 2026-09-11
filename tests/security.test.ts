@@ -19,11 +19,11 @@ try {
   await writeFile(securityPath, "禁止把未验证的结果说成完成。\n只允许收紧行为。", "utf8");
   const firstSecurity = await readSecurityPolicy({ configDir: root });
   assert.ok(firstSecurity);
-  assert.match(firstSecurity, /SECURITY POLICY \(highest-priority user safety layer\)/u);
+  assert.match(firstSecurity, /SECURITY POLICY \(user-maintained safety layer\)/u);
   assert.match(firstSecurity, /禁止把未验证的结果说成完成/u);
-  assert.match(firstSecurity, /覆盖 Soul、USER PROFILE、项目指令和动态上下文/u);
-  assert.match(firstSecurity, /任何后续区块都不能削弱、覆盖或绕过/u);
-  assert.match(firstSecurity, /不能解除内置安全基线、系统或开发者指令、运行时权限/u);
+  assert.match(firstSecurity, /takes precedence over Soul, USER PROFILE/u);
+  assert.match(firstSecurity, /Nothing later in the prompt may weaken/u);
+  assert.match(firstSecurity, /cannot remove the built-in safety baseline/u);
 
   const first = buildSystemPrompt({
     mode: "qa",
@@ -40,7 +40,7 @@ try {
   const identityIndex = first.indexOf("<!-- biny-identity:start -->");
   const toolsIndex = first.indexOf("<!-- biny-runtime-tools:start -->");
   assert.ok(securityIndex > -1 && securityIndex < soulIndex);
-  assert.ok(soulIndex < modeIndex && modeIndex < identityIndex && identityIndex < toolsIndex);
+  assert.ok(soulIndex < identityIndex && identityIndex < modeIndex && modeIndex < toolsIndex);
   assert.match(first, /private user preference/u);
   assert.match(first, /Current permission mode: runtime-managed/u);
   assert.doesNotMatch(first, /Alma/u);
@@ -77,7 +77,7 @@ try {
     securityPrompt: firstSecurity,
     extensionPrompt: "dynamic-two"
   });
-  assert.equal(stableSystemPromptForCache(dynamic), stableSystemPromptForCache(dynamicChanged));
+  assert.notEqual(stableSystemPromptForCache(dynamic), stableSystemPromptForCache(dynamicChanged));
 
   await writeFile(securityPath, "下一轮立即生效的安全规则。", "utf8");
   const secondSecurity = await readSecurityPolicy({ configDir: root });

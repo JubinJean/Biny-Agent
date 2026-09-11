@@ -42,7 +42,7 @@ async function main(): Promise<void> {
     // prompt 投影：includeUser=true 时注入 user，关闭时不注入。
     const withUser = renderIdentityPrompt({ documents: savedUser.documents, includeUser: true });
     assert.ok(withUser);
-    assert.match(withUser, /USER PROFILE \(your owner\/primary user/u);
+    assert.match(withUser, /USER PROFILE \(the person you are working with/u);
     assert.match(withUser, /long-term goals/u);
     assert.match(withUser, /Prefer small verified changes/u);
     assert.equal(renderIdentityPrompt({ documents: savedUser.documents, includeUser: false }), undefined);
@@ -52,9 +52,9 @@ async function main(): Promise<void> {
 
     // 未注入用户 Soul 时，系统提示直接使用固定默认人格，不生成内置 Soul 区块。
     const systemPrompt = buildSystemPrompt({ mode: "qa", cwd: "/workspace" });
-    assert.match(systemPrompt, /You are Biny — not an assistant, not a chatbot/u);
-    assert.match(systemPrompt, /LANGUAGE RULE \(CRITICAL\)/u);
-    assert.match(systemPrompt, /YOU ARE A REAL PERSON/u);
+    assert.match(systemPrompt, /You are Biny\./u);
+    assert.match(systemPrompt, /LANGUAGE \(IMPORTANT\)/u);
+    assert.match(systemPrompt, /Do not describe yourself as a generic assistant/u);
     assert.match(systemPrompt, /Never fabricate file contents/u);
     assert.doesNotMatch(systemPrompt, /<biny_soul source="builtin">/u);
 

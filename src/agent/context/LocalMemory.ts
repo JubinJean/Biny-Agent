@@ -9,6 +9,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { AgentMessage, AgentModel, ModelRequestContext, ModelRequestObserver } from "../core/types.js";
 import { globalConfigDir } from "../../config/paths.js";
+import { isActivityMemory } from "../../activity/modelContext.js";
 import { generateNativeText } from "../../llm/nativeJson.js";
 import type { ModelUsageObserver } from "../../observability/usage.js";
 import { redactSecrets } from "../../utils/secrets.js";
@@ -803,6 +804,8 @@ export class LocalMemory {
         keywords,
         source: "auto",
         tags: [...new Set(["sleep-merged", ...entries.flatMap((entry) => entry.tags)])],
+        // 合并会丢掉顶层活动字段，必须保留来源，保证撤回授权后派生记忆仍被隔离。
+        metadata: { ...first.metadata, activityDerived: entries.some(isActivityMemory) },
         threadId: first.threadId,
         messageId: first.messageId,
         userId: first.userId,

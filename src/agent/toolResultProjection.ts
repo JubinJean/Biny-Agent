@@ -13,6 +13,7 @@ import type {
   AgentToolResultMessage
 } from "./core/types.js";
 import { serializeToolResult } from "../session/toolResultArchive.js";
+import { canonicalCompatibleToolName } from "../tools/toolNames.js";
 
 const defaultProjectionThresholdBytes = 8 * 1024;
 const defaultKeepRecentResults = 2;
@@ -348,7 +349,7 @@ function projectValue(
   const large = Buffer.byteLength(entry.serialized, "utf8") > thresholdBytes;
   if (isArchivedValue(entry.value)) return { value: entry.value, archive: false };
 
-  if (tool === "write" || tool === "edit_file" || tool === "edit" || tool === "multi_edit" || tool === "apply_patch") {
+  if (tool === "write" || tool === "edit_file" || tool === "edit") {
     return { value: projectFileChange(entry), archive: large };
   }
   if (tool === "bash") {
@@ -694,7 +695,7 @@ function fileChangeSummary(tool: string, filePath: string): string {
 }
 
 function normalizedToolName(tool: string): string {
-  return tool.toLowerCase().replace(/[\s-]+/gu, "_");
+  return canonicalCompatibleToolName(tool).toLowerCase().replace(/[\s-]+/gu, "_");
 }
 
 function isKnownSemanticTool(entry: ToolResultEntry): boolean {
@@ -702,8 +703,6 @@ function isKnownSemanticTool(entry: ToolResultEntry): boolean {
   return tool === "write"
     || tool === "edit_file"
     || tool === "edit"
-    || tool === "multi_edit"
-    || tool === "apply_patch"
     || tool === "bash"
     || tool === "git_diff"
     || tool === "git_status"

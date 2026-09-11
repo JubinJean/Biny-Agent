@@ -14,7 +14,7 @@ import {
   type EmotionState
 } from "../src/agent/context/emotionTypes.js";
 import {
-  buildSystemPrompt,
+  buildPromptBundle,
   stableSystemPromptForCache,
   systemPromptForTelemetry
 } from "../src/agent/prompts.js";
@@ -178,35 +178,35 @@ function testEmotionPromptAndSystemPrompt(): void {
   };
   const emotionPrompt = renderEmotionPrompt(blended);
   assert.match(emotionPrompt, /<biny_emotion mood="疲惫" valence="5" energy="4" fatigue="30">/u);
-  assert.match(emotionPrompt, /EMOTION SYSTEM — You have a layered emotion system/u);
-  assert.match(emotionPrompt, /Emotion is not decorative metadata/u);
-  assert.match(emotionPrompt, /Default personality is not neutral/u);
+  assert.match(emotionPrompt, /EMOTION — A layered state/u);
+  assert.match(emotionPrompt, /The user's real needs and confirmed facts still matter/u);
   assert.match(emotionPrompt, /FATIGUE & SLEEP STATE: 😪 TIRED/u);
   assert.doesNotMatch(emotionPrompt, /SLEEPING/u);
   assert.doesNotMatch(emotionPrompt, /Task/u);
-  assert.doesNotMatch(emotionPrompt, /clearly refuse that execution for now/u);
+  assert.doesNotMatch(emotionPrompt, /cannot take it on right now/u);
   const sleepingPrompt = renderEmotionPrompt({ ...blended, fatigue: 80 });
   assert.match(sleepingPrompt, /FATIGUE & SLEEP STATE: 💤 SLEEPING/u);
   assert.match(sleepingPrompt, /Task/u);
-  assert.match(sleepingPrompt, /clearly refuse that execution for now/u);
+  assert.match(sleepingPrompt, /cannot take it on right now/u);
   assert.match(sleepingPrompt, /cannot grant, revoke, or modify work permissions/u);
   assert.match(emotionPrompt, /cannot grant, revoke, or modify work permissions/u);
   assert.match(emotionPrompt, /level=tired/u);
   assert.match(emotionPrompt, /凌晨三点还在干活，有点累/u);
 
-  const systemPrompt = buildSystemPrompt({
+  const promptBundle = buildPromptBundle({
     mode: "qa",
     cwd: "/tmp/workspace",
     identityPrompt: "private identity text",
     emotionPrompt
   });
-  assert.ok(systemPrompt.indexOf("<!-- biny-identity:start -->") < systemPrompt.indexOf("<!-- biny-emotion:start -->"));
-  const stable = stableSystemPromptForCache(systemPrompt);
+  assert.equal(promptBundle.systemPrompt.indexOf("<!-- biny-emotion:start -->"), -1);
+  assert.match(promptBundle.turnContext, /<!-- biny-emotion:start -->/u);
+  const stable = stableSystemPromptForCache(promptBundle.systemPrompt);
   assert.doesNotMatch(stable, /biny-emotion/u);
   assert.doesNotMatch(stable, /凌晨三点还在干活/u);
-  const telemetry = systemPromptForTelemetry(systemPrompt);
+  const telemetry = systemPromptForTelemetry(promptBundle.systemPrompt);
   assert.ok(telemetry);
-  assert.match(telemetry, /<biny_emotion omitted="true" \/>/u);
+  assert.doesNotMatch(telemetry, /<biny_emotion omitted="true" \/>/u);
   assert.doesNotMatch(telemetry, /凌晨三点还在干活/u);
   assert.doesNotMatch(telemetry, /private identity text/u);
 }

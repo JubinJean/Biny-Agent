@@ -36,6 +36,7 @@ export class WorkspaceContext {
   private snapshot: ProjectSnapshot | undefined;
   private snapshotDirty = true;
   private repoEntries: RepoMapEntry[] = [];
+  private repoEntryCache = new Map<string, { fingerprint: string; entry: RepoMapEntry }>();
   private repoMapRefreshedAt: string | undefined;
   private repoMapDirty = true;
   private initialized = false;
@@ -68,6 +69,12 @@ export class WorkspaceContext {
     await this.initialize(signal);
     signal?.throwIfAborted();
     const explicitPaths = extractPathReferences(input);
+    // 指令是下一回合的输入；不能把已访问目录（包括没有指令的目录）永久缓存。
+    this.loadedInstructions.length = 0;
+    this.visitedInstructionDirectories.clear();
+    this.instructionBytes = 0;
+    await this.loadGlobalInstructions(signal);
+    await this.loadInstructionDirectory(this.workspaceRoot, signal);
     await this.loadInstructionsForPaths([...explicitPaths, ...this.activePaths], signal);
     const [snapshot, repoMapCandidates] = await Promise.all([
       this.refreshSnapshot(signal),
@@ -90,7 +97,7 @@ export class WorkspaceContext {
     if (
       tool === "Bash"
       || tool === "start_process"
-      || (["Write", "edit_file", "multi_edit", "delete_file", "apply_patch", "move_file"].includes(tool) && !isFailure(result))
+      || (["Write", "edit_file", "delete_file", "move_file"].includes(tool) && !isFailure(result))
     ) {
       this.snapshotDirty = true;
       this.repoMapDirty = true;
@@ -144,9 +151,28 @@ export class WorkspaceContext {
     signal?.throwIfAborted();
     if (!this.repoMapDirty) return;
     const files = (await scanWorkspaceFiles(this.workspaceRoot, this.ignore, maxRepoFiles, signal)).sort((left, right) => left.localeCompare(right));
-    const entries = await Promise.all(files.map(async (filePath) => await buildRepoMapEntry(this.workspaceRoot, this.ignore, filePath, signal)));
+    const nextCache = new Map<string, { fingerprint: string; entry: RepoMapEntry }>();
+    const entries = await Promise.all(files.map(async (filePath) => {
+      // 仍扫描目录来发现新增和删除；只复用元数据未变的源码提取结果。
+      let fingerprint: string;
+      try {
+        const resolved = resolveWorkspacePath(this.workspaceRoot, filePath, this.ignore);
+        const stat = await fs.stat(resolved, { bigint: true });
+        fingerprint = [stat.dev, stat.ino, stat.mode, stat.size, stat.mtimeNs, stat.ctimeNs].join(":");
+      } catch {
+        signal?.throwIfAborted();
+        return { path: filePath, role: classifyRepoRole(filePath), symbols: [], imports: [], exports: [] };
+      }
+      const cached = this.repoEntryCache.get(filePath);
+      const entry = cached?.fingerprint === fingerprint
+        ? cached.entry
+        : await buildRepoMapEntry(this.workspaceRoot, this.ignore, filePath, signal);
+      if (entry) nextCache.set(filePath, { fingerprint, entry });
+      return entry ?? { path: filePath, role: classifyRepoRole(filePath), symbols: [], imports: [], exports: [] };
+    }));
     signal?.throwIfAborted();
     this.repoEntries = entries;
+    this.repoEntryCache = nextCache;
     this.repoMapRefreshedAt = new Date().toISOString();
     this.repoMapDirty = false;
   }
@@ -271,7 +297,7 @@ export function extractPathReferences(value: string): string[] {
   return [...new Set(value.match(/[A-Za-z0-9_./-]+\.(?:ts|tsx|js|jsx|json|md|yml|yaml|css|html)/g) ?? [])].slice(0, 24);
 }
 
-async function buildRepoMapEntry(workspaceRoot: string, ignore: string[], filePath: string, signal?: AbortSignal): Promise<RepoMapEntry> {
+async function buildRepoMapEntry(workspaceRoot: string, ignore: string[], filePath: string, signal?: AbortSignal): Promise<RepoMapEntry | undefined> {
   signal?.throwIfAborted();
   const role = classifyRepoRole(filePath);
   if (!codeExtensions.has(path.extname(filePath).toLowerCase())) {
@@ -279,7 +305,22 @@ async function buildRepoMapEntry(workspaceRoot: string, ignore: string[], filePa
   }
   try {
     const resolvedPath = resolveWorkspacePath(workspaceRoot, filePath, ignore);
-    const content = (await fs.readFile(resolvedPath, { encoding: "utf8", signal })).slice(0, maxSourceChars);
+    const handle = await fs.open(resolvedPath, "r");
+    let content: string;
+    try {
+      // RepoMap 只提取文件头，避免大文件为了 slice 先被完整读入内存。
+      const buffer = Buffer.alloc(Math.min((await handle.stat()).size, maxSourceChars * 4));
+      let bytesRead = 0;
+      while (bytesRead < buffer.length) {
+        signal?.throwIfAborted();
+        const result = await handle.read(buffer, bytesRead, buffer.length - bytesRead, bytesRead);
+        if (!result.bytesRead) break;
+        bytesRead += result.bytesRead;
+      }
+      content = buffer.subarray(0, bytesRead).toString("utf8").slice(0, maxSourceChars);
+    } finally {
+      await handle.close();
+    }
     signal?.throwIfAborted();
     return {
       path: filePath,
@@ -290,7 +331,7 @@ async function buildRepoMapEntry(workspaceRoot: string, ignore: string[], filePa
     };
   } catch {
     signal?.throwIfAborted();
-    return { path: filePath, role, symbols: [], imports: [], exports: [] };
+    return undefined;
   }
 }
 

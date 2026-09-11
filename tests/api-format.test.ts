@@ -7,7 +7,7 @@ import path from "node:path";
 import { fetchModelCatalogSnapshot, ModelCatalogRequestError, parseModelCatalog } from "../src/ai/modelCatalog.js";
 import { providerDefinition } from "../src/ai/provider.js";
 import type { CatalogProviderRequest } from "../src/ai/types.js";
-import { apiFormatForConnection, apiFormatOption, apiFormatOptions } from "../src/desktop/renderer/src/providerCatalog.js";
+import { apiFormatForConnection, apiFormatOption, apiFormatOptions, apiFormatOptionsForConnection } from "../src/desktop/renderer/src/providerCatalog.js";
 import { createFileConfigStore } from "../src/config/store.js";
 import { defaultConfig } from "../src/config/schema.js";
 import { DesktopAgentManager } from "../src/desktop/electron/main/DesktopAgentManager.js";
@@ -15,6 +15,7 @@ import { DesktopProjectService } from "../src/desktop/electron/main/DesktopProje
 import { DesktopStateStore } from "../src/desktop/electron/main/DesktopStateStore.js";
 import { DesktopUserDataStore } from "../src/desktop/electron/main/DesktopUserDataStore.js";
 import { modelCatalogCacheKey } from "../src/llm/ModelsStore.js";
+import { resolveProviderRequestRoute } from "../src/llm/providerRequest.js";
 
 // ---------- 渲染层：格式选项与回显折回 ----------
 
@@ -42,6 +43,37 @@ test("apiFormatForConnection: apiBackend 优先，老配置按 protocol 折回",
   assert.equal(apiFormatForConnection("openai-compatible", "chat_completions"), "chat_completions");
   // 未知格式 id 兜底到 chat_completions。
   assert.equal(apiFormatOption("nonsense" as never).id, "chat_completions");
+});
+
+test("apiFormatOptionsForConnection: 已连接的兼容 Provider 也能修改请求格式", () => {
+  assert.deepEqual(
+    apiFormatOptionsForConnection("openai-compatible", "openai-compatible", "https://gateway.example/v1").map((option) => option.id),
+    ["chat_completions", "responses"]
+  );
+  assert.deepEqual(
+    apiFormatOptionsForConnection("openai-compatible", "openai-compatible", undefined).map((option) => option.id),
+    ["chat_completions", "responses", "anthropic_messages", "google_generative_ai"]
+  );
+  assert.deepEqual(
+    apiFormatOptionsForConnection("anthropic", "anthropic", "https://api.anthropic.com").map((option) => option.id),
+    ["anthropic_messages"]
+  );
+});
+
+test("resolveProviderRequestRoute: 模型覆盖优先于 Provider，再回退到定义", () => {
+  const definition = providerDefinition("openai-compatible");
+  const provider = { type: "openai-compatible", baseUrl: "https://gateway.example/v1", apiBackend: "responses" } as const;
+  assert.deepEqual(resolveProviderRequestRoute(undefined, provider, definition), {
+    apiBackend: "responses",
+    protocol: "openai-compatible",
+    source: "provider"
+  });
+  assert.deepEqual(resolveProviderRequestRoute({ apiBackend: "chat_completions" }, provider, definition), {
+    apiBackend: "chat_completions",
+    protocol: "openai-compatible",
+    source: "model"
+  });
+  assert.equal(resolveProviderRequestRoute(undefined, { type: "openai-compatible", baseUrl: "https://gateway.example/v1" }, definition).apiBackend, "chat_completions");
 });
 
 // ---------- 主进程：目录拉取的鉴权与 id 形状 ----------
@@ -173,6 +205,10 @@ test("workspaceSnapshot connections 携带 apiBackend（provider 级优先，老
     await configStore.save({
       ...defaultConfig,
       defaultModel: "gemini-pro",
+      web: {
+        ...defaultConfig.web,
+        search: { ...defaultConfig.web.search, provider: "tavily", apiKey: "search-key" }
+      },
       providers: {
         gemini: {
           type: "openai-compatible",
@@ -187,7 +223,7 @@ test("workspaceSnapshot connections 携带 apiBackend（provider 级优先，老
         }
       },
       models: {
-        "gemini-pro": { provider: "gemini", model: "gemini-2.5-pro" },
+        "gemini-pro": { provider: "gemini", model: "gemini-2.5-pro", headers: { "X-Test-Model": "old" } },
         "legacy-claude": { provider: "legacy", model: "claude-sonnet", apiBackend: "anthropic_messages" }
       }
     });
@@ -200,6 +236,46 @@ test("workspaceSnapshot connections 携带 apiBackend（provider 级优先，老
     assert.equal(gemini?.apiBackend, "google_generative_ai");
     // legacy 连接自身没存 apiBackend，从它名下模型的 apiBackend 折回，保证回显不丢。
     assert.equal(legacy?.apiBackend, "anthropic_messages");
+    assert.equal(JSON.stringify(snapshot).includes("g-key"), false);
+    assert.equal(await agents.readModelApiKey(project.id, "gemini"), "g-key");
+    assert.equal(await agents.readWebSearchApiKey(project.id, "tavily"), "search-key");
+
+    // 一笔设置事务必须同时保留能力、请求格式、profile 和明确清空的 Header。
+    const upsert = {
+      alias: "gemini-pro",
+      providerAlias: "gemini",
+      providerType: "openai-compatible",
+      model: "gemini-2.5-pro",
+      supportsTools: false,
+      supportsThinking: false,
+      supportsVision: false,
+      apiBackend: "chat_completions" as const,
+      headers: {},
+      modelProfile: { contextWindow: 64_000 }
+    };
+    const prepared = await agents.prepareSettingsConfig(project.id, {
+      expectedPreferenceRevision: 0,
+      models: { upserts: [upsert], removeAliases: [], modelProfiles: { gemini: { "gemini-2.5-pro": upsert.modelProfile } } }
+    });
+    await configStore.save(prepared.after);
+    const saved = await configStore.load(workspaceRoot);
+    assert.equal(saved.models["gemini-pro"]?.capabilities?.tools, false);
+    assert.equal(saved.models["gemini-pro"]?.capabilities?.reasoning, false);
+    assert.equal(saved.models["gemini-pro"]?.capabilities?.vision, false);
+    assert.equal(saved.models["gemini-pro"]?.apiBackend, "chat_completions");
+    assert.deepEqual(saved.models["gemini-pro"]?.headers, {});
+    assert.equal(saved.providers.gemini?.apiBackend, "google_generative_ai", "model override must not change connection default");
+    assert.equal(saved.providers.gemini?.modelProfiles?.["gemini-2.5-pro"]?.contextWindow, 64_000);
+    const reset = await agents.prepareSettingsConfig(project.id, {
+      expectedPreferenceRevision: 0,
+      models: {
+        upserts: [{ ...upsert, apiBackend: undefined, modelProfile: undefined }],
+        removeAliases: [],
+        modelProfiles: { gemini: {} }
+      }
+    });
+    assert.equal(reset.after.models["gemini-pro"]?.apiBackend, undefined);
+    assert.deepEqual(reset.after.providers.gemini?.modelProfiles, {});
   } finally {
     await rm(dataRoot, { recursive: true, force: true });
     await rm(workspaceRoot, { recursive: true, force: true });

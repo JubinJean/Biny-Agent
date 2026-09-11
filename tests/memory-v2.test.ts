@@ -54,6 +54,7 @@ async function main(): Promise<void> {
   await testSleepBatchOrdering();
   await testSleepWeightedSurvivor();
   await testEmbeddingStatusDoesNotCreateIndex();
+  await testEmbeddingStatusReadsSelfReflectionMemory();
   await testSemanticSearchTreatsUnbuiltIndexAsEmptyCandidates();
   await testFactsAndVectorsShareDatabase();
   await testInitialEmbeddingGeneration();
@@ -1287,7 +1288,7 @@ async function testSleepSynthesisArchivesCluster(): Promise<void> {
     let revision = 0;
     const first = await memory.writeEntry({ ...projectEntry("Synthesis A", "The first source fact is part of the synthesized memory cluster."), durability: "temporary", accessCount: 7, importance: 5, tags: ["first", "shared"], threadId: "T_A", messageId: "M_A" }, { expectedRevision: revision });
     revision = first.revision;
-    const second = await memory.writeEntry({ ...projectEntry("Synthesis B", "The second source fact is part of the synthesized memory cluster."), accessCount: 3, importance: 1, tags: ["shared", "second"], threadId: "T_B", messageId: "M_B" }, { expectedRevision: revision });
+    const second = await memory.writeEntry({ ...projectEntry("Synthesis B", "The second source fact is part of the synthesized memory cluster."), accessCount: 3, importance: 1, tags: ["shared", "second"], metadata: { activityDerived: true }, threadId: "T_B", messageId: "M_B" }, { expectedRevision: revision });
     revision = second.revision;
     assert.ok(first.entry && second.entry);
     const preparation = { calls: 0, commits: 0 };
@@ -1330,6 +1331,7 @@ async function testSleepSynthesisArchivesCluster(): Promise<void> {
     assert.equal(synthesis.threadId, "T_B");
     assert.equal(synthesis.messageId, "M_B");
     assert.deepEqual(synthesis.tags, ["sleep-merged", "first", "shared", "second"]);
+    assert.equal(synthesis.metadata?.activityDerived, true, "混合来源的合并必须保留 Activity 标记");
     assert.deepEqual(new Set(synthesis.lineage.at(-1)?.sourceEntryIds), new Set([first.entry!.id, second.entry!.id]));
     const archived = (await memory.listArchivedEntries()).entries;
     assert.equal(archived.length, 0, "synthesis without delete keeps the old cluster active");
@@ -1444,6 +1446,31 @@ async function testEmbeddingStatusDoesNotCreateIndex(): Promise<void> {
     assert.equal(status.index.active, undefined);
     assert.equal(status.pendingEntries, 0);
     await assert.rejects(fs.access(databasePath), /ENOENT/u, "读取状态不能创建空向量索引");
+  });
+}
+
+async function testEmbeddingStatusReadsSelfReflectionMemory(): Promise<void> {
+  await withIsolatedMemory(async (workspaceRoot) => {
+    const storage = new MemoryStorage(workspaceRoot);
+    await storage.writeEntry({
+      ...projectEntry(
+        "Self-reflection memory",
+        "A self-reflection entry must remain readable by the embedding status path."
+      ),
+      lineage: { source: "self_reflection", externalContext: false }
+    }, { expectedRevision: 0 });
+    const service = new MemoryEmbeddingService({
+      localMemory: new LocalMemory(workspaceRoot, unusedModel),
+      localManager: { list: async () => [] } as unknown as LocalEmbeddingManager,
+      getVectorIndex: () => { throw new Error("status must not open a writable vector index"); },
+      getReadOnlyVectorIndex: () => undefined,
+      getActiveModel: () => undefined,
+      getProviderModels: () => [],
+      getRuntime: async () => undefined
+    });
+    const status = await service.status();
+    assert.equal(status.totalEntries, 1);
+    assert.equal(status.pendingEntries, 1);
   });
 }
 

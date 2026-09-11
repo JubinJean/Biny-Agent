@@ -6,6 +6,7 @@ import type { ToolRegistry } from "../tools/registry.js";
 import type { ToolExecutionResultStatus, ToolInputDisplay, ToolUpdate } from "../tools/types.js";
 import type { PermissionManager, PermissionPrompt, PermissionResult } from "../permission/PermissionManager.js";
 import type { SessionUsage } from "../session/metadata.js";
+import type { ContextStatus } from "./context/types.js";
 import type { ContextMemory } from "./context/ContextMemory.js";
 import type { CapabilityStore } from "../runtime/CapabilityStore.js";
 
@@ -57,6 +58,7 @@ export interface AgentTurnOutcome {
 }
 
 export type AgentSessionUpdate =
+  | { type: "context.updated"; context: ContextStatus }
   | { type: "message.user"; messageId: string; content: string; delivery: "steer" | "followUp" }
   | { type: "context.retrying"; reason: "context_overflow"; attempt: number; compactedMessages: number }
   | { type: "assistant.delta"; content: string }

@@ -17,6 +17,8 @@ export type EmotionScope = "base" | "context";
 
 export interface BlendedEmotion extends EmotionState {
   fatigue: number;
+  base?: EmotionState;
+  context?: EmotionState;
   source: "base" | "context" | "blended";
 }
 
@@ -67,6 +69,8 @@ export function blendEmotion(
   return {
     ...state,
     fatigue: normalizedFatigue,
+    base: effectiveBase,
+    context: effectiveContext,
     source
   };
 }

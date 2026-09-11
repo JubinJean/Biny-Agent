@@ -264,7 +264,7 @@ function safeErrorMessage(error: unknown): string {
   return redactSecrets(error instanceof Error ? error.message : String(error));
 }
 
-function classifyModelRequestError(
+export function classifyModelRequestError(
   error: unknown,
   metrics: ModelRequestMetrics,
   signal: AbortSignal | undefined

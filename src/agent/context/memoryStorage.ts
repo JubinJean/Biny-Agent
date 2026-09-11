@@ -67,7 +67,7 @@ const memoryMetadataSchema = z.object({
   durability: z.enum(["temporary", "permanent"]),
   expiresAt: z.string().optional(),
   lineage: z.array(z.object({
-    source: z.enum(["explicit", "explicit_edit", "completed_task", "sleep"]),
+    source: z.enum(["explicit", "explicit_edit", "completed_task", "self_reflection", "sleep"]),
     externalContext: z.boolean(),
     sessionId: z.string().optional(),
     turnId: z.string().optional(),

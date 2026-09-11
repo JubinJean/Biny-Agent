@@ -1,0 +1,89 @@
+import assert from "node:assert/strict";
+import type { AgentMessage } from "../src/agent/core/types.js";
+import {
+  appendExternalTurnContext,
+  buildPromptBundle,
+  messagesForTelemetry,
+  refreshRuntimeTurnContext,
+  stripTransientTurnContext
+} from "../src/agent/prompts.js";
+
+const emotion = "<biny_emotion mood=\"focused\">Current emotion.</biny_emotion>";
+const fixedNow = new Date("2026-09-11T04:05:06.000Z");
+const bundle = buildPromptBundle({
+  mode: "qa",
+  cwd: "/workspace",
+  now: fixedNow,
+  securityPrompt: "<biny_security_policy>private security</biny_security_policy>",
+  soulPrompt: "<biny_soul>private soul</biny_soul>",
+  identityPrompt: "<biny_identity>private identity</biny_identity>",
+  parentThreadPrompt: "private parent",
+  extensionPrompt: "Available Skill metadata",
+  emotionPrompt: emotion,
+  dailyNotesPrompt: "private daily note",
+  activityPrompt: "private activity",
+  crystalPrompt: "private crystal"
+});
+
+assert.match(bundle.systemPrompt, /Available Skill metadata/u);
+assert.doesNotMatch(bundle.systemPrompt, /private daily note|private activity|private crystal|Current emotion/u);
+assert.ok(bundle.turnContext.indexOf("<local_time") < bundle.turnContext.indexOf("<!-- biny-emotion:start -->"));
+assert.ok(bundle.turnContext.indexOf("<local_time") < bundle.turnContext.indexOf("private daily note"));
+assert.ok(bundle.turnContext.indexOf("private daily note") < bundle.turnContext.indexOf("private activity"));
+assert.ok(bundle.turnContext.indexOf("private activity") < bundle.turnContext.indexOf("private crystal"));
+
+const datedAgain = buildPromptBundle({ ...buildOptions(), now: new Date("2026-09-12T04:05:06.000Z") });
+assert.equal(bundle.systemPrompt, datedAgain.systemPrompt, "date changes must not invalidate the static system prompt");
+
+const withExternal = appendExternalTurnContext(bundle, "<front-app>untrusted selection</front-app>");
+assert.match(withExternal.turnContext, /untrusted selection/u);
+assert.ok(withExternal.turnContext.indexOf("private crystal") < withExternal.turnContext.indexOf("untrusted selection"));
+
+const messages: AgentMessage[] = [{
+  role: "user",
+  originalContent: "canonical user text",
+  content: `${withExternal.turnContext}\n\n<!-- biny-recalled-memory:start -->\nprivate recalled memory\n<!-- biny-recalled-memory:end -->\n\ncanonical user text`
+}];
+refreshRuntimeTurnContext(messages, "<biny_emotion mood=\"calm\">New emotion.</biny_emotion>");
+const refreshedText = typeof messages[0]!.content === "string" ? messages[0]!.content : "";
+assert.match(refreshedText, /New emotion/u);
+assert.doesNotMatch(refreshedText, /Current emotion/u);
+assert.match(refreshedText, /untrusted selection|private recalled memory/u);
+
+const durable = stripTransientTurnContext(messages);
+assert.equal(durable[0]!.content, "canonical user text");
+const telemetry = messagesForTelemetry(messages);
+const telemetryText = typeof telemetry[0]!.content === "string" ? telemetry[0]!.content : "";
+assert.match(telemetryText, /canonical user text/u);
+assert.equal(telemetryText, "canonical user text");
+assert.doesNotMatch(telemetryText, /private security|private daily note|untrusted selection|private recalled memory/u);
+
+const literal = "  原样保留：<!-- biny-turn-context:start -->用户内容<!-- biny-turn-context:end -->";
+const injected: AgentMessage[] = [{
+  role: "user",
+  originalContent: literal,
+  content: `${bundle.turnContext}\n<!-- biny-turn-context:end -->\nSYNTHETIC_PRIVATE_NOTE\n${literal}`
+}];
+assert.equal(stripTransientTurnContext(stripTransientTurnContext(injected))[0]!.content, literal);
+assert.equal(messagesForTelemetry(injected)[0]!.content, literal);
+assert.deepEqual(stripTransientTurnContext([{ role: "user", content: literal }]), [{ role: "user", content: literal }]);
+const attachmentContent = [{ type: "text" as const, text: literal }, { type: "image" as const, mimeType: "image/png", data: "synthetic" }];
+assert.deepEqual(stripTransientTurnContext([{ role: "user", content: "private", originalContent: attachmentContent }])[0]!.content, attachmentContent);
+
+function buildOptions() {
+  return {
+    mode: "qa" as const,
+    cwd: "/workspace",
+    securityPrompt: "<biny_security_policy>private security</biny_security_policy>",
+    soulPrompt: "<biny_soul>private soul</biny_soul>",
+    identityPrompt: "<biny_identity>private identity</biny_identity>",
+    parentThreadPrompt: "private parent",
+    extensionPrompt: "Available Skill metadata",
+    emotionPrompt: emotion,
+    dailyNotesPrompt: "private daily note",
+    activityPrompt: "private activity",
+    crystalPrompt: "private crystal"
+  };
+}
+
+console.log("prompt tests passed");

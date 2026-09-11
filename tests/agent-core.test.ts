@@ -22,6 +22,7 @@ async function main(): Promise<void> {
   await testModelErrorRecoveryRetriesBeforeAnyDelta();
   await testModelStreamWithoutFinishFails();
   await testNextTurnRefreshesModelAndTools();
+  await testLegacyToolNameIsRepaired();
   await testUnknownToolCallStopsWithoutRetry();
   const calls: ModelStreamContext[] = [];
   const model: AgentModel = {
@@ -158,6 +159,39 @@ async function testUnknownToolCallStopsWithoutRetry(): Promise<void> {
   const failure = received.find((event): event is Extract<AgentEvent, { type: "error" }> => event.type === "error");
   assert.equal(failure?.fatal, true);
   assert.match(failure?.error ?? "", /missing a function name/iu);
+}
+
+async function testLegacyToolNameIsRepaired(): Promise<void> {
+  let requests = 0;
+  const tool: AgentTool = {
+    name: "Write",
+    description: "Write a file.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+    execute: async () => ({ content: [{ type: "text", text: "written" }] })
+  };
+  const model: AgentModel = {
+    provider: "legacy-tool-test",
+    modelId: "legacy-tool-model",
+    stream: async () => {
+      requests += 1;
+      return requests === 1
+        ? events([
+          { type: "tool-call", id: "legacy-write", name: "write_file", arguments: {} },
+          { type: "finish", reason: "tool-calls" }
+        ])
+        : events([{ type: "text-delta", text: "done" }, { type: "finish", reason: "stop" }]);
+    }
+  };
+  const received: AgentEvent[] = [];
+  for await (const event of agentLoop([{ role: "user", content: "write" }], { messages: [], tools: [tool] }, {
+    model,
+    tools: [tool],
+    maxSteps: 2
+  })) received.push(event);
+
+  assert.equal(requests, 2);
+  assert.equal(received.some((event) => event.type === "tool_execution_start"), true);
+  assert.equal(received.some((event) => event.type === "error"), false);
 }
 
 async function testModelStreamWithoutFinishFails(): Promise<void> {

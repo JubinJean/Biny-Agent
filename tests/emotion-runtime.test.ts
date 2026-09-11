@@ -9,6 +9,8 @@ import { EmotionStorage } from "../src/agent/context/emotionStorage.js";
 import { spawnRuntimeHost, type SpawnedRuntimeHost } from "../src/runtime/RuntimeHost.js";
 import { readSessionEvents } from "../src/session/events.js";
 import { sessionFilePath } from "../src/session/store.js";
+import { readSessionCatalogRecord } from "../src/session/catalog.js";
+import { sessionMessageMetadata } from "../src/session/messageTree.js";
 
 await testRuntimeHostUpdatesEmotion();
 console.log("emotion runtime tests passed");
@@ -34,6 +36,14 @@ async function testRuntimeHostUpdatesEmotion(): Promise<void> {
     });
 
     const sessionId = spawned.client.getSnapshot().info.sessionId;
+    const titleGenerated = new Promise<string>((resolve) => {
+      const unsubscribe = spawned!.client.subscribe(({ event }) => {
+        if (event?.type !== "session.title") return;
+        assert.equal(event.sessionId, sessionId);
+        unsubscribe();
+        resolve(event.title);
+      });
+    });
     const outcome = await withTimeout(
       spawned.client.submitPrompt("记录一次情绪变化，然后正常回复。", "chat").completion,
       15_000,
@@ -42,6 +52,8 @@ async function testRuntimeHostUpdatesEmotion(): Promise<void> {
     assert.equal(outcome.status, "completed", JSON.stringify(outcome));
     assert.equal(outcome.output, "情绪状态已更新。");
     assert.equal(provider.requestCount, 2, "the provider should receive the tool step and the final step");
+    assert.equal(await withTimeout(titleGenerated, 5_000, "Session title event"), "情绪状态记录");
+    assert.equal((await readSessionCatalogRecord(root, sessionId))?.title, "情绪状态记录");
 
     const storage = new EmotionStorage({ configDir: agentDir });
     const context = await storage.readContext(sessionId);
@@ -57,10 +69,23 @@ async function testRuntimeHostUpdatesEmotion(): Promise<void> {
       trigger: "完成一次 Host smoke"
     });
 
-    await spawned.client.close();
     const events = await readSessionEvents(sessionFilePath(root, sessionId));
     assert.ok(events.some((event) => event.type === "tool_call" && event.tool === "update_emotion"));
     assert.ok(events.some((event) => event.type === "tool_result" && event.tool === "update_emotion"));
+    const user = events.find((event) => event.type === "user_message");
+    assert.ok(user?.type === "user_message" && user.messageId);
+    assert.deepEqual(sessionMessageMetadata(events, user.messageId).capabilitySelection, { tools: ["update_emotion", "read_tool_result"], skills: [] });
+    const target = events.filter((event) => event.type === "agent_message" && event.message.role === "assistant").at(-1);
+    assert.ok(target?.type === "agent_message" && target.messageId);
+    const selectionsBeforeRetry = provider.selectionCount;
+    const retry = await withTimeout(spawned.client.submitPrompt("重新生成", "chat", [], { retryOfMessageId: target.messageId }).completion, 15_000, "Retry with selected capabilities");
+    assert.equal(retry.status, "completed");
+    assert.equal(provider.selectionCount, selectionsBeforeRetry, "重试沿用持久化能力名单，不重新筛选或启用全部");
+    const next = await withTimeout(spawned.client.submitPrompt("继续记录。", "chat").completion, 15_000, "Accumulated tool selection");
+    assert.equal(next.output, "情绪状态已更新。");
+    assert.equal(provider.selectionCount, selectionsBeforeRetry + 1);
+    assert.equal(provider.requestCount, 4, "新轮筛选为空时仍从消息元数据恢复之前的工具");
+    await spawned.client.close();
   } finally {
     await spawned?.client.close().catch(() => undefined);
     await stopHost(spawned?.process.pid);
@@ -73,13 +98,25 @@ async function testRuntimeHostUpdatesEmotion(): Promise<void> {
 interface ProviderServer {
   endpoint: string;
   requestCount: number;
+  selectionCount: number;
   close(): Promise<void>;
 }
 
 async function startProviderServer(): Promise<ProviderServer> {
   let requestCount = 0;
+  let selectionCount = 0;
   const server = createServer(async (request, response) => {
-    await drainRequest(request);
+    const body = await readRequest(request);
+    if (JSON.stringify(body.messages).includes("skillIds")) {
+      selectionCount += 1;
+      sendProviderText(response, JSON.stringify({ tools: selectionCount === 1 ? ["update_emotion"] : [], skillIds: [] }));
+      return;
+    }
+    // 自动标题等辅助请求不执行工具，也不计入正文的两步工具回合。
+    if (!Array.isArray(body.tools) || body.tools.length === 0) {
+      sendProviderText(response, "情绪状态记录");
+      return;
+    }
     requestCount += 1;
     if (requestCount === 1) sendEmotionToolCall(response);
     else sendProviderText(response, "情绪状态已更新。");
@@ -90,6 +127,7 @@ async function startProviderServer(): Promise<ProviderServer> {
   return {
     endpoint: `http://127.0.0.1:${String(address.port)}/v1`,
     get requestCount(): number { return requestCount; },
+    get selectionCount(): number { return selectionCount; },
     close: async () => {
       server.closeAllConnections?.();
       await new Promise<void>((resolve) => server.close(() => resolve()));
@@ -145,10 +183,10 @@ function sendProviderText(response: ServerResponse, text: string): void {
   ].join(""));
 }
 
-async function drainRequest(request: IncomingMessage): Promise<void> {
-  for await (const _chunk of request) {
-    // 读取完整请求体，确保 provider response 在客户端请求结束后再发送。
-  }
+async function readRequest(request: IncomingMessage): Promise<Record<string, unknown>> {
+  const chunks: Buffer[] = [];
+  for await (const chunk of request) chunks.push(Buffer.from(chunk));
+  return JSON.parse(Buffer.concat(chunks).toString("utf8")) as Record<string, unknown>;
 }
 
 async function listen(server: Server): Promise<void> {

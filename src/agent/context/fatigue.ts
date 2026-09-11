@@ -1,186 +1,146 @@
-/**
- * Agent 疲劳的本地持久化与时间计算。
- *
- * 疲劳跨 session、AgentSession 和进程保留，并通过 prompt 影响表达与工作节奏；高疲劳时模型
- * 可以拒绝亲自执行非琐碎任务或使用已有的委派工具，但运行时仍掌握真实权限。时段加成独立
- * 计算，记录到文件的基础值不包含该加成。
- */
+/** 跨进程疲劳与主动睡眠状态；时间计算统一在运行时，命令只改变真实持久状态。 */
 import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { globalAgentDir } from "../../config/paths.js";
+import { withGlobalConfigWriteLock } from "../../config/versioned.js";
+import { EmotionStorage } from "./emotionStorage.js";
 
-const fatigueFileName = "fatigue.json";
-const fatiguePerMessage = 1.5;
-const fatigueDecayPerMinute = 0.8;
-const fatigueDecayMinuteMs = 60_000;
-const maxFatigue = 100;
-
+const twoHoursMs = 2 * 60 * 60 * 1_000;
 export type FatigueLevel = "awake" | "tired" | "sleepy" | "sleeping";
-
+export type FatigueAction = "sleep" | "wake" | "rest";
 export interface FatigueState {
   fatigue: number;
   messageCount: number;
   lastMessageTime: string;
+  lastRestTime: string;
+  manualSleep: boolean;
+  manualWake: boolean;
 }
-
 export interface FatigueStatus {
   fatigue: number;
   level: FatigueLevel;
   messageCount: number;
   isNight: boolean;
+  manualSleep: boolean;
+  manualWake: boolean;
+  lastRestTime: string;
 }
-
-export interface FatigueServiceOptions {
-  agentDir?: string;
-  now?: () => Date;
-}
+export interface FatigueServiceOptions { agentDir?: string; now?: () => Date; }
 
 export class FatigueService {
   private readonly filePath: string;
   private readonly now: () => Date;
+  private readonly emotions: EmotionStorage;
   private state: FatigueState;
-
   constructor(options: FatigueServiceOptions = {}) {
-    const agentDir = path.resolve(options.agentDir ?? globalAgentDir());
-    this.filePath = path.join(agentDir, fatigueFileName);
+    this.filePath = path.join(path.resolve(options.agentDir ?? globalAgentDir()), "fatigue.json");
     this.now = options.now ?? (() => new Date());
-    this.state = defaultFatigueState(this.now());
+    this.emotions = new EmotionStorage({ configDir: options.agentDir, now: this.now });
+    this.state = defaultState(this.now());
   }
-
-  get path(): string {
-    return this.filePath;
-  }
-
-  async initialize(): Promise<void> {
-    this.state = await this.readState();
-  }
-
+  get path(): string { return this.filePath; }
+  async initialize(): Promise<void> { await this.read(); }
   async read(): Promise<FatigueState> {
-    this.state = await this.readState();
-    return { ...this.state };
+    return await withGlobalConfigWriteLock(path.dirname(this.filePath), async () => {
+      const state = await this.readState();
+      const before = JSON.stringify(state);
+      if (this.refreshSleep(state, this.now())) await this.emotions.updateRestEnergy("wake");
+      if (before !== JSON.stringify(state)) await this.writeState(state);
+      this.state = state;
+      return { ...state };
+    });
   }
-
   async recordMessage(): Promise<FatigueStatus> {
-    const state = await this.readState();
-    const now = this.now();
-    const next: FatigueState = {
-      fatigue: Math.min(maxFatigue, decayFatigue(state, now) + fatiguePerMessage),
-      messageCount: state.messageCount + 1,
-      lastMessageTime: now.toISOString()
-    };
-    await this.writeState(next);
-    this.state = next;
-    return statusFor(next, now);
+    return await this.mutate((state) => {
+      state.fatigue = Math.min(100, state.fatigue + 1.5);
+      state.messageCount += 1;
+    });
   }
-
+  async change(action: FatigueAction): Promise<FatigueStatus> {
+    return await this.mutate(async (state, now) => {
+      state.lastRestTime = now.toISOString();
+      state.manualSleep = action === "sleep";
+      state.manualWake = action === "wake";
+      if (action === "wake") state.fatigue = Math.max(0, state.fatigue - 30);
+      if (action === "rest") { state.fatigue = 0; state.messageCount = 0; }
+      await this.emotions.updateRestEnergy(action);
+    });
+  }
   status(): FatigueStatus {
-    return statusFor(this.state, this.now());
+    const now = this.now();
+    const fatigue = Math.round(Math.min(100, decayFatigue(this.state, now) + fatigueTimeBonus(now)));
+    const manualWake = this.state.manualWake && now.getTime() - Date.parse(this.state.lastRestTime) < twoHoursMs;
+    const hour = now.getHours();
+    return {
+      fatigue,
+      level: this.state.manualSleep ? "sleeping" : manualWake && !(hour >= 1 && hour < 6) ? "awake" : fatigueLevel(fatigue),
+      messageCount: this.state.messageCount,
+      isNight: hour >= 23 || hour < 8,
+      manualSleep: this.state.manualSleep, manualWake, lastRestTime: this.state.lastRestTime
+    };
   }
-
-  getFatigue(): number {
-    return this.status().fatigue;
+  getFatigue(): number { return this.status().fatigue; }
+  async currentStatus(): Promise<FatigueStatus> { await this.read(); return this.status(); }
+  private async mutate(change: (state: FatigueState, now: Date) => void | Promise<void>): Promise<FatigueStatus> {
+    return await withGlobalConfigWriteLock(path.dirname(this.filePath), async () => {
+      const state = await this.readState();
+      const now = this.now();
+      if (this.refreshSleep(state, now)) await this.emotions.updateRestEnergy("wake");
+      state.fatigue = decayFatigue(state, now);
+      state.lastMessageTime = now.toISOString();
+      await change(state, now);
+      await this.writeState(state);
+      this.state = state;
+      return this.status();
+    });
   }
-
-  async currentStatus(): Promise<FatigueStatus> {
-    await this.read();
-    return this.status();
+  private refreshSleep(state: FatigueState, now: Date): boolean {
+    const rested = now.getTime() - Date.parse(state.lastRestTime) >= twoHoursMs;
+    if (state.manualWake && rested) state.manualWake = false;
+    if (state.manualSleep && rested && now.getHours() >= 8 && now.getHours() < 22) {
+      state.manualSleep = false;
+      state.fatigue = Math.max(0, decayFatigue(state, now) - 40);
+      state.lastMessageTime = now.toISOString();
+      state.lastRestTime = now.toISOString();
+      return true;
+    }
+    return false;
   }
-
   private async readState(): Promise<FatigueState> {
     try {
-      const content = await fs.readFile(this.filePath, "utf8");
-      return parseFatigueState(JSON.parse(content), this.now());
-    } catch {
-      return defaultFatigueState(this.now());
-    }
+      const value = JSON.parse(await fs.readFile(this.filePath, "utf8")) as Partial<FatigueState>;
+      const lastMessageTime = typeof value.lastMessageTime === "number" ? new Date(value.lastMessageTime).toISOString() : value.lastMessageTime;
+      if (!Number.isFinite(value.fatigue) || value.fatigue! < 0 || value.fatigue! > 100
+        || !Number.isSafeInteger(value.messageCount) || value.messageCount! < 0
+        || !lastMessageTime || !Number.isFinite(Date.parse(lastMessageTime))) return defaultState(this.now());
+      return {
+        fatigue: value.fatigue!, messageCount: value.messageCount!, lastMessageTime,
+        lastRestTime: value.lastRestTime && Number.isFinite(Date.parse(value.lastRestTime)) ? value.lastRestTime : lastMessageTime,
+        manualSleep: value.manualSleep === true, manualWake: value.manualWake === true
+      };
+    } catch { return defaultState(this.now()); }
   }
-
   private async writeState(state: FatigueState): Promise<void> {
-    const directory = path.dirname(this.filePath);
-    await fs.mkdir(directory, { recursive: true, mode: 0o700 });
-    await fs.chmod(directory, 0o700);
     const temporary = `${this.filePath}.${randomUUID()}.tmp`;
-    let handle: Awaited<ReturnType<typeof fs.open>> | undefined;
     try {
-      handle = await fs.open(temporary, "w", 0o600);
-      await handle.writeFile(`${JSON.stringify(state, null, 2)}\n`, "utf8");
-      await handle.sync();
-      await handle.close();
-      handle = undefined;
+      await fs.writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
       await fs.rename(temporary, this.filePath);
-      await fs.chmod(this.filePath, 0o600);
-    } finally {
-      await handle?.close().catch(() => undefined);
-      await fs.unlink(temporary).catch(() => undefined);
-    }
+    } finally { await fs.unlink(temporary).catch(() => undefined); }
   }
 }
-
 export function fatigueLevel(value: number): FatigueLevel {
-  if (value >= 75) return "sleeping";
-  if (value >= 50) return "sleepy";
-  if (value >= 30) return "tired";
-  return "awake";
+  return value >= 75 ? "sleeping" : value >= 50 ? "sleepy" : value >= 30 ? "tired" : "awake";
 }
-
 export function fatigueTimeBonus(date: Date): number {
   const hour = date.getHours();
   if (hour >= 1 && hour < 6) return 30;
   if (hour >= 23 || hour < 8) return 15;
-  if (hour >= 13 && hour <= 14) return 8;
-  return 0;
+  return hour >= 13 && hour <= 14 ? 8 : 0;
 }
-
-function statusFor(state: FatigueState, now: Date): FatigueStatus {
-  const fatigue = Math.round(Math.min(maxFatigue, decayFatigue(state, now) + fatigueTimeBonus(now)));
-  return {
-    fatigue,
-    level: fatigueLevel(fatigue),
-    messageCount: state.messageCount,
-    isNight: now.getHours() >= 23 || now.getHours() < 8
-  };
-}
-
 function decayFatigue(state: FatigueState, now: Date): number {
-  const lastMessage = Date.parse(state.lastMessageTime);
-  const elapsedMs = Number.isFinite(lastMessage) ? Math.max(0, now.getTime() - lastMessage) : 0;
-  const decay = elapsedMs / fatigueDecayMinuteMs * fatigueDecayPerMinute;
-  return Math.max(0, Math.min(maxFatigue, state.fatigue - decay));
+  return Math.max(0, state.fatigue - Math.max(0, now.getTime() - Date.parse(state.lastMessageTime)) / 60_000 * 0.8);
 }
-
-function defaultFatigueState(now: Date): FatigueState {
-  return { fatigue: 0, messageCount: 0, lastMessageTime: now.toISOString() };
-}
-
-function parseFatigueState(value: unknown, now: Date): FatigueState {
-  if (!isRecord(value)) return defaultFatigueState(now);
-  const fatigue = value.fatigue;
-  const messageCount = value.messageCount;
-  const lastMessageTime = value.lastMessageTime;
-  if (
-    typeof fatigue !== "number"
-    || !Number.isFinite(fatigue)
-    || fatigue < 0
-    || fatigue > maxFatigue
-    || typeof messageCount !== "number"
-    || !Number.isSafeInteger(messageCount)
-    || messageCount < 0
-    || (typeof lastMessageTime !== "string" && typeof lastMessageTime !== "number")
-  ) return defaultFatigueState(now);
-  const parsedTime = typeof lastMessageTime === "number"
-    ? Number.isFinite(lastMessageTime) && lastMessageTime >= 0
-      ? new Date(lastMessageTime).toISOString()
-      : ""
-    : lastMessageTime;
-  if (!Number.isFinite(Date.parse(parsedTime))) return defaultFatigueState(now);
-  return {
-    fatigue,
-    messageCount,
-    lastMessageTime: parsedTime
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function defaultState(now: Date): FatigueState {
+  return { fatigue: 0, messageCount: 0, lastMessageTime: now.toISOString(), lastRestTime: now.toISOString(), manualSleep: false, manualWake: false };
 }

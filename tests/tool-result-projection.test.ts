@@ -4,6 +4,7 @@ import { runShellCommand } from "../src/tools/shell/runCommand.js";
 import type { AgentMessage, AgentToolResultMessage } from "../src/agent/core/types.js";
 
 await testFileAndCommandProjection();
+await testLegacyFileToolProjection();
 await testSemanticReplacementAndParallelIsolation();
 await testUnknownFailureIsNotMerged();
 await testArchiveFailureKeepsOriginal();
@@ -67,6 +68,23 @@ async function testFileAndCommandProjection(): Promise<void> {
   assert.equal(messages[2]?.role, "toolResult");
   assert.equal((messages[2] as AgentToolResultMessage).details, (resultDetails(messages[2])));
   assert.equal(String((messages[4] as AgentToolResultMessage).details?.stdout).startsWith("pnpm test"), true);
+}
+
+async function testLegacyFileToolProjection(): Promise<void> {
+  const messages: AgentMessage[] = [
+    { role: "user", content: "migrate legacy history" },
+    assistantCall("legacy-write", "write_file", { path: "src/legacy.ts", content: "new" }),
+    toolResult("legacy-write", "write_file", {
+      path: "src/legacy.ts",
+      diffPreview: "@@ -1 +1 @@\n-old\n+new"
+    })
+  ];
+  const projected = await projectToolResultsForModel(messages, { thresholdBytes: 1 });
+  const result = resultDetails(projected[2]);
+  assert.equal(result.path, "src/legacy.ts");
+  assert.equal(result.addedLines, 1);
+  assert.equal(result.deletedLines, 1);
+  assert.equal(result.modelProjection, undefined);
 }
 
 async function testSemanticReplacementAndParallelIsolation(): Promise<void> {

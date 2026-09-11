@@ -30,6 +30,8 @@ await testLegacyGlobalStateMigration();
 testRunBudget();
 testMemoryEmbeddingDefaultsToE5();
 testBuiltInEmotionAndHeartbeatAreNotConfigurable();
+testLegacyToolNamesMigrateBeforeSchemaValidation();
+testLegacySubagentDefaultMigration();
 testRemovedModelFormatsRequireManualUpdate();
 await testProjectOverridesAndGlobalPersistence();
 await testConcurrentProjectSettingUpdates();
@@ -108,6 +110,35 @@ function testBuiltInEmotionAndHeartbeatAreNotConfigurable(): void {
   const parsed = configSchema.parse(migrated);
   assert.equal("emotion" in parsed.context, false);
   assert.equal("heartbeat" in parsed, false);
+}
+
+function testLegacyToolNamesMigrateBeforeSchemaValidation(): void {
+  const document = structuredClone(defaultConfig) as unknown as Record<string, any>;
+  document.permission.allowTools = ["read_file", "write_file", "multi_edit", "apply_patch", "Read"];
+  document.extensions.subagent.allowedTools = ["read_file", "multi_edit", "apply_patch", "write_file"];
+
+  const migrated = migrateGlobalConfigDocument(document).document;
+  const parsed = configSchema.parse(migrated);
+  assert.deepEqual(parsed.permission.allowTools, ["Read", "Write", "edit_file"]);
+  assert.deepEqual(parsed.extensions.subagent.allowedTools, ["Read", "edit_file", "Write"]);
+}
+
+function testLegacySubagentDefaultMigration(): void {
+  const versioned = structuredClone(defaultConfig) as unknown as Record<string, any>;
+  delete versioned.extensions.subagent.enabled;
+  const migratedVersioned = migrateGlobalConfigDocument(versioned).document as Record<string, any>;
+  assert.equal(migratedVersioned.extensions.subagent.enabled, true);
+
+  const explicitlyDisabled = structuredClone(defaultConfig) as unknown as Record<string, any>;
+  const migratedDisabled = migrateGlobalConfigDocument(explicitlyDisabled).document as Record<string, any>;
+  assert.equal(migratedDisabled.extensions.subagent.enabled, false);
+
+  const unversioned = structuredClone(defaultConfig) as unknown as Record<string, any>;
+  delete unversioned.format;
+  delete unversioned.configVersion;
+  delete unversioned.extensions.subagent.enabled;
+  const migratedUnversioned = migrateGlobalConfigDocument(unversioned).document as Record<string, any>;
+  assert.equal(migratedUnversioned.extensions.subagent.enabled, true);
 }
 
 async function testLegacyGlobalStateMigration(): Promise<void> {

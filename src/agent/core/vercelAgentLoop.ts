@@ -1,5 +1,5 @@
 /**
- * 用 Vercel AI SDK 的 ToolLoopAgent 驱动 Biny 的原生 Agent 协议。
+ * 用 Vercel AI SDK 的 streamText 执行 Biny 的单个模型步骤。
  *
  * Biny 仍然拥有上下文、权限、工具审计和 session 消息；主 Agent 的 provider/model
  * 请求与工具续环交给 AI SDK。没有直连 Vercel model 的注入场景仍通过 Biny AgentModel
@@ -7,7 +7,8 @@
  */
 import {
   stepCountIs,
-  ToolLoopAgent,
+  streamText,
+  wrapLanguageModel,
   type StepResult,
   type ToolSet
 } from "ai";
@@ -33,11 +34,13 @@ import {
   fromVercelUsage,
   modelMessages,
   recordDirectModelRequest,
+  recordDirectModelFailure,
   toVercelReasoning,
   toModelMessages,
   type DirectCallDiagnostics
 } from "./vercelModelAdapter.js";
 import { createVercelTools } from "./vercelAgentTools.js";
+import { canonicalToolName } from "../../tools/toolNames.js";
 import { errorMessage, isRecord, providerMetadata, stringify } from "./vercelAgentUtils.js";
 
 export interface VercelLoopState {
@@ -66,11 +69,13 @@ export interface VercelLoopState {
   terminateRequested: boolean;
   stopRequested: boolean;
   streamFailure: string | undefined;
+  directModelError: unknown;
   sequentialToolTail: Promise<void>;
   currentText: string;
   currentReasoning: Map<string, { text: string; providerMetadata?: Record<string, unknown> }>;
   currentToolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }>;
-  directCallStarts: Map<string, DirectCallDiagnostics>;
+  directCall: DirectCallDiagnostics | undefined;
+  directAttempts: Array<{ startedAtMs: number; durationMs?: number; error?: string }>;
   directPromptMessages: AgentMessage[] | undefined;
   previousPromptShape: PromptShapeDiagnostic | undefined;
   promptProjectionCache: LocalPromptProjectionCache;
@@ -121,11 +126,13 @@ export async function* vercelAgentLoopContinue(
     terminateRequested: false,
     stopRequested: false,
     streamFailure: undefined,
+    directModelError: undefined,
     sequentialToolTail: Promise.resolve(),
     currentText: "",
     currentReasoning: new Map(),
     currentToolCalls: [],
-    directCallStarts: new Map(),
+    directCall: undefined,
+    directAttempts: [],
     directPromptMessages: undefined,
     previousPromptShape: undefined,
     promptProjectionCache: new LocalPromptProjectionCache(),
@@ -157,6 +164,8 @@ export async function* vercelAgentLoopContinue(
 
     state.terminateRequested = false;
     state.streamFailure = undefined;
+    state.directModelError = undefined;
+    state.directAttempts = [];
     state.outputProducedSinceStep = false;
     state.finishStepSeen = false;
     state.finishStepEventsEmitted = false;
@@ -164,12 +173,8 @@ export async function* vercelAgentLoopContinue(
       state.resolveStepCompletion = resolve;
     });
     state.pendingStepPreparation = undefined;
-    const agent = createToolLoopAgent(state);
     try {
-      const result = await agent.stream({
-        messages: toModelMessages(state.context.messages),
-        abortSignal: signal
-      });
+      const result = streamModelStep(state);
       const stream = result.fullStream[Symbol.asyncIterator]();
       let nextStream = stream.next();
       while (true) {
@@ -192,6 +197,7 @@ export async function* vercelAgentLoopContinue(
       signal?.throwIfAborted();
       if (stream.return) await stream.return();
     } catch (error) {
+      await recordDirectModelFailure(state, error);
       if (signal?.aborted) throw error;
       state.streamFailure = errorMessage(error);
       if (state.vercelModel === undefined) {
@@ -199,6 +205,7 @@ export async function* vercelAgentLoopContinue(
       }
     } finally {
       state.wakePendingEvents = undefined;
+      await recordDirectModelFailure(state, signal?.aborted ? signal.reason : state.directModelError ?? state.streamFailure ?? "Provider stream ended before a finish event.");
     }
     if (!state.streamFailure && state.finishStepSeen) {
       await state.stepCompletion;
@@ -294,16 +301,45 @@ async function recoverDirectModelError(
   return true;
 }
 
-function createToolLoopAgent(state: VercelLoopState): ToolLoopAgent {
+function streamModelStep(state: VercelLoopState) {
   const tools = createVercelTools(state);
   const callSettings = vercelCallSettings(state);
-  return new ToolLoopAgent({
-    id: "biny-native-agent",
-    model: state.vercelModel ?? createLanguageModel(state),
+  // SDK 的 call-start 只表示逻辑调用；物理重试要在 SDK middleware 的 doStream 边界计数。
+  const model = state.vercelModel === undefined ? createLanguageModel(state) : wrapLanguageModel({
+    model: state.vercelModel,
+    middleware: {
+      specificationVersion: "v4",
+      wrapStream: async ({ doStream }) => {
+        const attempt: VercelLoopState["directAttempts"][number] = { startedAtMs: Date.now() };
+        state.directAttempts.push(attempt);
+        try { return await doStream(); }
+        catch (error) {
+          attempt.error = errorMessage(error);
+          attempt.durationMs = Math.max(0, Date.now() - attempt.startedAtMs);
+          throw error;
+        }
+      }
+    }
+  });
+  return streamText({
+    messages: toModelMessages(state.context.messages),
+    abortSignal: state.signal,
+    model,
     instructions: state.context.systemPrompt,
     tools,
     maxRetries: state.vercelModel === undefined ? 0 : state.maxRetries ?? 0,
+    // 接管 SDK 默认的 console.error，错误仍由 fullStream 进入 Biny 稳定事件链。
+    onError: ({ error }) => { state.directModelError = error; },
+    onAbort: ({ reason }) => {
+      state.directModelError = reason ?? new Error("Provider request aborted.");
+      state.streamFailure = errorMessage(state.directModelError);
+    },
     ...callSettings,
+    repairToolCall: async ({ toolCall }) => {
+      const toolName = canonicalToolName(toolCall.toolName);
+      if (toolName === toolCall.toolName) return null;
+      return { ...toolCall, toolName };
+    },
     // SDK 只负责一个 provider step（含该 step 的工具执行）。跨 step 的边界
     // 由 Biny 管理，才能在 assistant turn 完整落库后再消费追问队列。
     stopWhen: [
@@ -311,7 +347,7 @@ function createToolLoopAgent(state: VercelLoopState): ToolLoopAgent {
       () => state.terminateRequested || state.stopRequested
     ],
     prepareStep: async () => ({
-      model: state.vercelModel ?? createLanguageModel(state),
+      model,
       instructions: state.context.systemPrompt,
       messages: await modelMessages(state),
       ...vercelCallSettings(state),

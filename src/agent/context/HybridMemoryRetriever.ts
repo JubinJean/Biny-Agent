@@ -57,6 +57,7 @@ export interface HybridMemoryRetrieverOptions {
   getThresholds: (fingerprint: string, recommended: EmbeddingThresholds) => EmbeddingThresholds;
   rewriteQuery?: (query: string, signal?: AbortSignal) => Promise<string>;
   queryRewriteEnabled?: () => boolean;
+  allowEntry?: (entry: MemoryEntry) => boolean;
   now?: () => Date;
   closeVectorIndex?: boolean;
 }
@@ -113,15 +114,18 @@ export class HybridMemoryRetriever {
       includeArchived: options.includeArchived,
       signal: options.signal
     });
+    if (this.options.allowEntry) snapshot.entries = snapshot.entries.filter(this.options.allowEntry);
     recordPerfPhase("memory.listEntries", listPerfStartedAt);
     if (!snapshot.entries.length || options.limit < 1) return emptySearchResult(snapshot);
 
     const safeQuery = redactSecrets(query).trim();
-    const rewritten = await this.rewrite(safeQuery, snapshot.entries, options.signal);
+    const semanticPerfStartedAt = perfNow();
+    const semantic = await this.semanticSearch(safeQuery, snapshot.entries, options.limit, options.signal);
+    recordPerfPhase("memory.semantic", semanticPerfStartedAt, { available: semantic.available });
     const matchPaths = new Map(Object.entries(snapshot.paths ?? {}));
     const lexicalRankings: string[][] = [];
     if (options.automatic !== true) {
-      const lexicalQueries = [...new Set([safeQuery, rewritten].filter(Boolean))];
+      const lexicalQueries = [...new Set([safeQuery, semantic.query].filter((value): value is string => Boolean(value)))];
       if (!lexicalQueries.length && paths.length) lexicalQueries.push("");
       const lexicalPerfStartedAt = perfNow();
       const lexicalResults = await Promise.all(lexicalQueries.map(async (value) => (
@@ -141,9 +145,6 @@ export class HybridMemoryRetriever {
       }
     }
 
-    const semanticPerfStartedAt = perfNow();
-    const semantic = await this.semanticSearch(rewritten || safeQuery, snapshot.entries, options.limit, options.signal);
-    recordPerfPhase("memory.semantic", semanticPerfStartedAt, { available: semantic.available });
     return rankHybridMemory({
       entries: snapshot.entries,
       currentWorkspaceId: await this.currentWorkspaceId,
@@ -189,27 +190,30 @@ export class HybridMemoryRetriever {
     entries: readonly MemoryEntry[],
     limit: number,
     signal?: AbortSignal
-  ): Promise<{ available: boolean; results: MemoryVectorSearchResult[] }> {
+  ): Promise<{ available: boolean; results: MemoryVectorSearchResult[]; query?: string }> {
     if (!query) return { available: false, results: [] };
+    let rewritten = query;
     try {
-      const runtime = await this.options.getEmbeddingRuntime();
-      if (!runtime) return { available: false, results: [] };
-      signal?.throwIfAborted();
-      const embedded = await runtime.embed({ texts: [query], inputType: "query", signal });
-      const queryVector = embedded.embeddings[0];
-      if (!queryVector || embedded.embeddings.length !== 1 || embedded.fingerprint !== runtime.descriptor.fingerprint) {
-        return { available: false, results: [] };
-      }
+      // 先排除缺失、空或不兼容的索引，再启动改写和 embedding；自动召回仍保持 fail closed。
       const index = this.vectorIndex ?? this.options.getReadOnlyVectorIndex();
       if (!index) return { available: false, results: [] };
       this.vectorIndex = index;
       const active = index.status().active;
+      if (!active || active.vectorCount < 1) return { available: false, results: [] };
+      const runtime = await this.options.getEmbeddingRuntime();
+      if (!runtime) return { available: false, results: [] };
       if (
-        !active
-        || active.modelFingerprint !== runtime.descriptor.fingerprint
-        || active.dimensions !== embedded.dimensions
-        || active.vectorCount < 1
+        active.modelFingerprint !== runtime.descriptor.fingerprint
+        || (runtime.descriptor.dimensions !== undefined && active.dimensions !== runtime.descriptor.dimensions)
       ) return { available: false, results: [] };
+      signal?.throwIfAborted();
+      rewritten = await this.rewrite(query, entries, signal);
+      const embedded = await runtime.embed({ texts: [rewritten], inputType: "query", signal });
+      const queryVector = embedded.embeddings[0];
+      if (!queryVector || embedded.embeddings.length !== 1 || embedded.fingerprint !== runtime.descriptor.fingerprint) {
+        return { available: false, results: [] };
+      }
+      if (active.dimensions !== embedded.dimensions) return { available: false, results: [], query: rewritten };
 
       const currentWorkspaceId = await this.currentWorkspaceId;
       const entryById = new Map(entries.map((entry) => [entry.id, entry]));
@@ -222,6 +226,7 @@ export class HybridMemoryRetriever {
       });
       return {
         available: true,
+        query: rewritten,
         results: candidates.filter((candidate) => {
           const entry = entryById.get(candidate.entryId);
           if (!entry) return false;
@@ -231,7 +236,7 @@ export class HybridMemoryRetriever {
       };
     } catch {
       signal?.throwIfAborted();
-      return { available: false, results: [] };
+      return { available: false, results: [], query: rewritten };
     }
   }
 }

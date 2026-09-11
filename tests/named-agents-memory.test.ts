@@ -19,7 +19,7 @@ import { createNativeModelSettings } from "../src/llm/nativeFactory.js";
 import { ensureAgentDirs } from "../src/session/store.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import type { Tool } from "../src/tools/types.js";
-import { SubagentTaskManager } from "../src/runtime/SubagentTaskManager.js";
+import { SubagentTaskIncompleteError, SubagentTaskManager } from "../src/runtime/SubagentTaskManager.js";
 import type { AgentModel } from "../src/agent/core/types.js";
 
 async function main(): Promise<void> {
@@ -31,7 +31,7 @@ async function main(): Promise<void> {
     await testSubagentDefinitionLoading(workspaceRoot);
     await testSubagentDefinitionBoundaries(workspaceRoot);
     await testSubagentTaskManagerAgentThreading();
-    await testSubagentBudgetExhaustionReturnsPartialFindings();
+    await testSubagentBudgetExhaustionRejectsWithPartialFindings();
     await testMemoryTopicLifecycle();
     await testMemoryTools();
     await testMaintenanceScansDurableEntries();
@@ -51,7 +51,7 @@ async function testSubagentDefinitionLoading(workspaceRoot: string): Promise<voi
     "---",
     "name: scout",
     "description: Read-only reconnaissance over the repository.",
-    "tools: Read, Grep, Read",
+    "tools: Read, Grep, Read, write_file, multi_edit, apply_patch",
     "model: deepseek-v4-flash",
     "---",
     "Locate relevant files and report exact paths with line ranges."
@@ -83,7 +83,7 @@ async function testSubagentDefinitionLoading(workspaceRoot: string): Promise<voi
     assert.ok(scout);
     assert.equal(scout.scope, "project");
     assert.equal(scout.model, "deepseek-v4-flash");
-    assert.deepEqual(scout.tools, ["Read", "Grep"]);
+    assert.deepEqual(scout.tools, ["Read", "Grep", "Write", "edit_file"]);
     assert.match(scout.prompt, /exact paths with line ranges/);
     assert.equal(scout.path, path.join(".biny", "agents", "scout.md"));
 
@@ -93,7 +93,7 @@ async function testSubagentDefinitionLoading(workspaceRoot: string): Promise<voi
 
     const prompt = buildSubagentDefinitionsPrompt(definitions);
     assert.match(prompt, /Named subagents/);
-    assert.match(prompt, /scout \(project, model deepseek-v4-flash, tools Read\/Grep\)/);
+    assert.match(prompt, /scout \(project, model deepseek-v4-flash, tools Read\/Grep\/Write\/edit_file\)/);
     assert.match(prompt, /Task/);
     assert.equal(buildSubagentDefinitionsPrompt([]), "");
   } finally {
@@ -155,7 +155,7 @@ async function testSubagentTaskManagerAgentThreading(): Promise<void> {
 }
 
 /** 模型每步都继续请求工具，验证步数预算截停时返回带标注的部分结论而不是抛错。 */
-async function testSubagentBudgetExhaustionReturnsPartialFindings(): Promise<void> {
+async function testSubagentBudgetExhaustionRejectsWithPartialFindings(): Promise<void> {
   const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "biny-subagent-partial-"));
   const originalFetch = globalThis.fetch;
   try {
@@ -205,11 +205,14 @@ async function testSubagentBudgetExhaustionReturnsPartialFindings(): Promise<voi
       toolRegistry: registry
     };
 
-    // "review …" 不含实现/调查关键词，命中最小 8 步预算。
-    const output = await runSubagentTask(options, "review the current repository state");
-    assert.match(output, /\[Partial result: the bounded subagent budget ran out after 8 steps/);
-    assert.match(output, /Inspect round 1\./);
-    assert.equal(requestCount, 8);
+    // 文案不再暗中缩小配置预算；预算停止必须保留部分交付但不能报告成功。
+    await assert.rejects(runSubagentTask(options, "review the current repository state"), (error) => {
+      assert.ok(error instanceof SubagentTaskIncompleteError);
+      assert.equal(error.stopReason, "step_limit");
+      assert.match(error.output, /Inspect round 1\./);
+      return true;
+    });
+    assert.equal(requestCount, config.extensions.subagent.maxSteps);
   } finally {
     globalThis.fetch = originalFetch;
     await rm(workspaceRoot, { recursive: true, force: true });

@@ -325,11 +325,18 @@ const mcpServerSchema = z.object({
   stderr: z.enum(["ignore", "inherit", "pipe"]).default("ignore"),
   url: z.string().url().optional(),
   headers: z.record(z.string()).optional(),
+  oauth: z.object({
+    clientId: z.string().trim().min(1).max(2_000).optional(),
+    scopes: z.array(z.string().trim().min(1).max(200)).max(32).optional(),
+    redirectPort: z.number().int().min(1024).max(65535).optional()
+  }).optional(),
   timeoutMs: z.number().int().min(1_000).max(600_000).optional(),
   enabled: z.boolean().default(true)
 }).superRefine((server, context) => {
   // type 省略时按字段推断：有 url 走 http，否则走 stdio。
   const transport = server.type ?? (server.url ? "http" : "stdio");
+  if (server.oauth && transport !== "http") context.addIssue({ code: z.ZodIssueCode.custom, path: ["oauth"], message: "MCP OAuth 仅适用于 HTTP 服务。" });
+  if (server.oauth && [...Object.keys(server.headers ?? {}), ...Object.keys(server.credentialRefs?.headers ?? {})].some((key) => key.toLowerCase() === "authorization")) context.addIssue({ code: z.ZodIssueCode.custom, path: ["headers"], message: "OAuth 与 Authorization 请求头不能同时配置。" });
   if (transport === "stdio" && !server.command) {
     context.addIssue({ code: z.ZodIssueCode.custom, path: ["command"], message: "stdio MCP server requires a command" });
   }
@@ -346,9 +353,7 @@ export const defaultSubagentAllowedTools = [
   "git_diff",
   "Write",
   "edit_file",
-  "multi_edit",
   "delete_file",
-  "apply_patch",
   "move_file",
   "Bash"
 ] as const;
@@ -367,25 +372,16 @@ const skillProjectOverridesSchema = z.record(skillActivationMapSchema).superRefi
   }
 });
 
-const skillExtractionSchema = z.object({
-  enabled: z.boolean().default(true),
-  minToolCalls: z.number().int().min(1).max(64).default(5)
-}).strict().default({
-  enabled: true,
-  minToolCalls: 5
-});
-
 const extensionsSchema = z.object({
   mcp: z.record(mcpServerSchema).default({}),
   skills: z.array(z.string().trim().min(1)).max(32).default([...DEFAULT_PROJECT_SKILL_PATHS]),
   skillDefaults: skillActivationMapSchema.default({}),
   skillProjectOverrides: skillProjectOverridesSchema.default({}),
-  skillExtraction: skillExtractionSchema,
   plugins: z.array(z.string().trim().min(1)).max(32).default([]),
   /** 全局配置目录下的 Plugin 路径；只允许在 ~/.config/biny/plugins 内解析。 */
   globalPlugins: z.array(z.string().trim().min(1)).max(32).default([]),
   subagent: z.object({
-    enabled: z.boolean().default(true),
+    enabled: z.boolean().default(false),
     maxSteps: z.number().int().min(1).max(32).default(16),
     maxOutputTokens: z.number().int().min(256).max(32_768).default(8_000),
     maxConcurrentSubagents: z.number().int().min(1).max(8).default(2),
@@ -397,7 +393,7 @@ const extensionsSchema = z.object({
     // 具名子代理定义目录（workspace 相对路径）；全局 ~/.config/biny/agents 始终生效。
     agentPaths: z.array(z.string().trim().min(1)).max(32).default([".biny/agents"])
   }).default({
-    enabled: true,
+    enabled: false,
     maxSteps: 16,
     maxOutputTokens: 8_000,
     maxConcurrentSubagents: 2,
@@ -413,14 +409,10 @@ const extensionsSchema = z.object({
   skills: [".agents/skills", ".biny/skills"],
   skillDefaults: {},
   skillProjectOverrides: {},
-  skillExtraction: {
-    enabled: true,
-    minToolCalls: 5
-  },
   plugins: [],
   globalPlugins: [],
   subagent: {
-    enabled: true,
+    enabled: false,
     maxSteps: 16,
     maxOutputTokens: 8_000,
     maxConcurrentSubagents: 2,
@@ -610,6 +602,8 @@ const canonicalConfigSchema = z.object({
   configVersion: z.literal(GLOBAL_CONFIG_VERSION),
   needsEmbeddingRebuild: z.boolean().default(false),
   defaultModel: z.string().min(1),
+  /** 活动分析、摘要与建议共用的工具模型；省略时从可用配置自动选择。 */
+  toolModel: z.string().trim().min(1).max(240).optional(),
   providers: z.record(providerConfigSchema),
   /** 凭据正文保存在 Keychain；这里仅保存并发 CAS 使用的非机密版本 nonce。 */
   credentialRevisions: z.record(z.string().min(1).max(128)).optional(),
@@ -795,6 +789,7 @@ export const defaultConfig: AgentConfig = {
   configVersion: GLOBAL_CONFIG_VERSION,
   needsEmbeddingRebuild: false,
   defaultModel: "deepseek-v4-flash",
+  toolModel: undefined,
   providers: {
     deepseek: {
       type: "deepseek",
@@ -916,14 +911,10 @@ export const defaultConfig: AgentConfig = {
     skills: [...DEFAULT_PROJECT_SKILL_PATHS],
     skillDefaults: {},
     skillProjectOverrides: {},
-    skillExtraction: {
-      enabled: true,
-      minToolCalls: 5
-    },
     plugins: [],
     globalPlugins: [],
     subagent: {
-      enabled: true,
+      enabled: false,
       maxSteps: 16,
       maxOutputTokens: 8_000,
       maxConcurrentSubagents: 2,

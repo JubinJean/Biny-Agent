@@ -5,6 +5,7 @@
  * 取文本、取思考内容、取工具名和深拷贝的读法。
  */
 import type { AgentMessage } from "./core/types.js";
+import { canonicalCompatibleToolName } from "../tools/toolNames.js";
 
 /** 拼出消息的纯文本形态；工具调用/结果按 JSON 展开，图片等无文本分片忽略。 */
 export function messageText(message: AgentMessage): string {
@@ -33,6 +34,22 @@ export function cloneAgentMessages(messages: AgentMessage[]): AgentMessage[] {
     ...message,
     content: Array.isArray(message.content) ? message.content.map((part) => ({ ...part })) : message.content
   })) as AgentMessage[];
+}
+
+/** 将存量消息里的工具名称迁移到当前协议；不执行工具，也不改写 session 原始事实。 */
+export function canonicalizeAgentMessageToolNames(message: AgentMessage): AgentMessage {
+  if (message.role === "assistant") {
+    return {
+      ...message,
+      content: message.content.map((part) => part.type === "toolCall"
+        ? { ...part, name: canonicalCompatibleToolName(part.name) }
+        : part)
+    };
+  }
+  if (message.role === "toolResult") {
+    return { ...message, toolName: canonicalCompatibleToolName(message.toolName) };
+  }
+  return message;
 }
 
 function stringify(value: unknown): string {

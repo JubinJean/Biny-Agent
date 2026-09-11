@@ -14,6 +14,7 @@ import { providerProtocol } from "./provider.js";
 import { createRetryFetch } from "./retry.js";
 import type { CatalogProviderRequest, ModelCapabilities, ModelCatalogEntry } from "./types.js";
 import { createProxyAwareFetch } from "../network/proxyFetch.js";
+import { resolveProviderRequestRoute } from "../llm/providerRequest.js";
 
 const catalogTimeoutMs = 15_000;
 
@@ -73,7 +74,8 @@ export async function fetchModelCatalogSnapshot(
   // Anthropic 原生协议用 x-api-key，Gemini 原生协议用 x-goog-api-key，
   // OAuth 场景和 OpenAI 兼容端点用 Bearer。
   const authMode = request.config.authMode ?? request.definition.authModes[0];
-  const googleNative = request.config.apiBackend === "google_generative_ai" && authMode !== "oauth-bearer";
+  const googleNative = resolveProviderRequestRoute(undefined, request.config, request.definition).apiBackend === "google_generative_ai"
+    && authMode !== "oauth-bearer";
   const headers: Record<string, string> = codex
     ? {
       Authorization: apiKey ? `Bearer ${apiKey}` : "",

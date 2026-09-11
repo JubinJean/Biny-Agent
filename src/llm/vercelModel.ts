@@ -9,7 +9,7 @@ import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createOpenAICompatible } from "@ai-sdk/openai-compatible";
 import type { LanguageModelV4 } from "@ai-sdk/provider";
-import type { ModelApiBackend, ProviderConfig } from "../config/schema.js";
+import type { ModelApiBackend, ModelCompatibility, ProviderConfig } from "../config/schema.js";
 
 export interface VercelModelInput {
   providerAlias: string;
@@ -18,6 +18,7 @@ export interface VercelModelInput {
   api: ModelApiBackend;
   modelId: string;
   supportsReasoning: boolean;
+  compatibility?: ModelCompatibility;
   baseUrl: string;
   apiKey: string | undefined;
   headers: Record<string, string>;
@@ -49,7 +50,8 @@ export function createVercelLanguageModel(input: VercelModelInput): LanguageMode
   }
 
   if (input.api === "responses" || input.providerType === "openai-codex"
-    || (input.providerType === "openai" && input.supportsReasoning)) {
+    || (input.providerType === "openai" && input.supportsReasoning
+      && input.compatibility?.maxTokensField === undefined && input.compatibility?.supportsDeveloperRole === undefined)) {
     const provider = createOpenAI({
       baseURL: input.baseUrl,
       apiKey: input.apiKey,
@@ -66,7 +68,18 @@ export function createVercelLanguageModel(input: VercelModelInput): LanguageMode
     apiKey: input.apiKey,
     headers: input.headers,
     fetch: input.fetcher,
-    includeUsage: true
+    includeUsage: true,
+    // SDK 已提供请求体变换入口；显式兼容配置必须覆盖 SDK 的默认字段和角色。
+    transformRequestBody: (body) => {
+      const { max_tokens: maxTokens, ...rest } = body;
+      return {
+        ...rest,
+        [input.compatibility?.maxTokensField ?? "max_tokens"]: maxTokens,
+        messages: body.messages.map((message: Record<string, unknown>) => message.role === "system" && input.compatibility?.supportsDeveloperRole === true
+          ? { ...message, role: "developer" }
+          : message)
+      };
+    }
   });
   return provider(input.modelId);
 }

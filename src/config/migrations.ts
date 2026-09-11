@@ -4,6 +4,7 @@
  * 这里只转换 JSON shape，不读写文件。读取方在内存中使用当前结构；只有用户明确保存配置时
  * 才通过安全原子写入路径替换磁盘文档。
  */
+import { migrateToolNameList } from "../tools/toolNames.js";
 
 export const GLOBAL_CONFIG_FORMAT = "biny-config" as const;
 export const GLOBAL_CONFIG_VERSION = 1 as const;
@@ -21,6 +22,9 @@ export function migrateGlobalConfigDocument(value: unknown): ConfigMigrationResu
     document.format = GLOBAL_CONFIG_FORMAT;
     document.configVersion = GLOBAL_CONFIG_VERSION;
     migrateMemoryPolicy(document);
+    migrateLegacySubagentDefault(document);
+  } else if (value.format === GLOBAL_CONFIG_FORMAT && value.configVersion === GLOBAL_CONFIG_VERSION) {
+    migrateLegacySubagentDefault(document);
   }
   // 嵌入字段曾在配置已版本化之后短暂写进 activity.*，版本门内的迁移够不到这批文件；
   // 严格 schema 不认识这两个键，所以这段清理必须对所有版本无条件执行。
@@ -37,6 +41,7 @@ export function migrateGlobalConfigDocument(value: unknown): ConfigMigrationResu
   // 人格预设与自定义指令已下线（改由内置 Soul 与 USER 承载）。顶层 personalization 块不再属于
   // 严格 schema，无条件剥离以兼容任何版本的存量配置文件。
   delete document.personalization;
+  migrateLegacyToolNames(document);
   return { document };
 }
 
@@ -135,6 +140,40 @@ function migrateMemoryEmbeddingPolicy(document: Record<string, unknown>): void {
     || (embeddingModel?.kind === "local" && typeof embeddingModel.model === "string" && embeddingModel.model !== "multilingual-e5-small")) {
     memory.embeddingModel = { kind: "local", model: "multilingual-e5-small" };
   }
+}
+
+/** 旧工具名只存在于配置数据中，加载时迁移到当前工具名，不改变运行时注册表。 */
+function migrateLegacyToolNames(document: Record<string, unknown>): void {
+  const permission = isRecord(document.permission) ? document.permission : undefined;
+  if (permission && isStringArray(permission.allowTools)) {
+    permission.allowTools = migrateToolNameList(permission.allowTools);
+  }
+
+  const extensions = isRecord(document.extensions) ? document.extensions : undefined;
+  const subagent = extensions && isRecord(extensions.subagent) ? extensions.subagent : undefined;
+  if (subagent && isStringArray(subagent.allowedTools)) {
+    subagent.allowedTools = migrateToolNameList(subagent.allowedTools);
+  }
+}
+
+/** 旧配置没有 subagent 开关时沿用旧的默认行为；新配置仍由 schema 默认关闭。 */
+function migrateLegacySubagentDefault(document: Record<string, unknown>): void {
+  const extensions = isRecord(document.extensions) ? document.extensions : undefined;
+  const subagent = extensions && isRecord(extensions.subagent) ? extensions.subagent : undefined;
+  if (subagent?.enabled !== undefined) return;
+  if (!extensions) {
+    document.extensions = { subagent: { enabled: true } };
+    return;
+  }
+  if (!subagent) {
+    extensions.subagent = { enabled: true };
+    return;
+  }
+  subagent.enabled = true;
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

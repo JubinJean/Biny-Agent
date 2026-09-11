@@ -5,7 +5,7 @@
  * 默认人格，不生成内置 Soul 正文。写入采用临时文件替换和目录锁，避免文件写成半截内容。
  */
 import { promises as fs } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { migrateLegacyGlobalState } from "../../config/globalStateMigration.js";
 import { globalConfigDir } from "../../config/paths.js";
@@ -21,20 +21,24 @@ export const maxSoulTraits = 15;
 
 export interface SoulStorageOptions {
   configDir?: string;
+  now?: () => Date;
 }
 
 export interface SoulSnapshot {
   content: string;
   source: SoulPromptSource;
+  revision: string;
   path: string;
 }
 
 export class SoulStorage {
+  private readonly now: () => Date;
   private readonly root: string;
   private readonly filePath: string;
   private readonly migrateDefaultState: boolean;
 
   constructor(options: SoulStorageOptions = {}) {
+    this.now = options.now ?? (() => new Date());
     this.migrateDefaultState = options.configDir === undefined;
     this.root = path.resolve(options.configDir ?? globalConfigDir());
     this.filePath = path.join(this.root, soulFileName);
@@ -58,6 +62,7 @@ export class SoulStorage {
     const userContent = normalizeSoulContent(await readOptional(this.filePath));
     return {
       content: userContent,
+      revision: createHash("sha256").update(userContent).digest("hex"),
       source: userContent ? "user" : "builtin",
       path: this.filePath
     };
@@ -106,10 +111,59 @@ export class SoulStorage {
     }
     return await this.withLock(async () => {
       const current = normalizeSoulContent(await readOptional(this.filePath));
-      const next = appendTrait(current, trait);
+      const date = this.now();
+      const marker = `<!-- biny-soul-growth:${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} -->`;
+      if (current.split("\n").some((line) => line.trim() === "- " + trait)) return await this.read();
+      if (current.includes(marker)) throw new Error("Soul 每天最多新增一条成长特征。");
+      const next = appendTrait(current, trait + "\n" + marker);
       validateSoulContent(next);
       await this.writeFile(this.filePath, next + "\n");
       return await this.read();
+    });
+  }
+
+  /** 只修改成长区；生成时的 revision 与每日额度都在同一把写锁内检查。 */
+  async applyEvolution(change: SoulEvolution, expectedRevision: string): Promise<SoulEvolutionResult> {
+    if (!change.evidence.trim()) throw new Error("Soul evolution requires evidence.");
+    if (!change.add && !change.revise?.length && !change.remove?.length) return "unchanged";
+    return await this.withLock(async () => {
+      const snapshot = await this.read();
+      if (snapshot.source !== "user") return "missing";
+      if (snapshot.revision !== expectedRevision) return "conflict";
+      const current = snapshot.content;
+      const lines = current.split("\n");
+      let start = lines.findIndex((line) => line.trim() === "## Evolved Traits");
+      if (start < 0) { lines.push("", "## Evolved Traits", ""); start = lines.length - 2; }
+      let end = start + 1;
+      while (end < lines.length && !/^#{1,2}\s/u.test(lines[end]!)) end += 1;
+      const section = lines.slice(start + 1, end);
+      for (const revision of change.revise ?? []) {
+        const index = section.findIndex((line) => line.trim() === "- " + revision.from);
+        if (index < 0) return "conflict";
+        const trait = normalizeTrait(revision.to);
+        if (!trait || trait.length > maxSoulTraitChars) throw new Error("Invalid Soul trait.");
+        section[index] = "- " + trait;
+      }
+      for (const trait of change.remove ?? []) {
+        const index = section.findIndex((line) => line.trim() === "- " + trait);
+        if (index < 0) return "conflict";
+        section.splice(index, 1);
+      }
+      if (change.add) {
+        const trait = normalizeTrait(change.add);
+        if (!trait || trait.length > maxSoulTraitChars) throw new Error("Invalid Soul trait.");
+        if (!section.some((line) => line.trim() === "- " + trait)) {
+          const date = this.now();
+          const marker = `<!-- biny-soul-growth:${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")} -->`;
+          if (current.includes(marker)) return "daily_limit";
+          if (section.filter((line) => /^\s*-\s+\S/u.test(line)).length >= maxSoulTraits) return "capacity";
+          section.push("- " + trait, marker);
+        }
+      }
+      const next = [...lines.slice(0, start + 1), ...section, ...lines.slice(end)].join("\n").trim();
+      if (next === current) return "unchanged";
+      await this.writeFile(this.filePath, validateSoulContent(next) + "\n");
+      return "applied";
     });
   }
 
@@ -224,3 +278,6 @@ function isNotFound(error: unknown): boolean {
 function isAlreadyExists(error: unknown): boolean {
   return typeof error === "object" && error !== null && "code" in error && error.code === "EEXIST";
 }
+
+export interface SoulEvolution { add?: string; revise?: Array<{ from: string; to: string }>; remove?: string[]; evidence: string; }
+export type SoulEvolutionResult = "applied" | "unchanged" | "missing" | "conflict" | "daily_limit" | "capacity";

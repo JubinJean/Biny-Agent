@@ -7,7 +7,8 @@ import path from "node:path";
 import type { AgentMessage, AgentModel, ModelStreamContext, ModelStreamEvent } from "../src/agent/core/types.js";
 import { AgentSession } from "../src/agent/AgentSession.js";
 import { LocalEmbeddingManager } from "../src/llm/embedding/LocalEmbeddingRuntime.js";
-import { ContextMemory, estimateMessageTokens } from "../src/agent/context/ContextMemory.js";
+import { estimateMessageTokens } from "../src/agent/context/tokenUsage.js";
+import { ContextMemory } from "../src/agent/context/ContextMemory.js";
 import { LocalMemory, redactSecrets } from "../src/agent/context/LocalMemory.js";
 import { sessionMessageMetadata } from "../src/session/messageTree.js";
 import { sessionEventsToTranscript } from "../src/tui/sessionTranscript.js";
@@ -17,7 +18,7 @@ import { memoryDatabaseFileName } from "../src/agent/context/memoryStorage.js";
 import { WorkspaceContext } from "../src/agent/context/WorkspaceContext.js";
 import { cloneAgentMessages, messageReasoning, messageText } from "../src/agent/modelMessages.js";
 import { selectPlanTools } from "../src/agent/planMode.js";
-import { buildSystemPrompt, refreshRuntimeSystemPrompt, stableSystemPromptForCache, withActiveRunCompactionSummary } from "../src/agent/prompts.js";
+import { buildSystemPrompt, refreshRuntimeSystemPrompt, stableSystemPromptForCache, stripTransientTurnContext, withActiveRunCompactionSummary } from "../src/agent/prompts.js";
 import { BINY_AGENT_DIR_ENV, globalAgentDir, legacyProjectStateDirName, projectSessionsDir, projectStateDirName } from "../src/config/paths.js";
 import type { AgentConfig } from "../src/config/schema.js";
 import { defaultConfig } from "../src/config/schema.js";
@@ -168,15 +169,15 @@ async function main(): Promise<void> {
 
 function testConversationBoundaryPrompt(): void {
   const prompt = buildSystemPrompt({ mode: "qa", cwd: "/workspace" });
-  assert.match(prompt, /You are Biny — not an assistant, not a chatbot/u);
+  assert.match(prompt, /You are Biny\./u);
   assert.doesNotMatch(prompt, /Biny is not human|不代表 Biny 是人类/u);
   assert.match(prompt, /Keep simple answers simple; do not add headings or lists to simple answers/u);
   assert.match(prompt, /simple greeting or casual exchange/u);
-  assert.match(prompt, /without inspecting or modifying the workspace/u);
+  assert.match(prompt, /Casual conversation gets a short direct reply and no workspace work/u);
   assert.match(prompt, /Available tools:\n\(none\)/u);
   assert.match(prompt, /only the latest user message as the active task/u);
-  assert.match(prompt, /desired outcome, constraints, and explicit success criteria/u);
-  assert.match(prompt, /external side effects, destructive or costly actions/u);
+  assert.match(prompt, /desired outcome, constraints, and observable finish line/u);
+  assert.match(prompt, /current permission mode, tool allowlist, confirmations/u);
   assert.match(prompt, /Current permission mode: runtime-managed/u);
   assert.match(prompt, /Current working directory: \/workspace/u);
   const parentPrompt = buildSystemPrompt({
@@ -206,19 +207,19 @@ function testConversationBoundaryPrompt(): void {
     /- custom_tool:/u
   );
   const compacted = withActiveRunCompactionSummary(
-    buildSystemPrompt({ mode: "qa", cwd: "/workspace", extensionPrompt: "old dynamic capability", tools: [webTool] }),
+    buildSystemPrompt({ mode: "qa", cwd: "/workspace", extensionPrompt: "static capability", tools: [webTool] }),
     "first overflow summary"
   );
-  const refreshed = refreshRuntimeSystemPrompt(compacted, "new dynamic capability", [{
+  const refreshed = refreshRuntimeSystemPrompt(compacted, [{
     name: "Bash",
     promptSnippet: "Run a finite command",
     promptGuidelines: ["Use Bash only for finite commands"]
   }]);
   const recoveredAgain = withActiveRunCompactionSummary(refreshed, "second overflow summary");
-  assert.match(recoveredAgain, /new dynamic capability/u);
+  assert.match(recoveredAgain, /static capability/u);
   assert.match(recoveredAgain, /Use Bash/u);
   assert.match(recoveredAgain, /second overflow summary/u);
-  assert.doesNotMatch(recoveredAgain, /old dynamic capability|first overflow summary/u);
+  assert.doesNotMatch(recoveredAgain, /first overflow summary/u);
 }
 
 function testPlanModePolicy(): void {
@@ -241,8 +242,8 @@ function testPlanModePolicy(): void {
   );
 
   const readPrompt = buildSystemPrompt({ mode: "plan", permissionMode: "ask", cwd: "/workspace" });
-  assert.match(readPrompt, /Plan mode is a collaboration workflow, not a permission mode/u);
-  assert.match(readPrompt, /only exposes read and inspection tools/u);
+  assert.match(readPrompt, /Plan is a collaboration workflow, not a permission mode/u);
+  assert.match(readPrompt, /exposes only read and inspection tools/u);
   assert.doesNotMatch(readPrompt, /Full access is active/u);
 
   const fullAccessPrompt = buildSystemPrompt({ mode: "plan", permissionMode: "full-access", cwd: "/workspace" });
@@ -252,11 +253,11 @@ function testPlanModePolicy(): void {
 }
 
 async function testPromptEpochAndCanonicalPrefix(): Promise<void> {
-  const toolA = { name: "alpha", description: "Alpha", parameters: { type: "object" as const } };
-  const toolB = { name: "beta", description: "Beta", parameters: { type: "object" as const } };
+  const toolA = { name: "alpha", description: "Alpha", parameters: { type: "object" as const }, execute: async () => ({ content: [] }) };
+  const toolB = { name: "beta", description: "Beta", parameters: { type: "object" as const }, execute: async () => ({ content: [] }) };
   const first = buildSystemPrompt({ mode: "qa", cwd: "/workspace", extensionPrompt: "project-a", tools: [toolB, toolA] });
   const second = buildSystemPrompt({ mode: "qa", cwd: "/workspace", extensionPrompt: "project-b", tools: [toolA, toolB] });
-  assert.equal(stableSystemPromptForCache(first), stableSystemPromptForCache(second));
+  assert.notEqual(stableSystemPromptForCache(first), stableSystemPromptForCache(second));
 
   await withTempWorkspace(async (workspaceRoot) => {
     const provider = new ContextTestModel();
@@ -927,8 +928,9 @@ async function testCheckpointIsResumeTruthSource(): Promise<void> {
     await resumedAgent.resume("checkpoint-resume");
     await resumedAgent.runTask("continue only from the durable checkpoint");
     const resumedMessages = resumedProvider.requests.at(-1) ?? [];
+    const durableResumedMessages = stripTransientTurnContext(resumedMessages);
     assert.equal(
-      resumedMessages.some((message) => messageText(message).includes("old checkpoint payload")),
+      durableResumedMessages.some((message) => messageText(message).includes("old checkpoint payload")),
       false,
       "resume must not reintroduce pre-checkpoint messages"
     );
@@ -2218,6 +2220,12 @@ async function testCrystalHistoricalMaterial(): Promise<void> {
       provider: "test",
       modelId: "material-test",
       stream: async (context) => (async function* (): AsyncGenerator<ModelStreamEvent> {
+        // 后台称呼抽取与主聊天并发，不能覆盖这里观察的聊天/材料请求。
+        if (context.systemPrompt?.startsWith("你是一个称呼抽取器。")) {
+          yield { type: "text-delta", text: "[]" };
+          yield { type: "finish", reason: "stop" };
+          return;
+        }
         materialPrompt = context.messages.map(messageText).join("\n");
         systemPrompts.push(context.systemPrompt ?? "");
         yield { type: "text-delta", text: JSON.stringify({ definition: { value: "Historical definition", sources: ["turn:historical-anchor"] } }) };
@@ -2250,12 +2258,14 @@ async function testCrystalHistoricalMaterial(): Promise<void> {
       crystals.confirm(seed.id);
       systemPrompts.length = 0;
       await agent.runTask(`Use @[Historical reference](biny://crystal/${seed.id}) to explain the project.`);
-      assert.ok(systemPrompts.some((prompt) => prompt.includes("Historical definition") && prompt.includes("## Crystal references")));
-      assert.ok(systemPrompts.some((prompt) => prompt.includes("只有用户可以批准正式化")));
+      assert.match(materialPrompt, /Historical definition/u);
+      assert.match(materialPrompt, /## Crystal references/u);
+      assert.match(materialPrompt, /只有用户可以批准正式化/u);
       systemPrompts.length = 0;
       await agent.runTask("Now explain a completely unrelated topic.");
       assert.ok(systemPrompts.length > 0);
-      assert.ok(systemPrompts.some((prompt) => prompt.includes("Referenced earlier in this thread (resolve if relevant):") && prompt.includes(`biny://crystal/${seed.id}`)));
+      assert.match(materialPrompt, /Referenced earlier in this thread \(resolve if relevant\):/u);
+      assert.match(materialPrompt, new RegExp(`biny://crystal/${seed.id}`, "u"));
       assert.ok(systemPrompts.every((prompt) => !(prompt.match(/<!-- biny-crystal:start -->([\s\S]*?)<!-- biny-crystal:end -->/u)?.[1] ?? "").includes("Historical definition")));
       await currentRecorder.flush();
       const retryTarget = (await readSessionEvents(currentRecorder.filePath)).filter((event) => event.type === "agent_message" && event.message.role === "assistant").at(-1);
@@ -2265,14 +2275,14 @@ async function testCrystalHistoricalMaterial(): Promise<void> {
       for await (const event of agent.retry(retryTarget.messageId)) {
         if (event.type === "error") assert.fail(event.message);
       }
-      assert.ok(systemPrompts.some((prompt) => (prompt.match(/<!-- biny-crystal:start -->([\s\S]*?)<!-- biny-crystal:end -->/u)?.[1] ?? "").includes(`biny://crystal/${seed.id}`)));
-      assert.ok(systemPrompts.every((prompt) => !(prompt.match(/<!-- biny-crystal:start -->([\s\S]*?)<!-- biny-crystal:end -->/u)?.[1] ?? "").includes(`biny://crystal/${wrong.id}`)));
+      assert.match(materialPrompt, new RegExp(`biny://crystal/${seed.id}`, "u"));
+      assert.doesNotMatch(materialPrompt, new RegExp(`biny://crystal/${wrong.id}`, "u"));
       await agent.compactConversation("Keep only a short summary without object references.");
       systemPrompts.length = 0;
       await agent.runTask("Continue after compacting the conversation.");
-      assert.ok(systemPrompts.some((prompt) => (prompt.match(/<!-- biny-crystal:start -->([\s\S]*?)<!-- biny-crystal:end -->/u)?.[1] ?? "").includes(`biny://crystal/${seed.id}`)));
+      assert.match(materialPrompt, new RegExp(`biny://crystal/${seed.id}`, "u"));
       assert.ok(systemPrompts.every((prompt) => !prompt.includes("Checklist:")));
-      assert.equal(materialPrompt.includes(`biny://crystal/${seed.id}`), false, "压缩后的模型消息已不含原始引用，但持久化历史仍应提供卡片");
+      assert.equal(materialPrompt.includes(`biny://crystal/${seed.id}`), true, "当前回合仍可通过动态 Crystal context 看到已确认卡片");
       const entered = deferred<void>();
       const released = deferred<void>();
       crystals.extract = async () => {

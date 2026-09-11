@@ -6,7 +6,6 @@
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { readDailyMemoryNote, readDailyMemorySection } from "../../activity/dailyNotes.js";
 import { globalConfigDir } from "../../config/paths.js";
 
 export interface HeartbeatSchedule {
@@ -86,7 +85,6 @@ export class HeartbeatScheduler {
   private lastHeartbeatAt?: string;
   private lastError?: string;
   private lastBaseEmotionRefresh = 0;
-  private reflectionHintSentThisSession = false;
 
   constructor(options: HeartbeatSchedulerOptions) {
     this.schedule = defaultHeartbeatSchedule;
@@ -99,7 +97,6 @@ export class HeartbeatScheduler {
   start(): void {
     if (this.timer) return;
     this.abort = new AbortController();
-    this.reflectionHintSentThisSession = false;
     void this.fileStore.ensure().catch((error) => { this.lastError = errorMessage(error); });
     this.timer = this.timers.setInterval(() => { void this.tick(); }, this.schedule.intervalMinutes * 60_000);
     this.timer.unref?.();
@@ -110,7 +107,6 @@ export class HeartbeatScheduler {
     this.timer = undefined;
     this.abort.abort();
     this.inFlight = false;
-    this.reflectionHintSentThisSession = false;
   }
 
   async triggerNow(): Promise<boolean> {
@@ -135,13 +131,11 @@ export class HeartbeatScheduler {
       const content = await this.fileStore.read();
       const now = this.now();
       const promptParts = [
-        content ? `HEARTBEAT.md content:\n${content}` : undefined,
-        "If nothing needs the user's personal attention, reply HEARTBEAT_OK."
+        content ? `HEARTBEAT.md (the user's checklist):\n${content}` : undefined,
+        "This is a quiet background check. If nothing needs the user's personal attention, reply HEARTBEAT_OK."
       ].filter((value): value is string => Boolean(value));
       const emotionPrompt = this.baseEmotionPrompt(this.schedule, now);
       if (emotionPrompt) promptParts.splice(Math.max(0, promptParts.length - 1), 0, emotionPrompt);
-      const diaryPrompt = await this.diaryPrompt(this.schedule, now);
-      if (diaryPrompt) promptParts.splice(Math.max(0, promptParts.length - 1), 0, diaryPrompt);
       const prompt = promptParts.join("\n\n");
       await this.run(prompt, this.abort.signal);
       this.lastHeartbeatAt = this.now().toISOString();
@@ -160,50 +154,11 @@ export class HeartbeatScheduler {
     this.lastBaseEmotionRefresh = now.getTime();
     return [
       "---",
-      "BASE EMOTION REFRESH: Check the current base emotion. If a persistent change is warranted, reflect on the recent activity and use update_emotion with scope=base, a mood, valence, energy, and a concise trigger."
+      "BASE EMOTION REFRESH: Check whether recent activity justifies a persistent change. If it does, reflect briefly and use update_emotion with scope=base, mood, valence, energy, and a concise trigger. Never claim an update without the tool result."
     ].join("\n");
   }
 
-  private async diaryPrompt(schedule: HeartbeatSchedule, now: Date): Promise<string | undefined> {
-    if (this.reflectionHintSentThisSession) return undefined;
-    const hour = localHour(now);
-    if (hour >= 10) {
-      const missed = await this.missedDiaryDates(now, 3);
-      if (missed.length) {
-        this.reflectionHintSentThisSession = true;
-        return [
-          "---",
-          `MISSED DIARY CATCH-UP: Write a brief self-reflection for each missed date: ${missed.join(", ")}. Prioritize the most recent date and keep older entries shorter.`
-        ].join("\n");
-      }
-    }
-    if (hour !== 23 || await this.didReflect(formatLocalDate(now))) return undefined;
-    this.reflectionHintSentThisSession = true;
-    return [
-      "---",
-      `DAILY DIARY TIME: Write today's (${formatLocalDate(now)}) diary from the available chat and activity notes, including a brief self-reflection.`
-    ].join("\n");
-  }
 
-  private async missedDiaryDates(now: Date, days: number): Promise<string[]> {
-    const missed: string[] = [];
-    for (let offset = 1; offset <= days; offset += 1) {
-      const date = new Date(now.getTime());
-      date.setDate(date.getDate() - offset);
-      const dateKey = formatLocalDate(date);
-      if (!await this.didReflect(dateKey)) missed.push(dateKey);
-    }
-    return missed;
-  }
-
-  private async didReflect(dateKey: string): Promise<boolean> {
-    try {
-      const note = await readDailyMemoryNote(dateKey, { configDir: path.dirname(this.fileStore.path) });
-      return readDailyMemorySection(note ?? "", "自我反思") !== undefined;
-    } catch {
-      return false;
-    }
-  }
 }
 
 export function isActiveHour(schedule: HeartbeatSchedule, date: Date): boolean {
@@ -217,9 +172,6 @@ function localHour(date: Date): number {
   return date.getHours();
 }
 
-function formatLocalDate(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
-}
 
 function defaultHeartbeatDocument(): string {
   return [

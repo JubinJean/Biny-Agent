@@ -147,6 +147,28 @@ async function testArchivedSearchFlagPropagates(): Promise<void> {
   });
 }
 
+async function testUnavailableIndexSkipsModels(): Promise<void> {
+  await withWorkspace(async (workspaceRoot) => {
+    const store = new FakeMemoryStore([memoryEntry("user", { kind: "user" })]);
+    for (const index of [undefined, new FakeVectorIndex("model", [])]) {
+      let runtimeCalls = 0;
+      let rewriteCalls = 0;
+      const retriever = new HybridMemoryRetriever({
+        workspaceRoot,
+        localMemory: store,
+        getReadOnlyVectorIndex: () => index,
+        getEmbeddingRuntime: async () => { runtimeCalls += 1; return undefined; },
+        rewriteQuery: async () => { rewriteCalls += 1; return "rewritten"; },
+        getThresholds: (_fingerprint, recommended) => recommended
+      });
+      assert.equal((await retriever.retrieve("workflow", [], { limit: 1, automatic: true })).matches.length, 0);
+      assert.equal((await retriever.retrieve("workflow", [], { limit: 1, automatic: false })).matches.length, 1);
+      assert.equal(runtimeCalls, 0, "缺失或空索引不能初始化 embedding runtime");
+      assert.equal(rewriteCalls, 0, "缺失或空索引不能请求模型改写");
+    }
+  });
+}
+
 async function testFingerprintThresholdAndCrossWorkspaceGate(): Promise<void> {
   await withWorkspace(async (workspaceRoot) => {
     const current = memoryEntry("current", { kind: "workspace", workspaceId: workspaceId(workspaceRoot), workspaceName: "current" });
@@ -309,6 +331,7 @@ testWholeEntryBudget();
 await testLexicalFallbackAndRewrite();
 await testRewriteFailureUsesOriginalQuery();
 await testArchivedSearchFlagPropagates();
+await testUnavailableIndexSkipsModels();
 await testFingerprintThresholdAndCrossWorkspaceGate();
 
 console.log("hybrid memory retriever tests passed");
