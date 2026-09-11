@@ -780,6 +780,8 @@ async function testDesktopMessageEditFork(): Promise<void> {
     const source = new SessionRecorder(dataRoot, "source-session");
     const first = source.record({ type: "user_message", content: "第一条" });
     source.record({ type: "assistant_message", content: "第一条回复" });
+    source.record({ type: "user_message", content: "审计输入", auditOnly: true });
+    source.record({ type: "assistant_message", content: "审计输出", auditOnly: true });
     source.record({ type: "user_message", content: "旧的第二条" });
     source.record({ type: "assistant_message", content: "旧的第二条回复" });
     await source.close();
@@ -796,8 +798,10 @@ async function testDesktopMessageEditFork(): Promise<void> {
 
     const forkedSessionId = await projects.forkSessionAtUserMessage(project, "source-session", 1);
     const forked = await readStoredSessionEvents(dataRoot, forkedSessionId);
-    assert.deepEqual(forked.events.map((event) => event.type), ["user_message", "assistant_message"]);
-    assert.equal(forked.events[0]?.type === "user_message" ? forked.events[0].content : undefined, "第一条");
+    assert.deepEqual(forked.events.filter((event) => event.type === "user_message" && !event.auditOnly).map((event) => event.content), ["第一条"]);
+    assert.equal(forked.events.some((event) => event.type === "user_message" && event.content === "旧的第二条"), false);
+    assert.equal(forked.events.some((event) => event.type === "user_message" && event.auditOnly), true);
+    assert.equal(forked.events.find((event) => event.type === "user_message" && !event.auditOnly)?.runtime?.eventId === first.runtime?.eventId, false);
     assert.notEqual(forked.events[0]?.runtime?.eventId, first.runtime?.eventId);
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
@@ -1625,6 +1629,28 @@ async function testDesktopSetDefaultModelImmediate(): Promise<void> {
       agents.setDefaultModelImmediate(project.id, "no-such-model", "off", nextRevision),
       /未知模型/u
     );
+
+    const settings = new DesktopSettingsTransaction(state, agents);
+    const selected = await commitDesktopSettings(settings, project.id, {
+      models: { upserts: [], removeAliases: [], toolModel: { alias: "test-model" } }
+    });
+    assert.equal(selected.models.toolModel, "test-model");
+    assert.equal(selected.models.resolvedToolModel, "test-model");
+    assert.equal((await configStore.load(workspaceRoot)).toolModel, "test-model");
+    assert.equal(selected.models.defaultModel, "alt-model", "工具模型与聊天模型独立保存");
+    const automatic = await commitDesktopSettings(settings, project.id, {
+      models: { upserts: [], removeAliases: [], toolModel: {} }
+    });
+    assert.equal(automatic.models.toolModel, undefined, "空选择明确恢复自动模式");
+    assert.ok(automatic.models.resolvedToolModel);
+    await commitDesktopSettings(settings, project.id, {
+      models: { upserts: [], removeAliases: [], toolModel: { alias: "test-model" } }
+    });
+    const removed = await commitDesktopSettings(settings, project.id, {
+      models: { upserts: [], removeAliases: ["test-model"] }
+    });
+    assert.equal(removed.models.toolModel, undefined, "删除工具模型时移除悬空引用");
+    assert.equal(removed.models.resolvedToolModel, "alt-model");
   } finally {
     await agents?.closeAll();
     await rm(workspaceRoot, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
@@ -3678,26 +3704,11 @@ function testDesktopUsagePresentation(): void {
   assert.equal(formatUsageCost(mixedSummary), "未知");
   assert.equal(formatTurnCost(unpricedUsage), "费用未知");
 
-  assert.deepEqual(formatContextUsage({
-    usedTokens: 5_561,
-    contextWindow: 1_000_000,
-    inputBudgetTokens: 950_000,
-    reservedTokens: 50_000,
-    toolTokens: 1_024,
-    otherTokens: 48_976
-  }), {
-    percent: 1,
-    used: "5,561",
-    // 主展示分母不含预留：显示可用输入额度 950,000，原始窗口只在 tooltip 解释字段里。
-    max: "950,000",
-    window: "1,000,000",
-    contextWindowIsFallback: undefined,
-    actual: "5,561",
-    available: "944,439",
-    reserved: "50,000",
-    tool: "1,024",
-    other: "48,976"
-  });
+  const context = formatContextUsage({ usedTokens: 109_000, contextWindow: 1_000_000, source: "provider" });
+  assert.equal(context?.percent, 10.9);
+  assert.equal(context?.max, "1,000,000");
+  assert.equal(context?.compactUsed, "10.9万");
+  assert.equal(context?.estimated, false);
 
   const replayedTurnUsage: SessionUsage = {
     ...unpricedUsage,

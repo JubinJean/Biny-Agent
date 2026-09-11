@@ -8,6 +8,7 @@
  * 通道名统一用 `desktop:<领域>:<动作>` 的形式，便于排查。
  */
 import type { InteractiveAgentRunMode } from "../agent/AgentSession.js";
+import type { DesktopCrystalRequest, DesktopCrystalSnapshot } from "./crystalProtocol.js";
 import type { AgentCapabilitySelection, CapabilitySelectionMode } from "../agent/capabilitySelection.js";
 import type { ActivitySettings, ActivitySettingsInput, ActivitySettingsPatch } from "../activity/settings.js";
 import type { ActivityRuntimeSnapshot } from "../activity/types.js";
@@ -64,6 +65,8 @@ export type DesktopActivitySessionDetail = Omit<ActivitySessionDetail, "events">
 };
 
 export const desktopIpc = {
+  activitySuggestions: "desktop:activity:suggestions",
+  crystalRequest: "desktop:crystal:request",
   bootstrap: "desktop:bootstrap",
   openProject: "desktop:project:open",
   createEmptyProject: "desktop:project:create-empty",
@@ -105,6 +108,8 @@ export const desktopIpc = {
   switchModel: "desktop:model:switch",
   setDefaultModel: "desktop:model:set-default",
   testModelConfiguration: "desktop:model:test-configuration",
+  readModelApiKey: "desktop:model:read-api-key",
+  readWebSearchApiKey: "desktop:web-search:read-api-key",
   fetchModelCatalog: "desktop:model:fetch-catalog",
   fetchModelCatalogCandidate: "desktop:model:fetch-catalog-candidate",
   startModelLogin: "desktop:model:login:start",
@@ -195,6 +200,8 @@ export const desktopIpc = {
   terminalEvent: "desktop:terminal:event",
   event: "desktop:agent:event",
   menuAction: "desktop:menu:action",
+  recipeSuggestions: "desktop:recipe:suggestions",
+  recipeState: "desktop:recipe:state",
   skillCatalog: "desktop:skill:catalog",
   skillExpand: "desktop:skill:expand",
   skillSourceImport: "desktop:skill:source-import",
@@ -206,14 +213,13 @@ export const desktopIpc = {
   skillRepositoryAdd: "desktop:skill:repository-add",
   skillRepositoryRemove: "desktop:skill:repository-remove",
   skillFileRead: "desktop:skill:file-read",
+  skillCheck: "desktop:skill:check",
+  skillVersion: "desktop:skill:version",
+  skillVersionUpdate: "desktop:skill:version-update",
+  skillVersionRollback: "desktop:skill:version-rollback",
   skillFileWrite: "desktop:skill:file-write",
   skillOpenDirectory: "desktop:skill:open-directory",
   skillSettings: "desktop:skill:settings",
-  skillDrafts: "desktop:skill:drafts",
-  skillDraftApprove: "desktop:skill:draft-approve",
-  skillDraftReject: "desktop:skill:draft-reject",
-  skillDraftRetry: "desktop:skill:draft-retry",
-  skillDraftEdit: "desktop:skill:draft-edit",
   pluginRegistry: "desktop:plugin:registry",
   pluginRegistryRefresh: "desktop:plugin:registry-refresh",
   pluginInstall: "desktop:plugin:install",
@@ -228,7 +234,11 @@ export const desktopIpc = {
   mcpDeleteServer: "desktop:mcp:server-delete",
   mcpTestServer: "desktop:mcp:server-test",
   mcpReconnect: "desktop:mcp:server-reconnect",
-  mcpDetails: "desktop:mcp:server-details"
+  mcpDetails: "desktop:mcp:server-details",
+  mcpLoginStart: "desktop:mcp:login-start",
+  mcpLoginFinish: "desktop:mcp:login-finish",
+  mcpLoginCancel: "desktop:mcp:login-cancel",
+  mcpLogout: "desktop:mcp:logout"
 } as const;
 
 export type DesktopThemePreference = "system" | "light" | "dark";
@@ -633,33 +643,29 @@ export interface DesktopSkillActivation {
   source: DesktopSkillActivationSource;
 }
 
-export interface DesktopSkillExtractionSettings {
-  enabled: boolean;
-  minToolCalls: number;
-}
-
 export interface DesktopSkillSettings {
   projectId: string;
   projectKey: string;
   globalDefaults: Record<string, boolean>;
   projectOverrides: Record<string, boolean>;
-  extraction: DesktopSkillExtractionSettings;
   activations: DesktopSkillActivation[];
 }
 
-export type DesktopSkillDraftStatus = "pending" | "approved" | "rejected" | "failed";
+export type DesktopRecipeId = "repeatable-doc-task" | "mcp-pipeline" | "thread-to-workflow";
+export type DesktopRecipeState = "dismissed" | "extracted";
 
-export interface DesktopSkillDraft {
-  id: string;
-  name: string;
+export interface DesktopRecipeSlot {
+  key: string;
+  label: string;
+  filled: boolean;
+}
+
+export interface DesktopRecipeSuggestion {
+  id: DesktopRecipeId;
+  title: string;
   description: string;
-  content: string;
-  status: DesktopSkillDraftStatus;
-  toolCalls: number;
-  createdAt: string;
-  updatedAt: string;
-  error?: string;
-  installedPath?: string;
+  slots: DesktopRecipeSlot[];
+  extractPrompt: string;
 }
 
 export interface DesktopPluginSummary {
@@ -717,7 +723,7 @@ export interface DesktopSkillCatalogSnapshot {
 
 export type DesktopMcpTransport = "stdio" | "remote";
 export type DesktopMcpRemoteProtocol = "streamable-http" | "sse";
-export type DesktopMcpServerState = "connected" | "disconnected" | "not-started" | "disabled";
+export type DesktopMcpServerState = "connected" | "connecting" | "disconnected" | "not-started" | "disabled";
 
 export interface DesktopMcpServerSummary {
   name: string;
@@ -738,6 +744,8 @@ export interface DesktopMcpServerSummary {
   environmentKeys: string[];
   headerNames: string[];
   lastError?: string;
+  oauth?: { clientId?: string; scopes?: string[]; redirectPort?: number };
+  authRequired?: boolean;
 }
 
 export interface DesktopMcpResourceSummary {
@@ -774,6 +782,7 @@ export interface DesktopMcpServerDraft {
   timeoutMs?: number;
   env: DesktopMcpFieldMutation[];
   headers: DesktopMcpFieldMutation[];
+  oauth?: { clientId?: string; scopes?: string[]; redirectPort?: number };
 }
 
 export interface DesktopMcpCatalogParameter {
@@ -855,6 +864,8 @@ export interface DesktopModelConfigurationInput {
   /** 主进程暂存的 API Key 句柄；与 apiKey 二选一，句柄正文不会进入 IPC 返回值或 journal。 */
   apiKeyHandle?: string;
   apiKeyEnv?: string;
+  /** 模型级自定义 Header；undefined 保留既有值。请求时与服务商级 Header 合并，同名以此处为准。 */
+  headers?: Record<string, string>;
   requiresApiKey?: boolean;
   /** 模型目录的鉴权要求独立于聊天请求。 */
   modelsRequiresApiKey?: boolean;
@@ -869,7 +880,10 @@ export interface DesktopModelConfigurationInput {
   maxInputTokens?: number;
   maxOutputTokens?: number;
   limits?: ModelLimits;
+  /** 当前模型的请求格式覆盖；连接默认格式使用 providerApiBackend。 */
   apiBackend?: ModelApiBackend;
+  /** 连接级默认格式；不填写时仅更新当前模型的格式覆盖。 */
+  providerApiBackend?: ModelApiBackend;
   thinkingLevelMap?: ThinkingLevelMap;
   /** 按 provider + 原始 model ID 保存的独立元数据覆盖，不写入 alias 元数据。 */
   modelProfile?: ModelProfile;
@@ -886,7 +900,7 @@ export interface DesktopModelConfigurationInput {
  * Credential and endpoint state for one configured provider alias. The renderer
  * needs this to prefill the real saved base URL, to tell "key set" from "key
  * missing", and to decide whether a connection is OAuth-backed (and expired).
- * Secrets themselves are never sent across the bridge — only their presence.
+ * This snapshot only carries credential presence; the settings page reads an API key separately on demand.
  */
 export interface DesktopModelConnection {
   providerAlias: string;
@@ -931,8 +945,8 @@ export interface DesktopModelConnectionTestResult {
 export type DesktopWebSearchProvider = WebSearchConfig["provider"];
 
 /**
- * 联网搜索设置的渲染端视图。密钥本身不过桥：`hasApiKey` 只表示 config 中
- * 是否已保存密钥，`envKeyDetected` 表示生效的环境变量当前是否可用。
+ * 联网搜索设置的普通渲染端视图。这里仍只返回密钥状态；设置页按需读取 API Key，避免
+ * 普通设置快照携带明文凭据。
  */
 export interface DesktopWebSearchSettings {
   enabled: boolean;
@@ -1202,6 +1216,8 @@ export interface DesktopSettingsModelsSnapshot {
   /** 脱敏的独立 embedding 目录；不含 provider headers 或凭据。 */
   embeddingModels: DesktopEmbeddingModelDescriptor[];
   defaultModel: string;
+  toolModel?: string;
+  resolvedToolModel?: string;
   thinking: ThinkingSelection;
   /** provider alias -> 原始模型 ID -> 用户声明的元数据覆盖。 */
   modelProfiles: Record<string, Record<string, ModelProfile>>;
@@ -1260,6 +1276,8 @@ export interface DesktopSettingsSnapshot {
 export interface DesktopSettingsModelsInput {
   upserts: DesktopModelConfigurationInput[];
   removeAliases: string[];
+  /** 省略表示不修改，空对象表示恢复自动选择。 */
+  toolModel?: { alias?: string };
   defaultModel?: {
     alias: string;
     thinking: ThinkingSelection;
@@ -1297,7 +1315,6 @@ export interface DesktopSettingsSaveInput {
 export interface DesktopSkillSettingsInput {
   globalDefaults: Record<string, boolean>;
   projectOverrides: Record<string, boolean>;
-  extraction: DesktopSkillExtractionSettings;
 }
 
 export type DesktopSettingsSegment = "preferences" | "config" | "chat_metadata";
@@ -1451,6 +1468,8 @@ export type DesktopTerminalEvent =
  * 不需要自己推算改动结果。`on*` 系列返回取消订阅函数。
  */
 export interface DesktopApi {
+  activitySuggestions(): Promise<string[]>;
+  crystalRequest(request: DesktopCrystalRequest): Promise<DesktopCrystalSnapshot>;
   bootstrap(): Promise<DesktopBootstrap>;
   openProject(): Promise<DesktopWorkspaceSnapshot | undefined>;
   createEmptyProject(): Promise<DesktopWorkspaceSnapshot | undefined>;
@@ -1504,6 +1523,8 @@ export interface DesktopApi {
   setPermissionMode(projectId: string, mode: PermissionMode): Promise<DesktopWorkspaceSnapshot>;
   switchModel(projectId: string, alias: string, thinking: ThinkingSelection): Promise<ModelRuntimeInfo>;
   testModelConfiguration(projectId: string, configuration: DesktopModelConfigurationInput): Promise<DesktopModelConnectionTestResult>;
+  readModelApiKey(projectId: string, providerAlias: string): Promise<string | undefined>;
+  readWebSearchApiKey(projectId: string, provider: DesktopWebSearchProvider): Promise<string | undefined>;
   fetchModelCatalog(projectId: string, providerAlias: string, force?: boolean): Promise<DesktopModelCatalogResult>;
   /**
    * 用尚未保存的候选配置（临时密钥 + 目录地址）直接向服务商拉取模型目录，
@@ -1609,22 +1630,23 @@ export interface DesktopApi {
   writeTerminal(terminalId: string, data: string): void;
   resizeTerminal(terminalId: string, cols: number, rows: number): void;
   disposeTerminal(terminalId: string): Promise<void>;
+  recipeSuggestions(projectId: string, sessionId: string): Promise<DesktopRecipeSuggestion[]>;
+  setRecipeState(projectId: string, sessionId: string, recipeId: DesktopRecipeId, state: DesktopRecipeState): Promise<void>;
   skillCatalog(projectId?: string): Promise<DesktopSkillCatalogSnapshot>;
   skillSettings(projectId: string): Promise<DesktopSkillSettings>;
-  skillDrafts(projectId: string): Promise<DesktopSkillDraft[]>;
-  approveSkillDraft(projectId: string, draftId: string): Promise<DesktopSkillDraft>;
-  rejectSkillDraft(projectId: string, draftId: string): Promise<DesktopSkillDraft>;
-  retrySkillDraft(projectId: string, draftId: string): Promise<DesktopSkillDraft>;
-  editSkillDraft(projectId: string, draftId: string, content: string): Promise<DesktopSkillDraft>;
   importSkillSource(): Promise<DesktopManagedSkillSource | undefined>;
   installSkillSource(sourceId: string): Promise<void>;
   importExistingSkills(skillIds: string[]): Promise<DesktopSkillImportResult[]>;
   skillDiscovery(): Promise<DesktopSkillDiscoverySnapshot>;
   searchSkills(query: string, limit?: number, offset?: number): Promise<DesktopSkillsShSearchResult>;
-  installDiscoveredSkill(skill: DesktopDiscoverableSkill): Promise<void>;
+  installDiscoveredSkill(skill: DesktopDiscoverableSkill): Promise<import("../extensions/skillDiscovery.js").SkillInstallResult>;
+  skillVersion(skillId: string): Promise<import("../extensions/skillVersions.js").ManagedSkillVersion | undefined>;
+  updateSkillVersion(skillId: string, expectedVersion: string): Promise<import("../extensions/skillDiscovery.js").SkillInstallResult>;
+  rollbackSkillVersion(skillId: string, expectedVersion: string): Promise<import("../extensions/skillVersions.js").ManagedSkillVersion>;
   addSkillRepository(repository: DesktopSkillRepository): Promise<DesktopSkillRepository[]>;
   removeSkillRepository(owner: string, name: string): Promise<DesktopSkillRepository[]>;
   readSkillFile(skillId: string, relativePath: string): Promise<DesktopSkillFilePreview>;
+  checkSkill(skillId: string): Promise<import("../extensions/skillDiagnostics.js").SkillDiagnosticReport>;
   writeSkillFile(skillId: string, relativePath: string, content: string): Promise<void>;
   openSkillDirectory(skillId: string): Promise<void>;
   pluginRegistry(projectId: string): Promise<DesktopPluginRegistrySnapshot>;
@@ -1647,6 +1669,10 @@ export interface DesktopApi {
   mcpTestServer(projectId: string | undefined, draft: DesktopMcpServerDraft): Promise<DesktopMcpTestResult>;
   mcpReconnect(projectId: string, name: string): Promise<DesktopMcpServerSummary>;
   mcpDetails(projectId: string, name: string): Promise<DesktopMcpServerDetails>;
+  mcpLoginStart(projectId: string | undefined, name: string): Promise<import("../extensions/mcpOAuth.js").McpOAuthLogin>;
+  mcpLoginFinish(projectId: string | undefined, name: string, id: string): Promise<DesktopMcpSnapshot>;
+  mcpLoginCancel(id: string): Promise<void>;
+  mcpLogout(projectId: string | undefined, name: string): Promise<DesktopMcpSnapshot>;
   onTerminalEvent(listener: (event: DesktopTerminalEvent) => void): () => void;
   onAgentEvent(listener: (envelope: DesktopAgentEventEnvelope) => void): () => void;
   onSessionHandoff(listener: (target: DesktopSessionHandoff) => void): () => void;

@@ -133,7 +133,6 @@ class FakeSettingsAgents implements DesktopSettingsTransactionAgents {
         ...after.extensions.skillProjectOverrides,
         "fake-project": structuredClone(input.skills.projectOverrides)
       };
-      after.extensions.skillExtraction = structuredClone(input.skills.extraction);
     }
     if (input.models?.modelProfiles !== undefined) {
       for (const [providerAlias, profiles] of Object.entries(input.models.modelProfiles)) {
@@ -423,15 +422,13 @@ async function testSkillSettingsOnlySaveCommits(): Promise<void> {
       expectedConfigRevision: initial.configRevision,
       skills: {
         globalDefaults: { "demo-skill": false },
-        projectOverrides: { "demo-skill": true },
-        extraction: { enabled: false, minToolCalls: 7 }
+        projectOverrides: { "demo-skill": true }
       }
     });
     assert.equal(result.status, "committed", JSON.stringify(result));
     assert.deepEqual(result.appliedFields, ["skills"]);
     assert.deepEqual(agents.config.extensions.skillDefaults, { "demo-skill": false });
     assert.deepEqual(agents.config.extensions.skillProjectOverrides["fake-project"], { "demo-skill": true });
-    assert.deepEqual(agents.config.extensions.skillExtraction, { enabled: false, minToolCalls: 7 });
   });
 }
 

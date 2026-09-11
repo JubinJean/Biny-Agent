@@ -47,6 +47,7 @@ export const modelConfigurationSchema = z.object({
   maxOutputTokens: z.number().int().min(1).max(384_000).optional(),
   limits: modelLimitsSchema.optional(),
   apiBackend: modelApiBackendSchema.optional(),
+  providerApiBackend: modelApiBackendSchema.optional(),
   thinkingLevelMap: z.record(z.string().min(1), z.string().min(1).nullable()).optional(),
   modelProfile: modelProfileSchema.optional(),
   compatibility: modelCompatibilitySchema.optional(),
@@ -101,17 +102,14 @@ export const settingsSaveInputSchema = z.object({
   models: z.object({
     upserts: z.array(modelConfigurationSchema).max(200),
     removeAliases: z.array(idSchema).max(200),
+    toolModel: z.object({ alias: idSchema.optional() }).strict().optional(),
     defaultModel: z.object({ alias: idSchema, thinking: thinkingSchema }).strict().optional(),
     oauthCredentialHandles: z.array(z.string().uuid()).max(20).optional(),
     modelProfiles: z.record(idSchema, z.record(z.string().trim().min(1).max(240), modelProfileSchema)).optional()
   }).strict().optional(),
   skills: z.object({
     globalDefaults: z.record(z.boolean()).refine((value) => Object.keys(value).length <= 512, "技能全局开关不能超过 512 项。"),
-    projectOverrides: z.record(z.boolean()).refine((value) => Object.keys(value).length <= 512, "技能项目开关不能超过 512 项。"),
-    extraction: z.object({
-      enabled: z.boolean(),
-      minToolCalls: z.number().int().min(1).max(64)
-    }).strict()
+    projectOverrides: z.record(z.boolean()).refine((value) => Object.keys(value).length <= 512, "技能项目开关不能超过 512 项。")
   }).strict().optional(),
   chat: z.object({
     sessionId: idSchema,

@@ -17,12 +17,14 @@ import { DesktopConfigStore } from "./DesktopConfigStore.js";
 import { DesktopMcpService } from "./DesktopMcpService.js";
 import { DesktopProjectService } from "./DesktopProjectService.js";
 import { DesktopSkillService } from "./DesktopSkillService.js";
+import { DesktopCrystalService } from "./DesktopCrystalService.js";
 import { DesktopStateStore } from "./DesktopStateStore.js";
 import { DesktopSettingsCloseCoordinator } from "./DesktopSettingsCloseCoordinator.js";
 import { DesktopSettingsTransaction } from "./DesktopSettingsTransaction.js";
 import { DesktopTerminalManager } from "./DesktopTerminalManager.js";
 import { DesktopUserDataStore } from "./DesktopUserDataStore.js";
-import { globalConfigDir } from "../../../config/paths.js";
+import { globalAgentDir, globalConfigDir } from "../../../config/paths.js";
+import { LocalEmbeddingManager } from "../../../llm/embedding/LocalEmbeddingRuntime.js";
 import { createActivityMemoryPipeline } from "../../../activity/memoryPipeline.js";
 import { registerDesktopIpc } from "./ipc.js";
 import { installApplicationMenu } from "./menu.js";
@@ -69,6 +71,9 @@ async function startDesktopApplication(): Promise<void> {
   // （safeStorage 加密落自管文件），不走 `security` CLI，避免保存时授权卡死。
   const configStore = new DesktopConfigStore(globalConfigDir());
   const projects = new DesktopProjectService(state, storage, configStore);
+  const crystals = new DesktopCrystalService(configStore, async () => await Promise.all(
+    state.projects().map(async (project) => await projects.dataRoot(project))
+  ));
   const skills = new DesktopSkillService(state, configStore, net.fetch.bind(net) as unknown as typeof globalThis.fetch);
   let mainWindow: BrowserWindow | undefined;
   let preparingQuit = false;
@@ -135,6 +140,8 @@ async function startDesktopApplication(): Promise<void> {
     net.fetch.bind(net) as unknown as typeof globalThis.fetch
   );
   const globalDataRoot = await projects.globalDataRoot();
+  // Activity 自己持有本地嵌入运行时；只加载已下载模型，聊天窗口是否驻留不影响后台索引。
+  const activityEmbeddingModels = new LocalEmbeddingManager(path.join(globalAgentDir(), "models", "embeddings"));
   const activityMemoryPipeline = await createActivityMemoryPipeline({
     workspaceRoot: globalDataRoot,
     resolveWorkspace: async (projectName) => resolveActivityProject(projectName, state.projects())?.path,
@@ -152,7 +159,7 @@ async function startDesktopApplication(): Promise<void> {
     }),
     writeMemories: activityMemoryPipeline.writeMemories,
     onAnalyzed: activityMemoryPipeline.onAnalyzed,
-    getEmbeddingRuntime: async () => await agents.getActivityEmbeddingRuntime(),
+    getEmbeddingRuntime: async () => await activityEmbeddingModels.createRuntime("multilingual-e5-small").catch(() => undefined),
     emit: (snapshot) => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(desktopIpc.activityEvent, snapshot);
     }
@@ -258,6 +265,7 @@ async function startDesktopApplication(): Promise<void> {
   };
 
   registerDesktopIpc({
+    crystals,
     state,
     projects,
     agents,
@@ -334,8 +342,10 @@ async function startDesktopApplication(): Promise<void> {
         globalShortcut.unregisterAll();
         quickChatWindow?.destroy();
         await activity.stop();
+        await activityEmbeddingModels.close();
         activityMemoryPipeline.close();
         await browser.dispose();
+        await mcp.dispose();
         mainWindow?.destroy();
         await Promise.race([
           agents.closeAll({ terminateOwnedHosts: true }),

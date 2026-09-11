@@ -24,6 +24,7 @@ import type {
   MemorySearchResult
 } from "../../../agent/context/memoryTypes.js";
 import { MemoryStorage } from "../../../agent/context/memoryStorage.js";
+import { resolveToolModelAlias } from "../../../llm/toolModel.js";
 import { IdentityStorage } from "../../../agent/context/identityStorage.js";
 import type { ChildProcess } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -43,7 +44,7 @@ import { createNativeModelSettings, validateModelConfiguration } from "../../../
 import { ModelRuntime } from "../../../llm/ModelRuntime.js";
 import { LocalEmbeddingManager, listLocalEmbeddingModels } from "../../../llm/embedding/LocalEmbeddingRuntime.js";
 import { listProviderEmbeddingModels } from "../../../llm/embedding/ProviderEmbeddingRuntime.js";
-import type { EmbeddingModelDescriptor, EmbeddingModelRuntime, LocalEmbeddingModelId } from "../../../llm/embedding/types.js";
+import type { EmbeddingModelDescriptor, LocalEmbeddingModelId } from "../../../llm/embedding/types.js";
 import type { MemoryEmbeddingRuntimeStatus } from "../../../agent/context/MemoryEmbeddingService.js";
 import { FileModelsStore, restoreProviderCatalogs, type ModelsStore } from "../../../llm/ModelsStore.js";
 import { listConfiguredModelChoices, listPickerModelChoices, modelRuntimeInfo, type ModelRuntimeInfo, type ThinkingSelection } from "../../../llm/ModelManager.js";
@@ -57,6 +58,7 @@ import {
   type InteractiveRuntimeHandle
 } from "../../../runtime/InteractiveAgentRuntime.js";
 import type { CommandRuntime } from "../../../runtime/CommandRuntime.js";
+import { SubagentTaskIncompleteError } from "../../../runtime/SubagentTaskManager.js";
 import {
   connectOrSpawnRuntimeHostWithOwnership,
   connectRuntimeHost,
@@ -75,6 +77,9 @@ import {
   writeSessionCatalogRecord,
   type SessionCatalogRecord
 } from "../../../session/catalog.js";
+import { readSessionEvents } from "../../../session/events.js";
+import { openRecipeSuggestions, recipeIds, RecipeStateStore, type RecipeId } from "../../../session/recipes.js";
+import { resolveSessionFile } from "../../../session/store.js";
 import {
   defaultChatPersonalizationOverride,
   type AgentPersonalizationState,
@@ -111,6 +116,9 @@ import type {
   DesktopModelLoginStartResult,
   DesktopPersonalizationOverview,
   DesktopProject,
+  DesktopRecipeId,
+  DesktopRecipeState,
+  DesktopRecipeSuggestion,
   DesktopRunReceipt,
   DesktopRuntimeMutation,
   DesktopRuntimeProjection,
@@ -121,6 +129,7 @@ import type {
   DesktopSessionTreePageOptions,
   DesktopSlashResult,
   DesktopWebSearchSettings,
+  DesktopWebSearchProvider,
   DesktopWorktreeStatus,
   DesktopSettingsChatSnapshot,
   DesktopSettingsCredentialScope,
@@ -233,14 +242,6 @@ export class DesktopAgentManager {
     this.modelLogin = new DesktopModelLoginService(openExternal ?? (async () => {
       throw new Error("当前环境无法打开浏览器。");
     }), this.fetcher);
-  }
-
-  /** Activity 后台索引只复用已经驻留的本地 AgentSession，不因采集器启动而偷偷下载模型。 */
-  async getActivityEmbeddingRuntime(): Promise<EmbeddingModelRuntime | undefined> {
-    for (const managed of this.runtimes.values()) {
-      if (managed.commands) return await managed.commands.agent.getActivityEmbeddingRuntime();
-    }
-    return undefined;
   }
 
   /** Activity 记忆写入复用已经驻留的 AgentSession；没有 session 时不为后台分析强行启动 Runtime。 */
@@ -534,6 +535,29 @@ export class DesktopAgentManager {
     };
   }
 
+  async recipeSuggestions(projectId: string, sessionId: string): Promise<DesktopRecipeSuggestion[]> {
+    const project = this.projects.requireProject(projectId);
+    const persistenceRoot = await this.projects.dataRoot(project);
+    const filePath = await resolveSessionFile(persistenceRoot, sessionId);
+    const events = await readSessionEvents(filePath);
+    const states = await new RecipeStateStore(persistenceRoot).read(sessionId);
+    return openRecipeSuggestions(events, sessionId, states).map((recipe) => ({
+      id: recipe.id,
+      title: recipe.title,
+      description: recipe.description,
+      slots: recipe.slots.map((slot) => ({ ...slot })),
+      extractPrompt: recipe.extractPrompt
+    }));
+  }
+
+  async setRecipeState(projectId: string, sessionId: string, recipeId: DesktopRecipeId, state: DesktopRecipeState): Promise<void> {
+    const project = this.projects.requireProject(projectId);
+    if (!recipeIds.includes(recipeId as RecipeId)) throw new Error("Unknown recipe id.");
+    const persistenceRoot = await this.projects.dataRoot(project);
+    await resolveSessionFile(persistenceRoot, sessionId);
+    await new RecipeStateStore(persistenceRoot).set(sessionId, recipeId as RecipeId, state);
+  }
+
   async renameSession(projectId: string, sessionId: string, title: string, expectedRevision?: string): Promise<DesktopWorkspaceSnapshot> {
     const revision = (await this.resolvePendingSessionRead(projectId, sessionId, expectedRevision)) ?? expectedRevision;
     await this.projects.updateSessionMetadata(this.projects.requireProject(projectId), sessionId, { title }, revision);
@@ -613,7 +637,7 @@ export class DesktopAgentManager {
         : {
             accepted: true,
             revision: snapshot.revision,
-            result: delivery === "steer" ? runtime.steer(prompt, nativeAttachments) : runtime.followUp(prompt, nativeAttachments)
+            result: delivery === "steer" ? await runtime.steer(prompt, nativeAttachments) : await runtime.followUp(prompt, nativeAttachments)
           };
       if (!queued.accepted || queued.result === undefined) {
         throw new Error(queued.reason ?? "Runtime Host did not accept the queued message.");
@@ -1076,15 +1100,14 @@ export class DesktopAgentManager {
           skillProjectOverrides: {
             ...next.extensions.skillProjectOverrides,
             [projectKey]: input.skills.projectOverrides
-          },
-          skillExtraction: input.skills.extraction
+          }
         }
       });
     }
     if (input.activity !== undefined) {
       next = configSchema.parse({
         ...next,
-        // externalPolicy 不在 Desktop 设置输入中，保留配置文件当前值，避免未来策略被 UI/IPC 提前打开。
+        // 分析和回忆策略都通过同一份版本化设置保存。
         activity: { ...next.activity, ...input.activity }
       });
     }
@@ -1144,6 +1167,7 @@ export class DesktopAgentManager {
         next = configSchema.parse({
           ...next,
           defaultModel: next.defaultModel === alias ? remaining[0]![0] : next.defaultModel,
+          toolModel: next.toolModel === alias ? undefined : next.toolModel,
           models: Object.fromEntries(remaining)
         });
       }
@@ -1175,6 +1199,13 @@ export class DesktopAgentManager {
             effort: selection === "off" ? next.thinking.effort : selection
           }
         });
+      }
+      if (input.models.toolModel !== undefined) {
+        const reference = input.models.toolModel.alias;
+        const alias = reference === undefined ? undefined : resolveConfiguredModelAlias(next, reference);
+        if (reference !== undefined && !alias) throw new Error(`未知工具模型：${reference}`);
+        if (alias) validateModelConfiguration(next, alias);
+        next = configSchema.parse({ ...next, toolModel: alias });
       }
       validateModelConfiguration(next, next.defaultModel);
     }
@@ -1906,6 +1937,24 @@ export class DesktopAgentManager {
     return await this.testCandidate(candidate, input.alias);
   }
 
+  /**
+   * 设置页按需读取当前服务商的 API Key。密钥不进入普通工作区快照，只在用户打开模型设置时返回。
+   * OAuth 连接的 access token 不作为可编辑 API Key 暴露，避免把订阅登录凭据混进密钥输入框。
+   */
+  async readModelApiKey(projectId: string, providerAlias: string): Promise<string | undefined> {
+    const provider = (await this.loadProjectConfig(projectId)).providers[providerAlias];
+    if (!provider || provider.authMode === "oauth-bearer") return undefined;
+    const apiKeyEnv = provider.apiKeyEnv ?? providerDefinition(provider.type).apiKeyEnv;
+    return provider.apiKey ?? (apiKeyEnv ? process.env[apiKeyEnv] : undefined);
+  }
+
+  async readWebSearchApiKey(projectId: string, provider: DesktopWebSearchProvider): Promise<string | undefined> {
+    const search = (await this.loadProjectConfig(projectId)).web.search;
+    if (search.provider !== provider) return undefined;
+    const apiKeyEnv = search.apiKeyEnv ?? (provider === "duckduckgo" || provider === "google" ? undefined : webSearchKeyEnvNames[provider]);
+    return search.apiKey ?? (apiKeyEnv ? process.env[apiKeyEnv] : undefined);
+  }
+
   private async testCandidate(candidate: AgentConfig, alias: string): Promise<DesktopModelConnectionTestResult> {
     const model = candidate.models[alias];
     if (!model) return { ok: false, message: `未知模型：${alias}` };
@@ -2030,9 +2079,10 @@ export class DesktopAgentManager {
       retry: sameProvider ? existingProvider.retry : undefined,
       modelsEndpoint: sameProvider ? existingProvider.modelsEndpoint : undefined,
       headers: sameProvider ? existingProvider.headers : undefined,
-      // 「API 格式」同时写连接级与模型级：连接级让目录拉取/回显不用翻模型列表，
-      // 模型级保留逐模型覆盖的逃生门。显式选择优先；未带格式时保留既有连接级设置。
-      apiBackend: input.apiBackend ?? (sameProvider ? existingProvider.apiBackend : undefined),
+      // 「API 格式」分成连接默认与模型覆盖：连接级让目录拉取/回显不用翻模型列表，
+      // 模型级保留逐模型覆盖的逃生门。providerApiBackend 只在显式切换连接默认时写入。
+      apiBackend: input.providerApiBackend
+        ?? (sameProvider ? existingProvider.apiBackend : input.apiBackend),
       compatibility: sameProvider ? existingProvider.compatibility : undefined,
       embeddingModels: sameProvider ? existingProvider.embeddingModels : undefined,
       modelProfiles
@@ -2060,16 +2110,22 @@ export class DesktopAgentManager {
           supportsTools: input.supportsTools,
           // 目录元数据只参与当前运行时解析，不自动写成 alias 覆盖；已有 alias 元数据
           // 继续保留，新的上下文/输入上限/思考映射应通过 provider.modelProfiles 声明。
-          capabilities: sameModel
-            ? { ...existingModel.capabilities, tools: input.supportsTools }
-            : { tools: input.supportsTools },
+          // 输入里显式给出的能力是用户在模型选项里的覆盖值：给出才写，未给出沿用现状。
+          capabilities: {
+            ...(sameModel ? existingModel.capabilities : undefined),
+            tools: input.supportsTools,
+            reasoning: input.supportsThinking ?? (sameModel ? existingModel.capabilities?.reasoning : undefined),
+            vision: input.supportsVision ?? (sameModel ? existingModel.capabilities?.vision : undefined),
+            audio: input.supportsAudio ?? (sameModel ? existingModel.capabilities?.audio : undefined),
+            parallelToolCalls: input.parallelToolCalls ?? (sameModel ? existingModel.capabilities?.parallelToolCalls : undefined)
+          },
           contextWindow: sameModel ? existingModel.contextWindow : undefined,
           maxInputTokens: sameModel ? existingModel.maxInputTokens : undefined,
           maxOutputTokens: sameModel ? existingModel.maxOutputTokens : undefined,
           limits: sameModel ? existingModel.limits : undefined,
           apiBackend: input.apiBackend,
           baseUrl: sameModel ? existingModel.baseUrl : undefined,
-          headers: sameModel ? existingModel.headers : undefined,
+          headers: input.headers ?? (sameModel ? existingModel.headers : undefined),
           thinkingLevelMap: sameModel ? existingModel.thinkingLevelMap : undefined,
           compatibility: input.compatibility ?? (sameModel ? existingModel.compatibility : undefined),
           pricing: sameModel ? existingModel.pricing : undefined
@@ -2176,7 +2232,7 @@ export class DesktopAgentManager {
       const cancelledSubagent = commands.subagents?.cancelTask(taskRunId, reason) ?? false;
       const runId = task?.attempts.at(-1)?.runId;
       if (runId !== undefined) runtime.cancelRun(runId);
-      const subagentActive = subagent !== undefined && !["completed", "failed", "aborted", "timed_out"].includes(subagent.status);
+      const subagentActive = subagent?.status === "queued" || subagent?.status === "running";
       if (subagentActive && !cancelledSubagent && !isTaskRunTerminal(task?.status ?? "created")) {
         throw new Error(`Unable to cancel active subagent task ${taskRunId}.`);
       }
@@ -3010,8 +3066,13 @@ export class DesktopAgentManager {
       },
       (error: unknown) => {
         const failure = error instanceof Error ? error : new Error(String(error));
-        const status = failure.name === "SubagentTaskAbortedError" || failure.name === "AbortError" ? "aborted" as const : "failed" as const;
-        this.finishFallbackTaskRun(commands, taskRunId, attempt.attemptId, status, { message: failure.message, failureClass: status === "failed" ? "execution_failed" : "cancelled" });
+        const status = failure.name === "SubagentTaskAbortedError" || failure.name === "AbortError" ? "aborted"
+          : failure instanceof SubagentTaskIncompleteError ? "incomplete" : "failed";
+        this.finishFallbackTaskRun(commands, taskRunId, attempt.attemptId, status, {
+          message: failure.message,
+          failureClass: failure instanceof SubagentTaskIncompleteError ? failure.stopReason
+            : status === "failed" ? "execution_failed" : "cancelled"
+        }, failure instanceof SubagentTaskIncompleteError ? { output: failure.output } : undefined);
         throw failure;
       }
     ).finally(() => {
@@ -3026,7 +3087,7 @@ export class DesktopAgentManager {
     commands: CommandRuntime,
     taskRunId: string,
     attemptId: string,
-    status: "completed" | "failed" | "aborted",
+    status: "completed" | "incomplete" | "failed" | "aborted",
     failure?: unknown,
     artifacts?: unknown
   ): void {
@@ -3097,8 +3158,8 @@ function resolveConfiguredModelAlias(config: AgentConfig, aliasOrReference: stri
 
 /**
  * Projects the saved provider configs into the credential/endpoint facts the
- * settings UI needs. Only presence is reported — an API key or refresh token
- * never crosses the IPC bridge.
+ * settings UI needs. 普通设置快照只报告存在性；API Key 只有在设置页明确读取时才跨 IPC 返回，
+ * refresh token 始终不跨桥。
  */
 function describeWebSearchSettings(search: AgentConfig["web"]["search"]): DesktopWebSearchSettings {
   const envKeyName = search.provider === "duckduckgo" || search.provider === "google"
@@ -3137,6 +3198,8 @@ function describeSettingsConfigSnapshot(
       connections: describeModelConnections(config),
       embeddingModels: describeEmbeddingModels(config),
       defaultModel: config.defaultModel,
+      toolModel: config.toolModel,
+      resolvedToolModel: resolveToolModelAlias(config),
       thinking: config.thinking.enabled ? config.thinking.effort : "off",
       modelProfiles: Object.fromEntries(Object.entries(config.providers).map(([providerAlias, provider]) => [
         providerAlias,
@@ -3148,7 +3211,6 @@ function describeSettingsConfigSnapshot(
       projectKey: createProjectSkillKey(workspaceRoot),
       globalDefaults: { ...config.extensions.skillDefaults },
       projectOverrides: { ...config.extensions.skillProjectOverrides[createProjectSkillKey(workspaceRoot)] },
-      extraction: { ...config.extensions.skillExtraction },
       activations: []
     }
   };

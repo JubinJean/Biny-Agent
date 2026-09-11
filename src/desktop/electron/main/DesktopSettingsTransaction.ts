@@ -720,7 +720,6 @@ export class DesktopSettingsTransaction {
         projectKey: "",
         globalDefaults: {},
         projectOverrides: {},
-        extraction: { enabled: true, minToolCalls: 5 },
         activations: []
       },
       chat,

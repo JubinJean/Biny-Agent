@@ -19,6 +19,8 @@ import {
   type SaveDialogOptions
 } from "electron";
 import { z } from "zod";
+import { desktopCrystalRequestSchema } from "../../crystalProtocol.js";
+import type { DesktopCrystalService } from "./DesktopCrystalService.js";
 import { agentCapabilitySelectionSchema } from "../../../agent/capabilitySelection.js";
 import {
   chatPersonalizationSchema,
@@ -52,6 +54,7 @@ import { resolveActivityReportRange } from "../../../activity/analyzer.js";
 import { readDailyMemoryNote } from "../../../activity/dailyNotes.js";
 
 interface IpcContext {
+  crystals: DesktopCrystalService;
   state: DesktopStateStore;
   projects: DesktopProjectService;
   agents: DesktopAgentManager;
@@ -191,7 +194,6 @@ const settingsDraftStateSchema = z.object({
 const settingsCloseResponseSchema = z.enum(["saved", "discarded", "cancelled"]);
 const skillIdSchema = z.string().trim().min(1).max(128);
 const skillProjectIdSchema = idSchema;
-const skillDraftIdSchema = z.string().uuid();
 const skillFilePathSchema = z.string().trim().min(1).max(2_000);
 const skillFileContentSchema = z.string().max(512 * 1024);
 const skillImportIdsSchema = z.array(skillIdSchema).max(256);
@@ -241,6 +243,11 @@ const mcpDraftSchema = z.object({
   stderr: z.enum(["ignore", "inherit", "pipe"]).optional(),
   url: z.string().url().max(4_000).optional(),
   remoteProtocol: z.enum(["streamable-http", "sse"]).optional(),
+  oauth: z.object({
+    clientId: z.string().trim().min(1).max(2_000).optional(),
+    scopes: z.array(z.string().trim().min(1).max(200)).max(32).optional(),
+    redirectPort: z.number().int().min(1024).max(65535).optional()
+  }).strict().optional(),
   timeoutMs: z.number().int().min(1_000).max(600_000).optional(),
   env: z.array(mcpFieldMutationSchema).max(256),
   headers: z.array(mcpFieldMutationSchema).max(256)
@@ -271,6 +278,10 @@ export function registerDesktopIpc(context: IpcContext): void {
     });
   };
   handle(desktopIpc.bootstrap, async () => await context.bootstrap());
+  handleRecoveryGated(desktopIpc.crystalRequest, async (_event, input: unknown) => {
+    return await context.crystals.request(desktopCrystalRequestSchema.parse(input));
+  });
+  handleRecoveryGated(desktopIpc.activitySuggestions, async () => (await context.activity.suggestions()).suggestions);
 
   handle(desktopIpc.openProject, async () => {
     const window = context.getWindow();
@@ -589,6 +600,14 @@ export function registerDesktopIpc(context: IpcContext): void {
 
   handleRecoveryGated(desktopIpc.testModelConfiguration, async (_event, projectId: unknown, configuration: unknown) => {
     return await context.agents.testModelConfiguration(idSchema.parse(projectId), modelConfigurationSchema.parse(configuration));
+  });
+
+  handleRecoveryGated(desktopIpc.readModelApiKey, async (_event, projectId: unknown, providerAlias: unknown) => {
+    return await context.agents.readModelApiKey(idSchema.parse(projectId), idSchema.parse(providerAlias));
+  });
+
+  handleRecoveryGated(desktopIpc.readWebSearchApiKey, async (_event, projectId: unknown, provider: unknown) => {
+    return await context.agents.readWebSearchApiKey(idSchema.parse(projectId), z.enum(["anysearch", "google", "duckduckgo", "tavily", "brave"]).parse(provider));
   });
 
   handle(desktopIpc.fetchModelCatalog, async (_event, projectId: unknown, providerAlias: unknown, force: unknown) => {
@@ -985,11 +1004,16 @@ export function registerDesktopIpc(context: IpcContext): void {
   ));
 
   handle(desktopIpc.skillSettings, async (_event, projectId: unknown) => await context.skills.settings(idSchema.parse(projectId)));
-  handle(desktopIpc.skillDrafts, async (_event, projectId: unknown) => await context.skills.drafts(idSchema.parse(projectId)));
-  handleRecoveryGated(desktopIpc.skillDraftApprove, async (_event, projectId: unknown, draftId: unknown) => await context.skills.approveDraft(idSchema.parse(projectId), skillDraftIdSchema.parse(draftId)));
-  handleRecoveryGated(desktopIpc.skillDraftReject, async (_event, projectId: unknown, draftId: unknown) => await context.skills.rejectDraft(idSchema.parse(projectId), skillDraftIdSchema.parse(draftId)));
-  handleRecoveryGated(desktopIpc.skillDraftRetry, async (_event, projectId: unknown, draftId: unknown) => await context.skills.retryDraft(idSchema.parse(projectId), skillDraftIdSchema.parse(draftId)));
-  handleRecoveryGated(desktopIpc.skillDraftEdit, async (_event, projectId: unknown, draftId: unknown, content: unknown) => await context.skills.editDraft(idSchema.parse(projectId), skillDraftIdSchema.parse(draftId), skillFileContentSchema.parse(content)));
+  handle(desktopIpc.recipeSuggestions, async (_event, projectId: unknown, sessionId: unknown) => await context.agents.recipeSuggestions(
+    idSchema.parse(projectId),
+    idSchema.parse(sessionId)
+  ));
+  handle(desktopIpc.recipeState, async (_event, projectId: unknown, sessionId: unknown, recipeId: unknown, state: unknown) => await context.agents.setRecipeState(
+    idSchema.parse(projectId),
+    idSchema.parse(sessionId),
+    z.enum(["repeatable-doc-task", "mcp-pipeline", "thread-to-workflow"]).parse(recipeId),
+    z.enum(["dismissed", "extracted"]).parse(state)
+  ));
 
   handle(desktopIpc.skillSourceImport, async () => {
     const window = context.getWindow();
@@ -1025,7 +1049,7 @@ export function registerDesktopIpc(context: IpcContext): void {
   });
 
   handle(desktopIpc.skillDiscoveryInstall, async (_event, skill: unknown) => {
-    await context.skills.installDiscoveredSkill(discoverableSkillSchema.parse(skill));
+    return await context.skills.installDiscoveredSkill(discoverableSkillSchema.parse(skill));
   });
 
   handle(desktopIpc.skillRepositoryAdd, async (_event, repository: unknown) => {
@@ -1038,6 +1062,15 @@ export function registerDesktopIpc(context: IpcContext): void {
 
   handle(desktopIpc.skillFileRead, async (_event, skillId: unknown, relativePath: unknown) => {
     return await context.skills.readFile(skillIdSchema.parse(skillId), skillFilePathSchema.parse(relativePath));
+  });
+
+  handle(desktopIpc.skillCheck, async (_event, skillId: unknown) => await context.skills.check(skillIdSchema.parse(skillId)));
+  handle(desktopIpc.skillVersion, async (_event, skillId: unknown) => await context.skills.version(skillIdSchema.parse(skillId)));
+  handleRecoveryGated(desktopIpc.skillVersionUpdate, async (_event, skillId: unknown, expectedVersion: unknown) => {
+    return await context.skills.updateVersion(skillIdSchema.parse(skillId), z.string().uuid().parse(expectedVersion));
+  });
+  handleRecoveryGated(desktopIpc.skillVersionRollback, async (_event, skillId: unknown, expectedVersion: unknown) => {
+    return await context.skills.rollbackVersion(skillIdSchema.parse(skillId), z.string().uuid().parse(expectedVersion));
   });
 
   handle(desktopIpc.skillFileWrite, async (_event, skillId: unknown, relativePath: unknown, content: unknown) => {
@@ -1115,6 +1148,19 @@ export function registerDesktopIpc(context: IpcContext): void {
 
   handleRecoveryGated(desktopIpc.mcpDetails, async (_event, projectId: unknown, name: unknown) => {
     return await context.mcp.details(idSchema.parse(projectId), idSchema.parse(name));
+  });
+
+  handleRecoveryGated(desktopIpc.mcpLoginStart, async (_event, projectId: unknown, name: unknown) => {
+    return await context.mcp.loginStart(mcpProjectIdSchema.parse(projectId), idSchema.parse(name));
+  });
+  handleRecoveryGated(desktopIpc.mcpLoginFinish, async (_event, projectId: unknown, name: unknown, id: unknown) => {
+    return await context.mcp.loginFinish(mcpProjectIdSchema.parse(projectId), idSchema.parse(name), z.string().uuid().parse(id));
+  });
+  handle(desktopIpc.mcpLoginCancel, async (_event, id: unknown) => {
+    await context.mcp.loginCancel(z.string().uuid().parse(id));
+  });
+  handleRecoveryGated(desktopIpc.mcpLogout, async (_event, projectId: unknown, name: unknown) => {
+    return await context.mcp.logout(mcpProjectIdSchema.parse(projectId), idSchema.parse(name));
   });
 
   handle(desktopIpc.openExternal, async (_event, url: unknown) => {
@@ -1202,7 +1248,7 @@ function applyNativeThemePreference(preference: DesktopThemePreference): void {
 
 function themeBackgroundColor(preference: DesktopThemePreference): string {
   const dark = preference === "dark" || (preference === "system" && nativeTheme.shouldUseDarkColors);
-  return dark ? "#181818" : "#ffffff";
+  return dark ? "#1c1c1c" : "#ffffff";
 }
 
 /** 先移除同名 handler 再注册：重复注册会被 Electron 直接拒绝（开发期热重载会遇到）。 */

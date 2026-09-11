@@ -504,7 +504,7 @@ export class DesktopProjectService {
   async forkSessionAtUserMessage(project: DesktopProject, sessionId: string, userMessageIndex: number): Promise<string> {
     const dataRoot = await this.storage.ensureProjectData(project);
     const events = await readStoredSessionEvents(dataRoot, sessionId).then((result) => result.events);
-    const userEventIndices = events.flatMap((event, index) => event.type === "user_message" ? [index] : []);
+    const userEventIndices = events.flatMap((event, index) => event.type === "user_message" && !event.auditOnly ? [index] : []);
     const targetEventIndex = userEventIndices[userMessageIndex];
     if (targetEventIndex === undefined) throw new Error("要编辑的消息已不在当前会话中。");
     const targetSessionId = createSessionId();
