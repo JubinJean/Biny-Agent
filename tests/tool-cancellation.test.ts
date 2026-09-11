@@ -7,7 +7,6 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { createEditFileTool } from "../src/tools/file/editFile.js";
 import { createDeleteFileTool } from "../src/tools/file/deleteFile.js";
-import { createMultiEditTool } from "../src/tools/file/multiEdit.js";
 import { createReadFileTool } from "../src/tools/file/readFile.js";
 import { atomicWriteUtf8File, maxEditFileBytes, maxReadFileBytes, maxSearchFileBytes, readUtf8FileForEdit } from "../src/tools/file/safeFileIo.js";
 import { createWriteFileTool } from "../src/tools/file/writeFile.js";
@@ -35,7 +34,6 @@ async function main(): Promise<void> {
     await testPreAbortedEditHasNoSideEffect(workspaceRoot);
     await testCancellationBeforeAtomicCommitPreservesTargets(workspaceRoot);
     await testAtomicWriteAndEditCommitCleanly(workspaceRoot);
-    await testMultiEditIsAtomic(workspaceRoot);
     await testDeleteFileBindsPreparedTarget(workspaceRoot);
     await testAtomicWriteDetachesExistingHardlink(workspaceRoot);
     await testAtomicWriteRejectsChangedSnapshot(workspaceRoot);
@@ -230,38 +228,6 @@ async function testAtomicWriteAndEditCommitCleanly(workspaceRoot: string): Promi
   });
   assert.equal(await readFile(target, "utf8"), "after");
   assert.deepEqual((await readdir(workspaceRoot)).filter((entry) => entry.startsWith(".biny-write-")), []);
-}
-
-async function testMultiEditIsAtomic(workspaceRoot: string): Promise<void> {
-  const target = path.join(workspaceRoot, "multi-edit.txt");
-  await writeFile(target, "alpha beta beta\n", "utf8");
-  const tool = createMultiEditTool({ workspaceRoot, ignore: [] });
-  const execution = runnable(await tool.resolveExecution({
-    path: "multi-edit.txt",
-    edits: [
-      { oldText: "alpha", newText: "first" },
-      { oldText: "beta", newText: "second", replaceAll: true }
-    ]
-  }));
-  assert.deepEqual(await execution.execute({ toolCallId: "multi-edit" }), {
-    path: "multi-edit.txt",
-    edits: 2,
-    replacements: 3,
-    bytes: Buffer.byteLength("first second second\n")
-  });
-  assert.equal(await readFile(target, "utf8"), "first second second\n");
-
-  await assert.rejects(
-    tool.resolveExecution({
-      path: "multi-edit.txt",
-      edits: [
-        { oldText: "first", newText: "changed" },
-        { oldText: "missing", newText: "never" }
-      ]
-    }),
-    /edit 2.*not found/i
-  );
-  assert.equal(await readFile(target, "utf8"), "first second second\n");
 }
 
 async function testDeleteFileBindsPreparedTarget(workspaceRoot: string): Promise<void> {

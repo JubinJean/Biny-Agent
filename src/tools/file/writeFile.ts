@@ -27,7 +27,7 @@ export function createWriteFileTool(context: ToolContext): Tool<WriteFileArgs, W
     name: "Write",
     description: "Atomically write a UTF-8 file in the workspace, safely creating missing parent directories.",
     promptSnippet: "Create a new file or replace a file with complete UTF-8 content",
-    promptGuidelines: ["Use Write for new files or intentional full rewrites; use edit_file, multi_edit, or apply_patch for localized changes"],
+    promptGuidelines: ["Use Write for new files or intentional full rewrites; use edit_file for localized changes"],
     parameters: {
       type: "object",
       properties: {

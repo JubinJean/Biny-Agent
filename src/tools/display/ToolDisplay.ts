@@ -10,8 +10,6 @@ import { createUnifiedDiff } from "../../utils/diff.js";
 import { redactSecrets, redactSensitiveValue } from "../../utils/secrets.js";
 import { resolveWorkspacePath } from "../../workspace/resolvePath.js";
 import { maxEditFileBytes, readBoundedUtf8File } from "../file/safeFileIo.js";
-import { applyMultiEdits, type MultiEditOperation } from "../file/multiEdit.js";
-import { applyUnifiedPatch } from "../file/applyPatch.js";
 export interface ToolCallInput {
   id: string;
   name: string;
@@ -131,40 +129,6 @@ export const toolDisplayRules: Record<string, ToolDisplayRule> = {
       };
     }
   },
-  multi_edit: {
-    title: "Multi-edit request",
-    async summarize(args, context) {
-      const filePath = getStringField(args, "path");
-      const edits = getMultiEditOperations(args);
-      const oldContent = await readExistingFileForDiff(filePath, context);
-      const applied = applyMultiEdits(oldContent, edits, filePath);
-      const diff = createUnifiedDiff(filePath, oldContent, applied.content);
-      const preview = formatUnifiedDiffPreview(filePath, diff, 20);
-      return {
-        details: `File: ${filePath}\nEdits: ${String(edits.length)}\nReplacements: ${String(applied.replacements)}`,
-        diff,
-        preview,
-        changeSummary: `Apply ${String(edits.length)} edits to ${filePath}`
-      };
-    }
-  },
-  apply_patch: {
-    title: "Patch application request",
-    async summarize(args, context) {
-      const filePath = getStringField(args, "path");
-      const patch = getStringField(args, "patch");
-      const oldContent = await readExistingFileForDiff(filePath, context);
-      const applied = applyUnifiedPatch(oldContent, patch, filePath);
-      const diff = createUnifiedDiff(filePath, oldContent, applied.content);
-      const preview = formatUnifiedDiffPreview(filePath, diff, 24);
-      return {
-        details: `File: ${filePath}\nHunks: ${String(applied.hunks)}\nChanged lines: ${String(applied.changedLines)}`,
-        diff,
-        preview,
-        changeSummary: `Apply patch to ${filePath}`
-      };
-    }
-  },
   move_file: {
     title: "File move request",
     async summarize(args, context) {
@@ -242,18 +206,6 @@ function getStringField(value: unknown, key: string): string {
   if (typeof value !== "object" || value === null) return "";
   const field = (value as Record<string, unknown>)[key];
   return typeof field === "string" ? field : "";
-}
-
-function getMultiEditOperations(value: unknown): MultiEditOperation[] {
-  if (typeof value !== "object" || value === null || !("edits" in value) || !Array.isArray(value.edits)) return [];
-  return value.edits.flatMap((entry): MultiEditOperation[] => {
-    if (typeof entry !== "object" || entry === null) return [];
-    const oldText = "oldText" in entry && typeof entry.oldText === "string" ? entry.oldText : undefined;
-    const newText = "newText" in entry && typeof entry.newText === "string" ? entry.newText : undefined;
-    if (oldText === undefined || newText === undefined) return [];
-    const replaceAll = "replaceAll" in entry && typeof entry.replaceAll === "boolean" ? entry.replaceAll : undefined;
-    return [{ oldText, newText, replaceAll }];
-  });
 }
 
 // Permission previews are plain text shared by CLI and TUI. They deliberately

@@ -10,9 +10,7 @@ import type { Tool, ToolContext, ToolSource } from "./types.js";
 import { createReadFileTool } from "./file/readFile.js";
 import { createWriteFileTool } from "./file/writeFile.js";
 import { createEditFileTool } from "./file/editFile.js";
-import { createMultiEditTool } from "./file/multiEdit.js";
 import { createDeleteFileTool } from "./file/deleteFile.js";
-import { createApplyPatchTool } from "./file/applyPatch.js";
 import { createMoveFileTool } from "./file/moveFile.js";
 import { createReadToolResultTool } from "./file/readToolResult.js";
 import { createListFilesTool } from "./file/listFiles.js";
@@ -111,9 +109,7 @@ export function createToolRegistry(
   registry.register(createGitCommitTool(context));
   registry.register(createWriteFileTool(context));
   registry.register(createEditFileTool(context));
-  registry.register(createMultiEditTool(context));
   registry.register(createDeleteFileTool(context));
-  registry.register(createApplyPatchTool(context));
   registry.register(createMoveFileTool(context));
   registry.register(createRunCommandTool(context, sandboxConfig));
   if (managedProcessService) {

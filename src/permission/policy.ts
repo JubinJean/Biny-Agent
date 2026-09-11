@@ -14,9 +14,7 @@ export type ToolName =
   | "read_tool_result"
   | "Write"
   | "edit_file"
-  | "multi_edit"
   | "delete_file"
-  | "apply_patch"
   | "move_file"
   | "Glob"
   | "Grep"
@@ -82,7 +80,7 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
     };
   }
 
-  if (input.toolName === "Write" || input.toolName === "edit_file" || input.toolName === "multi_edit" || input.toolName === "apply_patch") {
+  if (input.toolName === "Write" || input.toolName === "edit_file") {
     return {
       ...base(input),
       actionType: "write",
