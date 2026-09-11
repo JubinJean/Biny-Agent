@@ -40,7 +40,6 @@ const unknownResult: Extract<SessionEvent, { type: "tool_result" }> = {
   type: "tool_result",
   tool: "Bash",
   toolCallId: "call-1",
-  operationId: "op-1",
   executionStatus: "unknown",
   recovered: true,
   result: { error: "interrupted" },
@@ -55,6 +54,20 @@ const unknownResult: Extract<SessionEvent, { type: "tool_result" }> = {
   assert.equal(plan.action, "block");
   assert.equal(plan.operations[0]?.action, "park");
   if (plan.action === "block") assert.equal(plan.blockedReason, "unsafe_action_required");
+}
+
+{
+  const plan = resolveContinuationPlan(interruptedTurn(), replay([
+    {
+      type: "tool_call",
+      tool: "Bash",
+      args: {},
+      toolCallId: "call-1",
+      runtime: { ...runtime, turnId: "old-turn" }
+    },
+    { ...unknownResult, runtime: { ...runtime, eventId: "event-2", eventSeq: 2, turnId: "old-turn" } }
+  ]), 10);
+  assert.equal(plan.action, "continue", "另一个 turn 的 unknown 工具结果不能阻塞当前恢复");
 }
 
 {

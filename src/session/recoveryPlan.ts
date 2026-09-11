@@ -16,7 +16,8 @@ export type OperationRecoveryAction = "preserve-result" | "discard-not-started" 
 export interface OperationRecoveryDecision {
   tool: string;
   toolCallId?: string;
-  operationId: string;
+  /** 旧 session 的工具结果可能没有 operationId，归属判断仍必须 fail-closed。 */
+  operationId?: string;
   executionStatus?: ToolExecutionResultStatus;
   action: OperationRecoveryAction;
   evidence?: string;
@@ -129,10 +130,11 @@ function operationRecoveryDecisions(replay: RecoveryEvidence): OperationRecovery
       action: "discard-not-started"
     });
   }
-  for (const event of [...replay.events, ...replay.recoveredToolResults]) {
-    if (event.type !== "tool_result" || event.executionStatus === undefined || event.operationId === undefined) continue;
+  for (const [index, event] of [...replay.events, ...replay.recoveredToolResults].entries()) {
+    if (event.type !== "tool_result" || event.executionStatus === undefined) continue;
     if (event.recovered !== true && event.executionStatus !== "unknown") continue;
-    decisions.set(event.operationId, {
+    const decisionKey = event.operationId ?? event.toolCallId ?? `legacy-tool-result-${String(index)}`;
+    decisions.set(decisionKey, {
       tool: event.tool,
       toolCallId: event.toolCallId,
       operationId: event.operationId,
