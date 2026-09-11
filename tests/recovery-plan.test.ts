@@ -1,0 +1,108 @@
+import assert from "node:assert/strict";
+import { resolveContinuationPlan } from "../src/session/recoveryPlan.js";
+import type { SessionEvent } from "../src/session/recorder.js";
+import type { SessionReplay } from "../src/session/replay.js";
+import type { InterruptedTurn } from "../src/session/turnStore.js";
+
+const runtime = { eventId: "event-1", eventSeq: 1, runId: "run-1", turnId: "turn-1" };
+
+function interruptedTurn(overrides: Partial<InterruptedTurn> = {}): InterruptedTurn {
+  return {
+    sessionId: "session-1",
+    turnId: "turn-1",
+    prompt: "continue",
+    messages: [{ role: "user", content: "continue" }],
+    completedSteps: 2,
+    updatedAt: "2026-09-12T00:00:00.000Z",
+    ...overrides
+  };
+}
+
+function replay(events: SessionEvent[], overrides: Partial<SessionReplay> = {}): SessionReplay {
+  return {
+    events,
+    messages: [],
+    messageReferences: [],
+    contextStartMessageIndex: 0,
+    contextStartUserMessageIndex: 0,
+    totalMessageCount: 0,
+    usage: [],
+    modelRequests: [],
+    recoveredToolResults: [],
+    discardedToolCalls: [],
+    messageTree: [],
+    runtimeHighWater: runtime,
+    ...overrides
+  };
+}
+
+const unknownResult: Extract<SessionEvent, { type: "tool_result" }> = {
+  type: "tool_result",
+  tool: "Bash",
+  toolCallId: "call-1",
+  operationId: "op-1",
+  executionStatus: "unknown",
+  recovered: true,
+  result: { error: "interrupted" },
+  runtime: { ...runtime, eventId: "event-2", eventSeq: 2 }
+};
+
+{
+  const plan = resolveContinuationPlan(interruptedTurn(), replay([
+    { type: "tool_call", tool: "Bash", args: {}, toolCallId: "call-1", runtime },
+    unknownResult
+  ]), 10);
+  assert.equal(plan.action, "block");
+  assert.equal(plan.operations[0]?.action, "park");
+  if (plan.action === "block") assert.equal(plan.blockedReason, "unsafe_action_required");
+}
+
+{
+  const recoveredSuccess: Extract<SessionEvent, { type: "tool_result" }> = {
+    ...unknownResult,
+    executionStatus: "succeeded",
+    result: { status: "recovered-success" }
+  };
+  const plan = resolveContinuationPlan(interruptedTurn(), replay([
+    { type: "tool_call", tool: "Bash", args: {}, toolCallId: "call-1", runtime },
+    recoveredSuccess
+  ]), 10);
+  assert.equal(plan.action, "continue");
+  assert.equal(plan.operations[0]?.action, "preserve-result");
+  if (plan.action === "continue") assert.equal(plan.remainingSteps, 8);
+}
+
+{
+  const plan = resolveContinuationPlan(interruptedTurn(), replay([], {
+    discardedToolCalls: [{
+      tool: "Read",
+      toolCallId: "call-2",
+      operationId: "op-2",
+      state: "not_started",
+      reason: "not_started"
+    }]
+  }), 10);
+  assert.equal(plan.action, "continue");
+  assert.equal(plan.operations[0]?.action, "discard-not-started");
+}
+
+{
+  const plan = resolveContinuationPlan(interruptedTurn({
+    terminal: {
+      status: "blocked",
+      stopReason: "blocked",
+      summary: "Need a choice",
+      blockedReason: "missing_user_input",
+      requiredAction: "Choose a target."
+    }
+  }), replay([]), 10);
+  assert.equal(plan.action, "require-user-input");
+  if (plan.action === "require-user-input") assert.match(plan.message, /Choose a target/u);
+}
+
+{
+  const plan = resolveContinuationPlan(interruptedTurn({ completedSteps: 10 }), replay([]), 10);
+  assert.equal(plan.action, "exhausted");
+}
+
+console.log("recovery plan tests passed");

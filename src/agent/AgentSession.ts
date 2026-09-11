@@ -22,6 +22,7 @@ import { SessionRecorder, type ReasoningBlock, type SessionEvent } from "../sess
 import { activeSessionEventsForPath, activeSessionMessageIds, replaySessionEvents, sessionMessageTree, type SessionMessageReference, type SessionReplay } from "../session/replay.js";
 import { tryReadSessionSnapshot, writeSessionSnapshot, snapshotToReplay, type SessionSnapshotData } from "../session/sessionSnapshot.js";
 import { runtimeEventsForRun, type RuntimeEventSink, type RuntimeHighWater } from "../session/runtimeEvent.js";
+import { resolveContinuationPlan } from "../session/recoveryPlan.js";
 import type { CapabilityStore } from "../runtime/CapabilityStore.js";
 import {
   TurnStore,
@@ -868,33 +869,10 @@ export class AgentSession {
         yield doneEvent(outcome);
         return;
       }
-      const interruptedTurnId = turn.turnId ?? turn.runtimeHighWater?.turnId;
-      const toolTurnIds = new Map<string, string>();
-      for (const event of replay.events) {
-        if (!event.runtime?.turnId) continue;
-        if ((event.type === "tool_call" || event.type === "tool_execution") && event.toolCallId) {
-          toolTurnIds.set(event.toolCallId, event.runtime.turnId);
-        } else if (event.type === "agent_message" && event.message.role === "assistant") {
-          for (const part of event.message.content) {
-            if (part.type === "toolCall") toolTurnIds.set(part.id, event.runtime.turnId);
-          }
-        }
-      }
-      const unknownToolNames = new Set<string>();
-      // 合成结果可能已落盘，且落盘时的 run 不等于原调用的 run；归属必须追溯原工具调用。
-      // 缺少归属证据仍保守阻塞，不能把历史不明的副作用当作安全结果。
-      for (const event of [...replay.events, ...replay.recoveredToolResults]) {
-        if (
-          event.type === "tool_result"
-          && event.executionStatus === "unknown"
-        ) {
-          const operationTurnId = event.toolCallId ? toolTurnIds.get(event.toolCallId) : undefined;
-          if (!interruptedTurnId || !operationTurnId || operationTurnId === interruptedTurnId) unknownToolNames.add(event.tool);
-        }
-      }
-      if (unknownToolNames.size > 0) {
-        const toolNames = [...unknownToolNames];
-        const message = `${toolNames.join("、")} 可能产生了未确认的副作用，恢复已阻塞。`;
+      const turnLimit = runOptions.maxSteps ?? resolveRunBudget(this.options.config.agent).hardStepLimit;
+      const recoveryPlan = resolveContinuationPlan(turn, replay, turnLimit);
+      if (recoveryPlan.action === "block") {
+        const message = recoveryPlan.message;
         const outcome: AgentTurnOutcome = {
           status: "blocked",
           stopReason: "blocked",
@@ -902,8 +880,8 @@ export class AgentSession {
           output: "",
           error: message,
           resumable: false,
-          blockedReason: "unsafe_action_required",
-          requiredAction: "Inspect the session facts and workspace, then start a new turn after resolving the unknown tool operation."
+          blockedReason: recoveryPlan.blockedReason,
+          requiredAction: recoveryPlan.requiredAction
         };
         this.recordError(message);
         await this.turnStore.clear().catch(() => undefined);
@@ -913,25 +891,12 @@ export class AgentSession {
         yield doneEvent(outcome);
         return;
       }
-      if (
-        turn.terminal?.status === "blocked"
-        && (turn.terminal.blockedReason === "missing_user_input"
-          || turn.terminal.blockedReason === "unsafe_action_required")
-      ) {
-        throw new Error(
-          turn.terminal.requiredAction
-            ? `This blocked turn requires a new user message: ${turn.terminal.requiredAction}`
-            : "This blocked turn requires a new user message before it can continue."
-        );
+      if (recoveryPlan.action === "require-user-input") {
+        throw new Error(recoveryPlan.message);
       }
-      const turnLimit = runOptions.maxSteps ?? resolveRunBudget(this.options.config.agent).hardStepLimit;
-      const remainingSteps = turnLimit - turn.completedSteps;
-      if (remainingSteps < 1) {
+      if (recoveryPlan.action === "exhausted") {
         await this.turnStore.clear().catch(() => undefined);
-        throw new Error(
-          `The interrupted turn already reached its ${String(turnLimit)}-step limit. `
-          + "Send a new user message to start another turn."
-        );
+        throw new Error(recoveryPlan.message);
       }
       const replayMessages = await this.rehydrateSessionAttachments(
         replay.messages,
@@ -960,7 +925,7 @@ export class AgentSession {
         ...runOptions,
         runId,
         turnId,
-        maxSteps: remainingSteps,
+        maxSteps: recoveryPlan.remainingSteps,
         continueFrom: continuationMessages,
         continueMessageReferences: continuationReferences,
         continueSystemPrompt: turn.systemPrompt,
