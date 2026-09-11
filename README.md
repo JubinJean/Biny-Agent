@@ -1,75 +1,105 @@
-# Biny
+<h1 align="center">Biny</h1>
 
-> 一个想法、半句话、一段粘贴——剩下交给 Biny。
+<p align="center">本地优先的 AI Agent，支持 macOS Desktop、TUI 与 CLI。</p>
 
-Biny 是一个本地优先、记忆优先（First Local × First Memory）的 AI Agent，在 macOS Desktop、TUI 和 CLI 中连接你的模型服务，协助编码、研究和文件处理。会话、配置和长期上下文默认保存在本机。
+<p align="center">
+  <a href="https://github.com/JubinJean/Biny-Agent">GitHub</a> ·
+  <a href="#快速开始">快速开始</a> ·
+  <a href="#可以做什么">功能</a> ·
+  <a href="#运行方式">运行方式</a>
+</p>
 
-## 功能
+## Biny 是什么
 
-- **三端入口**：Desktop、TUI、CLI 共用 Agent Runtime、工具和 Session。
-- **工作区工具**：文件读写、代码搜索、Git、Shell、受管进程、Web、Todo、MCP、Plugin 和 Skill。
-- **模型与 Provider**：支持主流模型服务、OpenAI-compatible / Anthropic-compatible 网关和 Ollama。
-- **本地状态**：Session、Memory、Agent Identity 和运行状态以本地文件或数据库为主。
-- **安全与恢复**：权限确认、checkpoint/undo、Session 恢复，以及可审计的工具执行结果。
-- **个性化**：表达风格、长期记忆和 Agent 灵魂分层管理；Markdown 仍是身份资料的权威来源，长期记忆由 SQLite 保存。
-- **活动感知**：macOS 原生采集器在本地记录屏幕活动（截图、OCR、输入事件），写入前规则脱敏、原始内容不出设备；分析层归纳会话摘要并聚合每日工作日记，Agent 可主动检索你最近在做什么。
-- **交互**：支持 Chat / Plan、follow-up / steer、slash command、编辑、重试和重新生成。
+Biny 使用你自己配置的模型，在工作区中协助编码、研究和文件处理。配置、会话与记忆默认保存在本机；模型调用和启用的网络工具会按你的配置发送请求。
+
+## 可以做什么
+
+- 在 Desktop、TUI 或 CLI 中与 Agent 对话、执行任务或先生成计划。
+- 在工作区读写文件、搜索代码、使用 Git、运行 Shell 命令和管理进程。
+- 使用 Todo 管理任务，并保留会话、工具结果与任务状态，便于继续处理。
+- 接入 MCP、Plugin 和 Skill 扩展能力。
+- 管理模型、权限、记忆和活动记录等本地设置。
+- 进行“情绪/活动/记忆”协同：Agent 会保留会话级情绪上下文，通过 `update_emotion` 在对话中更新情绪状态；并将窗口内活动归档为可检索的活动记录（含报告与摘要）；同时提供本地持久记忆用于跨会话复用背景信息。
+
+## 情绪机制
+
+Biny 按会话和全局保存情绪状态，支持模型在回复前读取并注入情绪上下文（`update_emotion` 工具驱动更新）。  
+情绪影响主要是对话风格与主动性（如回复节奏、长度、语气），不改变任务目标、权限边界或执行能力。  
+如果你更偏好固定表达风格，可在设置里关闭情绪注入或限制模型更新。
+
+## 活动机制
+
+Biny 会记录会话期间的本地活动摘要（例如主题、时间线、PR/问题/讨论线索等），并支持按需查询。  
+可通过活动工具获取日常汇总、近时段摘要、活动检索与会话详情，让“今天做了什么 / 刚才在干嘛 / 找回某项历史记录”更容易被回答。  
+活动分析与注入均受隐私策略约束；敏感内容与原始采集数据不会被无差别发送到云侧。
+
+## 记忆机制
+
+记忆是本地优先的持久上下文：  
+- 工具化调用 `save_memory` / `recall_memory` 写入与检索记忆。  
+- 记忆会通过可控策略参与上下文注入，默认以稳健优先级处理，不会覆盖用户当前指令、会话事实和权限规则。  
+- 提供“记忆维护/归档/重建”等后台能力，帮助长期使用时维持检索质量。  
+- 你可以在会话中仅开启当前聊天记忆，或按项目/全局范围控制记忆范围。
+
+## 渐进式扩展：Skill / MCP / CLI
+
+建议按三层理解和对外说明：
+
+- Skill（内置能力）：Biny 的能力包，分“先说明、后加载”两步。  
+  你通常先在对话里看到某些技能名（例如记忆、反思、任务、计划相关技能），要使用时再显式加载；这样可以减少初始上下文噪音并降低误触发风险。
+- MCP（外部能力）：通过 MCP 连接器接入第三方工具和服务（如 GitHub、数据库、搜索网关等），属于“联网执行能力边界”层，默认受权限与策略控制，不等于本地记忆数据。  
+- CLI（底座入口）：`biny` 命令是统一入口，既能发起对话、也能执行一次性任务、也能拉起 TUI。`pnpm` 下发的本地命令只用于开发调试与本地运行方式，产品入口与功能调度统一走 `biny`。
+
+## 安全提示
+
+Biny 使用当前操作系统账户的权限运行，不是隔离容器。处理陌生或重要工作区时，请在设置或 `/permissions` 中选用 `ask` 或 `read-only`。不要把 API key、token 或业务密钥提交到仓库。
 
 ## 快速开始
 
-需要 Node.js 22.12+，项目使用 `pnpm@10.6.5`。
+需要 Node.js 22 和 `pnpm@10.6.5`。Desktop 目前面向 macOS。
 
 ```bash
-git clone https://github.com/Thinkya1/Biny.git
-cd Biny
+git clone https://github.com/JubinJean/Biny-Agent.git
+cd Biny-Agent
 corepack enable
 corepack prepare pnpm@10.6.5 --activate
 pnpm install --frozen-lockfile
 pnpm dev -- init
 ```
 
-然后在 **设置 → 模型** 中配置模型：
+`init` 可以重复运行，不会覆盖已有配置。随后在 Desktop 的 **设置 → 模型** 中添加模型连接并选择默认模型；也可通过 `providers.<alias>.apiKeyEnv` 使用环境变量提供密钥。
 
 ```bash
-# macOS Desktop
+export DEEPSEEK_API_KEY="YOUR_API_KEY"
+pnpm dev -- doctor
+```
+
+## 运行方式
+
+```bash
+# Desktop
 pnpm desktop:dev
 
-# TUI
+# TUI / 对话
 pnpm dev -- tui
+pnpm dev -- chat
+
+# 一次性执行或只生成计划
+pnpm dev -- run "梳理这个仓库，并说明最需要先处理的风险"
+pnpm dev -- plan "为这项改动列出实施计划，不执行写入或命令工具"
 ```
 
-## 配置
-
-CLI、TUI 和 Desktop 共用全局 `~/.biny/config.json`；项目设置可放在 `<project>/.biny/settings.json`。API key 不要写入代码、README 或测试数据，使用 macOS Keychain 或 `apiKeyEnv` 环境变量。
-
-最小配置示例：
-
-```json
-{
-  "format": "biny-config",
-  "configVersion": 1,
-  "defaultModel": "coder",
-  "providers": {
-    "deepseek": { "type": "deepseek", "apiKeyEnv": "DEEPSEEK_API_KEY" }
-  },
-  "models": {
-    "coder": { "provider": "deepseek", "model": "deepseek-v4-flash" }
-  },
-  "context": {
-    "memory": { "enabled": false, "useMemories": true, "generateMemories": true }
-  }
-}
-```
-
-### Agent 灵魂
-
-全局 `$BINY_AGENT_DIR/identity/`（默认 `~/.biny/agent/identity/`）保存 `SOUL.md`、`IDENTITY.md`、`STYLE.md` 和 `USER.md`。身份资料默认加载，Desktop 的 **设置 → 通用 → Agent 灵魂** 支持只读预览和提案审核；Memory 与身份资料彼此分开。
+运行 `pnpm dev -- --help` 查看完整命令和参数。
 
 ## 开发
 
 ```bash
-pnpm test
+pnpm install --frozen-lockfile
 pnpm typecheck
 pnpm lint
+pnpm test
 pnpm build
 ```
+
+修改 TUI 后，先运行 `pnpm build:cli`，再到任意目标项目目录使用全局 `biny tui` 或 `biny chat` 验证真实入口。
