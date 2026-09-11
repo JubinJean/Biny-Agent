@@ -19,6 +19,8 @@ import { defaultActivitySettings, type ActivitySettings } from "../src/activity/
 import type { AgentModel, ModelStreamEvent } from "../src/agent/core/types.js";
 import type { ActivityModelRuntime, ActivityDataResidency } from "../src/activity/types.js";
 import type { Tool } from "../src/tools/types.js";
+import type { EmbeddingModelRuntime } from "../src/llm/embedding/types.js";
+import { buildActivityChatContext } from "../src/activity/context.js";
 
 const NOW = new Date(2026, 7, 26, 15, 30, 0); // 本地 2026-08-26 15:30
 
@@ -47,6 +49,64 @@ await testSessionsAndShowTools();
 await testReportToolCachesSameDayWithoutReanalysis();
 await testReportCacheExpiresAfterTtl();
 await testReportCacheInMemoryBehavior();
+await testExternalRecallAndRevocation();
+await testExternalSemanticSummaryWithoutOcr();
+
+async function testExternalRecallAndRevocation(): Promise<void> {
+  await withStore(async (store, root) => {
+    const id = seedEndedSession(store, todayAt(14, 0), todayAt(14, 30), 3);
+    store.recordAnalysis(analysisRow(id, { project: "biny", summary: "RECALL_SUMMARY_731 token=summary-secret" }));
+    let settings: ActivitySettings = { ...await settingsFor(root), enabled: true, externalPolicy: "external_allowed" };
+    const cloud = scriptedModel([], { runtime: "provider", dataResidency: "external" }).model;
+    const deps = { loadSettings: async () => settings, getChatModel: () => cloud, now: () => new Date(NOW) };
+    const digest = createActivityDigestTool(deps);
+    const sessions = createActivitySessionsTool(deps);
+    const search = createActivitySearchTool(deps);
+    const report = createActivityReportTool({ ...deps, getModel: () => undefined, cache: createInMemoryActivityReportCache(60_000) });
+    const calls = [
+      () => executeTool(digest, {}),
+      () => executeTool(sessions, { sessionId: id }),
+      () => executeTool(search, { query: "Test App" }),
+      () => executeTool(report, {})
+    ];
+    for (const run of calls) {
+      const allowed = await run();
+      assert.doesNotMatch(allowed, /阻止|summary-secret|window-secret/u);
+      assert.match(allowed, /RECALL_SUMMARY_731|Test App/u);
+    }
+    const greeting = await buildActivityChatContext("你好", { store, settings, now: () => new Date(NOW) });
+    assert.match(greeting!, /RECALL_SUMMARY_731/u);
+    assert.match(greeting!, /MUST reference one specific/u);
+    assert.doesNotMatch(greeting!, /summary-secret/u);
+    settings = { ...settings, externalPolicy: "local_only" };
+    for (const run of calls) assert.match(await run(), /阻止/u, "revocation must precede cached report lookup");
+    settings = { ...settings, externalPolicy: "confirm_external", externalConfirmed: false };
+    for (const run of calls) assert.match(await run(), /确认/u);
+    settings = { ...settings, externalConfirmed: true };
+    for (const run of calls) assert.doesNotMatch(await run(), /请在设置/u);
+  });
+}
+
+async function testExternalSemanticSummaryWithoutOcr(): Promise<void> {
+  await withStore(async (store, root) => {
+    const id = seedEndedSession(store, todayAt(9, 0), todayAt(10, 0), 3);
+    await store.recordFallbackCapture({ sessionId: id, occurredAt: todayAt(9, 10), eventType: "fallback_capture", rawOcrText: "LOCAL_OCR_ONLY_731", jpeg: Buffer.from("jpeg"), fallbackReason: "test" });
+    store.recordAnalysis(analysisRow(id, { summary: "SHAREABLE_SUMMARY_731", sourceEventCount: 3 }));
+    const runtime: EmbeddingModelRuntime = {
+      fingerprint: "persona-test",
+      descriptor: { ref: { kind: "local", model: "multilingual-e5-small" }, fingerprint: "persona-test", displayName: "test", source: "local", dimensions: 2, recommendedThresholds: { currentWorkspace: 0.3, crossWorkspace: 0.2 }, available: true, installed: true },
+      embed: async (request) => ({ embeddings: request.texts.map(() => new Float32Array([1, 0])), dimensions: 2, fingerprint: "persona-test", model: { kind: "local", model: "multilingual-e5-small" } })
+    };
+    let model = scriptedModel([]).model;
+    const tool = createActivitySearchTool({ loadSettings: async () => ({ ...await settingsFor(root), externalPolicy: "external_allowed" }), getChatModel: () => model, getEmbeddingRuntime: async () => runtime });
+    const local = await executeTool(tool, { query: "work", mode: "semantic" });
+    assert.match(local, /LOCAL_OCR_ONLY_731/u);
+    model = scriptedModel([], { runtime: "provider", dataResidency: "external" }).model;
+    const external = await executeTool(tool, { query: "work", mode: "semantic" });
+    assert.match(external, /SHAREABLE_SUMMARY_731/u);
+    assert.doesNotMatch(external, /LOCAL_OCR_ONLY_731|OCR 摘录|\.jpg/u);
+  });
+}
 
 /** digest：窗口内 session 渲染成 旧→新 时间线；未分析 session 退化展示事件摘要并标注。 */
 async function testDigestRendersTimelineWithUnanalyzedSessions(): Promise<void> {
@@ -55,7 +115,7 @@ async function testDigestRendersTimelineWithUnanalyzedSessions(): Promise<void> 
     seedEndedSession(store, todayAt(13, 0), todayAt(13, 30), 3);
     store.recordAnalysis(analysisRow(analyzed, { project: "biny", topics: ["实现 analyzer"] }));
 
-    const tool = createActivityDigestTool({
+    const tool = createActivityDigestTool({ getChatModel: () => scriptedModel([]).model,
       loadSettings: async () => settingsFor(root),
       now: () => new Date(NOW.getTime())
     });
@@ -70,7 +130,7 @@ async function testDigestRendersTimelineWithUnanalyzedSessions(): Promise<void> 
 async function testKeywordSearchToolHitsRedactedSummaries(): Promise<void> {
   await withStore(async (store, root) => {
     seedEndedSession(store, todayAt(10, 0), todayAt(10, 30), 3);
-    const tool = createActivitySearchTool({ loadSettings: async () => settingsFor(root) });
+    const tool = createActivitySearchTool({ getChatModel: () => scriptedModel([]).model, loadSettings: async () => settingsFor(root) });
     const markdown = await executeTool(tool, { query: "Test App" });
     assert.match(markdown, /## activity_search: Test App/u);
     assert.match(markdown, /Test App event/u);
@@ -84,7 +144,7 @@ async function testSessionsAndShowTools(): Promise<void> {
     const sessionId = seedEndedSession(store, todayAt(9, 0), todayAt(10, 0), 3);
     store.recordAnalysis(analysisRow(sessionId, { project: "biny", topics: ["接入工具"], decisions: ["走工具"] }));
 
-    const sessionsTool = createActivitySessionsTool({ loadSettings: async () => settingsFor(root) });
+    const sessionsTool = createActivitySessionsTool({ getChatModel: () => scriptedModel([]).model, loadSettings: async () => settingsFor(root) });
     const list = await executeTool(sessionsTool, {});
     assert.match(list, /## 最近的活动会话/u);
     assert.ok(list.includes(sessionId), "列表带 session id 供下一步打开");
@@ -107,8 +167,8 @@ async function testReportToolCachesSameDayWithoutReanalysis(): Promise<void> {
     seedEndedSession(store, todayAt(9, 0), todayAt(10, 0), 3);
     const cache = createInMemoryActivityReportCache(60_000);
     const { model, calls } = scriptedModel([ANALYSIS_JSON]);
-    const tool = createActivityReportTool({
-      getModel: () => model,
+    const tool = createActivityReportTool({ getChatModel: () => scriptedModel([]).model,
+      getModel: async () => model,
       loadSettings: async () => settingsFor(root),
       cache,
       now: () => new Date(NOW.getTime())
@@ -128,7 +188,7 @@ async function testReportCacheExpiresAfterTtl(): Promise<void> {
     seedEndedSession(store, todayAt(9, 0), todayAt(10, 0), 3);
     const cache = createInMemoryActivityReportCache(0); // 立即过期
     const { model, calls } = scriptedModel([ANALYSIS_JSON, ANALYSIS_JSON_NEW_SESSION]);
-    const tool = createActivityReportTool({
+    const tool = createActivityReportTool({ getChatModel: () => scriptedModel([]).model,
       getModel: () => model,
       loadSettings: async () => settingsFor(root),
       cache,

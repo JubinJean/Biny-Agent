@@ -8,6 +8,9 @@
  * 原文不进入渲染文本，详情也只展示与工具、分析输入同级的摘要级信息。
  */
 import { z } from "zod";
+import type { AgentModel } from "../../agent/core/types.js";
+import { ActivityPrivacyPolicy } from "../../activity/privacyPolicy.js";
+import { redactSecrets } from "../../utils/secrets.js";
 import { ActivityStore } from "../../activity/store.js";
 import type { ActivitySettings } from "../../activity/settings.js";
 import { ToolAccesses } from "../access.js";
@@ -22,6 +25,7 @@ export interface ActivitySessionsArgs {
 export interface ActivitySessionsToolDeps {
   /** 读取最新的 activity 设置（存储目录），避免沿用回合开始时的旧快照。 */
   loadSettings(): Promise<ActivitySettings>;
+  getChatModel(): AgentModel | undefined;
 }
 
 export function createActivitySessionsTool(deps: ActivitySessionsToolDeps): Tool<ActivitySessionsArgs, string> {
@@ -60,6 +64,10 @@ export function createActivitySessionsTool(deps: ActivitySessionsToolDeps): Tool
         approvalRule: "activity_sessions",
         async execute() {
           const settings = await deps.loadSettings();
+          const model = deps.getChatModel();
+          if (!model) return "当前聊天模型不可用。";
+          const decision = new ActivityPrivacyPolicy(settings).evaluate(model);
+          if (!decision.allowed) return decision.message;
           const store = new ActivityStore();
           await store.open(settings.outputDirectory);
           try {
@@ -68,10 +76,10 @@ export function createActivitySessionsTool(deps: ActivitySessionsToolDeps): Tool
               if (!record) return `没有找到会话 ${sessionId}。`;
               const events = store.listSessionEventSummaries(sessionId);
               const analysis = store.getAnalysis(sessionId);
-              return renderSessionDetail(record, events, analysis);
+              return redactSecrets(renderSessionDetail(record, events, analysis));
             }
             const rows = store.listRecentSessionsWithAnalysis("1970-01-01T00:00:00.000Z", args.limit ?? 10);
-            return renderSessionList(rows);
+            return redactSecrets(renderSessionList(rows));
           } finally {
             await store.close();
           }

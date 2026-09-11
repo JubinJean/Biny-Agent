@@ -209,10 +209,20 @@ done
     await waitFor(() => service.snapshot().sessions === 1);
     timers.advance(10);
     await waitForSummary(root, yesterdayKey);
-    assert.equal(notes, 1);
-    assert.match(lastNote ?? "", new RegExp(`^# ${yesterdayKey} 每日摘要`, "u"));
-    timers.advance(15 * 60 * 1_000);
-    await waitFor(() => notes === 2);
+    assert.equal(notes, 0, "自动摘要不写入 Agent 每日记忆文件");
+    assert.equal(lastNote, undefined);
+    const verifier = new ActivityStore();
+    await verifier.open(root);
+    try {
+      const first = verifier.getSummary("daily", yesterdayKey);
+      assert.ok(first && !first.isPartial);
+      timers.advance(15 * 60 * 1_000);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      assert.deepEqual(verifier.getSummary("daily", yesterdayKey), first, "已完成的昨日摘要不重复生成");
+      assert.equal(notes, 0);
+    } finally {
+      await verifier.close();
+    }
   } finally {
     await service.stop();
     await rm(root, { recursive: true, force: true });

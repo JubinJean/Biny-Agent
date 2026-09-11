@@ -60,6 +60,7 @@ await testWorthGateSkipsLongTermProjections();
 await testPolicyBlocksExternalModel();
 await testSweepRespectsAnalysisPolicyGate();
 await testSweepRetriesAfterModelError();
+await testSweepCancellationKeepsRemainingSessionsPending();
   await testAnalysisModelErrorRecordsFailed();
   await testParseFailureRecordsFailedStatus();
 await testBuildReportGroupsAndFilters();
@@ -68,6 +69,23 @@ await testBuildReportBlockedPolicy();
 await testBuildReportCanRenderStoredAnalysesOnly();
 testDailyNoteFormatter();
 testReportRangeParsing();
+
+async function testSweepCancellationKeepsRemainingSessionsPending(): Promise<void> {
+  await withStore(async (store) => {
+    const first = seedEndedSession(store, todayAt(9), todayAt(10), 2);
+    const second = seedEndedSession(store, todayAt(11), todayAt(12), 2);
+    const controller = new AbortController();
+    const { model, calls } = scriptedModel([ANALYSIS_JSON]);
+    await assert.rejects(analyzePendingActivitySessions({
+      ...deps(store, localPolicy(), model),
+      signal: controller.signal,
+      onAnalyzed: async () => { controller.abort(); }
+    }), { name: "AbortError" });
+    assert.equal(calls(), 1, "取消批次间隔后不能再请求下一个会话");
+    assert.ok(store.getAnalysis(first));
+    assert.deepEqual(store.listSessionsPendingAnalysis().map((session) => session.id), [second]);
+  });
+}
 
 /** 心跳/零星 session（事件数 < 阈值）不调用模型，直接落低置信度占位记录。 */
 async function testTrivialSessionSkipsModel(): Promise<void> {

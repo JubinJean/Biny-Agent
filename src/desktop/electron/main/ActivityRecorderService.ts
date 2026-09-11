@@ -21,7 +21,8 @@ import {
   type ActivityReportResult
 } from "../../../activity/analyzer.js";
 import { refreshActivitySummaryWithNarrative } from "../../../activity/summary.js";
-import { resolveActivityAnalysisModel } from "../../../activity/analysisModel.js";
+import { resolveToolModel } from "../../../llm/toolModel.js";
+import { generateActivitySuggestions, type ActivitySuggestionsResult } from "../../../activity/suggestions.js";
 import { ActivityAnalysisScheduler } from "../../../activity/analysisScheduler.js";
 import { ActivityEmbeddingScheduler } from "../../../activity/embeddingScheduler.js";
 import { precomputeActivityEmbeddings } from "../../../activity/semanticSearch.js";
@@ -198,7 +199,7 @@ export class ActivityRecorderService {
     this.writeDailyNote = options.writeDailyNote ?? writeDailyActivityNote;
     this.writeMemories = options.writeMemories;
     this.onAnalyzed = options.onAnalyzed;
-    // 分析由 session 结束时的立即 sweep、启动后的首次检查和周期 sweep 触发；门禁与模型
+    // 分析由启动后的首次检查和周期 sweep 触发；门禁与模型
     // 选择在 runAnalysisSweep 里每次新鲜加载。
     this.analysisScheduler = new ActivityAnalysisScheduler({
       run: () => this.runAnalysisSweep(),
@@ -316,13 +317,25 @@ export class ActivityRecorderService {
   async buildReport(date?: string): Promise<ActivityReportResult> {
     const config = await this.configStore.load();
     const policy = new ActivityPrivacyPolicy(config.activity);
-    const model = resolveActivityAnalysisModel(config);
+    const model = resolveToolModel(config);
     const store = new ActivityStore();
     await store.open(config.activity.outputDirectory);
     try {
       const result = await buildActivityReport({ store, policy, model, writeMemories: this.writeMemories, onAnalyzed: this.onAnalyzed }, date ?? "today");
       await this.writeDailyNote(result.date, formatActivityDailyNote(result));
       return result;
+    } finally {
+      await store.close();
+    }
+  }
+
+  /** 首页只消费已分析且获准使用的活动，生成结果沿用领域层的缓存。 */
+  async suggestions(): Promise<ActivitySuggestionsResult> {
+    const config = await this.configStore.load();
+    const store = new ActivityStore();
+    await store.open(config.activity.outputDirectory);
+    try {
+      return await generateActivitySuggestions({ store, model: resolveToolModel(config), policy: new ActivityPrivacyPolicy(config.activity) });
     } finally {
       await store.close();
     }
@@ -348,13 +361,13 @@ export class ActivityRecorderService {
   /**
    * 周期分析的统一入口：首次检查和后续 sweep 都跑这一个。
    * 与 buildReport 同理开一条独立 store 连接，避免多次模型调用堵住采集写队列。
-   * 每次新鲜加载 config，因此 analysisPolicy/analysisModel 的改动下一轮即生效；
-   * 策略未放行或无可用模型时由 analyzePendingActivitySessions 逐项跳过，session 保持待分析。
+   * 每次新鲜加载 config，因此 analysisPolicy/toolModel 的改动下一轮即生效；
+   * 策略未放行时 session 保持待分析；无模型或失败则记录对应终态，供显式重分析。
    */
   private async runAnalysisSweep(): Promise<void> {
     const config = await this.configStore.load();
     const policy = new ActivityPrivacyPolicy(config.activity);
-    const model = resolveActivityAnalysisModel(config);
+    const model = resolveToolModel(config);
     const store = new ActivityStore();
     await store.open(config.activity.outputDirectory);
     try {
@@ -719,9 +732,7 @@ export class ActivityRecorderService {
     if (sessionId) {
       this.store.endSession(sessionId, endedAt);
       this.invalidateStoreSnapshot();
-      // Session 已经有明确结束边界，立即把摘要落库；周期 sweep 仍负责进程退出、
-      // OCR 延迟或模型暂不可用时的补偿。
-      this.analysisScheduler.runNow();
+      // 等待周期分析，让短暂离开前后的相邻活动有机会合并，并等待异步 OCR 落库。
     }
     this.sessionId = undefined;
   }
@@ -799,22 +810,16 @@ export class ActivityRecorderService {
         const store = new ActivityStore();
         await store.open(config.activity.outputDirectory);
         try {
-          // 先重渲染日报，以便升级前的旧格式和本轮刚补分析的 session 都能进入 daily note。
-          const report = await buildActivityReport({
-            store,
-            policy,
-            signal: this.analysisAbort.signal,
-            analyzePending: false
-          }, dateKey);
-          // activity_summaries 同时保留统计和可重试的 narrative；daily note 写入按项目归纳的完整日报。
+          const existing = store.getSummary("daily", dateKey);
+          if (existing && !existing.isPartial && existing.summary) return;
+          // 自动日结只维护 SQLite 摘要；工作日报的文件导出由显式请求触发。
           await refreshActivitySummaryWithNarrative(store, "daily", dateKey, {
-            model: resolveActivityAnalysisModel(config),
+            model: resolveToolModel(config),
             policy,
             signal: this.analysisAbort.signal,
             now,
             withNarrative: true
           });
-          await this.writeDailyNote(report.date, formatActivityDailyNote(report));
         } finally {
           await store.close();
         }

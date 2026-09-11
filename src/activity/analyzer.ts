@@ -12,6 +12,7 @@
  *   置信度占位记录；短 session 中有足够事件或截图时仍允许分析。
  */
 import { createHash } from "node:crypto";
+import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import type { AgentModel } from "../agent/core/types.js";
 import { generateNativeText, nativeJsonMessages } from "../llm/nativeJson.js";
@@ -149,7 +150,7 @@ export interface ActivityAnalyzerDeps {
   store: ActivityStore;
   policy: ActivityPrivacyPolicy;
   /**
-   * 分析所用模型。省略（未配置模型）时只落「零星活动」占位，需要模型的 session 保持待分析；
+   * 分析所用模型。省略时需要模型的 session 标记为 skipped，不生成伪分析内容；
    * 调用方据此区分「策略拒绝」与「没有模型可用」。
    */
   model?: AgentModel;
@@ -282,7 +283,8 @@ When in doubt, emit []. One clean durable fact is worth more than ten plausible 
  */
 export async function analyzeActivitySession(
   deps: ActivityAnalyzerDeps,
-  sessionId: string
+  sessionId: string,
+  force = false
 ): Promise<ActivityAnalysisOutcome> {
   const { store } = deps;
   const session = store.getEndedSession(sessionId);
@@ -291,7 +293,7 @@ export async function analyzeActivitySession(
   const semanticEventCount = events.filter((event) => event.eventType !== "screenshot_ocr").length;
   const inputHash = activityAnalysisInputHash(events);
   const existing = store.getAnalysis(sessionId);
-  if (existing && existing.inputHash === inputHash) {
+  if (!force && existing && existing.inputHash === inputHash) {
     if (existing.analysisStatus === "skipped" && existing.summary === ACTIVITY_TRIVIAL_SUMMARY) {
       return { status: "trivial", analysis: existing };
     }
@@ -325,7 +327,7 @@ export async function analyzeActivitySession(
     KNOWN_PROJECT_LIMIT
   );
 
-  let parsed: AnalysisOutput | undefined;
+  let parsed: AnalysisOutput;
   try {
     const run = await deps.policy.runAnalysis(model, async () => await requestSessionAnalysis(
       model,
@@ -350,15 +352,6 @@ export async function analyzeActivitySession(
       analyzedAt
     });
     return { status: "error", error: errorMessage(error) };
-  }
-
-  if (!parsed) {
-    store.recordAnalysisStatus(session.id, "failed", {
-      model: model.modelId,
-      error: "LLM did not return parseable JSON",
-      analyzedAt
-    });
-    return { status: "error", error: "LLM did not return parseable JSON" };
   }
 
   const entityDetails = normalizeEntityDetails(parsed);
@@ -449,6 +442,8 @@ export async function analyzePendingActivitySessions(
     } catch {
       result.errors += 1;
     }
+    // 积压会话逐条处理，给前台交互与模型服务留出间隔；停止时直接取消等待。
+    if (session !== pending.at(-1)) await delay(3_000, undefined, { signal: deps.signal });
   }
   return result;
 }
@@ -928,8 +923,8 @@ function dedupeOcrTexts(texts: readonly string[]): string[] {
 
 function textSimilarity(left: string, right: string): number {
   if (left === right) return 1;
-  const leftTokens = new Set(left.toLocaleLowerCase().split(/\s+/u).filter(Boolean));
-  const rightTokens = new Set(right.toLocaleLowerCase().split(/\s+/u).filter(Boolean));
+  const leftTokens = new Set(left.toLowerCase().split(/[^a-z0-9\u4e00-\u9fff]+/u).filter(Boolean));
+  const rightTokens = new Set(right.toLowerCase().split(/[^a-z0-9\u4e00-\u9fff]+/u).filter(Boolean));
   if (!leftTokens.size || !rightTokens.size) return 0;
   let intersection = 0;
   for (const token of leftTokens) if (rightTokens.has(token)) intersection += 1;

@@ -10,6 +10,9 @@
  * 两侧都只接触 store 查询层提供的脱敏数据；语义结果只显示脱敏 OCR 短摘录，不暴露快照路径。
  */
 import { z } from "zod";
+import type { AgentModel } from "../../agent/core/types.js";
+import { ActivityPrivacyPolicy, isTrustedLocalActivityModel } from "../../activity/privacyPolicy.js";
+import { redactSecrets } from "../../utils/secrets.js";
 import { searchActivitySemantic, type ActivitySemanticSearchResult } from "../../activity/semanticSearch.js";
 import { ActivityStore } from "../../activity/store.js";
 import type { ActivitySettings } from "../../activity/settings.js";
@@ -26,6 +29,7 @@ export interface ActivitySearchArgs {
 export interface ActivitySearchToolDeps {
   /** 读取最新的 activity 设置（存储目录），避免沿用回合开始时的旧快照。 */
   loadSettings(): Promise<ActivitySettings>;
+  getChatModel(): AgentModel | undefined;
   /**
    * 本地嵌入运行时（与记忆同一套 LocalEmbeddingRuntime）；未安装/不可用时 semantic 模式
    * 返回友好提示，由模型回退到 keyword 模式。
@@ -76,6 +80,10 @@ export function createActivitySearchTool(deps: ActivitySearchToolDeps): Tool<Act
         approvalRule: "activity_search",
         async execute({ signal }) {
           const settings = await deps.loadSettings();
+          const model = deps.getChatModel();
+          if (!model) return "当前聊天模型不可用。";
+          const decision = new ActivityPrivacyPolicy(settings).evaluate(model);
+          if (!decision.allowed) return decision.message;
           const store = new ActivityStore();
           await store.open(settings.outputDirectory);
           try {
@@ -88,10 +96,15 @@ export function createActivitySearchTool(deps: ActivitySearchToolDeps): Tool<Act
                 signal,
                 now: deps.now
               });
-              return renderSemanticSearchResult(args.query, result);
+              if (result.ok && !isTrustedLocalActivityModel(model)) {
+                const analyzed = result.hits.filter((hit) => hit.analysisAvailable === true);
+                if (result.hits.length && !analyzed.length) return "找到相关活动，但尚无可外发的分析摘要；OCR 内容保留在本机。";
+                result.hits = analyzed.map((hit) => ({ ...hit, excerpt: undefined }));
+              }
+              return redactSecrets(renderSemanticSearchResult(args.query, result));
             }
             const rows = store.search(args.query, args.limit ?? 20);
-            return renderKeywordSearchResult(args.query, rows);
+            return redactSecrets(renderKeywordSearchResult(args.query, rows));
           } finally {
             await store.close();
           }

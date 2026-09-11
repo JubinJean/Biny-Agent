@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 import { Command, InvalidArgumentError } from "commander";
 import { initCommand } from "./commands/init.js";
 import { registerCrystalCommands } from "./commands/crystal.js";
+import { registerFatigueCommands } from "./commands/fatigue.js";
 import { registerSoulCommands } from "./commands/soul.js";
 import { doctorCommand } from "./commands/doctor.js";
 import { runCommand, type RunCommandOptions } from "./commands/run.js";
@@ -29,6 +30,7 @@ import {
   activityConfigCommand,
   activityDigestCommand,
   activityReportCommand,
+  activityAnalyzeCommand,
   activitySearchCommand,
   activityServeCommand,
   activitySessionsCommand,
@@ -92,6 +94,7 @@ const { version: cliVersion } = createRequire(import.meta.url)("../../package.js
 program.name("biny").description("Biny local desktop assistant").version(cliVersion);
 registerCrystalCommands(program);
 registerSoulCommands(program);
+registerFatigueCommands(program);
 registerSkillCommands(program, workspaceRoot);
 
 program.command("init").description("Initialize config and .biny directories").action(wrap(() => initCommand(workspaceRoot)));
@@ -239,6 +242,7 @@ session
     return wrap(() => sessionImportCommand(workspaceRoot, file, { format, json: options.json }))();
   });
 const activity = program.command("activity").description("Inspect and serve local Activity Recorder data");
+activity.command("analyze").argument("<session-id>", "activity session to analyze again").option("--json", "print JSON").action((sessionId: string, options: { json?: boolean }) => wrap(() => activityAnalyzeCommand(workspaceRoot, sessionId, options))());
 activity.command("status").option("--json", "print JSON").action((options: { json?: boolean }) => wrap(() => activityStatusCommand(workspaceRoot, options))());
 activity.command("config").option("--json", "print JSON").action((options: { json?: boolean }) => wrap(() => activityConfigCommand(workspaceRoot, options))());
 activity

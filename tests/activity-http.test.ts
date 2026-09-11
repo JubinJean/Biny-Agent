@@ -9,6 +9,56 @@ import type { AgentModel, ModelStreamEvent } from "../src/agent/core/types.js";
 
 await testActivityHttpServerExposesLoopbackQueries();
 await testActivityHttpReportProjectsMemoryCallbacks();
+await testActivitySummaryReadsWithoutGeneratingAndManualAnalysisRetries();
+
+async function testActivitySummaryReadsWithoutGeneratingAndManualAnalysisRetries(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-http-analysis-"));
+  const settings: ActivitySettings = { ...defaultActivitySettings, outputDirectory: root, analysisPolicy: "external_allowed" };
+  const store = new ActivityStore();
+  let calls = 0;
+  const model: AgentModel = {
+    provider: "test", modelId: "tool-test", runtime: "provider",
+    stream: async () => (async function* (): AsyncGenerator<ModelStreamEvent> {
+      calls += 1;
+      yield { type: "text-delta", text: JSON.stringify({ worth: true, title: "修复登录", description: "修复了登录错误", memoryCandidates: [] }) };
+      yield { type: "finish", reason: "stop" };
+    })()
+  };
+  const deps = { loadSettings: async () => settings, getModel: () => model };
+  try {
+    await store.open(root);
+    const sessionId = store.startSession("2026-08-31T09:00:00.000Z");
+    store.recordEvent({ sessionId, occurredAt: "2026-08-31T09:00:01.000Z", eventType: "app_focus", application: "Editor" });
+    store.endSession(sessionId, "2026-08-31T10:00:00.000Z");
+    store.recordAnalysisStatus(sessionId, "skipped", { description: "No tool model configured." });
+    const pathname = `/api/activity-recorder/sessions/${sessionId}/analyze`;
+    const first = await handleActivityHttpRequest({ method: "POST", pathname }, deps);
+    assert.equal(first.status, 200);
+    assert.equal((first.body as { status: string }).status, "analyzed");
+    assert.equal(calls, 1, "恢复之前没有模型的会话");
+    await handleActivityHttpRequest({ method: "POST", pathname }, deps);
+    assert.equal(calls, 2, "显式重分析应绕过已有结果缓存");
+    const denied = await handleActivityHttpRequest({ method: "POST", pathname }, { ...deps, loadSettings: async () => ({ ...settings, analysisPolicy: "local_only" as const }) });
+    assert.equal((denied.body as { status: string }).status, "blocked");
+    assert.equal(calls, 2, "重分析不能绕过外发权限");
+    assert.ok(store.getAnalysis(sessionId), "授权不足不能清掉已有分析");
+
+    const summaryPath = "/api/activity-recorder/summary/daily/2026-08-31";
+    const missing = await handleActivityHttpRequest({ method: "GET", pathname: summaryPath }, deps);
+    assert.equal(missing.body, null);
+    assert.equal(calls, 2, "读取摘要不能触发模型");
+    const generated = await handleActivityHttpRequest({ method: "POST", pathname: summaryPath }, deps);
+    assert.equal(generated.status, 200);
+    assert.equal(calls, 2, "未请求 narrative 时只生成统计");
+    const read = await handleActivityHttpRequest({ method: "GET", pathname: summaryPath }, deps);
+    assert.deepEqual(read.body, generated.body);
+    const absent = await handleActivityHttpRequest({ method: "POST", pathname: "/api/activity-recorder/sessions/missing/analyze" }, deps);
+    assert.equal(absent.status, 404);
+  } finally {
+    await store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+}
 
 async function testActivityHttpServerExposesLoopbackQueries(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-http-"));

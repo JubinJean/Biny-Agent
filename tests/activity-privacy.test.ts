@@ -73,32 +73,20 @@ async function testActivityPolicyPersistenceUsesCas(): Promise<void> {
 async function testActivityPolicyBlocksExternalModelsWithoutFallback(): Promise<void> {
   const local = model("builtin-llama.cpp", "llama.cpp");
   const cloud = model("provider", "openai", "local", "http://127.0.0.1:11434/v1");
-
   for (const externalPolicy of policies) {
-    const policy = new ActivityPrivacyPolicy({ externalPolicy });
-    assert.equal(policy.canUseWithModel(local), true);
-    assert.equal(policy.canUseWithModel(cloud), false);
-    assert.equal(policy.evaluate(local).unsupportedPolicy, externalPolicy !== "local_only");
-    if (externalPolicy !== "local_only") {
-      assert.match(policy.evaluate(local).message, /当前版本暂不支持/u);
+    for (const externalConfirmed of [false, true]) {
+      const policy = new ActivityPrivacyPolicy({ ...defaultActivitySettings, externalPolicy, externalConfirmed });
+      assert.equal(policy.canUseWithModel(local), true);
+      const allowed = externalPolicy === "external_allowed" || externalPolicy === "confirm_external" && externalConfirmed;
+      assert.equal(policy.canUseWithModel(cloud), allowed);
+      let operationCalled = false;
+      const result = await policy.run(cloud, () => { operationCalled = true; return "summary"; });
+      assert.equal(operationCalled, allowed);
+      assert.equal(result.value, allowed ? "summary" : undefined);
+      assert.equal(result.fallbackAttempted, false);
     }
-
-    let operationCalled = false;
-    const result = await policy.run(cloud, () => {
-      operationCalled = true;
-      return "must-not-run";
-    });
-    assert.equal(result.status, "blocked");
-    assert.equal(result.value, undefined);
-    assert.equal(result.fallbackAttempted, false);
-    assert.equal(result.decision.policy, externalPolicy);
-    assert.match(result.decision.message, /阻止/u);
-    assert.equal(operationCalled, false);
   }
-
-  const localOnly = new ActivityPrivacyPolicy();
-  const fakeLocalUrl = model("provider", "llama.cpp", "local", "file:///tmp/model.gguf");
-  assert.equal(localOnly.canUseWithModel(fakeLocalUrl), false, "provider name and URL must not infer local trust");
+  assert.equal(new ActivityPrivacyPolicy().canUseWithModel(cloud), false, "a localhost URL cannot grant local trust");
 }
 
 function testAnalysisPolicySchemaAndDefault(): void {

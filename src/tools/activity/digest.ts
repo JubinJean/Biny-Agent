@@ -10,6 +10,9 @@
  * 从查询层就不在这条链路上；digest 本身只读活动记录，不自动写入长期记忆。
  */
 import { z } from "zod";
+import type { AgentModel } from "../../agent/core/types.js";
+import { ActivityPrivacyPolicy } from "../../activity/privacyPolicy.js";
+import { redactSecrets } from "../../utils/secrets.js";
 import { buildActivityDigest, type ActivityDigestResult } from "../../activity/digest.js";
 import { ActivityStore } from "../../activity/store.js";
 import type { ActivitySettings } from "../../activity/settings.js";
@@ -23,6 +26,7 @@ export interface ActivityDigestArgs {
 export interface ActivityDigestToolDeps {
   /** 读取最新的 activity 设置（存储目录），避免沿用回合开始时的旧快照。 */
   loadSettings(): Promise<ActivitySettings>;
+  getChatModel(): AgentModel | undefined;
   /** 仅生成近期活动时间线，不自动写入长期记忆。 */
   now?(): Date;
 }
@@ -66,6 +70,10 @@ export function createActivityDigestTool(deps: ActivityDigestToolDeps): Tool<Act
         approvalRule: "activity_digest",
         async execute() {
           const settings = await deps.loadSettings();
+          const model = deps.getChatModel();
+          if (!model) return "当前聊天模型不可用。";
+          const decision = new ActivityPrivacyPolicy(settings).evaluate(model);
+          if (!decision.allowed) return decision.message;
           const store = new ActivityStore();
           await store.open(settings.outputDirectory);
           try {
@@ -74,7 +82,7 @@ export function createActivityDigestTool(deps: ActivityDigestToolDeps): Tool<Act
               lookbackMin: args.lookbackMin,
               now: deps.now
             });
-            return result.markdown;
+            return redactSecrets(result.markdown);
           } finally {
             await store.close();
           }

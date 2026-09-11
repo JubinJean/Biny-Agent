@@ -7,10 +7,10 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { updateConfig, createFileConfigStore } from "../../config/store.js";
-import { resolveActivityAnalysisModel } from "../../activity/analysisModel.js";
+import { resolveToolModel } from "../../llm/toolModel.js";
 import { ActivityPrivacyPolicy } from "../../activity/privacyPolicy.js";
 import { buildActivityDigest } from "../../activity/digest.js";
-import { buildActivityReport, formatActivityDailyNote, formatActivityReportResult } from "../../activity/analyzer.js";
+import { analyzeActivitySession, buildActivityReport, formatActivityDailyNote, formatActivityReportResult } from "../../activity/analyzer.js";
 import { writeDailyActivityNote } from "../../activity/dailyNotes.js";
 import { refreshActivitySummaryWithNarrative } from "../../activity/summary.js";
 import { generateActivitySuggestions } from "../../activity/suggestions.js";
@@ -138,6 +138,32 @@ export async function activityDigestCommand(
   }
 }
 
+/** 显式重分析可恢复 skipped/failed 会话，仍经过同一模型选择和外发权限判断。 */
+export async function activityAnalyzeCommand(workspaceRoot: string, sessionId: string, options: ActivityOutputOptions = {}): Promise<void> {
+  const config = await createFileConfigStore(workspaceRoot).load();
+  const store = await openActivityStore(config.activity);
+  let memoryPipeline: Awaited<ReturnType<typeof createActivityMemoryPipeline>> | undefined;
+  try {
+    if (!store.getSessionDetail(sessionId)) throw new Error("没有找到活动会话。");
+    memoryPipeline = await createActivityMemoryPipeline({ workspaceRoot, getCrystalConfig: () => config.crystal, requireSemantic: false });
+    const result = await analyzeActivitySession({
+      store,
+      policy: new ActivityPrivacyPolicy(config.activity),
+      model: resolveToolModel(config),
+      writeMemories: memoryPipeline.writeMemories,
+      onAnalyzed: memoryPipeline.onAnalyzed
+    }, sessionId, true);
+    if (options.json) console.log(JSON.stringify(result));
+    else if (result.status === "analyzed" || result.status === "trivial") console.log(result.analysis.summary);
+    else if (result.status === "blocked") console.log(result.decision.message);
+    else if (result.status === "error") throw new Error(result.error);
+    else console.log(result.reason === "no_model" ? "暂无可用工具模型。" : "会话尚未结束，请稍后再试。");
+  } finally {
+    await store.close();
+    memoryPipeline?.close();
+  }
+}
+
 export async function activityReportCommand(
   workspaceRoot: string,
   date = "today",
@@ -156,7 +182,7 @@ export async function activityReportCommand(
     const result = await buildActivityReport({
       store,
       policy,
-      model: resolveActivityAnalysisModel(config),
+      model: resolveToolModel(config),
       writeMemories: memoryPipeline.writeMemories,
       onAnalyzed: memoryPipeline.onAnalyzed
     }, date);
@@ -178,7 +204,7 @@ export async function activitySummaryCommand(
   const store = await openActivityStore(config.activity);
   try {
     const result = await refreshActivitySummaryWithNarrative(store, "daily", dateKey, {
-      model: resolveActivityAnalysisModel(config),
+      model: resolveToolModel(config),
       policy: new ActivityPrivacyPolicy(config.activity),
       withNarrative: true
     });
@@ -199,7 +225,7 @@ export async function activitySuggestionsCommand(
     const result = await generateActivitySuggestions({
       store,
       policy: new ActivityPrivacyPolicy(config.activity),
-      model: resolveActivityAnalysisModel(config),
+      model: resolveToolModel(config),
       force: options.force
     });
     if (options.json) console.log(JSON.stringify(result));
@@ -240,7 +266,7 @@ export async function activityServeCommand(
   });
   const crystalHttpService = new CrystalService({
     getConfig: () => currentConfig.crystal,
-    getModel: () => resolveActivityAnalysisModel(currentConfig),
+    getModel: () => resolveToolModel(currentConfig),
     readAnchorText: async ({ threadId, anchorId }) => {
       if (!threadId || !/^[A-Za-z0-9_-]+$/u.test(threadId)) return undefined;
       const filePath = await resolveSessionFile(workspaceRoot, threadId).catch(() => undefined);
@@ -274,7 +300,7 @@ export async function activityServeCommand(
       },
       getModel: async () => {
         currentConfig = await configStore.load();
-        return resolveActivityAnalysisModel(currentConfig);
+        return resolveToolModel(currentConfig);
       },
       getRuntimeSnapshot: () => recorder.snapshot(),
       start: async () => {

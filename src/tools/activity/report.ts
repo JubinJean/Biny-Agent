@@ -6,10 +6,11 @@
  * 落库的结构化结果，必要时才补分析——整条链路只接触脱敏的 occurredAt/summary/application
  * 和受控的 OCR 投影，截图文件、原始 OCR 和输入键值从查询层就不在模型输入里。
  *
- * 是否用当前聊天模型补分析由 ActivityPrivacyPolicy 的 analysis 维度决定：外部模型默认需要
+ * 是否用工具模型补分析由 ActivityPrivacyPolicy 的 analysis 维度决定：外部模型默认需要
  * 用户在设置页确认，未放行时报告只渲染已分析的部分并说明原因，绝不降级到别的模型。
  */
 import { z } from "zod";
+import { redactSecrets } from "../../utils/secrets.js";
 import type { AgentModel } from "../../agent/core/types.js";
 import { buildActivityReport, formatActivityReportResult, resolveActivityReportRange, type ActivityReportResult } from "../../activity/analyzer.js";
 import { ActivityPrivacyPolicy } from "../../activity/privacyPolicy.js";
@@ -29,10 +30,11 @@ export interface ActivityReportCache {
 }
 
 export interface ActivityReportToolDeps {
-  /** 取当前聊天模型；未配置时返回 undefined，报告只渲染已分析的数据。 */
-  getModel(): AgentModel | undefined;
+  /** 取统一工具模型；未配置时返回 undefined，报告只渲染已分析的数据。 */
+  getModel(): AgentModel | undefined | Promise<AgentModel | undefined>;
   /** 读取最新的 activity 设置（策略与存储目录），避免沿用回合开始时的旧快照。 */
   loadSettings(): Promise<ActivitySettings>;
+  getChatModel(): AgentModel | undefined;
   /** 报告结果缓存；缺省时用进程内 10 分钟 TTL 的默认缓存。 */
   cache?: ActivityReportCache;
   /** 可注入时钟，便于测试固定「今天」。 */
@@ -70,7 +72,7 @@ export function createActivityReportTool(deps: ActivityReportToolDeps): Tool<Act
       "Summarize the user's recorded on-device screen activity into a dated work diary, grouped by project.",
       "Use it when the user asks what they worked on, wants to recap a day, or recalls past activity.",
       "It reads only redacted on-device event summaries (application, window, timestamp); original screenshots and unredacted OCR never leave the device.",
-      "Analyzing sessions that have no result yet uses the current chat model only when the activity privacy policy allows it; otherwise the report covers what is already analyzed and explains why."
+      "Analyzing sessions that have no result yet uses the configured tool model only when the activity privacy policy allows it; otherwise the report covers what is already analyzed and explains why."
     ].join(" "),
     promptSnippet: "Summarize recorded on-device activity into a dated work diary",
     promptGuidelines: [
@@ -103,6 +105,10 @@ export function createActivityReportTool(deps: ActivityReportToolDeps): Tool<Act
         async execute({ signal }) {
           const settings = await deps.loadSettings();
           const policy = new ActivityPrivacyPolicy(settings);
+          const chatModel = deps.getChatModel();
+          if (!chatModel) return "当前聊天模型不可用。";
+          const recall = policy.evaluate(chatModel);
+          if (!recall.allowed) return recall.message;
           const now = deps.now?.() ?? new Date();
           // 用独立连接读分析表并补分析，避免长时间模型调用占用采集器自己的那条写连接。
           const store = new ActivityStore();
@@ -112,7 +118,7 @@ export function createActivityReportTool(deps: ActivityReportToolDeps): Tool<Act
             // 缓存必须同时受原始事件、分析输入、模型和策略影响；否则今天新增活动或模型切换后，
             // 仍会返回旧日报。第一次补分析会改变 analysis revision，因此 set 使用补分析后的 key。
             const dateLabel = resolveReportDateLabel(date, now);
-            const model = deps.getModel();
+            const model = await deps.getModel();
             const cacheKey = reportCacheKey(dateLabel, settings, model, store.activityRevision());
             const cached = cache.get(cacheKey);
             const result = cached ?? await buildActivityReport({
@@ -123,7 +129,7 @@ export function createActivityReportTool(deps: ActivityReportToolDeps): Tool<Act
               now: deps.now
             }, dateLabel);
             if (!cached) cache.set(reportCacheKey(dateLabel, settings, model, store.activityRevision()), result);
-            return formatActivityReportResult(result);
+            return redactSecrets(formatActivityReportResult(result));
           } finally {
             await store.close();
           }
@@ -144,7 +150,6 @@ function reportCacheKey(
     revision,
     settings.analysisPolicy,
     settings.analysisExternalConfirmed ? "confirmed" : "unconfirmed",
-    settings.analysisModel ?? "follow-current",
     model?.provider ?? "no-model",
     model?.modelId ?? "",
     model?.runtime ?? "",

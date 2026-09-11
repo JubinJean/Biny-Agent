@@ -5,6 +5,7 @@
  * 做个性化回应，普通问题则用本地 OCR embedding 找到相关 session，再只注入分析后的标题/描述。
  * 原始截图不进聊天上下文；OCR 只作为本地检索输入，避免把整段屏幕文字无条件塞进每一轮 prompt。
  */
+import { redactSecrets } from "../utils/secrets.js";
 import type { EmbeddingModelRuntime } from "../llm/embedding/types.js";
 import { ACTIVITY_ANALYSIS_FAILED_SUMMARY, ACTIVITY_TRIVIAL_SUMMARY } from "./analyzer.js";
 import type { ActivitySettings } from "./settings.js";
@@ -42,15 +43,15 @@ export async function buildActivityChatContext(
       sections.push(recent);
       sections.push(greetingGuidance(input));
     }
-    return sections.join("\n\n");
+    return redactSecrets(sections.join("\n\n"));
   }
 
-  if (input.trim().length < 4 || options.getEmbeddingRuntime === undefined) return sections.join("\n\n");
+  if (input.trim().length < 4 || options.getEmbeddingRuntime === undefined) return redactSecrets(sections.join("\n\n"));
   try {
     const runtime = await options.getEmbeddingRuntime();
     // Activity 索引使用本地 multilingual-e5-small；不能因为配置了云端记忆 embedding
     // 就顺手把 OCR 送到云端。云端向量仍可由主动的 activity_search 工具按它自己的策略决定。
-    if (runtime?.descriptor.source !== "local") return sections.join("\n\n");
+    if (runtime?.descriptor.source !== "local") return redactSecrets(sections.join("\n\n"));
     const result = await searchActivitySemantic({
       store: options.store,
       getEmbeddingRuntime: async () => runtime,
@@ -66,7 +67,7 @@ export async function buildActivityChatContext(
   } catch {
     // 被动上下文不能阻断正常聊天；索引未下载、数据库暂忙或嵌入失败都静默降级为主动工具。
   }
-  return sections.join("\n\n");
+  return redactSecrets(sections.join("\n\n"));
 }
 
 export function isBareGreeting(input: string): boolean {
@@ -91,7 +92,7 @@ function activityInstructions(): string {
 function greetingGuidance(input: string): string {
   return [
     "## Personalize this greeting",
-    `The user just said “${input.trim().slice(0, 60)}”, a bare greeting with no question. Reply like a friend who remembers one recent thread from the activity context above. Do not list everything, do not ask a generic “How can I help?”, and do not claim details beyond the context.`,
+    `The user just said “${input.trim().slice(0, 60)}”, a bare greeting with no question. Reply in 1-2 sentences like a friend: you MUST reference one specific project, topic or event from the activity context above. Do not list everything, do not ask a generic “How can I help?”, and do not claim details beyond the context.`,
     "If the activity context is sparse, give a brief warm greeting instead."
   ].join("\n");
 }

@@ -12,7 +12,7 @@ import { ActivityPrivacyPolicy } from "./privacyPolicy.js";
 import type { ActivitySettings } from "./settings.js";
 import { ActivityStore } from "./store.js";
 import { buildActivityDigest } from "./digest.js";
-import { buildActivityReport, resolveActivityReportRange, type ActivityAnalyzerDeps } from "./analyzer.js";
+import { analyzeActivitySession, buildActivityReport, resolveActivityReportRange, type ActivityAnalyzerDeps } from "./analyzer.js";
 import { refreshActivitySummaryWithNarrative } from "./summary.js";
 import { generateActivitySuggestions } from "./suggestions.js";
 import type { ActivityRuntimeSnapshot } from "./types.js";
@@ -77,7 +77,7 @@ export async function handleActivityHttpRequest(
         body: {
           endpoints: [
             "config", "status", "start", "stop", "clear", "search", "sessions", "digest",
-            "report/:date", "summary/:date", "suggestions", "snapshots/:id/preview"
+            "sessions/:id/analyze", "report/:date", "summary/daily/:date", "suggestions", "snapshots/:id/preview"
           ]
         }
       };
@@ -109,6 +109,20 @@ export async function handleActivityHttpRequest(
       if (pathname === "/api/activity-recorder/sessions" && method === "GET") {
         const since = searchParams.get("since") ?? new Date(Date.now() - 7 * 24 * 60 * 60 * 1_000).toISOString();
         return { status: 200, body: store.listRecentSessionsWithAnalysis(since, boundedLimit(searchParams.get("limit"), 50, 200)) };
+      }
+      if (pathname.startsWith("/api/activity-recorder/sessions/") && pathname.endsWith("/analyze") && method === "POST") {
+        const sessionId = decodePathPart(pathname.slice("/api/activity-recorder/sessions/".length, -"/analyze".length));
+        if (!store.getSessionDetail(sessionId)) return notFound("没有找到 Activity session。");
+        return {
+          status: 200,
+          body: await analyzeActivitySession({
+            store,
+            policy: new ActivityPrivacyPolicy(settings),
+            model: await deps.getModel?.(),
+            writeMemories: deps.writeMemories,
+            onAnalyzed: deps.onAnalyzed
+          }, sessionId, true)
+        };
       }
       if (pathname.startsWith("/api/activity-recorder/sessions/") && method === "GET") {
         const sessionId = decodePathPart(pathname.slice("/api/activity-recorder/sessions/".length));
@@ -144,9 +158,10 @@ export async function handleActivityHttpRequest(
           }, range.label)
         };
       }
-      if (pathname.startsWith("/api/activity-recorder/summary/") && method === "GET") {
-        const dateKey = decodePathPart(pathname.slice("/api/activity-recorder/summary/".length));
+      if (pathname.startsWith("/api/activity-recorder/summary/daily/") && (method === "GET" || method === "POST")) {
+        const dateKey = decodePathPart(pathname.slice("/api/activity-recorder/summary/daily/".length));
         if (!/^\d{4}-\d{2}-\d{2}$/u.test(dateKey)) return badRequest("summary date 必须是 YYYY-MM-DD。");
+        if (method === "GET") return { status: 200, body: store.getSummary("daily", dateKey) ?? null };
         const model = await deps.getModel?.();
         const policy = new ActivityPrivacyPolicy(settings);
         return {
@@ -154,7 +169,7 @@ export async function handleActivityHttpRequest(
           body: await refreshActivitySummaryWithNarrative(store, "daily", dateKey, {
             model,
             policy,
-            withNarrative: true
+            withNarrative: searchParams.get("narrative") === "true"
           })
         };
       }

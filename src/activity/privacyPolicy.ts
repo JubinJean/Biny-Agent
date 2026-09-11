@@ -7,24 +7,21 @@ import {
   type ActivitySettings
 } from "./settings.js";
 
-const effectiveActivityPolicy = "local_only" as const;
 
 export type ActivityPrivacyDecisionStatus = "allowed" | "blocked";
 
 export type ActivityPrivacyDecisionReason =
   | "trusted_local_model"
   | "external_model_blocked"
-  | "unsupported_policy";
+  | "external_allowed"
+  | "external_confirmed"
+  | "external_needs_confirmation";
 
 export interface ActivityPrivacyDecision {
   allowed: boolean;
   status: ActivityPrivacyDecisionStatus;
   reason: ActivityPrivacyDecisionReason;
-  /** 配置中的值必须保留，便于设置页显示“当前版本暂不支持”。 */
   policy: ActivityExternalPolicy;
-  /** v1 执行时始终按 local_only 处理。 */
-  effectivePolicy: typeof effectiveActivityPolicy;
-  unsupportedPolicy: boolean;
   trustedLocalModel: boolean;
   message: string;
 }
@@ -70,8 +67,8 @@ export interface ActivityAnalysisRunResult<T> {
  * 这里是双维度策略：回忆（把 Activity 注入聊天上下文）走 `externalPolicy`，分析（把脱敏
  * 摘要聚合送分析模型）走 `analysisPolicy`。两个维度都遵守同一条底线：只有明确标记为
  * builtin-llama.cpp 的运行时算受信任本地模型；provider 名称、模型 ID、URL 和
- * dataResidency 声明都不能单独把一个模型提升为受信任本地模型。截图、OCR 原文在任何
- * 策略下都不出设备。
+ * dataResidency 声明都不能单独把一个模型提升为受信任本地模型。截图始终留在设备；
+ * 允许外部分析时仅提供脱敏后的事件与 OCR 文本。
  */
 export class ActivityPrivacyPolicy {
   private readonly settings: ActivitySettings;
@@ -95,39 +92,20 @@ export class ActivityPrivacyPolicy {
   }
 
   evaluate(model: ActivityModelIdentity): ActivityPrivacyDecision {
-    const unsupportedPolicy = this.settings.externalPolicy !== effectiveActivityPolicy;
     const trustedLocalModel = isTrustedLocalActivityModel(model);
-    if (trustedLocalModel) {
-      return {
-        allowed: true,
-        status: "allowed",
-        reason: unsupportedPolicy ? "unsupported_policy" : "trusted_local_model",
-        policy: this.settings.externalPolicy,
-        effectivePolicy: effectiveActivityPolicy,
-        unsupportedPolicy,
-        trustedLocalModel: true,
-        message: unsupportedPolicy
-          ? `当前版本暂不支持 Activity 外发策略“${this.settings.externalPolicy}”，已按 local_only 执行。`
-          : "Activity 仅在受信任的本地 llama.cpp 模型中可用。"
-      };
-    }
-
+    const policy = this.settings.externalPolicy;
+    const allowed = trustedLocalModel || policy === "external_allowed" || (policy === "confirm_external" && this.settings.externalConfirmed);
+    const reason = trustedLocalModel ? "trusted_local_model" : policy === "external_allowed" ? "external_allowed"
+      : policy === "confirm_external" ? this.settings.externalConfirmed ? "external_confirmed" : "external_needs_confirmation" : "external_model_blocked";
     return {
-      allowed: false,
-      status: "blocked",
-      reason: "external_model_blocked",
-      policy: this.settings.externalPolicy,
-      effectivePolicy: effectiveActivityPolicy,
-      unsupportedPolicy,
-      trustedLocalModel: false,
-      message: unsupportedPolicy
-        ? `当前版本暂不支持 Activity 外发策略“${this.settings.externalPolicy}”；已阻止向当前模型外发 Activity。`
-        : "当前模型不是受信任的本地 llama.cpp 模型，已阻止注入 Activity。"
+      allowed, status: allowed ? "allowed" : "blocked", policy, trustedLocalModel, reason,
+      message: allowed ? "已允许使用脱敏活动摘要；原始截图和 OCR 留在本机。"
+        : policy === "confirm_external" ? "请在设置中确认允许聊天模型使用脱敏活动摘要。" : "当前模型不是受信任的本地模型，已阻止注入 Activity。"
     };
   }
 
   /**
-   * 分析维度的判定：决定能不能把脱敏后的事件摘要聚合送到当前聊天模型做 session 分析。
+   * 分析维度的判定：决定能不能把脱敏后的事件摘要聚合送到工具模型做 session 分析。
    *
    * 与 evaluate（回忆维度）相互独立；未放行时调用方必须完全不运行分析，而不是降级成
    * 别的模型。原始截图/OCR 不在这条链路上，无论判定结果如何都不出设备。
@@ -164,7 +142,7 @@ export class ActivityPrivacyPolicy {
         trustedLocalModel: false,
         message: confirmed
           ? "用户已在设置页确认放行外部模型分析。"
-          : "外部模型分析需要用户在设置页确认后才运行；当前已跳过。"
+          : "请在设置 → 权限中允许外部模型分析活动；当前已跳过。"
       };
     }
     return {

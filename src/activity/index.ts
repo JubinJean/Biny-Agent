@@ -1,5 +1,4 @@
 export * from "./analyzer.js";
-export * from "./analysisModel.js";
 export * from "./analysisScheduler.js";
 export * from "./embeddingScheduler.js";
 export * from "./context.js";
