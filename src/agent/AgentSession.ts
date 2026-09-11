@@ -372,6 +372,7 @@ export class AgentSession {
       if (!model) throw new Error("Agent model is not configured.");
       return model;
     };
+    const currentModel = (): AgentModel | undefined => options.modelManager?.getModel() ?? options.model;
     const onUsage = async (usage: AgentUsage, operation: "agent" | "plan" | "compaction" | "memory" | "subagent"): Promise<void> => {
       this.recordModelUsage(usage, operation);
     };
@@ -385,9 +386,21 @@ export class AgentSession {
       const activeAlias = options.modelManager?.getInfo().modelAlias ?? this.activeConfig.defaultModel;
       return alias === activeAlias ? getModel() : createNativeModelForConfig(this.activeConfig, alias);
     };
-    this.toolModel = () => auxiliaryModel(resolveToolModelAlias(this.activeConfig));
+    this.toolModel = () => {
+      const alias = resolveToolModelAlias(this.activeConfig);
+      if (alias) return auxiliaryModel(alias);
+      // 自动模式在凭据尚未落盘时仍可使用宿主已注入的当前模型；显式失效配置必须保留不可用状态。
+      return this.activeConfig.toolModel === undefined ? currentModel() : undefined;
+    };
     const memoryModel = (field: MemoryModelField): AgentModel => {
-      const model = auxiliaryModel(resolveMemoryModelAlias(this.activeConfig, field));
+      const alias = resolveMemoryModelAlias(this.activeConfig, field);
+      const model = alias
+        ? auxiliaryModel(alias)
+        : this.activeConfig.context.memory[field] === undefined
+          && this.activeConfig.context.memory.memoryModel === undefined
+          && this.activeConfig.toolModel === undefined
+          ? currentModel()
+          : undefined;
       if (!model) throw new Error("没有可用的记忆工具模型，请在设置中配置工具模型。");
       return model;
     };

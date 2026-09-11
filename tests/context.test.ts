@@ -2314,7 +2314,10 @@ async function testCrystalHistoricalMaterial(): Promise<void> {
 }
 
 function testConfig(): AgentConfig {
-  return JSON.parse(JSON.stringify(defaultConfig)) as AgentConfig;
+  const config = JSON.parse(JSON.stringify(defaultConfig)) as AgentConfig;
+  // 测试只依赖注入的 ContextTestModel，不能被开发机的真实环境变量改变辅助模型选择。
+  config.providers.deepseek = { ...config.providers.deepseek!, apiKeyEnv: "BINY_CONTEXT_TEST_UNCONFIGURED_KEY" };
+  return config;
 }
 
 async function withTempWorkspace(fn: (workspaceRoot: string) => Promise<void>): Promise<void> {
