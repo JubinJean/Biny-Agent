@@ -8,6 +8,7 @@
 import type { SessionEvent } from "../session/recorder.js";
 import { activitySummaryText } from "../runtime/activitySummary.js";
 import { publicUserMessage } from "../session/publicMessage.js";
+import { canonicalCompatibleToolName } from "../tools/toolNames.js";
 import { completeToolItem, createRunningToolItem } from "./toolPresentation.js";
 import type { ToolTranscriptItem, TranscriptItem } from "./types.js";
 
@@ -18,6 +19,7 @@ export function sessionEventsToTranscript(events: SessionEvent[]): TranscriptIte
   for (const [index, event] of events.entries()) {
     if (event.type === "tool_result" && event.auditOnly && event.recovered && resultStatus(event.result) !== "skipped") continue;
     if (event.type === "user_message") {
+      if (event.auditOnly && (event.metadata?.queuedDelivery === "steer" || event.metadata?.queuedDelivery === "followUp")) continue;
       items.push({ id: replayId("user", index), kind: "user", content: publicUserMessage(event.content) });
       continue;
     }
@@ -28,11 +30,12 @@ export function sessionEventsToTranscript(events: SessionEvent[]): TranscriptIte
     }
 
     if (event.type === "tool_call") {
+      const toolName = canonicalCompatibleToolName(event.tool);
       appendActivity(items, event.assistantContent, index);
       pendingTools.push(createRunningToolItem({
-        id: replayId(`tool-${event.tool}`, index),
+        id: replayId(`tool-${toolName}`, index),
         toolCallId: event.toolCallId,
-        tool: event.tool,
+        tool: toolName,
         args: event.args,
         startedAtMs: eventTimeMs(event.time)
       }));
@@ -40,12 +43,13 @@ export function sessionEventsToTranscript(events: SessionEvent[]): TranscriptIte
     }
 
     if (event.type === "tool_result") {
-      const pendingIndex = findPendingTool(pendingTools, event.toolCallId, event.tool);
+      const toolName = canonicalCompatibleToolName(event.tool);
+      const pendingIndex = findPendingTool(pendingTools, event.toolCallId, toolName);
       const running = pendingIndex === -1
         ? createRunningToolItem({
-          id: replayId(`tool-${event.tool}`, index),
+          id: replayId(`tool-${toolName}`, index),
           toolCallId: event.toolCallId,
-          tool: event.tool,
+          tool: toolName,
           args: {},
           startedAtMs: undefined
         })

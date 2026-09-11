@@ -74,6 +74,7 @@ export function tuiReducer(state: TuiState, event: TuiAction): TuiState {
       // 维护操作不属于 Agent 回合，不能复用或结算任务耗时。
       return { ...state, turnStartedAt: undefined, lastWorkedMs: undefined };
     case "run.started":
+    case "session.title":
       return state;
     case "run.completed": {
       const transcript = finalizeActiveCells(state.transcript, "skipped", "Interrupted before completion.");
@@ -247,7 +248,7 @@ export function tuiReducer(state: TuiState, event: TuiAction): TuiState {
     case "context.updated":
     case "compact.started":
     case "compact.completed":
-    case "skill.draft_created":
+    case "recipe.ready":
       return state;
   }
 }

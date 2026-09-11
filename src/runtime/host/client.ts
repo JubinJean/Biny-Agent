@@ -27,7 +27,6 @@ import type { ChatPersonalizationOverridePatch, AgentPersonalizationState, Globa
 import {
   runtimeHostEventHistoryLimit as eventHistoryLimit,
   runtimeHostCapabilities,
-  runtimeHostMaxFrameBytes as maxFrameBytes,
   runtimeHostProtocolVersion as protocolVersion,
   decodeHostFrame,
   encodeHostFrame,
@@ -79,6 +78,7 @@ import type {
 } from "./types.js";
 import type { WorktreeRecord, WorktreeStatusView } from "./worktree.js";
 import { RuntimeResourceBaselinePendingError } from "./resources.js";
+import { RuntimeHostFrameDecoder } from "./framing.js";
 
 interface RuntimeHostClientOptions extends HostClientOptions {
   registration: HostRegistration;
@@ -100,7 +100,7 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
   readonly persistenceRoot: string;
   readonly clientId: string;
   private socket: net.Socket | undefined;
-  private buffer = "";
+  private decoder = new RuntimeHostFrameDecoder();
   private readyPromise: Promise<void> | undefined;
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private reconnectAttempts = 0;
@@ -501,10 +501,10 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     return () => this.capabilityOfferListeners.delete(listener);
   }
 
-  steer(input: string, attachments: AgentAttachment[] = [], requestIds?: RuntimeRequestIds): QueuedAgentMessage {
+  async steer(input: string, attachments: AgentAttachment[] = [], requestIds?: RuntimeRequestIds): Promise<QueuedAgentMessage> {
     this.assertQueueable(input, attachments);
     const ids = normalizeRequestIds(requestIds);
-    void this.request("queue", {
+    return await this.request<QueuedAgentMessage>("queue", {
       input,
       attachments,
       delivery: "steer",
@@ -512,14 +512,13 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
       sessionId: this.focusedSessionId,
       writeIntent: true,
       expectedRevision: this.currentRevision()
-    }).catch((error) => this.reportError(error));
-    return { runId: this.activeRunId() ?? "", messageId: ids.messageId, delivery: "steer" };
+    });
   }
 
-  followUp(input: string, attachments: AgentAttachment[] = [], requestIds?: RuntimeRequestIds): QueuedAgentMessage {
+  async followUp(input: string, attachments: AgentAttachment[] = [], requestIds?: RuntimeRequestIds): Promise<QueuedAgentMessage> {
     this.assertQueueable(input, attachments);
     const ids = normalizeRequestIds(requestIds);
-    void this.request("queue", {
+    return await this.request<QueuedAgentMessage>("queue", {
       input,
       attachments,
       delivery: "followUp",
@@ -527,8 +526,7 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
       sessionId: this.focusedSessionId,
       writeIntent: true,
       expectedRevision: this.currentRevision()
-    }).catch((error) => this.reportError(error));
-    return { runId: this.activeRunId() ?? "", messageId: ids.messageId, delivery: "followUp" };
+    });
   }
 
   async continueInterruptedTurn(): Promise<AgentRunOutcome | undefined> {
@@ -1006,7 +1004,7 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
   private openSocket(): Promise<void> {
     if (this.readyPromise) return this.readyPromise;
     // 旧 socket 可能只收到半个 JSON 帧；新握手必须从干净的 JSONL 边界开始。
-    this.buffer = "";
+    this.decoder = new RuntimeHostFrameDecoder();
     this.readyPromise = new Promise<void>((resolve, reject) => {
       const socket = net.createConnection(this.options.registration.endpoint);
       this.socket = socket;
@@ -1052,7 +1050,7 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
         if (!settled) fail(new Error("Runtime Host connection closed during handshake."));
         const error = new Error("Runtime Host connection closed.");
         this.rejectPendingRequests(error);
-        this.buffer = "";
+        this.decoder = new RuntimeHostFrameDecoder();
         this.socket = undefined;
         this.readyPromise = undefined;
         this.noteConnectionDropped();
@@ -1245,22 +1243,16 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
 
   private readClientData(socket: net.Socket, chunk: string): void {
     if (this.socket !== socket) return;
-    this.buffer += chunk;
-    if (Buffer.byteLength(this.buffer, "utf8") > maxFrameBytes) {
-      this.socket?.destroy(new Error("Runtime Host frame is too large."));
-      return;
-    }
-    while (true) {
-      const newline = this.buffer.indexOf("\n");
-      if (newline < 0) return;
-      const line = this.buffer.slice(0, newline).trim();
-      this.buffer = this.buffer.slice(newline + 1);
-      if (!line) continue;
-      try {
-        this.handleClientFrame(decodeHostFrame(line));
-      } catch (error) {
-        this.reportError(error);
+    try {
+      for (const line of this.decoder.push(chunk)) {
+        try {
+          this.handleClientFrame(decodeHostFrame(line));
+        } catch (error) {
+          this.reportError(error);
+        }
       }
+    } catch (error) {
+      socket.destroy(asError(error));
     }
   }
 

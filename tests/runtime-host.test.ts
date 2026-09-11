@@ -11,6 +11,7 @@ import { saveConfig } from "../src/config/loader.js";
 import { runtimeHostPaths, startRuntimeHost, connectRuntimeHost, spawnRuntimeHost } from "../src/runtime/RuntimeHost.js";
 import { RuntimeEventAuthority } from "../src/runtime/RuntimeAuthority.js";
 import { DurableTaskRunStore } from "../src/runtime/TaskRunStore.js";
+import { SubagentTaskIncompleteError } from "../src/runtime/SubagentTaskManager.js";
 import type { InteractiveRuntimeHandle } from "../src/runtime/InteractiveAgentRuntime.js";
 import { defaultChatPersonalizationOverride, resolveChatPersonalization } from "../src/personalization/index.js";
 
@@ -318,6 +319,17 @@ async function main(): Promise<void> {
   const failedRecord = await waitForTaskStatus(async () => await client.taskGet("task-host-failure"), "failed");
   assert.match(JSON.stringify(failedRecord), /execution failed/u);
 
+  await client.taskCreate({ taskRunId: "task-host-incomplete", task: "bounded task" });
+  const incompleteRun = client.taskRun("task-host-incomplete");
+  await waitUntil(() => taskCompletions.has("task-host-incomplete"));
+  taskCompletions.get("task-host-incomplete")?.reject(new SubagentTaskIncompleteError("step_limit", "partial findings"));
+  assert.equal((await incompleteRun).accepted, false);
+  const incompleteRecord = await waitForTaskStatus(async () => await client.taskGet("task-host-incomplete"), "incomplete");
+  assert.deepEqual((incompleteRecord.attempts as Array<{ artifacts?: unknown }>)[0]?.artifacts, { output: "partial findings" });
+  assert.match(JSON.stringify(incompleteRecord), /step_limit/u);
+  assert.equal((await client.taskCancel("task-host-incomplete")).accepted, true);
+  assert.equal((await client.taskGet("task-host-incomplete") as { status: string }).status, "incomplete");
+
   const retryableTask = taskRuns.create({ taskRunId: "task-host-retryable", task: "retry me", sessionId: snapshot.info.sessionId });
   const retryableAttempt = taskRuns.createAttempt(retryableTask.taskRunId, { retrySafety: "idempotent" });
   taskRuns.transition(retryableTask.taskRunId, "running", { attemptId: retryableAttempt.attemptId });
@@ -596,7 +608,7 @@ async function main(): Promise<void> {
   await fs.chmod(hostPaths.registrationPath, 0o600);
   await assert.rejects(
     connectRuntimeHost(workspace, { clientId: "incompatible-client", surface: "tui" }),
-    /protocol 2 is incompatible with 5/u
+    /protocol 2 is incompatible with 6/u
   );
   assert.deepEqual(JSON.parse(await readFile(hostPaths.registrationPath, "utf8")), incompatibleRegistration);
   await fs.rm(hostPaths.registrationPath);

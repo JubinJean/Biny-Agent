@@ -46,4 +46,16 @@ releaseSessionA();
 await Promise.all([sessionA, sessionASecond, sessionB]);
 assert.deepEqual(runOrder, ["a:start", "b", "a:end", "a:second"]);
 
+let releaseQuery!: () => void;
+const pendingQuery = dispatcher.dispatch("query", () => new Promise<void>((resolve) => { releaseQuery = resolve; }));
+let snapshotRead = false;
+const snapshotQuery = dispatcher.dispatch("query", async () => { snapshotRead = true; });
+await new Promise<void>((resolve) => setTimeout(resolve, 0));
+try {
+  assert.equal(snapshotRead, true, "wait-idle 未完成时其他查询仍应完成");
+} finally {
+  releaseQuery();
+  await Promise.all([pendingQuery, snapshotQuery]);
+}
+
 console.log("runtime-host operations tests passed");

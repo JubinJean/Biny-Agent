@@ -15,7 +15,9 @@ import { randomUUID } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { AgentMessage } from "../agent/core/types.js";
+import { canonicalizeAgentMessageToolNames } from "../agent/modelMessages.js";
 import type { ToolExecutionState, ToolRetrySafety } from "../tools/types.js";
+import { canonicalCompatibleToolName } from "../tools/toolNames.js";
 import type { RuntimeHighWater } from "./runtimeEvent.js";
 import { agentDir, ensureAgentDirs } from "./store.js";
 
@@ -116,7 +118,15 @@ export class TurnStore {
       const version = (parsed as { version?: unknown }).version;
       if (version !== turnStateVersion && version !== 3 && version !== 2) return undefined;
       const turn = (parsed as { turn?: unknown }).turn;
-      return isInterruptedTurn(turn) ? turn : undefined;
+      if (!isInterruptedTurn(turn)) return undefined;
+      return {
+        ...turn,
+        messages: turn.messages.map(canonicalizeAgentMessageToolNames),
+        pendingToolExecutions: turn.pendingToolExecutions?.map((checkpoint) => ({
+          ...checkpoint,
+          tool: canonicalCompatibleToolName(checkpoint.tool)
+        }))
+      };
     } catch {
       return undefined;
     }

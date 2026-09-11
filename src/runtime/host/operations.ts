@@ -7,8 +7,7 @@ import type { OperationLane } from "./types.js";
 import { sessionIdFromFile } from "../../session/store.js";
 
 export class OperationDispatcher {
-  private readonly tails: Record<OperationLane, Promise<void>> = {
-    query: Promise.resolve(),
+  private readonly tails: Record<Exclude<OperationLane, "query">, Promise<void>> = {
     mutation: Promise.resolve(),
     admission: Promise.resolve(),
     control: Promise.resolve(),
@@ -17,6 +16,8 @@ export class OperationDispatcher {
   private readonly runTails = new Map<string, Promise<void>>();
 
   dispatch<T>(lane: OperationLane, work: () => Promise<T>, key?: string): Promise<T> {
+    // 查询不占因果写队列：wait-idle 或远端 MCP 读取不能挡住其他会话的快照和订阅。
+    if (lane === "query") return Promise.resolve().then(work);
     if (lane !== "run" || key === undefined) {
       const result = this.tails[lane].then(work, work);
       this.tails[lane] = result.then(() => undefined, () => undefined);

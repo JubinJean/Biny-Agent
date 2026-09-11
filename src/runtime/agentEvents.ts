@@ -3,7 +3,7 @@ import type { AgentSessionUpdate, AgentTurnStopReason, BlockedReason } from "../
 import type { ContextStatus } from "../agent/context/types.js";
 import type { PermissionAction, PermissionGrantScope, PermissionMode } from "../permission/PermissionManager.js";
 import type { SessionUsage } from "../session/metadata.js";
-import type { RuntimeResourceSnapshot } from "./host/resources.js";
+import type { RuntimeResourceReadiness } from "./host/resources.js";
 
 export type AgentRunStatus =
   | "thinking"
@@ -57,6 +57,7 @@ export interface AgentRunModel {
 
 export type AgentHostEvent =
   | RunStartedEvent
+  | (AgentEventBase & { type: "session.title"; title: string })
   | (AgentEventBase & { type: "message.user"; messageId: string; content: string; delivery?: "steer" | "followUp" })
   | (AgentEventBase & AgentSessionUpdate)
   | (AgentEventBase & { type: "permission.requested"; requestId: string; toolCallId: string; request: AgentPermissionEventRequest })
@@ -83,8 +84,8 @@ export type AgentHostEvent =
   /** 旧宿主仍可能发布 aborted；新用户取消应优先发布 run.cancelled。 */
   | (AgentEventBase & { type: "run.aborted"; durationMs: number; reason: string; stopReason?: AgentTurnStopReason; finishReason?: string; steps?: number })
   | (AgentEventBase & { type: "run.failed"; durationMs: number; error: string; stopReason?: AgentTurnStopReason; finishReason?: string; steps?: number })
-  /** 自动技能提取产出待审核草稿后的界面审核入口；不进入时间线，仅触发聊天内草稿卡。 */
-  | (AgentEventBase & { type: "skill.draft_created"; draft: { id: string; name: string; description: string; toolCalls: number } });
+  /** 会话事实满足 Recipe 槽位后的界面入口；不进入时间线，仅触发聊天内提示卡。 */
+  | (AgentEventBase & { type: "recipe.ready"; recipe: import("../session/recipes.js").RecipeSuggestion });
 
 export type TerminalRunEvent = Extract<AgentHostEvent, {
   type:
@@ -156,7 +157,7 @@ export interface InteractiveRuntimeSnapshot {
   permissionMode: PermissionMode;
   state: InteractiveRunState;
   /** Host 级 MCP/Skill 基线；旧客户端缺省时按未知处理。 */
-  resourceReadiness?: RuntimeResourceSnapshot;
+  resourceReadiness?: RuntimeResourceReadiness;
 }
 
 /** Runtime 发布的唯一实时信封；没有 event 时表示维护操作等纯状态变化。 */

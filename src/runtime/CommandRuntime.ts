@@ -10,6 +10,8 @@ import { createFileConfigStore, type AgentConfigStore } from "../config/store.js
 import type { AgentConfig } from "../config/schema.js";
 import { AgentSession } from "../agent/AgentSession.js";
 import { ModelManager } from "../llm/ModelManager.js";
+import { resolveToolModel } from "../llm/toolModel.js";
+import { preselectCapabilities } from "../agent/capabilityPreselection.js";
 import { SessionRecorder } from "../session/recorder.js";
 import { ensureAgentDirs } from "../session/store.js";
 import { createToolRegistry } from "../tools/registry.js";
@@ -54,7 +56,7 @@ import { DurableTaskRunStore } from "./TaskRunStore.js";
 import { AutomationStore } from "./AutomationScheduler.js";
 import { GoalGraphStore } from "./GoalGraphStore.js";
 import { CapabilityStore } from "./CapabilityStore.js";
-import { RuntimeHostResourceScope, RuntimeResourceBaselinePendingError, type RuntimeHostResourceRegistry, type RuntimeResourceSnapshot } from "./host/resources.js";
+import { RuntimeHostResourceScope, RuntimeResourceBaselinePendingError, type RuntimeHostResourceRegistry, type RuntimeResourceSnapshot, type RuntimeResourceReadiness } from "./host/resources.js";
 import { listEnabledGlobalPluginPaths, listEnabledProjectPluginPaths } from "../extensions/pluginRegistry.js";
 import { globalPluginRoot } from "../config/paths.js";
 import { DailyDiaryScheduler } from "../agent/context/chatDiary.js";
@@ -90,7 +92,7 @@ export interface CommandRuntime {
   refreshSkills(): Promise<void>;
   /** 刷新共享 MCP/Skill 代理；回合开始前调用，避免活动回合看到半套工具。 */
   refreshExtensionTools?(): void;
-  resourceSnapshot?(): RuntimeResourceSnapshot;
+  resourceSnapshot?(): RuntimeResourceReadiness;
   assertResourceBaselineReady?(): void;
   subscribeResourceChanges?(listener: (snapshot: RuntimeResourceSnapshot) => void): () => void;
   /** 实时重新扫描具名子代理定义（会话期间可编辑生效）。 */
@@ -333,18 +335,22 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
       return decision.value;
     };
 
+    const getActivityChatModel = () => modelManager?.getModel();
     toolRegistry.registerBuiltinTool(createActivityReportTool({
-      getModel: () => modelManager?.getModel(),
+      getChatModel: getActivityChatModel,
+      getModel: async () => resolveToolModel(await configStore.load(workspaceRoot)),
       loadSettings: loadActivitySettings
     }));
     toolRegistry.registerBuiltinTool(createActivityDigestTool({
+      getChatModel: getActivityChatModel,
       loadSettings: loadActivitySettings
     }));
     toolRegistry.registerBuiltinTool(createActivitySearchTool({
+      getChatModel: getActivityChatModel,
       loadSettings: loadActivitySettings,
       getEmbeddingRuntime: async () => await agent?.getActivityEmbeddingRuntime()
     }));
-    toolRegistry.registerBuiltinTool(createActivitySessionsTool({ loadSettings: loadActivitySettings }));
+    toolRegistry.registerBuiltinTool(createActivitySessionsTool({ loadSettings: loadActivitySettings, getChatModel: getActivityChatModel }));
     // MCP/Plugin 仍由 Host 持有连接和执行权；共享 MCP 工具在回合开始前按最新快照同步。
     for (const entry of toolRegistry.listEntries()) {
       if (entry.source !== "mcp" && entry.source !== "plugin") continue;
@@ -367,6 +373,9 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
       skillPrompt: (selection) => skillPromptForSelection(requireSkillBundle(skills), selection),
       subagentPrompt: buildSubagentDefinitionsPrompt(subagentDefinitions),
       skillPaths: (selection) => skillPathsForSelection(requireSkillBundle(skills), selection),
+      selectCapabilities: async (input) => await preselectCapabilities({
+        ...input, model: resolveToolModel(input.config), tools: toolRegistry.list(), skills: requireSkillBundle(skills).skills
+      }),
       mcpPrompt: () => mcpHost.instructionsPrompt(),
       todoStore: todos,
       createCheckpoint: checkpoints ? async (label) => await checkpoints.create(label) : undefined,
@@ -521,7 +530,7 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     expandSkillCommand: async (input: string): Promise<string> => await expandSkillCommandText(requireSkillBundle(skills), input),
     refreshSkills,
     refreshExtensionTools,
-    resourceSnapshot: (): RuntimeResourceSnapshot => resourceScope.snapshot(),
+    resourceSnapshot: (): RuntimeResourceReadiness => resourceScope.readiness(),
     assertResourceBaselineReady: (): void => {
       if (!resourceScope.isReadyForSubmission()) throw new RuntimeResourceBaselinePendingError();
     },

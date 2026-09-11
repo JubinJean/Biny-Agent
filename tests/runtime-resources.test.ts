@@ -2,9 +2,10 @@ import assert from "node:assert/strict";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { mock } from "node:test";
 import { defaultConfig } from "../src/config/schema.js";
 import { loadSkills } from "../src/extensions/skills.js";
-import { RuntimeHostResourceRegistry } from "../src/runtime/host/resources.js";
+import { RuntimeHostResourceRegistry, RuntimeHostResourceScope } from "../src/runtime/host/resources.js";
 
 const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "biny-runtime-resources-"));
 
@@ -36,6 +37,45 @@ try {
   await first.start();
   assert.equal(first.snapshot().state, "ready");
   assert.equal(first.isReadyForSubmission(), true);
+  assert.deepEqual(first.readiness(), { revision: first.snapshot().revision, state: "ready" });
+  assert.ok(Buffer.byteLength(JSON.stringify(first.readiness())) < 100, "高频就绪摘要不应包含能力目录");
+  const revision = first.snapshot().revision;
+  const refresh = first.refreshSkills();
+  assert.equal(first.refreshSkills(), refresh, "并发会话复用同一次 Skill 扫描");
+  await refresh;
+  assert.equal(first.snapshot().revision, revision, "未变化的 Skill 不应递增资源版本或发布快照");
+  await writeFile(path.join(workspaceRoot, ".biny", "skills", "duplicate-skill", "SKILL.md"), duplicateSkill.replace("Duplicate test", "Updated test"));
+  await first.refreshSkills();
+  assert.equal(first.skills.skills.find((skill) => skill.name === "duplicate-skill")?.description, "Updated test skill");
+  assert.equal(first.snapshot().revision, revision + 1, "变化的目录仅发布一次");
+
+  const slow = new RuntimeHostResourceScope(workspaceRoot, {
+    ...defaultConfig,
+    extensions: { ...defaultConfig.extensions, mcp: { slow: { enabled: true, command: "unused", args: [], cwd: ".", stderr: "ignore", timeoutMs: 60_000 } } }
+  });
+  let connected = false;
+  let connecting = true;
+  let finishConnection!: () => void;
+  slow.mcp.connectConfiguredServers = () => new Promise<void>((resolve) => { finishConnection = resolve; });
+  slow.mcp.listServers = () => [{ name: "slow", command: "unused", transport: "stdio", enabled: true, connected, connecting, toolNames: [], promptNames: [], hasResources: false }];
+  mock.timers.enable({ apis: ["setTimeout"] });
+  try {
+    const starting = slow.start();
+    mock.timers.tick(10_000);
+    await starting;
+    assert.equal(slow.snapshot().state, "ready", "仍在连接不应被标记为 degraded");
+    assert.equal(slow.snapshot().mcp.pending, true, "baseline 超时不能清除仍在连接的 pending");
+    connected = true;
+    connecting = false;
+    finishConnection();
+    await Promise.resolve();
+    await Promise.resolve();
+    assert.equal(slow.snapshot().mcp.pending, false);
+    assert.equal(slow.snapshot().state, "ready");
+  } finally {
+    mock.timers.reset();
+    await slow.close();
+  }
 
   const changedConfig = {
     ...defaultConfig,

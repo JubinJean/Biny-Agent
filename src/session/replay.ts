@@ -10,7 +10,9 @@
  */
 import path from "node:path";
 import type { AgentMessage, AgentReasoningContent, ModelRequestMetrics } from "../agent/core/types.js";
+import { canonicalizeAgentMessageToolNames } from "../agent/modelMessages.js";
 import { createToolOperationId, type ToolExecutionState } from "../tools/types.js";
+import { canonicalCompatibleToolName } from "../tools/toolNames.js";
 import { readSessionEvents, readStoredSessionEvents } from "./events.js";
 import { activeSessionEventsForPath, sessionMessageTree, type SessionMessageNode, type SessionMessageReference } from "./messageTree.js";
 import type { ReasoningBlock, SessionContextCheckpoint, SessionContextState, SessionContextUsage, SessionEvent, SessionUsage } from "./recorder.js";
@@ -129,20 +131,20 @@ function validateCanonicalToolPairing(events: readonly SessionEvent[]): void {
   const calls = new Map<string, { tool: string; operationId?: string; canonical: boolean }>();
   for (const event of events) {
     if (event.type !== "tool_call" || !event.toolCallId || event.runtime !== undefined || calls.has(event.toolCallId)) continue;
-    calls.set(event.toolCallId, { tool: event.tool, canonical: false });
+    calls.set(event.toolCallId, { tool: canonicalCompatibleToolName(event.tool), canonical: false });
   }
   const results = new Set<string>();
   for (const event of canonicalEvents) {
     if (event.type === "tool_call" && event.toolCallId) {
       const existing = calls.get(event.toolCallId);
       if (existing?.canonical) throw new Error(`Duplicate canonical tool call: ${event.toolCallId}`);
-      calls.set(event.toolCallId, { tool: event.tool, canonical: true });
+      calls.set(event.toolCallId, { tool: canonicalCompatibleToolName(event.tool), canonical: true });
       continue;
     }
     if (event.type === "tool_execution") {
       const call = calls.get(event.toolCallId);
       if (!call) throw new Error(`Tool execution has no matching tool call: ${event.toolCallId}`);
-      if (call.tool !== event.tool) throw new Error(`Tool call ${event.toolCallId} changed tool identity.`);
+      if (call.tool !== canonicalCompatibleToolName(event.tool)) throw new Error(`Tool call ${event.toolCallId} changed tool identity.`);
       if (call.operationId !== undefined && call.operationId !== event.operationId) {
         throw new Error(`Tool call ${event.toolCallId} changed operation identity.`);
       }
@@ -152,7 +154,7 @@ function validateCanonicalToolPairing(events: readonly SessionEvent[]): void {
     if (event.type === "tool_result" && event.toolCallId) {
       const call = calls.get(event.toolCallId);
       if (!call) throw new Error(`Tool result has no matching tool call: ${event.toolCallId}`);
-      if (call.tool !== event.tool) throw new Error(`Tool result ${event.toolCallId} changed tool identity.`);
+      if (call.tool !== canonicalCompatibleToolName(event.tool)) throw new Error(`Tool result ${event.toolCallId} changed tool identity.`);
       if (results.has(event.toolCallId)) throw new Error(`Duplicate canonical tool result: ${event.toolCallId}`);
       if (event.operationId !== undefined && call.operationId !== undefined && event.operationId !== call.operationId) {
         throw new Error(`Tool result ${event.toolCallId} has a mismatched operation identity.`);
@@ -209,7 +211,9 @@ function findRecoveryCallIndex(events: SessionEvent[], result: ToolResultEvent):
     const event = events[index];
     if (event?.type === "tool_call") {
       if (result.toolCallId !== undefined && event.toolCallId === result.toolCallId) return index;
-      if (result.toolCallId === undefined && event.tool === result.tool && (result.sequence === undefined || event.sequence === result.sequence)) return index;
+      if (result.toolCallId === undefined
+        && canonicalCompatibleToolName(event.tool) === canonicalCompatibleToolName(result.tool)
+        && (result.sequence === undefined || event.sequence === result.sequence)) return index;
     }
     if (event?.type === "agent_message" && event.message.role === "assistant" && result.toolCallId !== undefined
       && event.message.content.some((part) => part.type === "toolCall" && part.id === result.toolCallId)) return index;
@@ -265,6 +269,7 @@ function interruptedToolResults(events: SessionEvent[], options: SessionReplayOp
     index: number,
     auditOnly?: boolean
   ): RecoveryLedgerEntry => {
+    const canonicalTool = canonicalCompatibleToolName(tool);
     const key = callKey(toolCallId, sequence, index);
     const current = entries.get(key);
     if (current) {
@@ -274,7 +279,7 @@ function interruptedToolResults(events: SessionEvent[], options: SessionReplayOp
       return current;
     }
     const entry: RecoveryLedgerEntry = {
-      tool,
+      tool: canonicalTool,
       toolCallId,
       sequence,
       operationId: createToolOperationId(options.sessionId ?? "legacy", key),
@@ -288,16 +293,17 @@ function interruptedToolResults(events: SessionEvent[], options: SessionReplayOp
     return entry;
   };
   const findEntry = (toolCallId: string | undefined, tool: string, sequence: number | undefined): [string, RecoveryLedgerEntry] | undefined => {
+    const canonicalTool = canonicalCompatibleToolName(tool);
     if (toolCallId) {
       const direct = entries.get(toolCallId);
       if (direct) return [toolCallId, direct];
     }
     for (const key of activeKeys) {
       const entry = entries.get(key);
-      if (entry && entry.tool === tool && (sequence === undefined || entry.sequence === sequence)) return [key, entry];
+      if (entry && entry.tool === canonicalTool && (sequence === undefined || entry.sequence === sequence)) return [key, entry];
     }
     for (const [key, entry] of entries) {
-      if (!entry.hasResult && entry.tool === tool) return [key, entry];
+      if (!entry.hasResult && entry.tool === canonicalTool) return [key, entry];
     }
     return undefined;
   };
@@ -534,6 +540,17 @@ function projectSessionConversation(
   const references: SessionMessageReference[] = [];
   const pendingCalls: Array<{ id: string; name: string; args: unknown }> = [];
   const openCalls = new Map<string, { id: string; name: string; args: unknown }>();
+  const canonicalOpenCalls = new Set<string>();
+  // 同一调用同时有 canonical 消息与审计事件时，只投影一次历史提示。
+  // 先收集 ID，兼容审计事件在 canonical 消息之前或之后落盘。
+  const historicalCanonicalCalls = new Set(events.flatMap((event) => event.type === "agent_message" && event.message.role === "assistant"
+    ? event.message.content.flatMap((part) => part.type === "toolCall" && isNonReplayableHistoricalTool(part.name) ? [part.id] : [])
+    : []));
+  const historicalCanonicalResults = new Set(events.flatMap((event) => event.type === "agent_message" && event.message.role === "toolResult"
+    && historicalCanonicalCalls.has(event.message.toolCallId) ? [event.message.toolCallId] : []));
+  const legacyCalls = new Map<string, { tool: string; sequence?: number }>();
+  const pendingHistoricalNotices: string[] = [];
+  const pendingHistoricalResultNotices: string[] = [];
   let pendingAssistantContent = "";
   let pendingReasoningContent: string | undefined;
   let pendingReasoningProviderOptions: Record<string, unknown> | undefined;
@@ -547,13 +564,35 @@ function projectSessionConversation(
     messages.push(message);
   };
 
+  const findLegacyCall = (toolCallId: string | undefined, tool: string, sequence: number | undefined): [string, { tool: string; sequence?: number }] | undefined => {
+    if (toolCallId) {
+      const direct = legacyCalls.get(toolCallId);
+      if (direct) return [toolCallId, direct];
+    }
+    const canonicalTool = canonicalCompatibleToolName(tool);
+    return [...legacyCalls.entries()].reverse().find(([, call]) =>
+      canonicalCompatibleToolName(call.tool) === canonicalTool
+      && (sequence === undefined || call.sequence === sequence)
+    );
+  };
+
+  const flushPendingHistoricalResultNotices = (): void => {
+    if ((openCalls.size > 0 || canonicalOpenCalls.size > 0) || !pendingHistoricalResultNotices.length) return;
+    appendMessage({
+      role: "assistant",
+      content: pendingHistoricalResultNotices.map((text) => ({ type: "text" as const, text }))
+    });
+    pendingHistoricalResultNotices.splice(0, pendingHistoricalResultNotices.length);
+  };
+
   const flushPendingCalls = (): void => {
-    if (!pendingCalls.length || callsFlushed) return;
+    if ((!pendingCalls.length && !pendingHistoricalNotices.length) || (callsFlushed && pendingCalls.length)) return;
     appendMessage({
       role: "assistant",
       content: [
         ...replayReasoningParts(pendingReasoningBlocks, pendingReasoningContent, pendingReasoningProviderOptions),
         ...(pendingAssistantContent ? [{ type: "text" as const, text: pendingAssistantContent }] : []),
+        ...pendingHistoricalNotices.map((text) => ({ type: "text" as const, text })),
         ...pendingCalls.map((call) => ({
           type: "toolCall" as const,
           id: call.id,
@@ -572,6 +611,7 @@ function projectSessionConversation(
     pendingReasoningContent = undefined;
     pendingReasoningProviderOptions = undefined;
     pendingReasoningBlocks = undefined;
+    pendingHistoricalNotices.splice(0, pendingHistoricalNotices.length);
     callsFlushed = false;
   };
 
@@ -582,11 +622,12 @@ function projectSessionConversation(
     appendMessage({
       role: "toolResult",
       toolCallId,
-      toolName: event.tool,
+      toolName: canonicalCompatibleToolName(event.tool),
       content: [{ type: "text", text: stringifyResult(event.result) }],
       details: event.result
     });
     openCalls.delete(toolCallId);
+    flushPendingHistoricalResultNotices();
   };
 
   const appendRecoveredResultsForOpenCalls = (): void => {
@@ -618,6 +659,7 @@ function projectSessionConversation(
     if (event.type === "user_message") {
       flushPendingCalls();
       appendRecoveredResultsForOpenCalls();
+      flushPendingHistoricalResultNotices();
       resetPendingCalls();
       appendMessage({ role: "user", content: event.content }, event.messageId, event.parentMessageId, event.slotId);
       canonicalTurn = false;
@@ -627,15 +669,33 @@ function projectSessionConversation(
     if (event.type === "agent_message") {
       flushPendingCalls();
       appendRecoveredResultsForOpenCalls();
+      flushPendingHistoricalResultNotices();
       resetPendingCalls();
       if (event.message.role === "assistant") {
         const content = event.message.content.filter((part) => part.type !== "toolCall" || !options.discardedToolCallIds?.has(part.id));
-        if (content.length) appendMessage({ ...event.message, content }, event.messageId, event.parentMessageId, event.slotId);
-        for (const part of content) {
-          if (part.type === "toolCall") openCalls.set(part.id, { id: part.id, name: part.name, args: part.arguments });
+        const canonicalContent = content.map((part) => part.type === "toolCall"
+          ? isNonReplayableHistoricalTool(part.name)
+            ? (legacyCalls.set(part.id, { tool: part.name }), {
+              type: "text" as const,
+              text: historicalToolCallNotice(part.name)
+            })
+            : { ...part, name: canonicalCompatibleToolName(part.name) }
+          : part);
+        if (canonicalContent.length) appendMessage({ ...event.message, content: canonicalContent }, event.messageId, event.parentMessageId, event.slotId);
+        for (const part of canonicalContent) {
+          if (part.type === "toolCall") canonicalOpenCalls.add(part.id);
         }
       } else {
-        appendMessage(event.message, event.messageId, event.parentMessageId, event.slotId);
+        const legacyCall = findLegacyCall(event.message.toolCallId, event.message.toolName, undefined);
+        if (legacyCall || isNonReplayableHistoricalTool(event.message.toolName)) {
+          pendingHistoricalResultNotices.push(historicalToolResultNotice(legacyCall?.[1].tool ?? event.message.toolName, event.message.details ?? event.message.content));
+          if (legacyCall) legacyCalls.delete(legacyCall[0]);
+          flushPendingHistoricalResultNotices();
+        } else {
+          appendMessage(canonicalizeAgentMessageToolNames(event.message), event.messageId, event.parentMessageId, event.slotId);
+          canonicalOpenCalls.delete(event.message.toolCallId);
+          flushPendingHistoricalResultNotices();
+        }
       }
       if (event.message.role !== "assistant") {
         openCalls.delete(event.message.toolCallId);
@@ -648,6 +708,7 @@ function projectSessionConversation(
       if (canonicalTurn) continue;
       flushPendingCalls();
       appendRecoveredResultsForOpenCalls();
+      flushPendingHistoricalResultNotices();
       resetPendingCalls();
       if (!event.content && !event.reasoningContent) continue;
       const content = [
@@ -665,17 +726,29 @@ function projectSessionConversation(
 
     if (event.type === "tool_call") {
       if (event.toolCallId && options.discardedToolCallIds?.has(event.toolCallId)) continue;
+      if (event.toolCallId && historicalCanonicalCalls.has(event.toolCallId)) continue;
+      if (isNonReplayableHistoricalTool(event.tool)) {
+        const id = event.toolCallId ?? `session-tool-${String(event.sequence ?? index + 1)}`;
+        legacyCalls.set(id, { tool: event.tool, sequence: event.sequence });
+        if (canonicalTurn) {
+          appendMessage({ role: "assistant", content: [{ type: "text", text: historicalToolCallNotice(event.tool) }] });
+        } else {
+          if (callsFlushed && openCalls.size === 0) resetPendingCalls();
+          pendingHistoricalNotices.push(historicalToolCallNotice(event.tool));
+        }
+        continue;
+      }
       // 上一批调用已经 flush 且全部收到结果，说明这是新一批调用，重新开始累积。
       if (canonicalTurn) {
         const id = event.toolCallId ?? `session-tool-${String(event.sequence ?? index + 1)}`;
-        if (!openCalls.has(id)) openCalls.set(id, { id, name: event.tool, args: event.args });
+        if (!openCalls.has(id)) openCalls.set(id, { id, name: canonicalCompatibleToolName(event.tool), args: event.args });
         continue;
       }
       if (callsFlushed && openCalls.size === 0) resetPendingCalls();
       const toolCall = {
         // 旧 session 没记 id，用序号造一个稳定 id，保证 call 与 result 能配上。
         id: event.toolCallId ?? `session-tool-${String(event.sequence ?? index + 1)}`,
-        name: event.tool,
+        name: canonicalCompatibleToolName(event.tool),
         args: event.args
       };
       pendingAssistantContent = event.assistantContent ?? pendingAssistantContent;
@@ -690,7 +763,15 @@ function projectSessionConversation(
 
     if (event.type === "tool_result") {
       if (event.toolCallId && options.discardedToolCallIds?.has(event.toolCallId)) continue;
+      if (event.toolCallId && historicalCanonicalResults.has(event.toolCallId)) continue;
       if (event.recovered && recoveredResults.has(event) && consumedRecoveredResults.has(event)) continue;
+      const legacyCall = findLegacyCall(event.toolCallId, event.tool, event.sequence);
+      if (legacyCall) {
+        pendingHistoricalResultNotices.push(historicalToolResultNotice(legacyCall[1].tool, event.result));
+        legacyCalls.delete(legacyCall[0]);
+        flushPendingHistoricalResultNotices();
+        continue;
+      }
       // 完整 canonical session 已经有 agent_message/toolResult；这里只接收 replay 新补的结果。
       if (canonicalTurn && !event.recovered) continue;
       const toolCallId = event.toolCallId ?? findToolCallId(openCalls, event.tool) ?? `session-tool-${String(event.sequence ?? index + 1)}`;
@@ -704,6 +785,7 @@ function projectSessionConversation(
 
   flushPendingCalls();
   appendRecoveredResultsForOpenCalls();
+  flushPendingHistoricalResultNotices();
   return { messages, references };
 }
 
@@ -740,7 +822,8 @@ function normalizeToolArguments(value: unknown): Record<string, unknown> {
 }
 
 function findToolCallId(calls: Map<string, { id: string; name: string; args: unknown }>, toolName: string): string | undefined {
-  return [...calls.values()].find((call) => call.name === toolName)?.id;
+  const canonicalTool = canonicalCompatibleToolName(toolName);
+  return [...calls.values()].find((call) => call.name === canonicalTool)?.id;
 }
 
 function stringifyResult(result: unknown): string {
@@ -750,6 +833,18 @@ function stringifyResult(result: unknown): string {
   } catch {
     return String(result);
   }
+}
+
+function isNonReplayableHistoricalTool(tool: string): boolean {
+  return tool === "apply_patch" || tool === "multi_edit";
+}
+
+function historicalToolCallNotice(tool: string): string {
+  return `[历史工具调用未重放] ${tool} 已从当前工具集中移除；原调用只保留在会话记录中。`;
+}
+
+function historicalToolResultNotice(tool: string, result: unknown): string {
+  return `[历史工具结果] ${tool}：${stringifyResult(result)}`;
 }
 
 function sessionIdFromPath(filePath: string): string | undefined {

@@ -156,8 +156,9 @@ export function buildMcpCard(servers: readonly McpServerStatus[]): CommandCardDa
         server.promptNames.length ? `${String(server.promptNames.length)} prompts` : "",
         server.instructions ? "instructions" : ""
       ].filter(Boolean);
+      const connection = server.connected ? "connected" : server.connecting ? "connecting" : "disconnected";
       const value: CommandCardValue[] = [{
-        text: `${server.transport} · ${server.connected ? "connected" : "disconnected"} · ${String(server.toolNames.length)} tools`
+        text: `${server.transport} · ${connection} · ${String(server.toolNames.length)} tools`
       }];
       if (extras.length) value.push({ text: ` · ${extras.join(" · ")}`, style: "muted" });
       return { label: server.name, value, tone: server.connected ? "success" : "warning" };

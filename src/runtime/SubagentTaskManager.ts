@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-export type SubagentTaskStatus = "queued" | "running" | "completed" | "failed" | "aborted" | "timed_out";
+export type SubagentTaskStatus = "queued" | "running" | "completed" | "incomplete" | "failed" | "aborted" | "timed_out";
 export type SubagentAccessMode = "read-only" | "workspace";
 
 export interface SubagentTaskSnapshot {
@@ -278,7 +278,7 @@ export class SubagentTaskManager {
     if (isTerminal(task.status)) return;
     task.status = error instanceof SubagentTaskTimeoutError ? "timed_out"
       : error instanceof SubagentTaskAbortedError || task.controller.signal.aborted ? "aborted"
-        : "failed";
+        : error instanceof SubagentTaskIncompleteError ? "incomplete" : "failed";
     task.error = error.message;
     task.completedAt = new Date().toISOString();
     this.cleanup(task);
@@ -327,6 +327,15 @@ export class SubagentTaskAbortedError extends Error {
   }
 }
 
+/** 保留部分交付，但不能让 Promise 成功结算把预算停止投影为任务完成。 */
+export class SubagentTaskIncompleteError extends Error {
+  readonly name = "SubagentTaskIncompleteError";
+
+  constructor(readonly stopReason: string, readonly output: string) {
+    super(`Subagent did not complete (stopReason=${stopReason}).${output ? `\n\n${output}` : ""}`);
+  }
+}
+
 export class SubagentTaskTimeoutError extends Error {
   readonly name = "SubagentTaskTimeoutError";
 
@@ -349,7 +358,7 @@ function abortError(task: ManagedSubagentTask): Error {
 }
 
 function isTerminal(status: SubagentTaskStatus): boolean {
-  return status === "completed" || status === "failed" || status === "aborted" || status === "timed_out";
+  return status === "completed" || status === "incomplete" || status === "failed" || status === "aborted" || status === "timed_out";
 }
 
 function publicSnapshot(task: ManagedSubagentTask): SubagentTaskSnapshot {

@@ -19,6 +19,8 @@ export interface PersonalizationMetadata {
 
 export type UsageOperation = "agent" | "plan" | "compaction" | "memory" | "subagent";
 export type ContextBudgetSource = "estimated" | "provider";
+/** 最近一次实际请求的分类估算；不包含输出预留，也不是累计消耗。 */
+export type ContextTokenBreakdown = Record<"messages" | "mcpTools" | "systemTools" | "skills" | "systemPrompt" | "other", number>;
 
 export type ContextComponentDisposition = "included" | "trimmed" | "omitted";
 
@@ -30,6 +32,10 @@ export interface ContextComponentUsage {
 }
 
 export interface SessionContextUsage {
+  breakdown?: ContextTokenBreakdown;
+  /** 当前会话主模型请求按输入 token 加权的缓存命中率；缺少数据时不提供。 */
+  cacheHitRate?: number;
+  /** 可用输入预算，供压缩和裁剪使用；界面容量分母取完整 contextWindow。 */
   maxTokens: number;
   usedTokens: number;
   contextWindow?: number;
@@ -38,6 +44,7 @@ export interface SessionContextUsage {
   /** 按模型有效窗口比例计算的可用输入窗口；历史 session 没有时按旧字段恢复。 */
   effectiveContextWindow?: number;
   effectiveContextWindowPercent?: number;
+  /** 输出等预留不计入 usedTokens 或 breakdown。 */
   contextReserveTokens?: number;
   autoCompactTokenLimit?: number;
   maxOutputTokens?: number;

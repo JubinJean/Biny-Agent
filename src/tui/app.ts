@@ -604,7 +604,7 @@ export class BinyTui {
           if (runtime instanceof RuntimeHostClient) {
             const queued = await runtime.queueRunMessageForSession(sessionId, input, "followUp", attachments);
             if (!queued.accepted) throw new Error(queued.reason);
-          } else runtime.followUp(input, attachments);
+          } else await runtime.followUp(input, attachments);
           this.notify("Skill 消息已加入 follow-up 队列，将在当前任务准备结束时继续处理。");
           return;
         }
@@ -642,7 +642,7 @@ export class BinyTui {
         if (runtime instanceof RuntimeHostClient) {
           const queued = await runtime.queueRunMessageForSession(sessionId, withAttachmentReferences(prompt, attachments), "followUp", attachments);
           if (!queued.accepted) throw new Error(queued.reason);
-        } else runtime.followUp(withAttachmentReferences(prompt, attachments), attachments);
+        } else await runtime.followUp(withAttachmentReferences(prompt, attachments), attachments);
         this.notify("消息已加入 follow-up 队列，将在当前任务准备结束时继续处理。");
         return;
       }
@@ -753,7 +753,7 @@ export class BinyTui {
       if (runtime instanceof RuntimeHostClient) {
         const queued = await runtime.queueRunMessageForSession(sessionId, withAttachmentReferences(expandedPrompt, attachments), "steer", attachments);
         if (!queued.accepted) throw new Error(queued.reason);
-      } else runtime.steer(withAttachmentReferences(expandedPrompt, attachments), attachments);
+      } else await runtime.steer(withAttachmentReferences(expandedPrompt, attachments), attachments);
       this.setPendingAttachments([]);
       this.setEditorText("");
       this.editor.addToHistory(prompt);

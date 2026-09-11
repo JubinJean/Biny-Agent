@@ -7,6 +7,7 @@
 import { deleteSessionCatalogRecord } from "./catalog.js";
 import { deleteInterruptedTurn } from "./turnStore.js";
 import { SessionRunLedger } from "./runLedger.js";
+import { RecipeStateStore } from "./recipes.js";
 import { deleteSessionFile } from "./store.js";
 
 export async function deleteSessionArtifacts(persistenceRoot: string, sessionId: string): Promise<void> {
@@ -17,7 +18,8 @@ export async function deleteSessionArtifacts(persistenceRoot: string, sessionId:
     () => deleteSessionFile(persistenceRoot, sessionId),
     () => deleteSessionCatalogRecord(persistenceRoot, sessionId),
     () => deleteInterruptedTurn(persistenceRoot, sessionId),
-    async () => await new SessionRunLedger(persistenceRoot).deleteSessionRuns(sessionId)
+    async () => await new SessionRunLedger(persistenceRoot).deleteSessionRuns(sessionId),
+    async () => await new RecipeStateStore(persistenceRoot).clear(sessionId)
   ]) {
     try {
       await step();

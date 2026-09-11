@@ -556,7 +556,7 @@ interface CodexLine { type?: string; timestamp?: string; payload?: CodexMessageP
  *
  * - `message`：`content[].text`，`input_text`（user）/`output_text`（assistant）。
  * - `function_call`：`name` + `call_id` + `arguments`（**JSON 字符串**）。
- * - `custom_tool_call`：`name` + `call_id` + `input`（原始字符串，如 apply_patch 的补丁文本）。
+ * - `custom_tool_call`：`name` + `call_id` + `input`（原始字符串，例如某些外部工具的结构化输入）。
  * - `function_call_output` / `custom_tool_call_output`：`call_id` + `output`（通常是
  *   `{"output":"...","metadata":{...}}` 的 JSON 字符串）。
  * - `reasoning`：`summary[].text`（`summary_text`），折成 assistant 事件的 reasoningContent。

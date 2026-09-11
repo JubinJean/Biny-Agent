@@ -11,7 +11,7 @@ import type {
 } from "../CapabilityStore.js";
 import type { HostSurface } from "./types.js";
 
-export const runtimeHostProtocolVersion = 5 as const;
+export const runtimeHostProtocolVersion = 6 as const;
 export const runtimeHostEventHistoryLimit = 4_000;
 export const runtimeHostMaxFrameBytes = 8 * 1024 * 1024;
 /** 旧名保留：重连基准延迟。实际退避曲线（minMs/maxMs/stableConnectionMs）见 reconnect.ts。 */
@@ -40,9 +40,9 @@ export const runtimeHostCapabilities = [
 ] as const;
 
 /**
- * capabilities 协商（协议 v5 骨架）：v5↔v5 握手时，取 client 声明的 capability 与 host
+ * capabilities 协商：握手时，取 client 声明的 capability 与 host
  * 支持的 capability 的交集作为该连接的生效集。client 声明了 host 不认识的 capability
- * 不视为错误（前向兼容），只是不进生效集。本阶段不加任何新 op、不改事件结构。
+ * 不视为错误（前向兼容），只是不进生效集。v6 的运行快照仅携带资源就绪摘要。
  */
 export function negotiateRuntimeHostCapabilities(
   clientCapabilities: readonly string[],

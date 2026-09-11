@@ -10,6 +10,7 @@ import path from "node:path";
 import type { AgentConfig } from "../../config/schema.js";
 import { createProjectSkillKey } from "../../extensions/skillRef.js";
 import { createMcpResourceTools, McpToolHost, type McpServerStatus } from "../../extensions/mcp.js";
+import { createMcpPromptTools } from "../../extensions/mcpPrompts.js";
 import { loadSkills, type SkillBundle, type SkillDefinition } from "../../extensions/skills.js";
 import type { Tool } from "../../tools/types.js";
 
@@ -37,6 +38,9 @@ export interface RuntimeResourceSnapshot {
   };
 }
 
+/** 高频运行快照只需要就绪状态；能力目录通过 skills / mcp 查询读取。 */
+export type RuntimeResourceReadiness = Pick<RuntimeResourceSnapshot, "revision" | "state">;
+
 const defaultSkillBundle: SkillBundle = { skills: [], paths: [], prompt: "", warnings: [], conflicts: [], errors: [] };
 const mcpBaselineBudgetMs = 10_000;
 
@@ -48,6 +52,7 @@ export class RuntimeHostResourceScope {
   private revision = 0;
   private mcpPending = false;
   private baselinePromise: Promise<void> | undefined;
+  private skillRefreshPromise: Promise<void> | undefined;
   private closePromise: Promise<void> | undefined;
   private references = 0;
 
@@ -85,13 +90,11 @@ export class RuntimeHostResourceScope {
     const mcpPromise = this.startMcp();
     this.baselinePromise = Promise.all([skillPromise, mcpPromise]).then(
       () => {
-        this.mcpPending = false;
         this.state = this.isDegraded() ? "degraded" : "ready";
         this.publish();
       },
       () => {
         // 资源异常不能把普通对话永久卡在 loading；失败能力由 MCP/Skill 状态继续说明。
-        this.mcpPending = false;
         this.state = "degraded";
         this.publish();
       }
@@ -114,6 +117,10 @@ export class RuntimeHostResourceScope {
     };
   }
 
+  readiness(): RuntimeResourceReadiness {
+    return { revision: this.revision, state: this.state };
+  }
+
   subscribe(listener: (snapshot: RuntimeResourceSnapshot) => void): () => void {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
@@ -128,13 +135,13 @@ export class RuntimeHostResourceScope {
   }
 
   createResourceTools(): Tool[] {
-    return this.mcpHost.hasEnabledServers() ? createMcpResourceTools(this.mcpHost) : [];
+    return this.mcpHost.hasEnabledServers() ? [...createMcpResourceTools(this.mcpHost), ...createMcpPromptTools(this.mcpHost)] : [];
   }
 
-  async refreshSkills(): Promise<void> {
-    await this.loadSkillBundle();
-    this.refreshState();
-    this.publish();
+  refreshSkills(): Promise<void> {
+    // 同一资源 scope 的并行会话共享一次扫描，完成后下一轮仍可发现外部修改。
+    this.skillRefreshPromise ??= this.loadSkillBundle().finally(() => { this.skillRefreshPromise = undefined; });
+    return this.skillRefreshPromise;
   }
 
   async close(): Promise<void> {
@@ -144,21 +151,26 @@ export class RuntimeHostResourceScope {
   }
 
   private async loadSkillBundle(): Promise<void> {
+    let nextBundle: SkillBundle;
     try {
-      this.skillBundle = await loadSkills({
+      nextBundle = await loadSkills({
         workspaceRoot: this.workspaceRoot,
         projectPaths: this.config.extensions.skills,
         globalDefaults: this.config.extensions.skillDefaults,
         projectOverrides: this.config.extensions.skillProjectOverrides[createProjectSkillKey(this.workspaceRoot)],
       });
     } catch (error) {
-      this.skillBundle = {
+      nextBundle = {
         ...defaultSkillBundle,
         warnings: [error instanceof Error ? error.message : String(error)],
         errors: [error instanceof Error ? error.message : String(error)],
       };
     }
-    this.publish();
+    if (JSON.stringify(nextBundle) !== JSON.stringify(this.skillBundle)) {
+      this.skillBundle = nextBundle;
+      this.refreshState();
+      this.publish();
+    }
   }
 
   private async startMcp(): Promise<void> {
@@ -183,7 +195,9 @@ export class RuntimeHostResourceScope {
     if (timer) clearTimeout(timer);
     if (!finished && timedOut) {
       // 连接尝试继续在后台运行；后续成功会通过 MCP revision 进入下一回合。
-      this.state = "degraded";
+      // 网络连接尚未完成不等于能力退化。此时允许普通对话继续，MCP 状态会保留
+      // 「连接中」，等首轮连接结束后再判断是否真的失败。
+      this.state = "ready";
       this.mcpPending = true;
       this.publish();
       void connecting.then(
@@ -205,7 +219,7 @@ export class RuntimeHostResourceScope {
 
   private isDegraded(): boolean {
     return this.skillBundle.errors.length > 0
-      || this.mcpHost.listServers().some((server) => server.enabled && !server.connected);
+      || this.mcpHost.listServers().some((server) => server.enabled && !server.connected && !server.connecting);
   }
 
   private refreshState(): void {

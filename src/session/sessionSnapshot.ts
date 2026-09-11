@@ -11,6 +11,7 @@
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { AgentMessage } from "../agent/core/types.js";
+import { canonicalizeAgentMessageToolNames } from "../agent/modelMessages.js";
 import type { SessionReplay, SessionMessageReference, SessionDiscardedToolCall, SessionMessageNode } from "./replay.js";
 import type { SessionEvent, SessionContextUsage, SessionContextState, SessionContextCheckpoint, SessionUsage } from "./recorder.js";
 import type { ModelRequestMetrics } from "../agent/core/types.js";
@@ -128,7 +129,7 @@ export async function writeSessionSnapshot(
 export function snapshotToReplay(snapshot: SessionSnapshotData): SessionReplay {
   return {
     events: [],
-    messages: snapshot.messages,
+    messages: snapshot.messages.map(canonicalizeAgentMessageToolNames),
     messageReferences: snapshot.messageReferences,
     contextStartMessageIndex: snapshot.contextStartMessageIndex,
     contextStartUserMessageIndex: snapshot.contextStartUserMessageIndex,
@@ -140,7 +141,7 @@ export function snapshotToReplay(snapshot: SessionSnapshotData): SessionReplay {
     modelRequests: snapshot.modelRequests,
     recoveredToolResults: snapshot.recoveredToolResults,
     discardedToolCalls: snapshot.discardedToolCalls,
-    messageTree: snapshot.messageTree,
+    messageTree: snapshot.messageTree.map((node) => ({ ...node, message: canonicalizeAgentMessageToolNames(node.message) })),
     runtimeHighWater: snapshot.runtimeHighWater,
   };
 }

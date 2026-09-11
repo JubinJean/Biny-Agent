@@ -314,8 +314,10 @@ export function summarizeSessionEvents(
   events: readonly SessionEvent[],
   stat: Pick<Stats, "birthtime" | "mtime">
 ): SessionSummary | undefined {
-  if (!events.some((event) => event.type === "user_message")) return undefined;
-  const firstUserMessage = publicUserMessage(events.find((event) => event.type === "user_message")?.content ?? "");
+  const firstUser = events.find((event): event is Extract<SessionEvent, { type: "user_message" }> => event.type === "user_message"
+    && !(event.auditOnly && (event.metadata?.queuedDelivery === "steer" || event.metadata?.queuedDelivery === "followUp")));
+  if (!firstUser) return undefined;
+  const firstUserMessage = publicUserMessage(firstUser.content);
   const lastAssistant = [...events].reverse().find((event): event is Extract<SessionEvent, { type: "assistant_message" }> => event.type === "assistant_message" && Boolean(event.content));
   const lastAssistantMessage = lastAssistant?.content ?? "";
   const lastTurnStatus = [...events].reverse().find((event): event is SessionTurnStatusEvent => event.type === "turn_status");

@@ -23,6 +23,7 @@ import type {
 import { runtimeIsBusy, type AgentRuntimeUpdate, type InteractiveRuntimeSnapshot } from "../agentEvents.js";
 import { isTaskRunTerminal, type TaskRetrySafety, type TaskRunWithAttempts } from "../TaskRunStore.js";
 import { evaluateTaskRetry } from "../TaskRetryPolicy.js";
+import { SubagentTaskIncompleteError } from "../SubagentTaskManager.js";
 import type {
   CapabilityRegistrationInput,
   CapabilityStore
@@ -40,7 +41,6 @@ import {
 import {
   runtimeHostEventHistoryLimit as eventHistoryLimit,
   runtimeHostJournalFile as hostJournalFile,
-  runtimeHostMaxFrameBytes as maxFrameBytes,
   runtimeHostProtocolVersion as protocolVersion,
   runtimeHostCapabilities as hostCapabilities,
   negotiateRuntimeHostCapabilities,
@@ -93,6 +93,7 @@ import { RuntimeHostResourceRegistry } from "./resources.js";
 import { listSessionFiles, sessionIdFromFile } from "../../session/store.js";
 import { readSessionCatalogRecord, writeSessionCatalogRecord } from "../../session/catalog.js";
 import { WorktreeDirtyError, WorktreeManager } from "./worktree.js";
+import { RuntimeHostFrameDecoder } from "./framing.js";
 
 interface HostConnection {
   socket: net.Socket;
@@ -100,8 +101,8 @@ interface HostConnection {
   surface: HostSurface;
   subscribed: boolean;
   authenticated: boolean;
-  buffer: string;
-  /** v5↔v5 握手协商出的本连接生效 capability 子集；未协商前为空。 */
+  decoder: RuntimeHostFrameDecoder;
+  /** 握手协商出的本连接生效 capability 子集；未协商前为空。 */
   negotiatedCapabilities: readonly string[];
   /** undefined 表示订阅全部 session；空集合表示不接收 session 事件。 */
   sessionFilter?: ReadonlySet<string>;
@@ -384,7 +385,7 @@ export class RuntimeHostServer {
       surface: "cli",
       subscribed: false,
       authenticated: false,
-      buffer: "",
+      decoder: new RuntimeHostFrameDecoder(),
       negotiatedCapabilities: [],
       sessionFilter: undefined
     };
@@ -410,25 +411,19 @@ export class RuntimeHostServer {
   }
 
   private read(connection: HostConnection, chunk: string): void {
-    connection.buffer += chunk;
-    if (Buffer.byteLength(connection.buffer, "utf8") > maxFrameBytes) {
-      connection.socket.destroy(new Error("Runtime Host frame is too large."));
-      return;
-    }
-    while (true) {
-      const newline = connection.buffer.indexOf("\n");
-      if (newline < 0) return;
-      const line = connection.buffer.slice(0, newline).trim();
-      connection.buffer = connection.buffer.slice(newline + 1);
-      if (!line) continue;
-      let frame: unknown;
-      try {
-        frame = decodeHostFrame(line);
-      } catch {
-        connection.socket.destroy(new Error("Invalid Runtime Host JSON frame."));
-        return;
+    try {
+      for (const line of connection.decoder.push(chunk)) {
+        let frame: unknown;
+        try {
+          frame = decodeHostFrame(line);
+        } catch {
+          connection.socket.destroy(new Error("Invalid Runtime Host JSON frame."));
+          return;
+        }
+        void this.handleFrame(connection, frame);
       }
-      void this.handleFrame(connection, frame);
+    } catch (error) {
+      connection.socket.destroy(error instanceof Error ? error : new Error(String(error)));
     }
   }
 
@@ -461,7 +456,7 @@ export class RuntimeHostServer {
       connection.authenticated = true;
       connection.clientId = frame.clientId;
       connection.surface = frame.surface;
-      // v5↔v5 协商：取 client 声明与 host 支持的交集作为本连接生效集。
+      // 取 client 声明与 host 支持的交集作为本连接生效集。
       // 版本严格相等才能走到这里（见 authenticateRuntimeHostHello），client 声明了 host
       // 不认识的 capability 不报错，只是不进生效集（前向兼容骨架）。
       connection.negotiatedCapabilities = negotiateRuntimeHostCapabilities(frame.capabilities, hostCapabilities);
@@ -818,7 +813,7 @@ export class RuntimeHostServer {
           const cancelledSubagent = commands.subagents?.cancelTask(taskRunId, reason) ?? false;
           const runId = task?.attempts.at(-1)?.runId;
           if (runId !== undefined) runtime.cancelRun(runId);
-          const subagentActive = subagent !== undefined && !["completed", "failed", "aborted", "timed_out"].includes(subagent.status);
+          const subagentActive = subagent?.status === "queued" || subagent?.status === "running";
           if (subagentActive && !cancelledSubagent && !isTaskRunTerminal(task?.status ?? "created")) {
             throw new Error(`Unable to cancel active subagent task ${taskRunId}.`);
           }
@@ -1250,9 +1245,15 @@ export class RuntimeHostServer {
       },
       (error: unknown) => {
         const failure = error instanceof Error ? error : new Error(String(error));
-        const status = failure.name === "SubagentTaskAbortedError" || failure.name === "AbortError" ? "aborted" : "failed";
+        const status = failure.name === "SubagentTaskAbortedError" || failure.name === "AbortError" ? "aborted"
+          : failure instanceof SubagentTaskIncompleteError ? "incomplete" : "failed";
         this.finishTaskAttempt(commands, taskRunId, attempt.attemptId, status, {
-          failure: { message: failure.message, failureClass: status === "failed" ? "execution_failed" : "cancelled" }
+          artifacts: failure instanceof SubagentTaskIncompleteError ? { output: failure.output } : undefined,
+          failure: {
+            message: failure.message,
+            failureClass: failure instanceof SubagentTaskIncompleteError ? failure.stopReason
+              : status === "failed" ? "execution_failed" : "cancelled"
+          }
         });
         throw failure;
       }
@@ -1269,7 +1270,7 @@ export class RuntimeHostServer {
     commands: CommandRuntime,
     taskRunId: string,
     attemptId: string,
-    status: "completed" | "failed" | "aborted",
+    status: "completed" | "incomplete" | "failed" | "aborted",
     input: { artifacts?: unknown; failure?: unknown }
   ): void {
     try {

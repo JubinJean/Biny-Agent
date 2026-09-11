@@ -9,14 +9,14 @@ import type { AgentSessionEvent } from "../src/agent/types.js";
 import { assertCompletedCliRun } from "../src/cli/commands/run.js";
 import { configSchema, defaultConfig } from "../src/config/schema.js";
 import {
+  buildSubagentSystemPrompt,
   createSubagentTools,
   createReadOnlyTools,
   enforceSubagentCostBudget,
   isAllowedSubagentValidationCommand,
   isSensitiveSubagentPath,
   subagentCostBudgetReached,
-  subagentMaxOutputTokens,
-  subagentStepBudget
+  subagentMaxOutputTokens
 } from "../src/extensions/subagent.js";
 import type { CommandRuntime } from "../src/runtime/CommandRuntime.js";
 import { PermissionManager } from "../src/permission/PermissionManager.js";
@@ -45,6 +45,7 @@ import { createToolRegistry, ToolRegistry } from "../src/tools/registry.js";
 import { sessionEventsToTranscript } from "../src/tui/sessionTranscript.js";
 
 await testSubagentConfigDefaultsAndValidation();
+testSubagentPromptUsesBoundedHandoffProtocol();
 await testReadOnlyToolBoundary();
 await testWorkspaceSubagentToolBoundary();
 await testSubagentConcurrencyAndBoundedHistory();
@@ -78,6 +79,21 @@ await testSubagentMaintenanceCancellation();
 await testSubagentMaintenanceTimeout();
 await testImmediateSubagentMaintenanceCancellation();
 await testImmediateSubagentMaintenanceClose();
+
+function testSubagentPromptUsesBoundedHandoffProtocol(): void {
+  const workspacePrompt = buildSubagentSystemPrompt("workspace");
+  assert.match(workspacePrompt, /focused, bounded worker inside Biny/);
+  assert.match(workspacePrompt, /WORK STYLE:/);
+  assert.match(workspacePrompt, /Keep edits limited to the assigned task/);
+  assert.match(workspacePrompt, /HANDOFF:/);
+  assert.match(workspacePrompt, /actual results/);
+  assert.match(workspacePrompt, /Never request or expose secrets/);
+
+  const readOnlyPrompt = buildSubagentSystemPrompt("read-only");
+  assert.match(readOnlyPrompt, /This is a read-only assignment/);
+  assert.match(readOnlyPrompt, /Do not modify, delete, move, or execute/);
+  assert.doesNotMatch(readOnlyPrompt, /Keep edits limited/);
+}
 await testCompactionCloseCancellation();
 await testSubagentUsageModelAttributionAndAuditPersistence();
 await testRecoverableDiagnosticDoesNotFailRun();
@@ -86,13 +102,21 @@ await testCommandLifecycleUsesToolEvents();
 await testCommandFailureLifecycleUsesToolFailed();
 
 async function testSubagentConfigDefaultsAndValidation(): Promise<void> {
-  assert.equal(defaultConfig.extensions.subagent.enabled, true);
+  assert.equal(defaultConfig.extensions.subagent.enabled, false);
   const input = structuredClone(defaultConfig) as unknown as Record<string, unknown>;
   delete input.agent;
   const extensions = input.extensions as Record<string, unknown>;
   extensions.subagent = { maxSteps: 4, maxOutputTokens: 4_000 };
   const parsed = configSchema.parse(input);
-  assert.equal(parsed.extensions.subagent.enabled, true);
+  assert.equal(parsed.extensions.subagent.enabled, false);
+  const explicitlyEnabled = configSchema.parse({
+    ...defaultConfig,
+    extensions: {
+      ...defaultConfig.extensions,
+      subagent: { ...defaultConfig.extensions.subagent, enabled: true }
+    }
+  });
+  assert.equal(explicitlyEnabled.extensions.subagent.enabled, true);
   const explicitlyDisabled = configSchema.parse({
     ...defaultConfig,
     extensions: {
@@ -113,9 +137,7 @@ async function testSubagentConfigDefaultsAndValidation(): Promise<void> {
     "git_diff",
     "Write",
     "edit_file",
-    "multi_edit",
     "delete_file",
-    "apply_patch",
     "move_file",
     "Bash"
   ]);
@@ -212,9 +234,7 @@ async function testWorkspaceSubagentToolBoundary(): Promise<void> {
       "git_diff",
       "Write",
       "edit_file",
-      "multi_edit",
       "delete_file",
-      "apply_patch",
       "move_file",
       "Bash"
     ]);
@@ -238,9 +258,6 @@ async function testWorkspaceSubagentToolBoundary(): Promise<void> {
     assert.equal(isAllowedSubagentValidationCommand("mvn test"), true);
     assert.equal(isAllowedSubagentValidationCommand("pnpm test && rm -rf ."), false);
     assert.equal(isAllowedSubagentValidationCommand("pnpm test\nrm -rf ."), false);
-    assert.equal(subagentStepBudget("inspect one file", 16), 8);
-    assert.equal(subagentStepBudget("implement the fix and run tests", 16), 16);
-    assert.equal(subagentStepBudget("调查完整调用链", 16), 12);
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });
   }
@@ -809,8 +826,8 @@ async function testActiveRunAcceptsSteeringAndFollowUp(): Promise<void> {
   const run = runtime.submitPrompt("hold");
   await waitUntil(() => activeRun(runtime.getSnapshot())?.runId === run.runId);
 
-  const steering = runtime.steer("correct course");
-  const followUp = runtime.followUp("then explain the result");
+  const steering = await runtime.steer("correct course");
+  const followUp = await runtime.followUp("then explain the result");
   assert.equal(steering.delivery, "steer");
   assert.equal(followUp.delivery, "followUp");
   assert.deepEqual(queued, ["steer:correct course", "followUp:then explain the result"]);

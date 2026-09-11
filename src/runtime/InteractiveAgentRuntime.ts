@@ -76,8 +76,8 @@ export interface InteractiveAgentHost {
 /** Desktop、TUI 和 Unix socket 客户端共享的最小交互运行时形状。 */
 export interface InteractiveRuntimeHandle {
   submitPrompt(input: string, mode?: AgentRunMode, attachments?: AgentAttachment[], requestIds?: RuntimeRequestIds, promptContext?: string, capabilitySelection?: AgentCapabilitySelection): SubmittedAgentRun;
-  steer(input: string, attachments?: AgentAttachment[], requestIds?: RuntimeRequestIds): QueuedAgentMessage;
-  followUp(input: string, attachments?: AgentAttachment[], requestIds?: RuntimeRequestIds): QueuedAgentMessage;
+  steer(input: string, attachments?: AgentAttachment[], requestIds?: RuntimeRequestIds): Promise<QueuedAgentMessage>;
+  followUp(input: string, attachments?: AgentAttachment[], requestIds?: RuntimeRequestIds): Promise<QueuedAgentMessage>;
   continueInterruptedTurn(): Promise<AgentRunOutcome | undefined>;
   startInterruptedTurn(requestIds?: RuntimeRequestIds): Promise<SubmittedAgentRun | undefined>;
   waitForIdle(): Promise<void>;
@@ -179,16 +179,19 @@ export class InteractiveAgentRuntime {
         : undefined);
     this.runtimeAuthority = options.runtimeAuthority ?? commandRuntime.runtimeAuthority;
     this.resourceChangeUnsubscribe = commandRuntime.subscribeResourceChanges?.(() => this.publishSnapshot());
-    // 自动技能提取在回合终态之后 fire-and-forget；宿主在这里把草稿通知转成 host event，
-    // 经 wireRuntimeEvents 广播到渲染层。sessionId 回调时现取，避免沿用装配期快照。
-    commandRuntime.agent.setOnSkillDraftCreated?.((notice) => {
+    // Recipe 检测在回合终态之后 fire-and-forget；宿主在这里把通知转成 host event，
+    // 经 wireRuntimeEvents 广播到各个界面。sessionId 回调时现取，避免沿用装配期快照。
+    commandRuntime.agent.setOnRecipeReady?.((notice) => {
       this.emit({
-        type: "skill.draft_created",
+        type: "recipe.ready",
         sessionId: this.commandRuntime.agent.getInfo().sessionId,
         runId: notice.runId ?? "",
         timestamp: new Date().toISOString(),
-        draft: notice.draft
+        recipe: notice.recipe
       });
+    });
+    commandRuntime.agent.setOnTitleGenerated?.((sessionId, title) => {
+      this.emit({ type: "session.title", sessionId, title, runId: "", timestamp: new Date().toISOString() });
     });
   }
 
@@ -209,27 +212,27 @@ export class InteractiveAgentRuntime {
     return this.startRun(input, mode, attachments, false, requestIds, undefined, promptContext, capabilitySelection);
   }
 
-  steer(input: string, attachments: AgentAttachment[] = [], requestIds?: RuntimeRequestIds): QueuedAgentMessage {
-    return this.queueMessage(input, attachments, "steer", requestIds);
+  async steer(input: string, attachments: AgentAttachment[] = [], requestIds?: RuntimeRequestIds): Promise<QueuedAgentMessage> {
+    return await this.queueMessage(input, attachments, "steer", requestIds);
   }
 
-  followUp(input: string, attachments: AgentAttachment[] = [], requestIds?: RuntimeRequestIds): QueuedAgentMessage {
-    return this.queueMessage(input, attachments, "followUp", requestIds);
+  async followUp(input: string, attachments: AgentAttachment[] = [], requestIds?: RuntimeRequestIds): Promise<QueuedAgentMessage> {
+    return await this.queueMessage(input, attachments, "followUp", requestIds);
   }
 
-  private queueMessage(
+  private async queueMessage(
     input: string,
     attachments: AgentAttachment[],
     delivery: "steer" | "followUp",
     requestIds?: RuntimeRequestIds
-  ): QueuedAgentMessage {
+  ): Promise<QueuedAgentMessage> {
     if (this.closed) throw new Error("Agent runtime is closed.");
     const run = this.activeRun;
     if (!run || this.state.kind !== "runs") throw new Error("There is no active run to receive a queued message.");
     if (!input.trim() && !attachments.length) throw new Error("Queued message cannot be empty.");
     const messageId = requestIds?.messageId ?? randomUUID();
-    if (delivery === "steer") this.commandRuntime.agent.queueSteering(messageId, input, attachments);
-    else this.commandRuntime.agent.queueFollowUp(messageId, input, attachments);
+    if (delivery === "steer") await this.commandRuntime.agent.queueSteering(messageId, input, attachments);
+    else await this.commandRuntime.agent.queueFollowUp(messageId, input, attachments);
     return { runId: run.runId, messageId, delivery };
   }
 
@@ -1287,7 +1290,7 @@ export class InteractiveAgentRuntime {
       return undefined;
     }
 
-    if (event.type === "context.retrying") {
+    if (event.type === "context.retrying" || event.type === "context.updated") {
       this.emit({ ...this.eventBase(run), ...event });
       return undefined;
     }

@@ -5,6 +5,7 @@
  * 持久化回放负责把它接到模型消息上，时间线只使用消息 ID 和事件归属。
  */
 import type { AgentMessage } from "../agent/core/types.js";
+import { canonicalizeAgentMessageToolNames } from "../agent/modelMessages.js";
 import type { SessionEvent } from "./recorder.js";
 
 export interface SessionMessageNode {
@@ -27,7 +28,8 @@ export function sessionMessageMetadata(events: readonly SessionEvent[], messageI
   let exists = false;
   let metadata: Record<string, unknown> = {};
   for (const event of events) {
-    if ((event.type === "user_message" || event.type === "agent_message" || event.type === "assistant_message") && event.messageId === messageId && !exists) {
+    if ((event.type === "user_message" || event.type === "agent_message" || event.type === "assistant_message")
+      && !("auditOnly" in event && event.auditOnly) && event.messageId === messageId && !exists) {
       exists = true;
       metadata = { ...event.metadata };
     }
@@ -62,7 +64,7 @@ export function sessionMessageTree(events: SessionEvent[]): SessionMessageNode[]
         parentId: event.parentMessageId,
         slotId: event.slotId ?? event.messageId,
         eventIndex,
-        message: event.message
+        message: canonicalizeAgentMessageToolNames(event.message)
       }];
     }
     return [];
@@ -81,22 +83,41 @@ export function activeSessionMessageIds(events: readonly SessionEvent[]): Readon
   const pathFor = (leaf: SessionMessageNode): Set<string> => {
     const path = new Set<string>();
     let current: SessionMessageNode | undefined = leaf;
-    const visited = new Set<string>();
-    while (current && !visited.has(current.id)) {
-      visited.add(current.id);
+    while (current && !path.has(current.id)) {
       path.add(current.id);
       current = current.parentId === undefined ? undefined : byId.get(current.parentId);
     }
     return path;
   };
-  const compatible = nodes.filter((node) => {
-    const path = pathFor(node);
-    for (const messageId of selectedSlots.values()) {
-      if (!path.has(messageId)) return false;
+  // 普通对话只需从末节点走一次；版本选择按祖先累计命中数，避免每个节点重建整条路径。
+  if (!selectedSlots.size) return pathFor(nodes[nodes.length - 1]!);
+  const selected = new Set(selectedSlots.values());
+  const counts = new Map<string, number>();
+  for (const node of nodes) {
+    if (counts.has(node.id)) continue;
+    const trail: SessionMessageNode[] = [];
+    const positions = new Map<string, number>();
+    let current: SessionMessageNode | undefined = node;
+    while (current && !counts.has(current.id) && !positions.has(current.id)) {
+      positions.set(current.id, trail.length);
+      trail.push(current);
+      current = current.parentId === undefined ? undefined : byId.get(current.parentId);
     }
-    return true;
-  });
-  const leaf = compatible.at(-1) ?? nodes.at(-1);
+    let count = current ? counts.get(current.id) ?? 0 : 0;
+    const cycleStart = current ? positions.get(current.id) : undefined;
+    if (cycleStart !== undefined) {
+      // 损坏或外部导入的环仍沿用有限路径语义；环内每个节点可达同一组选择。
+      const cycle = trail.splice(cycleStart);
+      count = cycle.reduce((sum, item) => sum + Number(selected.has(item.id)), 0);
+      for (const item of cycle) counts.set(item.id, count);
+    }
+    for (let index = trail.length - 1; index >= 0; index -= 1) {
+      const item = trail[index]!;
+      count += Number(selected.has(item.id));
+      counts.set(item.id, count);
+    }
+  }
+  const leaf = [...nodes].reverse().find((node) => counts.get(node.id) === selected.size) ?? nodes.at(-1);
   if (!leaf) return new Set<string>();
   return pathFor(leaf);
 }
