@@ -24,6 +24,7 @@ import { McpToolHost, type McpServerStatus } from "../../../extensions/mcp.js";
 import { getSharedProxyAwareFetch } from "../../../network/proxyFetch.js";
 import { ToolRegistry } from "../../../tools/registry.js";
 import type { DesktopProjectService } from "./DesktopProjectService.js";
+import { McpOAuthLogins, McpOAuthProvider, type McpOAuthLogin } from "../../../extensions/mcpOAuth.js";
 
 export const MCP_CATALOG_URL = "https://ravitemer.github.io/mcp-registry/registry.json";
 
@@ -48,6 +49,9 @@ interface McpRuntimeBridge {
 }
 
 export class DesktopMcpService {
+  private readonly logins = new McpOAuthLogins();
+  private readonly startingLogins = new Set<string>();
+  private readonly loginServers = new Map<string, { projectId?: string; name: string; config: McpServerConfig }>();
   private catalogState: CatalogStateInternal = {
     status: "idle",
     source: MCP_CATALOG_URL,
@@ -78,6 +82,50 @@ export class DesktopMcpService {
   catalog(): DesktopMcpCatalogState {
     return cloneCatalogState(this.catalogState);
   }
+
+  async loginStart(projectId: string | undefined, name: string): Promise<McpOAuthLogin> {
+    this.agents.assertNoRunningTasks("请在任务结束后登录 MCP。");
+    const stored = await this.loadVersioned(this.workspaceRoot(projectId));
+    const config = stored.config.extensions.mcp[normalizeServerName(name)];
+    if (!config?.enabled || !config.oauth || !config.url) throw new Error("请先保存并启用使用 OAuth 的远程 MCP 服务。");
+    if (this.startingLogins.has(name)) throw new Error("此 MCP 正在准备登录，请稍候。");
+    this.startingLogins.add(name);
+    try {
+      for (const [id, pending] of this.loginServers) if (pending.name === name) await this.loginCancel(id);
+      const login = await this.logins.start(config);
+      this.loginServers.set(login.id, { projectId, name, config });
+      return login;
+    } finally { this.startingLogins.delete(name); }
+  }
+
+  async loginFinish(projectId: string | undefined, name: string, id: string): Promise<DesktopMcpSnapshot> {
+    const pending = this.loginServers.get(id);
+    if (!pending || pending.name !== name || pending.projectId !== projectId) throw new Error("MCP 登录与当前服务不匹配。");
+    try {
+      await this.logins.finish(id, async () => {
+        const stored = await this.loadVersioned(this.workspaceRoot(projectId));
+        if (JSON.stringify(stored.config.extensions.mcp[name]) !== JSON.stringify(pending.config)) throw new Error("MCP 配置已改变，请重新登录。");
+      });
+      try { await this.agents.refreshMcpRuntimes(); }
+      catch (error) { throw new Error(`MCP 授权已保存，但运行时尚未刷新：${errorText(error)}。请在任务结束后点击连接。`); }
+      return await this.snapshot(projectId);
+    } finally { this.loginServers.delete(id); }
+  }
+
+  async loginCancel(id: string): Promise<void> { await this.logins.cancel(id); this.loginServers.delete(id); }
+
+  async logout(projectId: string | undefined, name: string): Promise<DesktopMcpSnapshot> {
+    this.agents.assertNoRunningTasks("请在任务结束后退出 MCP 登录。");
+    const stored = await this.loadVersioned(this.workspaceRoot(projectId));
+    const config = stored.config.extensions.mcp[normalizeServerName(name)];
+    if (!config?.oauth || !config.url) throw new Error("此 MCP 未使用 OAuth。");
+    for (const [id, pending] of this.loginServers) if (pending.name === name) await this.loginCancel(id);
+    await new McpOAuthProvider(config).logout();
+    await this.agents.refreshMcpRuntimes();
+    return await this.snapshot(projectId);
+  }
+
+  async dispose(): Promise<void> { await this.logins.dispose(); this.loginServers.clear(); }
 
   async refreshCatalog(): Promise<DesktopMcpCatalogState> {
     const previous = this.catalogState;
@@ -136,6 +184,7 @@ export class DesktopMcpService {
     if (oldName !== undefined && oldName !== name) delete next.extensions.mcp[oldName];
     next.extensions.mcp[name] = targetServer;
     const parsed = configSchema.parse(next);
+    for (const [id, pending] of this.loginServers) if (pending.name === name || pending.name === oldName) await this.loginCancel(id);
     await this.saveVersioned(parsed, current.revision, workspaceRoot, expectedConfigRevision);
     await this.agents.refreshMcpRuntimes();
     return await this.snapshot(projectId);
@@ -155,6 +204,7 @@ export class DesktopMcpService {
     if (existing === undefined) throw new Error(`MCP 服务器不存在：${serverName}`);
     const next = structuredClone(current.config);
     next.extensions.mcp = { ...next.extensions.mcp, [serverName]: { ...existing, enabled } };
+    for (const [id, pending] of this.loginServers) if (pending.name === serverName) await this.loginCancel(id);
     await this.saveVersioned(configSchema.parse(next), current.revision, workspaceRoot, expectedConfigRevision);
     await this.agents.refreshMcpRuntimes();
     return await this.snapshot(projectId);
@@ -173,7 +223,10 @@ export class DesktopMcpService {
     const next = structuredClone(current.config);
     next.extensions.mcp = { ...next.extensions.mcp };
     delete next.extensions.mcp[serverName];
+    for (const [id, pending] of this.loginServers) if (pending.name === serverName) await this.loginCancel(id);
     await this.saveVersioned(configSchema.parse(next), current.revision, workspaceRoot, expectedConfigRevision);
+    const removed = current.config.extensions.mcp[serverName];
+    if (removed?.oauth) await new McpOAuthProvider(removed).logout();
     await this.agents.refreshMcpRuntimes();
     return await this.snapshot(projectId);
   }
@@ -299,6 +352,7 @@ function buildServerConfig(existing: McpServerConfig | undefined, draft: Desktop
         )
       : undefined,
     headers: Object.keys(headers.values).length ? headers.values : undefined,
+    oauth: transport === "remote" ? draft.oauth : undefined,
     timeoutMs: draft.timeoutMs,
     enabled: existing?.enabled ?? true
   };
@@ -360,13 +414,23 @@ function describeServer(name: string, config: McpServerConfig, live: McpServerSt
     stderr: config.stderr,
     timeoutMs: config.timeoutMs,
     enabled: config.enabled,
-    state: !config.enabled ? "disabled" : runtime === undefined ? "not-started" : runtime.connected ? "connected" : "disconnected",
+    state: !config.enabled
+      ? "disabled"
+      : runtime === undefined
+        ? "not-started"
+        : runtime.connecting
+          ? "connecting"
+          : runtime.connected
+            ? "connected"
+            : "disconnected",
     toolNames: runtime?.toolNames ?? [],
     promptNames: runtime?.promptNames ?? [],
     hasResources: runtime?.hasResources ?? false,
     environmentKeys: Object.keys(config.env ?? {}),
     headerNames: Object.keys(config.headers ?? {}),
-    lastError: runtime?.lastError
+    lastError: runtime?.lastError,
+    oauth: config.oauth,
+    authRequired: runtime?.authRequired
   };
 }
 

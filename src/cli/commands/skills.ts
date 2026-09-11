@@ -1,29 +1,24 @@
 /**
  * Skill 管理 CLI。
  *
- * CLI 对齐常见的 SkillHub 使用方式：搜索和安装优先交给 `skills` 命令，失败时
- * 回退到浅克隆 Git 仓库；运行时仍通过统一的 Skill loader 负责发现、激活和 Skill。
+ * CLI 与桌面共用仓库发现和受管安装器；版本切换不改变运行时的发现、激活与权限。
  */
 import { promises as fs } from "node:fs";
-import { spawnSync } from "node:child_process";
 import path from "node:path";
 import { InvalidArgumentError } from "commander";
 import type { Command } from "commander";
 import { defaultManagedSkillRoot } from "../../extensions/managedSkillSources.js";
-import { parseSkillDocument } from "../../extensions/skillCatalog.js";
-import { searchSkillsSh } from "../../extensions/skillDiscovery.js";
-import { defaultGlobalSkillRoots } from "../../extensions/skillRoots.js";
+import { parseSkillDocument } from "../../extensions/skillDocument.js";
+import { discoverSkillRepositories, installDiscoveredSkill, searchSkillsSh, updateDiscoveredSkill } from "../../extensions/skillDiscovery.js";
+import { readManagedSkillVersion, rollbackSkillVersion } from "../../extensions/skillVersions.js";
+import { withGlobalConfigWriteLock } from "../../config/versioned.js";
 import { loadSkills } from "../../extensions/skills.js";
-import { SkillStore } from "../../extensions/skillStore.js";
+import { scanSkillCatalog } from "../../extensions/skillCatalog.js";
+import { diagnoseSkill } from "../../extensions/skillDiagnostics.js";
+import { createFileConfigStore } from "../../config/store.js";
 
 interface SkillOutputOptions {
   json?: boolean;
-}
-
-interface PackageRunnerResult {
-  runner: string | undefined;
-  status: number | null;
-  error?: Error;
 }
 
 export function registerSkillCommands(program: Command, workspaceRoot: string): void {
@@ -52,11 +47,39 @@ export function registerSkillCommands(program: Command, workspaceRoot: string): 
     .action((query: string[], options: SkillSearchOptions) => execute(async () => await skillSearchCommand(workspaceRoot, query.join(" "), options)));
   command.command("install")
     .description("Install a Skill from skills.sh or GitHub")
-    .argument("<source>", "skills.sh source, GitHub repository, or Git URL")
+    .argument("<source>", "owner/repository, owner/repository@skill, or GitHub tree URL")
     .action((source: string) => execute(async () => await skillInstallCommand(source)));
+  command.command("check")
+    .description("Check declared Skill requirements without running scripts")
+    .argument("[name]", "check one Skill, or all discovered Skills")
+    .option("--json", "print JSON")
+    .action((name: string | undefined, options: SkillOutputOptions) => execute(async () => {
+      const catalog = await scanSkillCatalog({ projectRoots: [workspaceRoot] });
+      const config = await createFileConfigStore(workspaceRoot).load();
+      const skills = catalog.inventory.filter((skill) => name === undefined || skill.name === name || skill.ref === name);
+      if (name !== undefined && !skills.length) throw new Error(`Skill not found: ${name}`);
+      const reports = await Promise.all(skills.map((skill) => diagnoseSkill(skill, { config })));
+      if (options.json) console.log(JSON.stringify({ reports, diagnostics: catalog.diagnostics }));
+      else for (const report of reports) {
+        console.log(`${report.name}: ${report.status}`);
+        for (const check of report.checks) console.log(`  ${check.status}  ${check.subject}: ${check.message}`);
+      }
+      if (reports.some((report) => report.status === "blocked")) process.exitCode = 1;
+    }));
   command.command("update")
     .description("Check for and update installed Skills")
-    .action(() => execute(skillUpdateCommand));
+    .argument("[name]", "one managed Skill, or all managed versions")
+    .action((name: string | undefined) => execute(async () => await skillUpdateCommand(name)));
+  command.command("rollback")
+    .description("Restore the previous managed version without overwriting local edits")
+    .argument("<name>", "Skill name")
+    .action((name: string) => execute(async () => {
+      const root = defaultManagedSkillRoot();
+      const current = await readManagedSkillVersion(root, name);
+      if (!current) throw new Error("This Skill has no managed version history.");
+      const restored = await rollbackSkillVersion(root, name, current.id);
+      console.log(`Restored ${name}: ${restored.revision}`);
+    }));
   command.command("uninstall")
     .description("Remove an installed Skill")
     .argument("<name>", "Skill directory name")
@@ -75,9 +98,7 @@ interface SkillSearchOptions extends SkillOutputOptions {
 
 async function skillListCommand(workspaceRoot: string, options: SkillOutputOptions = {}): Promise<void> {
   const bundle = await loadSkills({ workspaceRoot, projectPaths: [] });
-  const store = new SkillStore();
-  await store.initialize();
-  const installations = store.list();
+  const installations = (await Promise.all((await managedSkillNames()).map((name) => readManagedSkillVersion(defaultManagedSkillRoot(), name)))).filter(Boolean);
   const result = {
     skills: bundle.skills.map((skill) => ({
       name: skill.name,
@@ -110,7 +131,6 @@ async function skillListCommand(workspaceRoot: string, options: SkillOutputOptio
 }
 
 async function skillSearchCommand(workspaceRoot: string, query: string, options: SkillSearchOptions = {}): Promise<void> {
-  if (!options.json && runPackageCommand(["find", query]).status === 0) return;
   const bundle = await loadSkills({ workspaceRoot, projectPaths: [] });
   const result = await searchSkillsSh({
     query,
@@ -133,50 +153,50 @@ async function skillSearchCommand(workspaceRoot: string, query: string, options:
 }
 
 async function skillInstallCommand(source: string): Promise<void> {
-  const root = defaultManagedSkillRoot();
-  await fs.mkdir(root, { recursive: true });
-  const packageResult = runPackageCommand(["add", source, "-g", "-y"], root);
-  if (packageResult.status === 0) {
-    await new SkillStore().upsert({ name: repositoryDirectoryName(source), source, kind: "skills", installPath: path.join(root, repositoryDirectoryName(source)) });
-    console.log(`Installed: ${source}`);
-    return;
-  }
-
-  const gitSource = source.includes("@") ? source.slice(0, source.indexOf("@")) : source;
-  const gitUrl = gitSource.startsWith("http://") || gitSource.startsWith("https://")
-    ? gitSource
-    : `https://github.com/${gitSource}`;
-  const repositoryName = repositoryDirectoryName(gitSource);
-  const target = path.join(root, repositoryName);
-  if (await pathExists(target)) throw new Error(`Skill already exists: ${target}`);
-  const result = spawnSync("git", ["clone", "--depth", "1", gitUrl, target], { stdio: "inherit" });
-  if (result.error) throw result.error;
-  if (result.status !== 0) throw new Error(`Install failed: git clone exited with status ${String(result.status)}.`);
-  await new SkillStore().upsert({ name: repositoryName, source, kind: "git", installPath: target });
-  console.log(`Installed via git: ${repositoryName}`);
+  const url = source.startsWith("https://") ? new URL(source) : new URL(`https://github.com/${source}`);
+  if (url.origin !== "https://github.com" || url.username || url.password || url.search || url.hash) throw new Error("Use a GitHub repository or tree URL.");
+  const parts = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  const owner = parts[0];
+  const [repositoryName, selectedName] = (parts[1] ?? "").replace(/\.git$/u, "").split("@");
+  if (!owner || !repositoryName || (parts.length > 2 && (parts[2] !== "tree" || !parts[3]))) throw new Error("Use owner/repository@skill or a GitHub tree URL.");
+  const branch = parts[3] ?? "main";
+  const directory = parts.length > 4 ? parts.slice(4).join("/") : undefined;
+  const result = await discoverSkillRepositories({ repositories: [{ owner, name: repositoryName, branch, enabled: true }] });
+  const candidates = result.skills.filter((skill) => (!selectedName || skill.name === selectedName) && (!directory || skill.directory === directory));
+  if (candidates.length !== 1) throw new Error(candidates.length ? `Choose a Skill with @name: ${candidates.map((skill) => skill.name).join(", ")}` : `Skill not found. ${result.warnings.join(" ")}`);
+  const installed = await installDiscoveredSkill({ skill: candidates[0]! });
+  console.log(`Installed ${installed.name}: ${installed.version.revision} at ${installed.installedPath}`);
+  console.log(`Environment check: ${installed.diagnostic.status}. Run biny skill check ${installed.name} for details.`);
 }
 
-async function skillUpdateCommand(): Promise<void> {
-  const check = runPackageCommand(["check"]);
-  if (check.runner === undefined) throw new Error("No package runner found. Install Node.js (npx) or Bun (bunx).");
-  if (check.status !== 0) throw check.error ?? new Error("Skill update check failed.");
-  const update = runPackageCommand(["update"]);
-  if (update.status !== 0) throw update.error ?? new Error("Skill update failed.");
-  await new SkillStore().markUpdated();
-  console.log("Skills updated.");
+async function skillUpdateCommand(name?: string): Promise<void> {
+  const names = name === undefined ? await managedSkillNames() : [name];
+  let updated = 0;
+  for (const candidate of names) {
+    const current = await readManagedSkillVersion(defaultManagedSkillRoot(), candidate);
+    if (!current) { if (name !== undefined) throw new Error("This Skill has no managed source version; install it through Biny first."); continue; }
+    const result = await updateDiscoveredSkill({ name: candidate, expectedVersion: current.id });
+    console.log(`${candidate}: ${result.version.id === current.id ? "unchanged" : result.version.revision} (${result.diagnostic.status})`);
+    updated += 1;
+  }
+  if (!updated) console.log("No managed repository Skills found.");
 }
 
 async function skillUninstallCommand(name: string): Promise<void> {
   assertSkillDirectoryName(name);
-  const targets = defaultGlobalSkillRoots().map((root) => path.join(root, name));
-  const installedTargets: string[] = [];
-  for (const target of targets) {
-    if (await pathExists(target)) installedTargets.push(target);
-  }
-  if (!installedTargets.length) throw new Error(`Skill not found: ${name}`);
-  for (const target of installedTargets) await fs.rm(target, { recursive: true, force: true });
-  await new SkillStore().remove(name);
-  console.log(`Uninstalled: ${name}`);
+  const root = defaultManagedSkillRoot();
+  await withGlobalConfigWriteLock(root, async () => {
+    const target = path.join(root, name);
+    if (!await pathExists(target)) throw new Error(`Skill not found: ${name}`);
+    await fs.rm(target, { recursive: true });
+    // 旧版本保留为归档，已开始的调用仍持有它们的真实路径。
+  });
+  console.log(`Uninstalled from Biny: ${name}`);
+}
+
+async function managedSkillNames(): Promise<string[]> {
+  try { return (await fs.readdir(defaultManagedSkillRoot())).filter((name) => /^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(name) && name.length <= 64); }
+  catch (error) { if (isNotFound(error)) return []; throw error; }
 }
 
 async function skillCreateCommand(name: string, source: string): Promise<void> {
@@ -195,30 +215,7 @@ async function skillCreateCommand(name: string, source: string): Promise<void> {
     await fs.rm(target, { recursive: true, force: true });
     throw error;
   }
-  await new SkillStore().upsert({ name, source, kind: "local", installPath: target });
   console.log(`Installed personal Skill "${name}" at ${target}`);
-}
-
-function runPackageCommand(args: string[], cwd?: string): PackageRunnerResult {
-  const runner = getPackageRunner();
-  if (runner === undefined) return { runner: undefined, status: null };
-  const result = spawnSync(runner, ["skills", ...args], { stdio: "inherit", cwd });
-  return { runner, status: result.status, error: result.error };
-}
-
-function getPackageRunner(): string | undefined {
-  for (const candidate of ["npx", "bunx"]) {
-    const result = spawnSync(candidate, ["--version"], { stdio: "ignore" });
-    if (!result.error && result.status === 0) return candidate;
-  }
-  return undefined;
-}
-
-function repositoryDirectoryName(source: string): string {
-  const withoutQuery = source.split(/[?#]/u, 1)[0] ?? source;
-  const name = withoutQuery.split("/").filter(Boolean).at(-1)?.replace(/\.git$/u, "") ?? "skill";
-  assertSkillDirectoryName(name);
-  return name;
 }
 
 function assertSkillDirectoryName(name: string): void {

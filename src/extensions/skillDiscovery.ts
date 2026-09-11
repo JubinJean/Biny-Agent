@@ -6,12 +6,13 @@
  */
 import { randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { globalConfigDir } from "../config/paths.js";
 import { getSharedProxyAwareFetch } from "../network/proxyFetch.js";
-import { parseSkillDocument } from "./skillCatalog.js";
+import { parseSkillDocument } from "./skillDocument.js";
 import { defaultManagedSkillRoot } from "./managedSkillSources.js";
+import { diagnoseSkill, type SkillDiagnosticReport } from "./skillDiagnostics.js";
+import { publishSkillVersion, readManagedSkillVersion, type ManagedSkillVersion } from "./skillVersions.js";
 
 const githubApiBase = "https://api.github.com";
 const skillsShApi = "https://skills.sh/api/search";
@@ -71,6 +72,8 @@ export interface SkillInstallResult {
   name: string;
   directory: string;
   installedPath: string;
+  version: ManagedSkillVersion;
+  diagnostic: SkillDiagnosticReport;
 }
 
 interface GitTreeEntry {
@@ -217,51 +220,61 @@ export async function installDiscoveredSkill(options: {
   skill: Pick<DiscoverableSkill, "name" | "directory" | "repoOwner" | "repoName" | "repoBranch">;
   homeDir?: string;
   fetcher?: typeof globalThis.fetch;
+  expectedVersion?: string;
+  signal?: AbortSignal;
 }): Promise<SkillInstallResult> {
   const { skill } = options;
   const repository: SkillRepository = { owner: skill.repoOwner, name: skill.repoName, branch: skill.repoBranch, enabled: true };
   assertRepository(repository);
   if (!isSafeSkillPath(skill.directory)) throw new Error("Skill 目录路径无效。");
-  const fetcher = options.fetcher ?? getSharedProxyAwareFetch();
-  const { tree, branch } = await fetchRepositoryTreeWithFallback(repository, fetcher);
+  options.signal?.throwIfAborted();
+  const baseFetch = options.fetcher ?? getSharedProxyAwareFetch();
+  const fetcher: typeof fetch = (input, init) => baseFetch(input, { ...init, signal: options.signal ? AbortSignal.any([options.signal, ...(init?.signal ? [init.signal] : [])]) : init?.signal });
+  const { tree, branch, revision } = await fetchRepositoryTreeWithFallback(repository, fetcher);
   const sourceDirectory = resolveSkillDirectory(tree, skill.directory);
-  if (sourceDirectory === undefined) throw new Error(`仓库中找不到 Skill 目录：${skill.directory}`);
-  const files = tree.filter((entry) => entry.type === "blob" && entry.mode !== "120000" && isInsideRepoDirectory(sourceDirectory, entry.path));
-  if (!files.some((entry) => path.posix.basename(entry.path).toLowerCase() === "skill.md")) throw new Error("仓库 Skill 目录缺少 SKILL.md。");
+  if (sourceDirectory === undefined) throw new Error(`仓库中找不到唯一的 Skill 目录：${skill.directory}`);
+  const files = tree.filter((entry) => entry.type === "blob" && isInsideRepoDirectory(sourceDirectory, entry.path));
+  if (files.some((entry) => entry.mode === "120000")) throw new Error("Skill 不能包含符号链接。");
   if (files.length > maxSkillFiles) throw new Error(`Skill 文件数量超过 ${String(maxSkillFiles)} 个。`);
   const expectedBytes = files.reduce((total, entry) => total + (typeof entry.size === "number" ? entry.size : 0), 0);
   if (expectedBytes > maxSkillBytes) throw new Error(`Skill 总大小超过 ${String(maxSkillBytes)} 字节。`);
 
-  const homeDir = options.homeDir ?? os.homedir();
-  const managedRoot = options.homeDir === undefined ? defaultManagedSkillRoot() : defaultManagedSkillRoot(homeDir);
+  const managedRoot = options.homeDir === undefined ? defaultManagedSkillRoot() : defaultManagedSkillRoot(options.homeDir);
   await ensureDirectory(managedRoot);
-  const installName = lastPathSegment(sourceDirectory === "." ? skill.directory : sourceDirectory);
-  assertSafeDirectoryName(installName);
-  const target = path.join(managedRoot, installName);
-  if (await pathExists(target)) throw new Error(`Skill 已安装：${installName}`);
-  const temporary = path.join(managedRoot, `.${installName}.biny-discovery-${process.pid}-${randomBytes(6).toString("hex")}`);
+  const temporary = path.join(managedRoot, `.skill-download-${process.pid}-${randomBytes(6).toString("hex")}`);
   try {
     await fs.mkdir(temporary);
-    const downloaded = await mapWithConcurrency(files, 6, async (entry) => ({
-      entry,
-      content: await fetchBytes(fetcher, githubRawUrl({ ...repository, branch }, entry.path), maxSkillBytes)
-    }));
     let totalBytes = 0;
-    for (const item of downloaded) {
-      totalBytes += item.content.byteLength;
+    await mapWithConcurrency(files, 6, async (entry) => {
+      const relative = sourceDirectory === "." ? entry.path : entry.path.slice(`${sourceDirectory}/`.length);
+      if (!isSafeSkillPath(relative)) throw new Error(`仓库文件路径无效：${entry.path}`);
+      const content = await fetchBytes(fetcher, githubRawUrl({ ...repository, branch: revision }, entry.path), Math.min(entry.size ?? maxSkillBytes, maxSkillBytes));
+      totalBytes += content.byteLength;
       if (totalBytes > maxSkillBytes) throw new Error(`Skill 总大小超过 ${String(maxSkillBytes)} 字节。`);
-      const relative = sourceDirectory === "." ? item.entry.path : item.entry.path.slice(`${sourceDirectory}/`.length);
-      if (!isSafeSkillPath(relative)) throw new Error(`仓库文件路径无效：${item.entry.path}`);
-      const targetFile = path.join(temporary, ...relative.split("/"));
+      const targetFile = path.join(temporary, ...(relative.toLowerCase() === "skill.md" ? "SKILL.md" : relative).split("/"));
       await fs.mkdir(path.dirname(targetFile), { recursive: true });
-      await fs.writeFile(targetFile, item.content, { flag: "wx", mode: 0o644 });
-    }
-    await fs.rename(temporary, target);
-  } catch (error) {
-    await fs.rm(temporary, { recursive: true, force: true }).catch(() => undefined);
-    throw error;
-  }
-  return { name: skill.name, directory: sourceDirectory, installedPath: target };
+      await fs.writeFile(targetFile, content, { flag: "wx", mode: entry.mode === "100755" ? 0o755 : 0o644 });
+      return true;
+    });
+    const documentPath = path.join(temporary, "SKILL.md");
+    if ((await fs.stat(documentPath)).size > 64 * 1024) throw new Error("SKILL.md 超过运行时支持的 64 KiB；请把长文档放入 references。");
+    const document = parseSkillDocument(await fs.readFile(documentPath, "utf8"));
+    const name = document.frontmatter.name;
+    if (typeof name !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(name) || name.length > 64) throw new Error("Skill name 无效。");
+    if (name !== skill.name) throw new Error("下载的 Skill 名称与所选 Skill 不一致，请刷新目录。");
+    const diagnostic = await diagnoseSkill({ name, frontmatter: document.frontmatter });
+    if (diagnostic.checks.some((check) => check.kind === "format" && check.status === "missing")) throw new Error(diagnostic.checks.filter((check) => check.kind === "format" && check.status === "missing").map((check) => check.message).join(" "));
+    const version = await publishSkillVersion({ root: managedRoot, name, preparedDirectory: temporary, revision,
+      source: { owner: repository.owner, repository: repository.name, branch, directory: sourceDirectory }, expectedVersion: options.expectedVersion, signal: options.signal });
+    return { name, directory: sourceDirectory, installedPath: path.join(managedRoot, name), version, diagnostic };
+  } finally { await fs.rm(temporary, { recursive: true, force: true }); }
+}
+
+export async function updateDiscoveredSkill(options: { name: string; expectedVersion: string; homeDir?: string; fetcher?: typeof globalThis.fetch }): Promise<SkillInstallResult> {
+  const root = options.homeDir === undefined ? defaultManagedSkillRoot() : defaultManagedSkillRoot(options.homeDir);
+  const current = await readManagedSkillVersion(root, options.name);
+  if (!current || current.id !== options.expectedVersion) throw new Error("Skill 版本不存在或已变化，请刷新后重试。");
+  return await installDiscoveredSkill({ skill: { name: current.name, directory: current.source.directory, repoOwner: current.source.owner, repoName: current.source.repository, repoBranch: current.source.branch }, homeDir: options.homeDir, fetcher: options.fetcher, expectedVersion: current.id });
 }
 
 async function discoverRepository(repository: SkillRepository, fetcher: typeof globalThis.fetch, installedNames: ReadonlySet<string>): Promise<{ skills: DiscoverableSkill[]; warning?: string }> {
@@ -302,14 +315,17 @@ async function fetchRepositoryTree(repository: SkillRepository, fetcher: typeof 
   return response.tree.filter((entry) => typeof entry.path === "string" && isSafeSkillPath(entry.path));
 }
 
-async function fetchRepositoryTreeWithFallback(repository: SkillRepository, fetcher: typeof globalThis.fetch): Promise<{ tree: GitTreeEntry[]; branch: string }> {
-  const branches = [...new Set([repository.branch, "main", "master"])];
+async function fetchRepositoryTreeWithFallback(repository: SkillRepository, fetcher: typeof globalThis.fetch): Promise<{ tree: GitTreeEntry[]; branch: string; revision: string }> {
+  const branches = repository.branch === "main" ? ["main", "master"] : [repository.branch];
   let lastError: unknown;
   for (const branch of branches) {
     try {
-      return { tree: await fetchRepositoryTree({ ...repository, branch }, fetcher), branch };
+      const commit = await fetchJson<{ sha: string }>(fetcher, `${githubApiBase}/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}/commits/${encodeURIComponent(branch)}?per_page=1`, maxMetadataBytes);
+      if (!/^[a-f0-9]{40}$/u.test(commit.sha)) throw new Error("GitHub 返回的提交 SHA 无效。");
+      return { tree: await fetchRepositoryTree({ ...repository, branch: commit.sha }, fetcher), branch, revision: commit.sha };
     } catch (error) {
       lastError = error;
+      if (!(error instanceof Error) || !error.message.includes("HTTP 404")) throw error;
     }
   }
   throw lastError instanceof Error ? lastError : new Error("无法读取 Skill 仓库。");
@@ -322,10 +338,10 @@ function resolveSkillDirectory(tree: readonly GitTreeEntry[], directory: string)
     .map((entry) => path.posix.dirname(entry.path)))];
   const direct = directories.find((candidate) => candidate === normalized);
   if (direct !== undefined) return direct;
-  const name = lastPathSegment(normalized);
-  const byName = directories.find((candidate) => lastPathSegment(candidate).toLocaleLowerCase() === name.toLocaleLowerCase());
-  if (byName !== undefined) return byName;
-  return directories.includes(".") ? "." : undefined;
+  if (normalized.includes("/")) return undefined;
+  const matches = directories.filter((candidate) => lastPathSegment(candidate).toLocaleLowerCase() === normalized.toLocaleLowerCase());
+  if (matches.length === 1) return matches[0];
+  return directories.length === 1 && directories[0] === "." ? "." : undefined;
 }
 
 function isInsideRepoDirectory(directory: string, filePath: string): boolean {
@@ -364,19 +380,30 @@ async function fetchText(fetcher: typeof globalThis.fetch, url: string, maxBytes
 async function fetchBytes(fetcher: typeof globalThis.fetch, url: string, maxBytes: number): Promise<Uint8Array> {
   const response = await fetcher(url, { signal: AbortSignal.timeout(15_000), headers: { "user-agent": "Biny SkillHub" } });
   if (!response.ok) throw new Error(`远程文件返回 HTTP ${String(response.status)}。`);
-  const contentLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > maxBytes) throw new Error(`远程文件超过 ${String(maxBytes)} 字节。`);
-  const bytes = new Uint8Array(await response.arrayBuffer());
-  if (bytes.byteLength > maxBytes) throw new Error(`远程文件超过 ${String(maxBytes)} 字节。`);
-  return bytes;
+  return await boundedResponseBytes(response, maxBytes);
 }
 
 async function boundedResponseText(response: Response, maxBytes: number): Promise<string> {
+  return Buffer.from(await boundedResponseBytes(response, maxBytes)).toString("utf8");
+}
+
+async function boundedResponseBytes(response: Response, maxBytes: number): Promise<Uint8Array> {
   const contentLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > maxBytes) throw new Error(`远程响应超过 ${String(maxBytes)} 字节。`);
-  const text = await response.text();
-  if (Buffer.byteLength(text, "utf8") > maxBytes) throw new Error(`远程响应超过 ${String(maxBytes)} 字节。`);
-  return text;
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) { await response.body?.cancel(); throw new Error(`远程响应超过 ${String(maxBytes)} 字节。`); }
+  const reader = response.body?.getReader();
+  if (!reader) return new Uint8Array();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  try {
+    while (true) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      total += chunk.value.byteLength;
+      if (total > maxBytes) { await reader.cancel(); throw new Error(`远程响应超过 ${String(maxBytes)} 字节。`); }
+      chunks.push(chunk.value);
+    }
+    return Buffer.concat(chunks, total);
+  } finally { reader.releaseLock(); }
 }
 
 async function writeRepositories(homeDir: string | undefined, repositories: SkillRepository[]): Promise<void> {
@@ -395,16 +422,6 @@ async function ensureDirectory(directory: string): Promise<void> {
   await fs.mkdir(directory, { recursive: true });
   const stat = await fs.lstat(directory);
   if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error(`Biny Skill 目录必须是真实目录：${directory}`);
-}
-
-async function pathExists(filePath: string): Promise<boolean> {
-  try {
-    await fs.lstat(filePath);
-    return true;
-  } catch (error) {
-    if (isNotFound(error)) return false;
-    throw error;
-  }
 }
 
 function isRepositoryList(value: unknown): value is SkillRepositoryFile {
@@ -435,10 +452,6 @@ function isValidBranch(value: string): boolean {
 
 function isSafeSkillPath(value: string): boolean {
   return value.length > 0 && value.length <= 1_000 && !value.startsWith("/") && !value.includes("\\") && value.split("/").every((part) => part.length > 0 && part !== "." && part !== ".." && !part.includes("\0"));
-}
-
-function assertSafeDirectoryName(value: string): void {
-  if (!value || value === "." || value === ".." || value.includes("/") || value.includes("\\") || value.includes("\0") || value.startsWith(".") || value.length > 128) throw new Error(`Skill 目录名无效：${value}`);
 }
 
 function lastPathSegment(value: string): string {
@@ -478,7 +491,9 @@ async function mapWithConcurrency<T, R>(items: readonly T[], limit: number, mapp
       results[index] = await mapper(item);
     }
   };
-  await Promise.all(Array.from({ length: Math.min(Math.max(limit, 1), Math.max(items.length, 1)) }, () => worker()));
+  const workers = await Promise.allSettled(Array.from({ length: Math.min(Math.max(limit, 1), Math.max(items.length, 1)) }, () => worker()));
+  const failure = workers.find((result) => result.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
   return results.filter((result): result is R => result !== undefined);
 }
 

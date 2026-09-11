@@ -45,7 +45,7 @@ biny memory sleep --run --yes --json
 
 ## Writing rules
 
-- Save only with explicit user intent or a clearly established stable working preference.
+- Explicit tool writes follow user intent or a clearly established stable preference. Authorized background extraction and daily self-reflection may save stable, supported facts when memory contribution is enabled; do not ask again for each automatic memory.
 - Search before writing to avoid duplicates; preserve the correct audience, topic, source, and durability.
 - Never save passwords, API keys, one-time codes, private credentials, or sensitive details merely because they appeared in context.
 - Do not promote a temporary plan, speculative interpretation, or assistant-generated prose into a user fact.

@@ -9,7 +9,7 @@ import { randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
 import path from "node:path";
 import { globalConfigDir } from "../config/paths.js";
-import { parseSkillDocument } from "./skillCatalog.js";
+import { parseSkillDocument } from "./skillDocument.js";
 
 const maxSkillFileBytes = 512 * 1024;
 const skillNamePattern = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;

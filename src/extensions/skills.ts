@@ -11,7 +11,7 @@ import { constants, promises as fs, type BigIntStats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { parseDocument } from "yaml";
+import { parseSkillDocument, readSkillMetadataFields, type SkillMetadata } from "./skillDocument.js";
 import { z } from "zod";
 import { ToolAccesses } from "../tools/access.js";
 import type { Tool } from "../tools/types.js";
@@ -33,7 +33,7 @@ const maxListedSkillResources = 100;
 
 export type SkillScope = "builtin" | "project" | "global";
 
-export interface SkillDefinition {
+export interface SkillDefinition extends SkillMetadata {
   ref: SkillRef;
   id: string;
   name: string;
@@ -219,15 +219,19 @@ async function appendSkillDefinitions(
   precedence: number,
   source: SkillRootSource
 ): Promise<void> {
-  for (const candidate of files.sort((left, right) => left.path.localeCompare(right.path))) {
-    if (candidates.length >= maxDiscoveredSkillCount) break;
-    try {
-      const skill = await readSkillMetadata(projectRoot, candidate, scope, source);
-      candidates.push({ skill, precedence });
-    } catch (error) {
-      const message = `Skipped ${candidate.path}: ${errorMessage(error)}`;
-      warnings.push(message);
-      errors.push(message);
+  const sorted = files.sort((left, right) => left.path.localeCompare(right.path));
+  // 独立文件的绑定校验与元数据读取可以并行；有界批次保留确定顺序和发现上限。
+  for (let offset = 0; offset < sorted.length && candidates.length < maxDiscoveredSkillCount;) {
+    const batch = sorted.slice(offset, offset + Math.min(16, maxDiscoveredSkillCount - candidates.length));
+    offset += batch.length;
+    const results = await Promise.allSettled(batch.map((candidate) => readSkillMetadata(projectRoot, candidate, scope, source)));
+    for (const [index, result] of results.entries()) {
+      if (result.status === "fulfilled") candidates.push({ skill: result.value, precedence });
+      else {
+        const message = `Skipped ${batch[index]!.path}: ${errorMessage(result.reason)}`;
+        warnings.push(message);
+        errors.push(message);
+      }
     }
   }
 }
@@ -271,8 +275,8 @@ function selectSkillCandidates(
 
 function buildSkillPrompt(skills: SkillDefinition[]): string {
   if (!skills.length) return "";
-  const header = "Available skills (metadata only; full instructions are not loaded yet):";
-  const footer = "Before doing a task that matches a skill, call Skill with its name. A $skill-name mention is an explicit invocation and must be honored. If a user submits /skill:name, its full instructions are already included in that message; follow them without loading the same Skill again.";
+  const header = "Available Skills (metadata only; load the matching Skill when you need its full instructions):";
+  const footer = "When a task matches a Skill, load it before improvising. A $skill-name mention is explicit and must be honored. If the user submits /skill:name, the full instructions are already in that message; follow them without loading the same Skill again.";
   const render = (descriptionLimit: number, limit = skills.length): string => {
     const lines = skills.slice(0, limit).map((skill) => {
       const description = truncateChars(skill.description, descriptionLimit);
@@ -336,8 +340,10 @@ export async function expandSkillCommand(bundle: SkillBundle, input: string): Pr
 
   const content = await readSkillFileFresh(skill.rootPath, skill.filePath, maxSkillInstructionBytes);
   let body = content;
+  let metadata: SkillMetadata | undefined;
   try {
     const parsed = splitFrontmatter(content);
+    metadata = parsed.frontmatter;
     if (path.basename(skill.filePath) === "SKILL.md" || parsed.frontmatter.name || parsed.frontmatter.description) {
       body = parsed.body;
     }
@@ -347,10 +353,12 @@ export async function expandSkillCommand(bundle: SkillBundle, input: string): Pr
   const skillBlock = [
     `<skill name="${skill.name}" location="${skill.filePath}">`,
     `References are relative to ${path.dirname(skill.filePath)}.`,
+    metadata?.compatibility ? `Compatibility notes (not automatically verified): ${metadata.compatibility}` : undefined,
+    metadata?.allowedTools?.length ? `Declared tools (normal permissions still apply): ${metadata.allowedTools.join(" ")}` : undefined,
     "",
     body.trim(),
     "</skill>"
-  ].join("\n");
+  ].filter((line) => line !== undefined).join("\n");
   return args ? `${skillBlock}\n\n${args}` : skillBlock;
 }
 
@@ -393,8 +401,10 @@ export function createSkillTool(source: SkillBundleSource): Tool {
         async execute(): Promise<unknown> {
           const content = await readSkillFileFresh(definition.rootPath, definition.filePath, maxSkillInstructionBytes);
           let body = content;
+          let metadata: SkillMetadata | undefined;
           try {
             const parsed = splitFrontmatter(content);
+            metadata = parsed.frontmatter;
             if (path.basename(definition.filePath) === "SKILL.md" || parsed.frontmatter.name || parsed.frontmatter.description) {
               body = parsed.body;
             }
@@ -407,6 +417,10 @@ export function createSkillTool(source: SkillBundleSource): Tool {
             scope: definition.scope,
             path: definition.path,
             instructions: body.trim() || content.trim(),
+            license: metadata?.license,
+            compatibility: metadata?.compatibility,
+            allowedTools: metadata?.allowedTools,
+            metadata: metadata?.metadata,
             resourceRoot: path.dirname(definition.filePath),
             resources
           };
@@ -496,7 +510,7 @@ async function readSkillMetadata(projectRoot: string, candidate: SkillFileCandid
   const rootPath = candidate.rootPath;
   const content = await readBoundedSkillFile(rootPath, candidate, maxSkillMetadataBytes);
   const standardSkill = path.basename(candidate.path) === "SKILL.md";
-  let frontmatter: SkillFrontmatter = {};
+  let frontmatter: SkillMetadata = {};
   let body = content;
   try {
     ({ frontmatter, body } = splitFrontmatter(content));
@@ -527,6 +541,10 @@ async function readSkillMetadata(projectRoot: string, candidate: SkillFileCandid
     id: createSkillId(ref),
     name,
     description,
+    license: frontmatter.license,
+    compatibility: frontmatter.compatibility,
+    allowedTools: frontmatter.allowedTools,
+    metadata: frontmatter.metadata,
     path: scope === "global" ? globalDisplayPath(rootPath, relative) : scope === "builtin" ? `builtin/${relative}` : relative,
     filePath: candidate.path,
     rootPath,
@@ -561,37 +579,9 @@ function deriveSkillName(filePath: string): string {
   return stem;
 }
 
-interface SkillFrontmatter {
-  name?: string;
-  description?: string;
-}
-
-function splitFrontmatter(content: string): { frontmatter: SkillFrontmatter; body: string } {
-  const opening = /^---[ \t]*\r?\n/.exec(content);
-  if (!opening) return { frontmatter: {}, body: content };
-  const closingPattern = /^---[ \t]*\r?$/gm;
-  closingPattern.lastIndex = opening[0].length;
-  const closing = closingPattern.exec(content);
-  if (!closing) return { frontmatter: {}, body: content };
-  const raw = content.slice(opening[0].length, closing.index);
-  const document = parseDocument(raw, { uniqueKeys: true });
-  if (document.errors.length) throw new Error(`Invalid SKILL.md YAML: ${document.errors[0]?.message ?? "unknown error"}`);
-  const value = document.toJS({ maxAliasCount: 0 });
-  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("SKILL.md frontmatter must be a YAML mapping.");
-  const record = value as Record<string, unknown>;
-  const name = stringMetadata(record.name, "name");
-  const description = stringMetadata(record.description, "description");
-  let bodyStart = closing.index + closing[0].length;
-  if (content.startsWith("\r\n", bodyStart)) bodyStart += 2;
-  else if (content.startsWith("\n", bodyStart)) bodyStart += 1;
-  return { frontmatter: { name, description }, body: content.slice(bodyStart) };
-}
-
-function stringMetadata(value: unknown, field: string): string | undefined {
-  if (value === undefined || value === null) return undefined;
-  if (typeof value !== "string") throw new Error(`SKILL.md ${field} must be a string.`);
-  const trimmed = value.trim();
-  return trimmed || undefined;
+function splitFrontmatter(content: string): { frontmatter: SkillMetadata; body: string } {
+  const parsed = parseSkillDocument(content);
+  return { frontmatter: readSkillMetadataFields(parsed.frontmatter), body: parsed.body };
 }
 
 function firstDescriptiveLine(body: string): string | undefined {

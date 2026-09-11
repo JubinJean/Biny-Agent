@@ -11,6 +11,7 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { globalConfigDir } from "../config/paths.js";
+import { canonicalCompatibleToolName } from "../tools/toolNames.js";
 
 const maxAgentCount = 16;
 const maxAgentFileBytes = 32 * 1024;
@@ -76,7 +77,7 @@ export function findSubagentDefinition(definitions: readonly SubagentDefinition[
 export function buildSubagentDefinitionsPrompt(definitions: readonly SubagentDefinition[]): string {
   if (!definitions.length) return "";
   return [
-    "Named subagents (metadata only; each runs as an isolated bounded subagent):",
+    "Named subagents (metadata only; each runs as an isolated, bounded Biny worker):",
     ...definitions.map((definition) => {
       const extras = [
         definition.scope,
@@ -85,7 +86,7 @@ export function buildSubagentDefinitionsPrompt(definitions: readonly SubagentDef
       ].filter(Boolean).join(", ");
       return `- ${definition.name} (${extras}): ${definition.description}`;
     }),
-    "Delegate to one by calling Task with agent: \"<name>\"; omit agent for the default subagent."
+    "Use Task with agent: \"<name>\" to delegate to a named worker; omit agent for the default worker. Delegate only work that benefits from isolation or a separate specialist."
   ].join("\n");
 }
 
@@ -176,7 +177,7 @@ function splitAgentFrontmatter(content: string): { frontmatter: AgentFrontmatter
 
 function parseToolList(value: string | undefined): string[] | undefined {
   if (!value) return undefined;
-  const tools = [...new Set(value.split(",").map((tool) => tool.trim()).filter(Boolean))].slice(0, maxAgentToolCount);
+  const tools = [...new Set(value.split(",").map((tool) => tool.trim()).filter(Boolean).map(canonicalCompatibleToolName))].slice(0, maxAgentToolCount);
   return tools.length ? tools : undefined;
 }
 

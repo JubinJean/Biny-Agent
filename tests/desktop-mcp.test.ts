@@ -105,4 +105,27 @@ assert.equal(sseByTransportProtocol?.remoteProtocol, "sse");
 const plainRemote = parseClipboardConfig({ mcpServers: { remote: { url: "https://example.com/mcp" } } });
 assert.equal(plainRemote?.remoteProtocol, "streamable-http");
 
+const connectingConfig = {
+  ...defaultConfig,
+  extensions: {
+    ...defaultConfig.extensions,
+    mcp: {
+      delayed: {
+        enabled: true,
+        command: "delayed-mcp",
+        args: [],
+        cwd: ".",
+        stderr: "ignore" as const
+      }
+    }
+  }
+};
+const connectingService = new DesktopMcpService(
+  { loadVersioned: async () => ({ config: structuredClone(connectingConfig), revision: "sha256:connecting" }) } as unknown as AgentConfigStore,
+  projects as never,
+  { ...agents, mcpStatuses: async () => [{ name: "delayed", command: "delayed-mcp", transport: "stdio" as const, enabled: true, connected: false, connecting: true, toolNames: [], promptNames: [], hasResources: false }] },
+  async () => new Response(null, { status: 204 })
+);
+assert.equal((await connectingService.snapshot("project")).servers[0]?.state, "connecting");
+
 console.log("desktop MCP service tests passed");

@@ -88,7 +88,7 @@ function formatMcpReport(servers: McpServerStatus[]): string {
       lines.push(`  - ${server.name} · disabled`);
       continue;
     }
-    const state = server.connected ? "connected" : "disconnected";
+    const state = server.connected ? "connected" : server.connecting ? "connecting" : "disconnected";
     const extras = [
       server.hasResources ? "resources" : "",
       server.promptNames.length ? `${String(server.promptNames.length)} prompts` : "",

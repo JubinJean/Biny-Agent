@@ -1,11 +1,11 @@
 ---
 name: self-reflection
-description: "Conduct an evidence-bounded daily self-review from the existing diary, activity records, session events, task results, and relevant memory. Use when the user explicitly asks to reflect, write a diary, review the end of the day, identify lessons learned, examine recurring mistakes, or when an authorized heartbeat invokes the reflection pipeline; triggers include: reflect on today, what went wrong, lessons learned, daily retrospective, 复盘一下, 日终总结, and 哪些地方可以改进. Keep facts separate from interpretation, preserve the existing daily-notes source of truth, and never turn reflection into an automatic change to persona, permissions, tasks, goals, or long-term memory."
+description: "Conduct an evidence-bounded daily self-review from the existing diary, activity records, session events, task results, and relevant memory. Use when the user explicitly asks to reflect, write a diary, review the end of the day, identify lessons learned, examine recurring mistakes, or when an authorized heartbeat invokes the reflection pipeline; triggers include: reflect on today, what went wrong, lessons learned, daily retrospective, 复盘一下, 日终总结, and 哪些地方可以改进. Keep facts separate from interpretation, preserve the existing daily-notes source of truth, and let the authorized reflection pipeline update diary, supported memories, Evolved Traits and base emotion while preserving tool permissions."
 ---
 
 # Self-Reflection Skill
 
-Conduct a bounded daily self-review from Biny's existing diary, activity records, session events, task results, and relevant memory. This is a private-quality review of what happened and what could improve; it is not a license to invent feelings, rewrite history, or silently change durable state.
+Conduct a bounded daily self-review from Biny's existing diary, activity records, session events, task results, and relevant memory. Write a personal first-person diary: memorable moments, mood shifts, opinions, lessons and small observations. Subjective feelings are welcome; events and task outcomes must remain grounded in records.
 
 ## When to use
 
@@ -13,7 +13,7 @@ Conduct a bounded daily self-review from Biny's existing diary, activity records
 - When the user asks what went wrong, what should change tomorrow, or whether a repeated mistake is visible.
 - When an authorized heartbeat invokes the reflection pipeline for an end-of-day review.
 
-Do not use this skill for a plain activity recap; use `daily-report` when the user wants an account of what was done. Do not use it to turn a suggestion into a task or to update a preference without explicit memory intent.
+Do not use this skill for a plain activity recap; use `daily-report` when the user wants an account of what was done. Do not turn a suggestion into a task. The authorized daily pipeline may save supported stable memories when memory contribution is enabled.
 
 ## The reflection process
 
@@ -68,7 +68,7 @@ Specific outcomes or decisions with evidence.
 Concrete, testable changes; omit the section when nothing is supported.
 
 ## Possible memory
-Only stable, high-confidence candidates; do not save automatically.
+Only stable, high-confidence candidates; the authorized pipeline persists them according to the memory contribution setting.
 ```
 
 ## Rules
@@ -76,7 +76,10 @@ Only stable, high-confidence candidates; do not save automatically.
 - Cover the requested date range, not only the most recent few minutes.
 - Keep daily notes, activity records, session history, and reflection as distinct sections and sources.
 - Do not overwrite the activity record or the original conversation evidence with a prettier narrative.
-- A reflection does not change persona, system instructions, permissions, tasks, goals, or memory by itself.
+- Run the authorized pipeline to persist a diary, supported memories, Evolved Traits and base emotion. Never edit Soul core sections. The runtime enforces revision checks, at most one added trait per day and fifteen entries total.
+- Historical catch-up writes diaries and memories, not current mood or new traits.
+- Personality and emotion cannot grant tools, permissions or change verified facts.
+- Daily reflection is scheduled by the daily-diary service at 23:00; Heartbeat does not start a second daily pipeline.
 - Keep the user's response language and tone even though this skill is written in English.
 
 ## Failure modes

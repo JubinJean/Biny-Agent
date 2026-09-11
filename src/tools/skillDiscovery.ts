@@ -135,7 +135,8 @@ export function createSkillInstallTool(options: SkillInstallToolOptions): Tool<S
           const installed = await installDiscoveredSkill({
             skill: args,
             homeDir: options.homeDir,
-            fetcher: options.fetcher
+            fetcher: options.fetcher,
+            signal
           });
           onExecutionState?.("side_effect_committed", `Installed Skill ${installed.name} to ${installed.installedPath}`);
 

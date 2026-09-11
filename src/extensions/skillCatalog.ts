@@ -8,7 +8,7 @@ import { randomBytes } from "node:crypto";
 import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { parseDocument } from "yaml";
+import { parseSkillDocument, readSkillMetadataFields } from "./skillDocument.js";
 import {
   GLOBAL_SKILL_ROOT_CONVENTIONS,
   PROJECT_SKILL_ROOT_CONVENTIONS,
@@ -20,6 +20,7 @@ import {
 import { globalConfigDir } from "../config/paths.js";
 import { createSkillId, createSkillRef, normalizeSkillName } from "./skillRef.js";
 import { builtinSkillRoot } from "./builtinSkills.js";
+import { isManagedSkillVersionPath } from "./skillVersions.js";
 
 const maxMetadataBytes = 64 * 1024;
 const maxEditorBytes = 512 * 1024;
@@ -367,6 +368,7 @@ async function scanSkillRoot(root: SkillRoot, allowedDirectories: readonly strin
       const absolutePath = await canonicalDirectory(path.join(root.directory, entry.name));
       if (
         entry.isSymbolicLink()
+        && !isManagedSkillVersionPath(await fs.realpath(root.directory), entry.name, absolutePath)
         && (!root.allowExternalSymlinks || !allowedDirectories.some((directory) => isPathInside(directory, absolutePath)))
       ) {
         const linkPath = path.join(root.directory, entry.name);
@@ -406,6 +408,7 @@ async function readDiscoveredSkill(root: SkillRoot, absolutePath: string, mdPath
   try {
     const parsed = parseSkillDocument(raw);
     frontmatter = parsed.frontmatter;
+    readSkillMetadataFields(frontmatter);
     const metadataDescription = frontmatter.description;
     description = typeof metadataDescription === "string" && metadataDescription.trim()
       ? metadataDescription.trim()
@@ -544,23 +547,6 @@ async function readMetadataFile(filePath: string): Promise<string> {
   } finally {
     await handle.close();
   }
-}
-
-export function parseSkillDocument(content: string): { frontmatter: Record<string, unknown>; body: string } {
-  const opening = /^---[ \t]*\r?\n/u.exec(content);
-  if (!opening) return { frontmatter: {}, body: content };
-  const closingPattern = /^---[ \t]*\r?$/gmu;
-  closingPattern.lastIndex = opening[0].length;
-  const closing = closingPattern.exec(content);
-  if (!closing) throw new Error("SKILL.md frontmatter 缺少结束分隔线。");
-  const document = parseDocument(content.slice(opening[0].length, closing.index), { uniqueKeys: true });
-  if (document.errors.length) throw new Error(`SKILL.md YAML 无法解析：${document.errors[0]?.message ?? "unknown error"}`);
-  const value = document.toJS({ maxAliasCount: 0 });
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("SKILL.md frontmatter 必须是 YAML 对象。");
-  let bodyStart = closing.index + closing[0].length;
-  if (content.startsWith("\r\n", bodyStart)) bodyStart += 2;
-  else if (content.startsWith("\n", bodyStart)) bodyStart += 1;
-  return { frontmatter: value as Record<string, unknown>, body: content.slice(bodyStart) };
 }
 
 function firstDescriptionLine(content: string): string | undefined {

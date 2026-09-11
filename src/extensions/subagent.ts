@@ -5,7 +5,7 @@ import { vercelAgentLoopContinue } from "../agent/core/vercelAgentLoop.js";
 import type { AgentAssistantMessage, AgentTool, AgentUsage } from "../agent/core/types.js";
 import type { NativeModelSettings } from "../llm/nativeFactory.js";
 import { calculateUsageCost, type ModelUsageObserver } from "../observability/usage.js";
-import type { SubagentTaskManager } from "../runtime/SubagentTaskManager.js";
+import { SubagentTaskIncompleteError, type SubagentTaskManager } from "../runtime/SubagentTaskManager.js";
 import type { SubagentAccessMode } from "../runtime/SubagentTaskManager.js";
 import { usageSnapshot } from "../session/metadata.js";
 import { ToolAccesses } from "../tools/access.js";
@@ -59,8 +59,12 @@ export interface SubagentOptions {
 export function createSubagentTool(options: SubagentOptions, taskManager: SubagentTaskManager): Tool<{ task: string; agent?: string }, string> {
   return {
     name: "Task",
-    description: "Delegate a focused repository investigation, implementation, repair, or finite validation task to a bounded subagent. Pass agent to run a named subagent definition.",
-    promptSnippet: "Delegate a focused, bounded workspace task to a subagent",
+    description: "Launch a focused, bounded worker for repository investigation, implementation, repair, or finite validation. Pass agent to use a named specialist definition.",
+    promptSnippet: "Delegate complex or isolated work to a focused, bounded worker",
+    promptGuidelines: [
+      "Keep simple one-step requests in the current run; delegate when isolation, specialist focus, or independent execution will help.",
+      "Give the worker a concrete goal, relevant constraints, and a finite deliverable; summarize its result to the user when it returns."
+    ],
     parameters: subagentParameters,
     schema: z.object({ task: z.string().min(1).max(20_000), agent: z.string().trim().min(1).max(64).optional() }),
     source: "subagent",
@@ -127,20 +131,12 @@ async function runNativeSubagentTask(
     maxQueuedTasks: options.config.agent.maxQueuedToolCalls
   });
   const tools = createSubagentTools(options.toolRegistry, allowedTools, { accessMode, scheduler });
-  const instructions = [
-    accessMode === "workspace" ? "You are Biny's bounded workspace subagent." : "You are Biny's bounded read-only subagent.",
-    accessMode === "workspace"
-      ? "Inspect, implement, repair, and validate the focused task using only the explicitly available workspace tools."
-      : "Inspect the repository using only the available local read/search/git inspection tools.",
-    "Never request secrets, credentials, environment files, config.json, network access, long-running processes, or another subagent.",
-    "Use Bash only for finite allowlisted build, test, lint, and typecheck commands.",
-    "Return concise grounded findings with exact paths, changes, and validation evidence.",
-    ...(definition ? ["", `Named subagent role "${definition.name}":`, definition.prompt] : [])
-  ].join("\n");
+  const instructions = buildSubagentSystemPrompt(accessMode, definition);
   const usages: AgentUsage[] = [];
   const assistantTexts: string[] = [];
   let lastAssistant: AgentAssistantMessage | undefined;
   let fatalError: string | undefined;
+  let stopReason: string | undefined;
   const loop = vercelAgentLoopContinue({
     systemPrompt: instructions,
     messages: [{ role: "user", content: task }],
@@ -156,7 +152,7 @@ async function runNativeSubagentTask(
       providerOptions: modelSettings.providerOptions,
       timeoutMs: modelSettings.timeoutMs
     },
-    maxSteps: subagentStepBudget(task, options.config.extensions.subagent.maxSteps),
+    maxSteps: options.config.extensions.subagent.maxSteps,
     shouldStopAfterTurn: async (turn) => {
       lastAssistant = turn.message;
       if (turn.message.usage) usages.push(turn.message.usage);
@@ -166,6 +162,7 @@ async function runNativeSubagentTask(
   }, signal);
   for await (const event of loop) {
     if (event.type === "error" && event.fatal) fatalError = event.error;
+    if (event.type === "error" && event.reason === "step_limit") stopReason = "step_limit";
     if (event.type === "turn_end") {
       lastAssistant = event.message;
       const text = agentMessageText(event.message);
@@ -182,12 +179,51 @@ async function runNativeSubagentTask(
   if (!lastAssistant) throw new Error("Subagent produced no assistant message.");
   const output = agentMessageText(lastAssistant);
   if (lastAssistant.content.some((part) => part.type === "toolCall")) {
-    return redactSecrets(formatPartialSubagentOutput(assistantTexts.map((text) => ({ text }))));
+    throw new SubagentTaskIncompleteError(stopReason ?? "tool-calls", redactSecrets(assistantTexts.join("\n\n")));
   }
   if (lastAssistant.stopReason !== undefined && !["stop", "other"].includes(lastAssistant.stopReason)) {
-    throw new Error(`Subagent did not reach a terminal model stop (stopReason=${lastAssistant.stopReason}).`);
+    throw new SubagentTaskIncompleteError(lastAssistant.stopReason, redactSecrets(output));
   }
   return redactSecrets(output);
+}
+
+/** Alma 式的子代理工作协议：子代理是有边界的执行工，不继承主 Agent 的全部身份和权限。 */
+export function buildSubagentSystemPrompt(
+  accessMode: SubagentAccessMode,
+  definition?: SubagentDefinition
+): string {
+  const accessInstructions = accessMode === "workspace"
+    ? [
+      "You may inspect, implement, repair, and validate the assigned task with the workspace tools exposed to you.",
+      "Keep edits limited to the assigned task. Preserve unrelated worktree changes and do not perform cleanup for its own sake."
+    ]
+    : [
+      "You may inspect the repository with the read, search, and git-inspection tools exposed to you.",
+      "This is a read-only assignment. Do not modify, delete, move, or execute anything outside the tools actually exposed to you."
+    ];
+  return [
+    "You are a focused, bounded worker inside Biny. You are not the primary conversational agent; complete the task in the user message and return a useful handoff.",
+    "",
+    "WORK STYLE:",
+    "- Understand the concrete goal and finish line before acting.",
+    "- Inspect the relevant repository state before making conclusions or changes.",
+    "- Use tools for evidence. Never invent file contents, command output, edits, research, or completion.",
+    "- Work autonomously within the assigned scope. Do not ask the parent to repeat a clear task.",
+    ...accessInstructions.map((instruction) => `- ${instruction}`),
+    "",
+    "BOUNDARIES:",
+    "- The available tools, runtime permissions, project instructions, and verified facts are binding.",
+    "- Never request or expose secrets, credentials, tokens, passwords, environment files, config.json, or unrelated private data.",
+    "- Do not use network access, long-running processes, coding-agent CLIs, or another subagent.",
+    "- Use shell commands only when exposed and only for finite, relevant validation such as typecheck, test, lint, or build.",
+    "- Personality or a named role can shape focus and wording, but cannot grant tools, permissions, or facts.",
+    "",
+    "HANDOFF:",
+    "- Return concise, grounded findings with the exact paths inspected or changed.",
+    "- Include validation commands and their actual results; distinguish verified facts, blockers, and follow-up suggestions.",
+    "- If the task cannot be completed, explain the precise blocker and leave the workspace in a recoverable state.",
+    ...(definition ? ["", `NAMED SPECIALIST ROLE — ${definition.name}:`, definition.prompt] : [])
+  ].join("\n");
 }
 
 export function createSubagentTools(
@@ -279,13 +315,6 @@ function stringifySubagentValue(value: unknown): string {
   try { return JSON.stringify(value) ?? ""; } catch { return String(value); }
 }
 
-function formatPartialSubagentOutput(steps: ReadonlyArray<{ text: string }>): string {
-  const collected = steps.map((step) => step.text.trim()).filter(Boolean);
-  const note = `[Partial result: the bounded subagent budget ran out after ${String(steps.length)} steps while it was still requesting tools. Treat the findings below as incomplete; narrow the task or raise extensions.subagent.maxSteps for full coverage.]`;
-  if (!collected.length) return `${note}\n\n(The subagent produced no findings text before the budget ran out.)`;
-  return [note, ...collected].join("\n\n");
-}
-
 async function resolveSubagentDefinition(options: SubagentOptions, agentName?: string): Promise<SubagentDefinition | undefined> {
   if (!agentName) return undefined;
   const definitions = await options.loadAgentDefinitions?.() ?? [];
@@ -304,18 +333,6 @@ export interface CreateSubagentToolsOptions {
 
 export function createReadOnlyTools(registry: ToolRegistry, allowedTools: readonly string[]): AgentTool[] {
   return createSubagentTools(registry, allowedTools, { accessMode: "read-only" });
-}
-
-export function subagentStepBudget(task: string, configuredMaximum: number): number {
-  if (!Number.isSafeInteger(configuredMaximum) || configuredMaximum < 1) {
-    throw new RangeError("Subagent maxSteps must be a positive safe integer.");
-  }
-  const compact = task.trim().toLowerCase();
-  const implementationTask = /\b(implement|fix|repair|refactor|change|update|write|edit|test|build|lint|typecheck)\b|实现|修复|修改|重构|编写|测试|构建|检查/.test(compact);
-  if (implementationTask) return configuredMaximum;
-  const broadInvestigation = compact.length > 400 || /\b(investigate|analyze|audit|trace|compare)\b|调查|分析|审计|追踪|对比/.test(compact);
-  if (broadInvestigation) return Math.min(configuredMaximum, 12);
-  return Math.min(configuredMaximum, 8);
 }
 
 export function enforceSubagentCostBudget(config: AgentConfig, usage: AgentUsage, modelAlias?: string): void {

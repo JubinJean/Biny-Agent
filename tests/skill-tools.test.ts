@@ -24,7 +24,8 @@ async function main(): Promise<void> {
         }]
       }));
     }
-    if (url.includes("/git/trees/main")) {
+    if (url.includes("/commits/main")) return response(JSON.stringify({ sha: "a".repeat(40) }));
+    if (url.includes("/git/trees/")) {
       return response(JSON.stringify({ tree: [
         { path: "skills/demo/SKILL.md", type: "blob", size: 64 },
         { path: "skills/demo/references/guide.md", type: "blob", size: 10 }
@@ -77,9 +78,10 @@ async function main(): Promise<void> {
     assert.equal(installed.name, "demo-skill");
     assert.equal(installed.refreshed, true);
     assert.equal(installed.warning, undefined);
+    assert.equal(installed.diagnostic.status, "unverified");
     assert.equal(refreshCount, 1);
     assert.match(committedEvidence ?? "", /demo-skill/u);
-    assert.equal(await readFile(path.join(homeDir, ".config", "biny", "skills", "demo", "SKILL.md"), "utf8"), "---\nname: demo-skill\ndescription: Demo\n---\n\n# Demo\n");
+    assert.equal(await readFile(path.join(homeDir, ".config", "biny", "skills", "demo-skill", "SKILL.md"), "utf8"), "---\nname: demo-skill\ndescription: Demo\n---\n\n# Demo\n");
   } finally {
     await rm(root, { recursive: true, force: true });
   }
