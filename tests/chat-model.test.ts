@@ -654,7 +654,7 @@ test("CompactionDivider 渲染压缩药丸并省略缺失段", () => {
   assert.doesNotMatch(minimal, /节省约/u);
 });
 
-test("ActivitySegment 运行时可展开记录且不重复显示实时状态", () => {
+test("ActivitySegment 运行时只展开最新阶段，锁定阶段切换并保留工具详情操作", () => {
   const running = renderToStaticMarkup(createElement(ActivitySegment, {
     steps: [
       reasoningStep("r1", { completed: false, durationMs: undefined }),
@@ -667,9 +667,11 @@ test("ActivitySegment 运行时可展开记录且不重复显示实时状态", (
     onOpenExternal: () => undefined,
     onResolvePermission: noopAsync,
   }));
-  assert.match(running, /工具调用 2 次/u);
-  assert.match(running, /chat-activity-chevron/u);
-  assert.doesNotMatch(running, /chat-shimmer-text|is-alive|disabled|Following the thread/u);
+  assert.match(running, /role="status">探索中/u);
+  assert.match(running, /disabled="" class="chat-phase-avatar is-active"/u);
+  assert.match(running, /biny-collapse is-open chat-activity-collapse/u);
+  assert.match(running, /class="chat-tool-row" data-activity-toggle/u);
+  assert.doesNotMatch(running, /chat-activity-chevron|chat-activity-mode|分析中/u);
 });
 
 test("ActivitySegment 工具落定后不另加跟进状态", () => {
@@ -685,7 +687,7 @@ test("ActivitySegment 工具落定后不另加跟进状态", () => {
   assert.match(idle, /已探索/u);
 });
 
-test("待授权工具的活动段自动展开行详情", () => {
+test("待授权工具的活动段自动显示独立授权卡片", () => {
   const pending = renderToStaticMarkup(createElement(ActivitySegment, {
     steps: [toolStep("t1", "Bash", "running", {
       args: { command: "rm -rf build" },
@@ -701,7 +703,7 @@ test("待授权工具的活动段自动展开行详情", () => {
     onOpenExternal: () => undefined,
     onResolvePermission: noopAsync,
   }));
-  assert.match(pending, /需要授权/u);
+  assert.match(pending, /需要你的确认/u);
 });
 
 test("RecipeReadyBanner 渲染提取横幅（标题、槽位、提取与忽略）", () => {

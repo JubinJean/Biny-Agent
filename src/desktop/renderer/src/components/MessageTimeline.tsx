@@ -23,6 +23,7 @@ import { CompactionDivider } from "./chat/CompactionDivider.js";
 import { MessageClock } from "./chat/MessageClock.js";
 import { SkillsIndicator } from "./chat/SkillsIndicator.js";
 import { ChangesSummary } from "./chat/ChangesSummary.js";
+import { RunStatus } from "./chat/RunStatus.js";
 
 interface MessageTimelineProps {
   projectId: string;
@@ -185,6 +186,7 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, turns,
           turn={turn}
         />
       ))}
+      {thinking && !displayedTurns.some((turn) => turn.status === "running" || turn.status === "waiting_permission") ? <RunStatus /> : null}
     </div>
   );
 });
@@ -229,6 +231,7 @@ function optimisticRewriteTurn(turn: TimelineTurn, user: string): TimelineTurn {
     usage: undefined,
     firstTokenAt: undefined,
     startedAt: undefined,
+    timestamp: undefined,
     ttftMs: undefined,
     decodeMs: undefined,
     decodeTokens: undefined,
@@ -297,9 +300,9 @@ const Turn = memo(function Turn({
     return onSwitchVersion(turn.assistantMessageId, direction);
   }, [onSwitchVersion, turn.assistantMessageId]);
   const canRetry = !running && !busy && Boolean(turn.user && (turn.assistantMessageId ?? turn.userMessageId));
-  // reasoning.started 只是等待模型的计时起点，不证明收到过思考。结束后仅保留真实内容和通知。
+  // 开始事件不证明收到过思考；等待由状态行展示，避免出现点开后为空的活动记录。
   const executionSteps = turn.steps.filter((step) => {
-    if (step.kind === "reasoning") return step.notice || step.content.trim() || (running && !step.completed);
+    if (step.kind === "reasoning") return step.notice || step.content.trim();
     if (step.kind === "assistant") return step.content.trim();
     return true;
   });
@@ -325,16 +328,10 @@ const Turn = memo(function Turn({
           time={turn.timestamp}
         />
       ) : null}
-      {/* 运行失败不是助手消息；只有真实输出或工具活动才占用助手区域。 */}
-      {executionSteps.length > 0 || turn.assistant.trim() || turn.capabilitySelection || (running && turn.preparationStage) || completedChangedFiles.length > 0 ? (
+      {/* 运行中保留状态反馈；结束后不凭空补出助手内容。 */}
+      {running || executionSteps.length > 0 || turn.assistant.trim() || turn.capabilitySelection || completedChangedFiles.length > 0 ? (
       <article className="chat-message desktop-assistant-message" data-sender="assistant">
         <div className="agent-response">
-        {running && turn.preparationStage && turn.preparationStage !== "ready" ? (
-          <div className="chat-preparation-status" role="status" aria-live="polite">
-            <span className="chat-preparation-spinner" aria-hidden="true" />
-            <span>{{ capabilities: "正在分析相关工具和技能…", workspace: "正在读取工作区上下文…", memory: "正在检索相关记忆…", compacting: "正在压缩对话上下文…" }[turn.preparationStage]}</span>
-          </div>
-        ) : null}
         <SkillsIndicator skillNames={skillNames} memoryInjectedCount={turn.memoryInjectedCount} selection={turn.capabilitySelection} skills={turn.skills} tools={turn.tools} />
         {executionSteps.length ? (
           <ExecutionTimeline
@@ -348,6 +345,7 @@ const Turn = memo(function Turn({
           />
         ) : null}
         {!executionSteps.some((step) => step.kind === "assistant") && turn.assistant ? <TypewriterMarkdown active={running} content={turn.assistant} onOpenExternal={onOpenExternal} onPreviewFile={onPreviewFile} projectId={projectId} /> : null}
+        {running ? <RunStatus turn={turn} /> : null}
 
         {!running && turn.assistant.trim() ? (
           <AssistantActions
@@ -413,9 +411,10 @@ function ExecutionTimeline({
   /** 轮次级思考耗时（秒）；纯思考段的「已思考 N 秒」兜底。 */
   thinkingSeconds?: number;
 }): React.JSX.Element {
+  const entries = groupExecutionSteps(steps);
   return (
     <div className="execution-timeline">
-      {groupExecutionSteps(steps).map((entry) => {
+      {entries.map((entry, index) => {
         // 思考 + 工具（无论几个）一律进活动段：单步骤呈现为一枚相位头像 + 一行摘要。
         if (Array.isArray(entry)) {
           return (
@@ -425,7 +424,7 @@ function ExecutionTimeline({
               onPreviewFile={onPreviewFile}
               onResolvePermission={onResolvePermission}
               projectId={projectId}
-              running={running}
+              running={running && index === entries.length - 1}
               steps={entry}
               thinkingSeconds={thinkingSeconds}
             />
@@ -446,7 +445,7 @@ function ExecutionTimeline({
               onPreviewFile={onPreviewFile}
               onResolvePermission={onResolvePermission}
               projectId={projectId}
-              running={running}
+              running={running && index === entries.length - 1}
               steps={[step]}
               thinkingSeconds={thinkingSeconds}
             />
@@ -471,7 +470,7 @@ function ExecutionTimeline({
             />
           );
         }
-        return <div className="execution-step execution-assistant-step" key={step.id}><TypewriterMarkdown active={running} content={step.content} onOpenExternal={onOpenExternal} onPreviewFile={onPreviewFile} projectId={projectId} /></div>;
+        return <div className="execution-step execution-assistant-step" key={step.id}><TypewriterMarkdown active={running && index === entries.length - 1 && !step.completed} content={step.content} onOpenExternal={onOpenExternal} onPreviewFile={onPreviewFile} projectId={projectId} /></div>;
       })}
     </div>
   );

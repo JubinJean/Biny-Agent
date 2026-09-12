@@ -102,6 +102,7 @@ function DesktopApp(): React.JSX.Element {
   const [projects, setProjects] = useState<DesktopProject[]>([]);
   const [sidebarSessions, setSidebarSessions] = useState<DesktopSessionSummary[]>([]);
   const [workspace, setWorkspace] = useState<DesktopWorkspaceSnapshot>();
+  const [composerSkillWarnings, setComposerSkillWarnings] = useState<string[]>([]);
   const [composerSkills, setComposerSkills] = useState<DesktopSkillCatalogEntry[]>([]);
   const skillNames = useMemo(() => new Map(composerSkills.flatMap((skill) => [[skill.id, skill.name], [skill.ref, skill.name]])), [composerSkills]);
   const [composerTools, setComposerTools] = useState<DesktopToolCatalogEntry[]>([]);
@@ -123,14 +124,8 @@ function DesktopApp(): React.JSX.Element {
   const [focusToken, setFocusToken] = useState(0);
   const [composerDraft, setComposerDraft] = useState<string>();
   const composerRef = useRef<ComposerHandle>(null);
-  /** 建议 pill 直达提交（nonce 变化触发 Composer 统一提交路径）。 */
-  const [composerSubmitDraft, setComposerSubmitDraft] = useState<{ text: string; nonce: number }>();
-  const composerSubmitNonceRef = useRef(0);
-  const composerSubmitClaimRef = useRef<number | undefined>(undefined);
   /** 发送前的乐观用户消息；真实 message.user 到达后按 messageId 移除。 */
   const [pendingPrompt, setPendingPrompt] = useState<PendingPrompt>();
-  /** 项目行「新建任务」直达的空白草稿：true 时 Workspace 渲染空白聊天而非首页欢迎态。 */
-  const [blankDraft, setBlankDraft] = useState(false);
   /** 未发送草稿的目标项目；只改变输入框归属，不提前切换工作区。 */
   const [draftProjectId, setDraftProjectId] = useState<string>();
   const [projectBranches, setProjectBranches] = useState<DesktopGitBranch[]>([]);
@@ -256,6 +251,7 @@ function DesktopApp(): React.JSX.Element {
     let active = true;
     const projectId = workspace?.project.id;
     if (!projectId || page !== "chat") {
+      setComposerSkillWarnings([]);
       setComposerSkills([]);
       setComposerTools([]);
       return () => { active = false; };
@@ -267,10 +263,12 @@ function DesktopApp(): React.JSX.Element {
     ]).then(([catalog, settings, tools]) => {
       if (!active) return;
       const enabledById = new Map(settings.activations.map((activation) => [activation.id, activation.enabled]));
+      setComposerSkillWarnings(catalog.warnings);
       setComposerSkills(catalog.skills.filter((skill) => enabledById.get(skill.id) !== false));
       setComposerTools(tools);
     }).catch((error) => {
       if (!active) return;
+      setComposerSkillWarnings([]);
       setComposerSkills([]);
       setComposerTools([]);
       setWarning(`无法加载 Skill 补全：${errorMessage(error)}`);
@@ -442,7 +440,6 @@ function DesktopApp(): React.JSX.Element {
       setRuntimePanelOpen(activeView === "runtime");
       selectedRef.current = sessionId;
       setSelectedSessionId(sessionId);
-      setBlankDraft(false);
       setDraftProjectId(undefined);
       setDraftMemoryOverride(undefined);
       // 上下文用量属于某一个会话，换会话就作废，等新会话跑出 context.updated 再显示。
@@ -510,7 +507,6 @@ function DesktopApp(): React.JSX.Element {
     const request = loadRequestRef.current + 1;
     loadRequestRef.current = request;
     const previousView = {
-      blankDraft,
       contextBudget,
       document: documentRef.current,
       draftMemoryOverride,
@@ -525,9 +521,6 @@ function DesktopApp(): React.JSX.Element {
       : workspace?.sessions.find((session) => session.id === target.sessionId)
         ?? sidebarSessions.find((session) => session.projectId === target.projectId && session.id === target.sessionId);
     const startingCurrentDraft = target.sessionId === undefined && target.projectId === projectRef.current;
-    // 只有无会话草稿需要在 await 前切换呈现变体；打开已有会话时保留旧变体，
-    // 跨项目时则等目标快照就绪后再切，避免旧项目先闪成另一种草稿布局。
-    if (startingCurrentDraft) setBlankDraft(target.draftVariant === "blank");
     if (startingCurrentDraft) {
       // 当前项目的新建任务应立即呈现空白输入框。startDraft 只负责重置旧运行时，
       // 这里不能把它伪装成“恢复会话”，也不能继续显示上一段聊天正文。
@@ -552,7 +545,6 @@ function DesktopApp(): React.JSX.Element {
       setRuntimePanelOpen(false);
       selectedRef.current = target.sessionId;
       setSelectedSessionId(target.sessionId);
-      setBlankDraft(false);
       setDraftProjectId(undefined);
       setDraftMemoryOverride(undefined);
       setContextBudget(undefined);
@@ -571,10 +563,7 @@ function DesktopApp(): React.JSX.Element {
         const snapshot = await window.biny.startDraft(target.projectId);
         if (loadRequestRef.current !== request) return false;
         const adopted = await adoptWorkspace(snapshot, undefined, request);
-        if (adopted) {
-          setBlankDraft(target.draftVariant === "blank");
-          setFocusToken((value) => value + 1);
-        }
+        if (adopted) setFocusToken((value) => value + 1);
         return adopted;
       }
       if (target.projectId === projectRef.current) {
@@ -590,7 +579,6 @@ function DesktopApp(): React.JSX.Element {
         setSelectedSessionId(previousView.selectedSessionId);
         setPage(previousView.page);
         setRuntimePanelOpen(previousView.runtimePanelOpen);
-        setBlankDraft(previousView.blankDraft);
         setDraftProjectId(previousView.draftProjectId);
         setDraftMemoryOverride(previousView.draftMemoryOverride);
         setContextBudget(previousView.contextBudget);
@@ -604,7 +592,7 @@ function DesktopApp(): React.JSX.Element {
     } finally {
       if (loadRequestRef.current === request) setLoading(false);
     }
-  }, [adoptWorkspace, blankDraft, contextBudget, draftMemoryOverride, draftProjectId, openSession, page, runtimePanelOpen, sidebarSessions, workspace, writerConflict]);
+  }, [adoptWorkspace, contextBudget, draftMemoryOverride, draftProjectId, openSession, page, runtimePanelOpen, sidebarSessions, workspace, writerConflict]);
 
   useEffect(() => {
     let active = true;
@@ -756,17 +744,14 @@ function DesktopApp(): React.JSX.Element {
     }
   }, [loadProjectBranches, mergeProjectSnapshot]);
 
-  const newTask = useCallback(async (targetProjectId = projectRef.current, variant: "welcome" | "blank" = "welcome"): Promise<void> => {
+  const newTask = useCallback(async (targetProjectId = projectRef.current): Promise<void> => {
     setRuntimePanelOpen(false);
     const projectId = targetProjectId;
     if (!projectId) {
       await openProject();
       return;
     }
-    // variant=blank：项目行「新建任务」直达空白聊天；其余入口走首页欢迎态。
-    const target: DesktopNavigationTarget = variant === "blank"
-      ? { projectId, draftVariant: "blank" }
-      : { projectId, sessionId: undefined };
+    const target: DesktopNavigationTarget = { projectId, sessionId: undefined };
     const previousNavigation = navigationRef.current;
     try {
       if (await openNavigationTarget(target)) commitNavigation(pushNavigation(previousNavigation, target));
@@ -986,19 +971,6 @@ function DesktopApp(): React.JSX.Element {
       throw error;
     }
   }, [draftProjectId, sendPrompt]);
-
-  const submitComposerPrompt = useCallback((prompt: string): void => {
-    const nonce = composerSubmitNonceRef.current + 1;
-    composerSubmitNonceRef.current = nonce;
-    setComposerSubmitDraft({ text: prompt, nonce });
-  }, []);
-
-  const consumeComposerSubmitDraft = useCallback((nonce: number): boolean => {
-    if (composerSubmitClaimRef.current === nonce) return false;
-    composerSubmitClaimRef.current = nonce;
-    setComposerSubmitDraft((current) => current?.nonce === nonce ? undefined : current);
-    return true;
-  }, []);
 
   const runSlashCommand = useCallback(async (command: string): Promise<void> => {
     const projectId = selectedRef.current === undefined ? draftProjectId ?? projectRef.current : projectRef.current;
@@ -1223,8 +1195,8 @@ function DesktopApp(): React.JSX.Element {
   const createSidebarProject = useCallback((): void => {
     void createEmptyProject();
   }, [createEmptyProject]);
-  const createSidebarTask = useCallback((projectId: string, variant: "welcome" | "blank"): void => {
-    void newTask(projectId, variant);
+  const createSidebarTask = useCallback((projectId: string): void => {
+    void newTask(projectId);
   }, [newTask]);
   const importSidebarSession = useCallback((projectId: string): void => {
     void importSessionIntoProject(projectId);
@@ -1558,8 +1530,6 @@ function DesktopApp(): React.JSX.Element {
       contextUsage={contextUsage}
       focusToken={focusToken}
       prefillInput={composerDraft}
-      submitDraft={composerSubmitDraft}
-      onSubmitDraftConsumed={consumeComposerSubmitDraft}
       capabilityDefaults={workspace?.capabilityDefaults ?? { tools: "auto", skills: "auto" }}
       skills={composerSkills}
       toolCatalog={composerTools}
@@ -1590,6 +1560,8 @@ function DesktopApp(): React.JSX.Element {
       running={selectedRunning}
       runtimeBusy={runtimeBusy}
       resourceState={selectedRuntimeSnapshot?.resourceReadiness?.state}
+      resourceRevision={selectedRuntimeSnapshot?.resourceReadiness?.revision}
+      skillWarnings={composerSkillWarnings}
       runtimeInfo={workspace?.runtime?.info}
     />
   );
@@ -1725,7 +1697,6 @@ function DesktopApp(): React.JSX.Element {
         onError={setWarning}
         onOpenRuntime={openRuntimePanel}
       /> : <Workspace
-        blankDraft={blankDraft}
         loading={loading}
         onCreateBranch={openTurnBranch}
         onDeleteUserMessage={deleteUserMessage}
@@ -1764,7 +1735,6 @@ function DesktopApp(): React.JSX.Element {
         onRuntimeError={reportRuntimeError}
         onRuntimeMutation={mutateRuntime}
         onRuntimeRefresh={refreshRuntimeProjection}
-        onSubmitPrompt={submitComposerPrompt}
         workspaceContext={workspaceContext}
         pendingPrompt={pendingPrompt}
         skillNames={skillNames}

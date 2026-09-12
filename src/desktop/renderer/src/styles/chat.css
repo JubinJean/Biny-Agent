@@ -2,7 +2,7 @@
  * 聊天表面样式（时间线 / 思考链 / 工具调用 / Markdown / 代码块）。
  *
  * 设计原则（聊天交互）：
- * - 运行中只有一处动效焦点：呼吸灯（图标光环或状态点）+ 微光标题，不叠加扫光；
+ * - 运行状态由阶段图形和文字扫光共同反馈，待授权时暂停动效；
  * - 折叠/展开用 grid-template-rows 高度动画 + 淡入，顺滑且无需测量；
  * - 颜色全部走 biny 主题 token，明暗主题自动适配；语法高亮用 --syn-* 变量双主题切换。
  */
@@ -855,179 +855,172 @@
 
 /* ============ 工具展开体：权限卡片 ============ */
 
+@font-face {
+  font-family: "IoskeleyMono";
+  src: url("../assets/fonts/IoskeleyMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 授权采用独立的两栏卡片；尺寸按 13px 界面基准计算，避免聊天字号改变布局比例。 */
+.chat-tool-row-wrap.has-permission,
 .permission-card {
-  border: 1px solid color-mix(in srgb, var(--biny-warning) 40%, transparent);
-  border-radius: var(--biny-radius-card, 10px);
-  background: color-mix(in srgb, var(--biny-warning) 5%, var(--biny-surface-soft));
-  overflow: hidden;
+  --permission-unit: calc(13px * var(--font-scale, 1));
+  --permission-background: #282c34;
+  --permission-foreground: #dcdfe4;
+  --permission-muted: #3b404c;
+  --permission-muted-foreground: #8b92a4;
+  --permission-border: #3e4451;
+  --permission-primary: #61afef;
+  --permission-primary-foreground: #0c111a;
+  --permission-danger: #b56b6f;
+  --permission-danger-foreground: #fff;
+  min-width: min(300px, 100%);
+  max-width: calc(36 * var(--permission-unit));
 }
-
-.permission-card.is-resolved {
+[data-theme="light"] .permission-card {
+  --permission-background: #fff;
+  --permission-foreground: #1a1a1a;
+  --permission-muted: #f1f5f9;
+  --permission-muted-foreground: #64748b;
+  --permission-border: #e2e8f0;
+  --permission-primary: #7299a0;
+  --permission-primary-foreground: #f8fafc;
+  --permission-danger: #c45c5c;
+}
+.chat-tool-row-wrap > .permission-card {
+  margin-top: calc(.5 * var(--permission-unit));
+}
+.permission-card {
   display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
-  border-color: var(--biny-border);
-  background: var(--biny-surface-soft);
-  font-size: calc(12.5px * var(--font-scale, 1));
-  color: var(--biny-text-secondary);
+  align-items: flex-start;
+  gap: calc(.5 * var(--permission-unit));
+  padding: calc(.75 * var(--permission-unit)) calc(.875 * var(--permission-unit));
+  border: 1px solid color-mix(in srgb, var(--permission-border) 75%, transparent);
+  border-radius: calc(.75 * var(--permission-unit));
+  background: linear-gradient(to bottom right in oklab, color-mix(in srgb, var(--permission-background) 96%, transparent), color-mix(in srgb, var(--permission-background) 92%, transparent), color-mix(in srgb, var(--permission-muted) 35%, transparent));
+  color: var(--permission-foreground);
+  font-family: ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
+  backdrop-filter: blur(1px);
+  box-shadow: 0 2px 6px rgb(15 23 42 / 8%), 0 6px 18px rgb(15 23 42 / 6%), inset 0 1px 0 rgb(255 255 255 / 5%);
 }
-
-.permission-card.is-resolved.is-approved { color: var(--biny-success); }
-.permission-card.is-resolved.is-denied { color: var(--biny-danger); }
-
-.permission-strip {
+.permission-card.is-critical {
+  border-color: color-mix(in srgb, var(--permission-danger) 35%, transparent);
+  background: linear-gradient(to bottom right in oklab, color-mix(in srgb, var(--permission-danger) 8.5%, transparent), color-mix(in srgb, var(--permission-background) 96%, transparent), color-mix(in srgb, var(--permission-background) 90%, transparent));
+}
+.permission-icon {
   display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--biny-warning) 25%, transparent);
-}
-
-.permission-strip-dot {
   flex: none;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--biny-warning);
-  animation: chat-breath-core 2.2s ease-in-out infinite;
+  align-items: center;
+  justify-content: center;
+  width: calc(1.5 * var(--permission-unit));
+  height: calc(1.5 * var(--permission-unit));
+  margin-top: calc(.125 * var(--permission-unit));
+  border: 1px solid color-mix(in srgb, var(--permission-primary) 30%, transparent);
+  border-radius: calc(.375 * var(--permission-unit));
+  color: var(--permission-primary);
+  background: color-mix(in srgb, var(--permission-primary) 12%, transparent);
 }
-
+.permission-icon svg { width: calc(.875 * var(--permission-unit)); height: calc(.875 * var(--permission-unit)); }
+.is-critical .permission-icon {
+  color: var(--permission-danger);
+  border-color: color-mix(in srgb, var(--permission-danger) 35%, transparent);
+  background: color-mix(in srgb, var(--permission-danger) 12%, transparent);
+}
+.permission-body { min-width: 0; flex: 1; }
 .permission-strip-title {
-  font-size: calc(12.5px * var(--font-scale, 1));
-  font-weight: 600;
-  color: var(--biny-text);
-}
-
-.risk-badge {
-  margin-left: auto;
-  padding: 1px 8px;
-  border-radius: 999px;
+  display: block;
+  color: color-mix(in srgb, var(--permission-muted-foreground) 80%, transparent);
   font-size: calc(11px * var(--font-scale, 1));
-  background: var(--biny-surface-hover);
-  color: var(--biny-text-secondary);
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: .12em;
+  text-transform: uppercase;
 }
-
-.risk-badge.is-high,
-.risk-badge.is-critical {
-  background: color-mix(in srgb, var(--biny-danger) 12%, transparent);
-  color: var(--biny-danger);
-}
-
-.risk-badge.is-medium {
-  background: color-mix(in srgb, var(--biny-warning) 14%, transparent);
-  color: var(--biny-warning);
-}
-
-.permission-body {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 10px 12px;
-  font-size: calc(12.5px * var(--font-scale, 1));
-  color: var(--biny-text-secondary);
-}
-
-.permission-body p { margin: 0; }
-
 .permission-headline {
-  margin: 0;
-  font-size: calc(13px * var(--font-scale, 1));
+  margin: calc(.125 * var(--permission-unit)) 0 0;
+  font-size: calc(.875 * var(--permission-unit));
+  line-height: 1.25;
   font-weight: 600;
-  color: var(--biny-text);
+  color: var(--permission-foreground);
 }
-
 .permission-preview {
-  margin: 0;
-  padding: 8px 10px;
-  max-height: 160px;
-  overflow: auto;
-  border: 1px solid var(--biny-border);
-  border-radius: 8px;
-  background: var(--biny-surface);
-  font-family: var(--font-mono);
-  font-size: calc(12px * var(--font-scale, 1));
+  margin: calc(.5 * var(--permission-unit)) 0 0;
+  padding: calc(.5 * var(--permission-unit)) calc(.625 * var(--permission-unit));
+  max-height: calc(9 * var(--permission-unit));
+  overflow-y: auto;
   white-space: pre-wrap;
   overflow-wrap: break-word;
-  scrollbar-width: thin;
-}
-
-.permission-target {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-mono);
+  border: 1px solid color-mix(in srgb, var(--permission-border) 60%, transparent);
+  border-radius: calc(.5 * var(--permission-unit));
+  background: color-mix(in srgb, var(--permission-background) 45%, transparent);
+  font-family: "IoskeleyMono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-size: calc(12px * var(--font-scale, 1));
-  color: var(--biny-text-secondary);
+  line-height: 1.625;
+  color: color-mix(in srgb, var(--permission-foreground) 85%, transparent);
 }
-
-.permission-reason {
-  color: var(--biny-text-tertiary);
-}
-
-.permission-confirmation {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  font-size: calc(12px * var(--font-scale, 1));
-}
-
+.permission-confirmation { display: flex; flex-direction: column; gap: 4px; margin-top: calc(.5 * var(--permission-unit)); font-size: calc(.75 * var(--permission-unit)); line-height: var(--permission-unit); }
 .permission-confirmation input {
-  padding: 6px 10px;
-  border: 1px solid var(--biny-border);
-  border-radius: 8px;
-  background: var(--biny-surface);
-  color: var(--biny-text);
-  font-family: var(--font-mono);
-  font-size: calc(12.5px * var(--font-scale, 1));
-  outline: none;
+  width: 100%;
+  min-width: 0;
+  height: calc(2.25 * var(--permission-unit));
+  padding: 0 calc(.75 * var(--permission-unit));
+  border: 1px solid color-mix(in srgb, var(--permission-primary) 30%, transparent);
+  border-radius: calc(.5 * var(--permission-unit));
+  background: color-mix(in srgb, var(--permission-background) 70%, transparent);
+  color: var(--permission-foreground);
+  font: inherit;
 }
-
-.permission-confirmation input:focus {
-  border-color: var(--biny-focus);
-}
-
-.permission-actions {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
+.is-critical .permission-confirmation input { border-color: color-mix(in srgb, var(--permission-danger) 35%, transparent); }
+.permission-confirmation input::placeholder { color: color-mix(in srgb, var(--permission-muted-foreground) 70%, transparent); }
+.permission-confirmation input:focus-visible { outline: 2px solid color-mix(in srgb, var(--permission-primary) 30%, transparent); outline-offset: 0; }
+.permission-reason { margin: 8px 0 0; color: var(--permission-muted-foreground); font-size: calc(.75 * var(--permission-unit)); }
+.permission-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: calc(.5 * var(--permission-unit)); margin-top: calc(.625 * var(--permission-unit)); }
 .biny-chat-scroll .permission-actions button {
-  padding: 5px 12px;
-  border: 1px solid var(--biny-border);
-  border-radius: 8px;
-  background: var(--biny-surface);
-  color: var(--biny-text);
-  font-size: calc(12.5px * var(--font-scale, 1));
+  height: calc(2.25 * var(--permission-unit));
+  padding: 0 var(--permission-unit);
+  border: 1px solid color-mix(in srgb, var(--permission-border) 75%, transparent);
+  border-radius: calc(.5 * var(--permission-unit));
+  background: color-mix(in srgb, var(--permission-background) 55%, transparent);
+  color: color-mix(in srgb, var(--permission-foreground) 85%, transparent);
+  font-size: calc(.875 * var(--permission-unit));
+  line-height: calc(1.25 * var(--permission-unit));
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 8%), 0 3px 8px rgb(15 23 42 / 5%), inset 0 1px 0 rgb(255 255 255 / 4%);
   cursor: pointer;
-  transition: background var(--biny-motion-quick, 120ms) ease;
 }
-
-.biny-chat-scroll .permission-actions button:hover:not(:disabled) {
-  background: var(--biny-surface-hover);
+.biny-chat-scroll .permission-actions button:hover:not(:disabled) { background: color-mix(in srgb, var(--permission-muted) 65%, transparent); }
+.biny-chat-scroll .permission-actions .is-danger { color: var(--permission-danger); border-color: color-mix(in srgb, var(--permission-danger) 35%, transparent); }
+.biny-chat-scroll .permission-actions .is-danger:hover:not(:disabled) { border-color: color-mix(in srgb, var(--permission-danger) 55%, transparent); background: color-mix(in srgb, var(--permission-danger) 12%, transparent); }
+.biny-chat-scroll .permission-actions .is-primary { background: var(--permission-primary); color: var(--permission-primary-foreground); border: 0; box-shadow: 0 1px 3px rgb(15 23 42 / 12%), 0 3px 8px rgb(15 23 42 / 8%), inset 0 1px 0 rgb(255 255 255 / 6%); }
+.biny-chat-scroll .permission-actions .is-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--permission-primary) 90%, transparent); }
+.biny-chat-scroll .is-critical .permission-actions .is-primary { background: var(--permission-danger); color: var(--permission-danger-foreground); }
+.biny-chat-scroll .is-critical .permission-actions .is-primary:hover:not(:disabled) { background: color-mix(in srgb, var(--permission-danger) 90%, transparent); }
+.biny-chat-scroll .permission-actions .is-session,
+.biny-chat-scroll .permission-actions .is-reason-active { color: var(--permission-primary); border-color: color-mix(in srgb, var(--permission-primary) 35%, transparent); background: color-mix(in srgb, var(--permission-primary) 12%, transparent); }
+.biny-chat-scroll .permission-actions .is-session:hover:not(:disabled),
+.biny-chat-scroll .permission-actions .is-reason-active:hover:not(:disabled) { background: color-mix(in srgb, var(--permission-primary) 20%, transparent); }
+.biny-chat-scroll .permission-actions button:disabled { opacity: .5; pointer-events: none; }
+.permission-actions button:focus-visible { outline: 2px solid var(--permission-primary); outline-offset: 2px; }
+.permission-card.is-resolved {
+  align-items: center;
+  gap: calc(.375 * var(--permission-unit));
+  margin-left: calc(-.625 * var(--permission-unit));
+  padding: calc(.5 * var(--permission-unit)) calc(.625 * var(--permission-unit));
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  font-size: calc(.75 * var(--permission-unit));
+  line-height: var(--permission-unit);
+  color: var(--permission-muted-foreground);
 }
-
-.biny-chat-scroll .permission-actions button.is-danger {
-  border-color: color-mix(in srgb, var(--biny-danger) 45%, var(--biny-border));
-  color: var(--biny-danger);
-}
-
-.biny-chat-scroll .permission-actions button.is-danger:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--biny-danger) 10%, var(--biny-surface));
-}
-
-.biny-chat-scroll .permission-actions button.is-primary {
-  border-color: var(--biny-focus);
-  background: var(--biny-focus);
-  color: #fff;
-}
-
-.biny-chat-scroll .permission-actions button:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
+.permission-card.is-resolved > svg { flex: none; width: calc(.75 * var(--permission-unit)); height: calc(.75 * var(--permission-unit)); }
+.permission-resolved-reason { color: color-mix(in srgb, var(--permission-muted-foreground) 70%, transparent); }
+.permission-card.is-approved > svg { color: oklch(69.6% .17 162.48); }
+.permission-card.is-denied > svg { color: var(--permission-danger); }
 
 /* ============ 工具展开体：文件变更卡片 ============ */
 
@@ -2526,7 +2519,6 @@
 /* ============ 动效降级 ============ */
 
 @media (prefers-reduced-motion: reduce) {
-  .permission-strip-dot,
   .biny-chat-scroll .chat-shimmer-text,
   .biny-chat-scroll .execution-step {
     animation: none !important;
@@ -2725,24 +2717,24 @@
   }
 }
 
-/* 准备阶段只显示一条实时提示，不叠加思考计时或粒子动画。 */
-.chat-preparation-status {
+/* 状态与计时不依赖文本增量；长工具参数只占一行。 */
+.chat-run-status {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   color: var(--biny-text-secondary);
-  font-size: calc(13px * var(--font-scale, 1));
-  padding: 4px 0 12px;
+  font-size: calc(14px * var(--font-scale, 1));
+  line-height: 20px;
+  min-height: 32px;
+  padding: 8px 0;
+  transition: opacity 300ms ease;
 }
-.chat-preparation-spinner {
-  width: 14px;
-  height: 14px;
-  flex-shrink: 0;
-  border: 2px dotted currentColor;
-  border-radius: 50%;
-  animation: chat-preparation-spin 1.5s linear infinite;
-}
-@keyframes chat-preparation-spin { to { transform: rotate(360deg); } }
+.chat-run-status.is-suppressed { opacity: 0; pointer-events: none; }
+.chat-run-status-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.chat-run-status-time { flex-shrink: 0; color: var(--biny-text-tertiary); font-size: calc(12px * var(--font-scale, 1)); font-variant-numeric: tabular-nums; }
+.chat-run-status-orb { flex-shrink: 0; opacity: 0.8; }
+.chat-run-status.is-following { gap: 10px; }
+.chat-run-status.is-following .chat-run-status-label { font-weight: 500; }
 @media (prefers-reduced-motion: reduce) {
-  .chat-preparation-spinner { animation: none; }
+  .chat-run-status { transition: none; }
 }

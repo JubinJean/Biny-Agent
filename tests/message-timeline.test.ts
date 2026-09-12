@@ -118,7 +118,8 @@ test("停止后不补错误回复，保留真实压缩通知", () => {
 
 test("运行中保留活动反馈，并禁止重试旧失败消息", () => {
   const running = renderTurns(buildSessionTimeline([], start), true);
-  assert.match(running, /chat-activity/u);
+  assert.match(running, /正在等待模型响应/u);
+  assert.doesNotMatch(running, /chat-activity/u);
   assert.doesNotMatch(running, /回复生成失败|assistant-actions/u);
   const busy = renderTurns(buildSessionTimeline([], [...start, failure]), true);
   assert.doesNotMatch(busy, /aria-label="重新生成"/u);
@@ -176,3 +177,75 @@ for (const [stage, label] of [["capabilities", "正在分析相关工具和技�
     assert.doesNotMatch(renderTurns(failed), new RegExp(label));
   });
 }
+
+test("首个运行事件前与只有用户消息时，始终显示准备反馈", () => {
+  assert.match(renderTurns([], true), /role="status"[^>]*>正在准备/u);
+  const markup = renderTurns(buildSessionTimeline([], start.slice(0, 1)), true);
+  assert.match(markup, /data-sender="assistant"/u);
+  assert.equal((markup.match(/class="chat-run-status"/gu) ?? []).length, 1);
+});
+
+test("等待首个增量、思考增量、工具执行及工具间空档都有准确状态", () => {
+  const events = [...start];
+  let markup = renderTurns(buildSessionTimeline([], events));
+  assert.match(markup, /正在等待模型响应/u);
+  assert.doesNotMatch(markup, /已思考/u);
+  events.push({ ...base, type: "reasoning.delta", content: "检查配置" });
+  markup = renderTurns(buildSessionTimeline([], events));
+  assert.match(markup, /正在思考/u);
+  assert.doesNotMatch(markup, /已思考/u);
+  events.push({ ...base, type: "tool.started", toolCallId: "read", tool: "Read", args: { path: "package.json" } });
+  markup = renderTurns(buildSessionTimeline([], events));
+  assert.match(markup, /正在读取 package.json/u);
+  assert.match(markup, /探索中/u);
+  events.push({ ...base, type: "tool.completed", toolCallId: "read", tool: "Read", result: { content: "{}" } });
+  markup = renderTurns(buildSessionTimeline([], events));
+  assert.match(markup, /正在继续处理/u);
+  assert.doesNotMatch(markup, /正在读取|探索中/u);
+  events.push({ ...base, type: "assistant.delta", content: "配置检查完成" });
+  assert.match(renderTurns(buildSessionTimeline([], events)), /正在生成回复/u);
+  events.push({ ...base, type: "run.cancelled", reason: "Stopped", durationMs: 1_000 });
+  assert.doesNotMatch(renderTurns(buildSessionTimeline([], events)), /chat-run-status|思考中|探索中/u);
+});
+
+test("待授权状态清楚表明在等用户，终态移除运行反馈", () => {
+  const turn = buildSessionTimeline([], start)[0]!;
+  assert.match(renderTurns([{ ...turn, status: "waiting_permission" }]), /is-waiting.*role="status"[^>]*>等待你的确认/u);
+  for (const status of ["completed", "failed", "cancelled"] as const) {
+    assert.doesNotMatch(renderTurns([{ ...turn, status }]), /chat-run-status/u);
+  }
+});
+
+test("实时内容接管反馈，空档显示等待，较早活动段不再自动展开", () => {
+  const events: AgentHostEvent[] = [...start, { ...base, type: "reasoning.delta", content: "第一段思考" }];
+  let html = renderTurns(buildSessionTimeline([], events));
+  assert.match(html, /role="status">思考中/u);
+  assert.match(html, /aria-hidden="true" class="chat-run-status[^"<>]*is-suppressed/u);
+  events.push({ ...base, type: "reasoning.completed" });
+  html = renderTurns(buildSessionTimeline([], events));
+  assert.match(html, /role="status"[^>]*>正在继续处理/u);
+  assert.doesNotMatch(html, /is-suppressed/u);
+  // 助手说明隔开两段活动，只有最后一段自动跟随。
+  events.push({ ...base, type: "assistant.delta", content: "接下来检查文件" });
+  events.push({ ...base, type: "tool.started", toolCallId: "read", tool: "Read", args: { path: "package.json" } });
+  html = renderTurns(buildSessionTimeline([], events));
+  const sections = [...html.matchAll(/<section class="chat-activity[^>]+>/gu)].map((match) => match[0]);
+  assert.equal(sections.length, 2);
+  assert.doesNotMatch(sections[0]!, /is-open|data-running/u);
+  assert.match(sections[1]!, /is-open.*data-running="true"/u);
+  assert.match(html, /is-suppressed/u);
+});
+
+test("正文流结束但轮次未结束时恢复等待反馈，下一次输出接管", () => {
+  const events: AgentHostEvent[] = [...start,
+    { ...base, type: "assistant.delta", content: "准备检查入口" },
+    { ...base, type: "assistant.completed", content: "准备检查入口" }
+  ];
+  let html = renderTurns(buildSessionTimeline([], events));
+  assert.match(html, /role="status"[^>]*>正在继续处理/u);
+  assert.doesNotMatch(html, /with-streaming-cursor|is-suppressed/u);
+  events.push({ ...base, type: "assistant.delta", content: "入口已经确认" });
+  html = renderTurns(buildSessionTimeline([], events));
+  assert.match(html, /is-suppressed/u);
+  assert.equal((html.match(/with-streaming-cursor/gu) ?? []).length, 1);
+});

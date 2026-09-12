@@ -3,15 +3,15 @@
  *
  * 头部是相位头像串（思考/探索/修改/运行/通用五类，24px 圆形图标，重叠堆叠）+ 摘要文案 +
  * 展开控件；落定后默认收起，摘要报「工具调用 N 次」或纯思考的「已思考 N 秒」；
- * 活动段集中展示思考和工具记录，避免在消息底部重复报「思考中」。
+ * 当前阶段直接反馈运行状态，消息末尾只在等待空档补充提示。
  *
- * 展开体是左导轨分相列表：默认「时间线模式」平铺所有相位；点单个头像只看该相位。
+ * 运行时只展开最新相位；结束后可点头像查看单相位，或打开完整时间线。
  * 工具行是动宾紧凑行（读取 xx / 编辑 xx +3 -2），点击行内展开完整工具详情；
- * 思考相位直接平铺思考文本。待授权的工具强制展开行详情。
+ * 思考相位直接平铺思考文本。待授权卡片独立展示在工具详情之后。
  *
- * 展开策略：待授权自动进入该相位；手动开合覆盖到运行态翻转为止；全部落定后收起。
+ * 待授权优先展示其所在相位；整个活动段结束后收起，不在工具间空档重置。
  */
-import React, { memo, useEffect, useMemo, useState } from "react";
+import React, { memo, useMemo, useState } from "react";
 import type { PermissionResult } from "../../../../../permission/PermissionManager.js";
 import {
   activityToolRow,
@@ -26,7 +26,7 @@ import type { IconName } from "../Icon.js";
 import { reasoningDetailText } from "../../reasoningPresentation.js";
 import type { TimelineReasoningStep, TimelineTool, TimelineToolStep } from "../../sessionTimeline.js";
 import { Icon } from "../Icon.js";
-import { ToolActivityDetail } from "../ToolActivity.js";
+import { ToolActivityDetail, ToolPermission } from "../ToolActivity.js";
 import { Collapse } from "../Collapse.js";
 
 /** 可进活动段的步骤：工具调用或思考相位。 */
@@ -46,7 +46,7 @@ const MAX_VISIBLE_PHASES = 8;
 interface ActivitySegmentProps {
   /** 连续的思考 + 工具步骤（单个也走活动段，呈现为一枚头像 + 一行摘要）。 */
   steps: ActivitySegmentStep[];
-  /** 轮次是否在运行（控制展开策略及思考记录文案）。 */
+  /** 当前活动段是否仍在执行；同轮较早的段按历史记录展示。 */
   running: boolean;
   /** 轮次级思考耗时（秒）；段内思考相位缺失时长时的兜底。 */
   thinkingSeconds?: number;
@@ -71,6 +71,19 @@ export const ActivitySegment = memo(function ActivitySegment({
   );
   const phases = useMemo(() => buildActivityPhases(items), [items]);
   const segmentKey = steps[0]?.id ?? "activity";
+  const isLive = (phase: ActivityPhase): boolean => running && phase.items.some(({ step }) =>
+    step.kind === "reasoning" ? !step.completed : step.kind === "tool" && (step.tool.status === "running" || step.tool.status === "waiting")
+  );
+  const labelFor = (phase: ActivityPhase, seconds?: number) => {
+    if (running && phase.items.some(({ step }) => step.kind === "tool" && step.tool.permission && !step.tool.permission.resolved)) {
+      return { verb: "等待确认", rest: "" };
+    }
+    if (isLive(phase) && phase.kind === "thinking" && !phase.items.some(({ step }) => step.kind === "reasoning" && step.content.trim())) {
+      return { verb: "等待模型响应", rest: "" };
+    }
+    return phaseLabel(phase, isLive(phase), seconds);
+  };
+  const activePhase = phases.findLast(isLive);
   const toolSteps = useMemo(
     () => steps.filter((step): step is Extract<ActivitySegmentStep, { kind: "tool" }> => step.kind === "tool"),
     [steps]
@@ -80,7 +93,7 @@ export const ActivitySegment = memo(function ActivitySegment({
   const secondsForThinkingPhase = (phase: ActivityPhase): number | undefined =>
     phaseThinkingSeconds(phase) ?? (thinkingPhaseCount === 1 ? thinkingSeconds : undefined);
 
-  // 待授权的工具强制展开其行详情，并自动进入所在相位。
+  // 待授权时自动进入所在相位；授权独立于工具详情的折叠状态。
   const forcedToolIds = useMemo(() => {
     const ids = new Set<string>();
     for (const tool of toolSteps.map((step) => step.tool)) {
@@ -92,39 +105,38 @@ export const ActivitySegment = memo(function ActivitySegment({
     ? phases.findIndex((phase) => phase.items.some(({ step }) => step.kind === "tool" && step.tool.permission && !step.tool.permission.resolved))
     : -1;
 
-  // selection：null = 收起；数字 = 只看该相位。timeline = 时间线模式（平铺全部相位）。
-  // 手动开合以「运行态 + 待授权」为 key，状态翻转后自动策略重新接管。
-  const autoKey = `${String(running)}:${String(forcedToolIds.size > 0)}`;
-  const [manual, setManual] = useState<{ key: string; open: boolean; timeline: boolean; phase: number | null }>();
-  const autoOpen = forcedToolIds.size > 0 && pendingPhaseIndex >= 0;
-  const manualActive = manual?.key === autoKey;
-  const railOpen = manualActive ? manual.open : autoOpen;
-  const timelineMode = manualActive ? manual.timeline : true;
-  const selectedPhase = manualActive ? manual.phase : autoOpen ? pendingPhaseIndex : null;
-
-  const close = (): void => setManual({ key: autoKey, open: false, timeline: false, phase: null });
-  const openTimeline = (): void => setManual({ key: autoKey, open: true, timeline: true, phase: null });
-  const openPhase = (index: number): void => setManual({ key: autoKey, open: true, timeline: false, phase: index });
+  // 模型执行时自动跟随，只有落定后的选择才由用户控制。恢复执行也清除旧选择。
+  const [selection, setSelection] = useState<{ running: boolean; phase: number | null; timeline: boolean }>({ running, phase: null, timeline: false });
+  if (selection.running !== running) setSelection({ running, phase: null, timeline: false });
+  const timelineMode = !running && selection.running === running && selection.timeline;
+  const selectedPhase = pendingPhaseIndex >= 0 ? pendingPhaseIndex
+    : running ? phases.length - 1 : selection.running === running ? selection.phase : null;
+  const railOpen = timelineMode || selectedPhase !== null;
+  const close = (): void => setSelection({ running, phase: null, timeline: false });
+  const openTimeline = (): void => setSelection({ running, phase: null, timeline: true });
+  const openPhase = (index: number): void => setSelection({ running, phase: selectedPhase === index ? null : index, timeline: false });
 
   if (phases.length === 0) return null;
 
   const openPhaseOrNull = selectedPhase !== null && selectedPhase >= 0 ? phases[selectedPhase] : null;
   const hiddenCount = Math.max(0, phases.length - MAX_VISIBLE_PHASES);
 
-  // 运行期间也允许展开记录，查看具体工具调用和思考内容。
+  // 执行中的标题不可切换；最新相位已经自动展开。
   const pureThinkingSeconds = allThinking ? secondsForThinkingPhase(phases[0]!) : undefined;
-  const headerLabel = openPhaseOrNull && !allThinking && !timelineMode
-    ? phaseLabel(openPhaseOrNull, false, secondsForThinkingPhase(openPhaseOrNull))
-    : null;
+  const headerLabel = openPhaseOrNull && !timelineMode
+    ? labelFor(openPhaseOrNull, secondsForThinkingPhase(openPhaseOrNull))
+    : activePhase ? labelFor(activePhase) : null;
 
   return (
-    <section className={`chat-activity${railOpen ? " is-open" : ""}`} data-running={running || undefined}>
+    <section className={`chat-activity${railOpen ? " is-open" : ""}`} data-activity-anchor="" data-running={running || undefined}>
       <div className="chat-activity-header">
         <div className="chat-activity-avatars">
           {hiddenCount > 0 ? (
             <button
               aria-label={`${String(hiddenCount)} 个更早阶段`}
               className="chat-phase-avatar is-overflow"
+              data-activity-toggle=""
+              disabled={running}
               onClick={openTimeline}
               title={`${String(hiddenCount)} 个更早阶段`}
               type="button"
@@ -135,7 +147,9 @@ export const ActivitySegment = memo(function ActivitySegment({
             const isOpen = selectedPhase === index;
             return (
               <button
-                aria-label={phaseLabel(phase, false).verb}
+                aria-label={labelFor(phase).verb}
+                data-activity-toggle=""
+                disabled={running}
                 className={`chat-phase-avatar${isOpen ? " is-active" : ""}`}
                 key={`${segmentKey}-avatar-${String(index)}`}
                 onClick={() => openPhase(index)}
@@ -147,50 +161,45 @@ export const ActivitySegment = memo(function ActivitySegment({
             );
           })}
         </div>
-        {allThinking ? (
-          <button className="chat-activity-summary" onClick={() => railOpen ? close() : openTimeline()} type="button">
-            <span className="chat-activity-verb">{running ? "思考过程" : "已思考"}</span>
-            {!running && pureThinkingSeconds !== undefined ? <span className="chat-activity-rest"> {String(pureThinkingSeconds)} 秒</span> : null}
-          </button>
+        {running ? (
+          <span className={`chat-activity-label${activePhase && forcedToolIds.size === 0 ? " chat-shimmer-text" : ""}`} role="status">
+            {headerLabel?.verb}{headerLabel?.rest ? ` ${headerLabel.rest}` : ""}
+          </span>
         ) : (
           <>
-            <button
-              className="chat-activity-summary"
-              onClick={() => railOpen ? close() : openTimeline()}
-              title={railOpen ? "收起活动" : "展开活动"}
-              type="button"
-            >
-              {headerLabel ? (
+            <button aria-expanded={railOpen} className="chat-activity-summary" data-activity-toggle="" onClick={() => railOpen ? close() : openTimeline()} type="button">
+              {allThinking ? (
+                <>
+                  <span className="chat-activity-verb">已思考</span>
+                  {pureThinkingSeconds !== undefined ? <span className="chat-activity-rest"> {String(pureThinkingSeconds)} 秒</span> : null}
+                </>
+              ) : headerLabel ? (
                 <>
                   <span className="chat-activity-verb">{headerLabel.verb}</span>
                   {headerLabel.rest ? <span className="chat-activity-rest"> {headerLabel.rest}</span> : null}
                 </>
-              ) : (
-                <span className="chat-activity-verb">工具调用 {String(toolSteps.length)} 次</span>
-              )}
+              ) : <span className="chat-activity-verb">工具调用 {String(toolSteps.length)} 次</span>}
             </button>
-            {phases.length > 1 ? (
+            {!allThinking && phases.length > 1 ? (
               <button
                 aria-label="时间线视图"
-                aria-expanded={railOpen && timelineMode}
-                aria-pressed={railOpen && timelineMode}
-                className={`chat-activity-mode${timelineMode && railOpen ? " is-active" : ""}`}
-                onClick={() => (railOpen && timelineMode ? close() : setManual({ key: autoKey, open: true, timeline: true, phase: null }))}
+                aria-expanded={timelineMode}
+                aria-pressed={timelineMode}
+                className={`chat-activity-mode${timelineMode ? " is-active" : ""}`}
+                data-activity-toggle=""
+                onClick={() => timelineMode ? setSelection({ running, phase: phases.length - 1, timeline: false }) : openTimeline()}
                 title="时间线视图"
                 type="button"
-              >
-                <Icon name="list-tree" size={14} />
-              </button>
+              ><Icon name="list-tree" size={14} /></button>
             ) : null}
             <button
               aria-expanded={railOpen}
               aria-label={railOpen ? "收起活动" : "展开活动"}
               className="chat-activity-chevron"
+              data-activity-toggle=""
               onClick={() => railOpen ? close() : openTimeline()}
               type="button"
-            >
-              <Icon name="chevron" size={14} />
-            </button>
+            ><Icon name="chevron" size={14} /></button>
           </>
         )}
       </div>
@@ -199,7 +208,7 @@ export const ActivitySegment = memo(function ActivitySegment({
           {timelineMode || !openPhaseOrNull
             ? phases.map((phase, index) => {
               const thinkingSecondsForPhase = secondsForThinkingPhase(phase);
-              const label = phaseLabel(phase, false, thinkingSecondsForPhase);
+              const label = labelFor(phase, thinkingSecondsForPhase);
               return (
                 <div className="chat-activity-phase" key={`${segmentKey}-phase-${String(index)}`}>
                   {phase.kind === "thinking" ? (
@@ -209,7 +218,6 @@ export const ActivitySegment = memo(function ActivitySegment({
                     </div>
                   ) : null}
                   <PhaseBody
-                    forcedToolIds={forcedToolIds}
                     onOpenExternal={onOpenExternal}
                     onPreviewFile={onPreviewFile}
                     onResolvePermission={onResolvePermission}
@@ -222,7 +230,7 @@ export const ActivitySegment = memo(function ActivitySegment({
             })
             : (
               <PhaseBody
-                forcedToolIds={forcedToolIds}
+                key={openPhaseOrNull?.items[0]?.step.id}
                 onOpenExternal={onOpenExternal}
                 onPreviewFile={onPreviewFile}
                 onResolvePermission={onResolvePermission}
@@ -241,7 +249,6 @@ export const ActivitySegment = memo(function ActivitySegment({
 const PhaseBody = memo(function PhaseBody({
   phase,
   segmentKey,
-  forcedToolIds,
   projectId,
   onPreviewFile,
   onOpenExternal,
@@ -249,7 +256,6 @@ const PhaseBody = memo(function PhaseBody({
 }: {
   phase: ActivityPhase;
   segmentKey: string;
-  forcedToolIds: Set<string>;
   projectId: string;
   onPreviewFile(path: string): void;
   onOpenExternal(url: string): void;
@@ -269,7 +275,6 @@ const PhaseBody = memo(function PhaseBody({
         if (step.kind !== "tool") return null;
         return (
           <ActivityToolRow
-            forced={forcedToolIds.has(step.tool.id)}
             key={`${segmentKey}-row-${step.id}`}
             onOpenExternal={onOpenExternal}
             onPreviewFile={onPreviewFile}
@@ -284,34 +289,29 @@ const PhaseBody = memo(function PhaseBody({
 });
 
 /** 轨道里的工具动宾行：动词加重、宾语弱化截断、± 行数、行内展开完整详情。 */
-const ActivityToolRow = memo(function ActivityToolRow({
+export const ActivityToolRow = memo(function ActivityToolRow({
   tool,
-  forced,
   projectId,
   onPreviewFile,
   onOpenExternal,
   onResolvePermission,
 }: {
   tool: TimelineTool;
-  forced: boolean;
   projectId: string;
   onPreviewFile(path: string): void;
   onOpenExternal(url: string): void;
   onResolvePermission(requestId: string, result: PermissionResult): Promise<void>;
 }): React.JSX.Element {
   const row = activityToolRow(tool);
-  const detailOpenable = !forced;
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (forced) setOpen(true);
-  }, [forced]);
+  const [open, setOpen] = useState(["Bash", "Write", "edit_file"].includes(tool.tool));
   const running = row.running;
   return (
-    <div className="chat-tool-row-wrap">
+    <div data-activity-anchor="" className={`chat-tool-row-wrap${tool.permission ? " has-permission" : ""}`}>
       <button
         aria-expanded={open}
         className={`chat-tool-row${open ? " is-open" : ""}`}
-        onClick={() => detailOpenable && setOpen((current) => !current)}
+        data-activity-toggle=""
+        onClick={() => setOpen((current) => !current)}
         type="button"
       >
         {running ? <span aria-hidden="true" className="chat-tool-run-dot" /> : null}
@@ -327,12 +327,12 @@ const ActivityToolRow = memo(function ActivityToolRow({
           <ToolActivityDetail
             onOpenExternal={onOpenExternal}
             onPreviewFile={onPreviewFile}
-            onResolvePermission={onResolvePermission}
             projectId={projectId}
             tool={tool}
           />
         </div>
       </Collapse>
+      <ToolPermission tool={tool} onResolvePermission={onResolvePermission} />
     </div>
   );
 });

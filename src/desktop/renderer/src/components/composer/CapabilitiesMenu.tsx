@@ -101,7 +101,7 @@ interface ToolGroup {
   }>;
 }
 
-export function CapabilitiesMenu({ anchorRef, onOpenMcpSettings, onRefreshCatalog, onWarning, open, projectId, onChange, selection, skills, toolsSupported, tools }: {
+export function CapabilitiesMenu({ anchorRef, onOpenMcpSettings, onRefreshCatalog, onWarning, open, projectId, resourceState, resourceRevision, skillWarnings, onChange, selection, skills, toolsSupported, tools }: {
   anchorRef: React.RefObject<HTMLElement | null>;
   /** 打开 MCP 设置页；未提供时隐藏设置入口。 */
   onOpenMcpSettings?(): void;
@@ -110,6 +110,9 @@ export function CapabilitiesMenu({ anchorRef, onOpenMcpSettings, onRefreshCatalo
   onWarning?(message: string): void;
   open: boolean;
   projectId?: string;
+  resourceState?: "loading" | "ready" | "degraded";
+  resourceRevision?: number;
+  skillWarnings?: string[];
   onChange(selection: AgentCapabilitySelection): void;
   selection: AgentCapabilitySelection;
   skills: DesktopSkillCatalogEntry[];
@@ -123,6 +126,10 @@ export function CapabilitiesMenu({ anchorRef, onOpenMcpSettings, onRefreshCatalo
   const [mcpOpen, setMcpOpen] = useState(false);
   const [mcpServers, setMcpServers] = useState<DesktopMcpServerSummary[]>();
   const [mcpBusy, setMcpBusy] = useState(false);
+  const [mcpError, setMcpError] = useState<string>();
+  const [reconnecting, setReconnecting] = useState<string>();
+  const requestRef = useRef(0);
+  useEffect(() => () => { requestRef.current += 1; }, []);
 
   // 定位和入场完成后再聚焦，避免浏览器把仍在屏幕外的浮层滚入视口。
   useEffect(() => {
@@ -137,22 +144,39 @@ export function CapabilitiesMenu({ anchorRef, onOpenMcpSettings, onRefreshCatalo
 
   const loadMcpServers = useCallback(async (): Promise<void> => {
     if (!projectId) return;
+    const request = ++requestRef.current;
     setMcpBusy(true);
+    setMcpError(undefined);
     try {
       const snapshot = await window.biny.mcpSnapshot(projectId);
+      if (request !== requestRef.current) return;
       setMcpServers(snapshot.servers.filter((server) => server.enabled));
     } catch (error) {
-      onWarning?.(`无法读取 MCP 服务器状态：${errorMessage(error)}`);
+      if (request === requestRef.current) setMcpError(`无法读取 MCP 服务器状态：${errorMessage(error)}`);
     } finally {
-      setMcpBusy(false);
+      if (request === requestRef.current) setMcpBusy(false);
     }
-  }, [onWarning, projectId]);
+  }, [projectId]);
 
-  // MCP 区按需加载：第一次展开时再读服务器快照，避免每次打开菜单都建立连接查询。
+  // 弹层展开期间跟随 Runtime 修订刷新，关闭后停止查询；不缓存上次打开的连接状态。
   useEffect(() => {
-    if (!mcpOpen || mcpServers !== undefined) return;
+    if (!open || !mcpOpen) return;
     void loadMcpServers();
-  }, [loadMcpServers, mcpOpen, mcpServers]);
+  }, [loadMcpServers, open, mcpOpen, resourceRevision]);
+
+  const reconnectMcp = async (name: string): Promise<void> => {
+    if (!projectId || reconnecting) return;
+    setReconnecting(name);
+    try {
+      await window.biny.mcpReconnect(projectId, name);
+      await loadMcpServers();
+      onRefreshCatalog?.();
+    } catch (error) {
+      onWarning?.(`MCP 重连失败：${errorMessage(error)}`);
+    } finally {
+      setReconnecting(undefined);
+    }
+  };
 
   const refreshMcp = useCallback(async (): Promise<void> => {
     await loadMcpServers();
@@ -213,7 +237,9 @@ export function CapabilitiesMenu({ anchorRef, onOpenMcpSettings, onRefreshCatalo
         <div aria-label={tab === "tools" ? "工具列表" : "技能列表"} className="capabilities-scroll" ref={listRef} role="group" {...listHover.handlers}>
           <FluidHoverHighlight hover={listHover} className="has-option-radius" />
           <CapabilityGroups groups={activeGroups} value={value} onToggle={toggleEntry} onToggleGroup={toggleGroupEntries} />
-          {!hasItems ? <p className="capabilities-empty">{query.trim() ? "没有匹配的能力" : tab === "tools" ? "当前项目没有可用工具" : "当前项目没有启用的技能"}</p> : null}
+          {resourceState === "loading" ? <p className="capabilities-loading" role="status"><span className="capabilities-spinner" />正在准备工具与技能…</p> : null}
+          {tab === "skills" && skillWarnings?.length ? <div className="capabilities-diagnostics" role="status">{skillWarnings.map((warning, index) => <p key={index}>{warning}</p>)}</div> : null}
+          {!hasItems && resourceState !== "loading" ? <p className="capabilities-empty">{query.trim() ? "没有匹配的能力" : tab === "tools" ? "当前项目没有可用工具" : "当前项目没有启用的技能"}</p> : null}
         </div>
         {tab === "tools" ? (
           <div className="capabilities-mcp">
@@ -222,6 +248,7 @@ export function CapabilitiesMenu({ anchorRef, onOpenMcpSettings, onRefreshCatalo
                 <Icon className="is-chevron" name="chevron" size={12} />
                 <Icon name="plug" size={13} />
                 <span>MCP 服务器</span>
+                {resourceState === "loading" ? <span className="capabilities-spinner" /> : null}
                 {mcpServerSelection.selected > 0 ? <span className="capabilities-mcp-count">{mcpServerSelection.selected}</span> : null}
               </button>
               <div className="capabilities-mcp-actions">
@@ -233,8 +260,9 @@ export function CapabilitiesMenu({ anchorRef, onOpenMcpSettings, onRefreshCatalo
             </div>
             {mcpOpen ? (
               <div className="capabilities-mcp-body">
+                {mcpError ? <p className="capabilities-diagnostics" role="alert">{mcpError}</p> : null}
                 {mcpServers === undefined ? (
-                  <p className="capabilities-mcp-desc">正在读取 MCP 服务器…</p>
+                  mcpBusy ? <p className="capabilities-loading" role="status"><span className="capabilities-spinner" />正在读取 MCP 服务器…</p> : null
                 ) : mcpServers.length === 0 ? (
                   <div className="capabilities-mcp-empty">
                     <Icon name="server" size={18} />
@@ -250,17 +278,21 @@ export function CapabilitiesMenu({ anchorRef, onOpenMcpSettings, onRefreshCatalo
                     <div className="capabilities-mcp-rows">
                       {mcpServers.map((server) => {
                         const checked = mcpServerSelection.checked.has(server.name);
+                        const connecting = server.state === "connecting" || reconnecting === server.name;
                         return (
                           <div className="capabilities-mcp-row" data-state={server.state} key={server.name}>
-                            <button aria-checked={checked} aria-label={`${checked ? "停用" : "启用"} ${server.name}`} className="capability-check" onClick={() => {
+                            <button disabled={!server.toolNames.length || server.state !== "connected"} aria-checked={checked} aria-label={`${checked ? "停用" : "启用"} ${server.name}`} className="capability-check" onClick={() => {
                               const serverTools = tools.filter((tool) => tool.source === "mcp" && mcpServerOf(tool) === server.name).map((tool) => tool.name);
                               if (serverTools.length === 0) return;
                               onChange({ ...selection, tools: applyNames(value, serverTools, allToolNames, !checked) });
                             }} role="switch" type="button"><Icon name="check" size={12} /></button>
-                            <span className={`capabilities-mcp-state is-${server.state}`} />
+                            {connecting ? <span aria-label="连接中" role="status" className="capabilities-spinner" /> : <span aria-label={server.state === "connected" ? "已连接" : "未连接"} role="img" className={`capabilities-mcp-state is-${server.state}`} />}
                             <span className="capabilities-mcp-name" title={server.description ?? server.name}>{server.name}</span>
-                            {server.state === "disconnected" ? <span className="capabilities-mcp-badge is-error">未连接</span> : null}
-                            {server.state === "disabled" ? <span className="capabilities-mcp-badge">已禁用</span> : null}
+                            {!connecting && server.state === "disconnected" ? <span className="capabilities-mcp-badge is-error">未连接</span> : null}
+                            {!connecting && server.state === "not-started" ? <span className="capabilities-mcp-badge">未启动</span> : null}
+                            {server.state !== "connected" ? <button aria-label={`重新连接 ${server.name}`} className="capabilities-mcp-action" disabled={Boolean(reconnecting) || server.state === "connecting"} onClick={() => void reconnectMcp(server.name)} type="button"><Icon name="refresh" size={13} /></button> : null}
+                            {connecting ? <span className="capabilities-mcp-badge">连接中</span> : null}
+                            {!connecting && server.lastError ? <p className="capabilities-mcp-error">{server.lastError}</p> : null}
                           </div>
                         );
                       })}

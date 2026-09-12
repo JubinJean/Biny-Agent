@@ -54,8 +54,7 @@ interface SidebarProps {
   onRevealProject(projectId: string): void;
   onOpenTerminalProject(projectId: string): void;
   onRenameProject(projectId: string): void;
-  /** variant=welcome：顶部入口，首页欢迎态；variant=blank：项目行入口，直达空白聊天。 */
-  onNewTask(projectId: string, variant: "welcome" | "blank"): void;
+  onNewTask(projectId: string): void;
   onImportSession(projectId: string): void;
   onRemoveProject(projectId: string): void;
   onSearch(): void;
@@ -255,7 +254,7 @@ export const Sidebar = memo(function Sidebar({
   };
 
   const createTask = (): void => {
-    if (activeProjectId) onNewTask(activeProjectId, "welcome");
+    if (activeProjectId) onNewTask(activeProjectId);
     else onOpenProject();
   };
 
@@ -333,7 +332,7 @@ export const Sidebar = memo(function Sidebar({
             setProjectCreateMenuOpen(false);
             setProjectMenuOpen((current) => current === `${section}:${project.id}` ? undefined : `${section}:${project.id}`);
           }}
-          onNewTask={() => { setProjectMenuOpen(undefined); onNewTask(project.id, "blank"); }}
+          onNewTask={() => { setProjectMenuOpen(undefined); onNewTask(project.id); }}
           onImportSession={() => { setProjectMenuOpen(undefined); onImportSession(project.id); }}
           onOpenTerminal={() => { setProjectMenuOpen(undefined); onOpenTerminalProject(project.id); }}
           onPin={() => { setProjectMenuOpen(undefined); onProjectPinned(project.id, !project.pinned); }}

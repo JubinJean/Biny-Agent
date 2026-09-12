@@ -93,6 +93,8 @@ export interface TimelineAssistantStep {
   kind: "assistant";
   id: string;
   content: string;
+  /** 正文流已结束；用于区分流式回复与等待下一步的空档。 */
+  completed?: boolean;
   /** 工具前的公开说明，作为时间线正文摘要展示，但不计入最终 assistant 正文。 */
   summary?: boolean;
 }
@@ -728,6 +730,7 @@ function createLiveTimelineFold(initialUserMessageIndex: number): LiveTimelineFo
     } else {
       step.content = content;
       step.summary = true;
+      step.completed = true;
     }
     activeAssistant.delete(runId);
   };
@@ -785,9 +788,12 @@ function createLiveTimelineFold(initialUserMessageIndex: number): LiveTimelineFo
       const active = activeAssistant.get(event.runId);
       if (active) {
         if (event.content) active.content = event.content;
+        active.completed = true;
         activeAssistant.delete(event.runId);
       } else if (event.content && latestAssistantContent(turn) !== event.content) {
         appendAssistant(turn, event.content);
+        const completed = activeAssistant.get(event.runId);
+        if (completed) completed.completed = true;
         activeAssistant.delete(event.runId);
       }
       turn.timestamp = event.timestamp;

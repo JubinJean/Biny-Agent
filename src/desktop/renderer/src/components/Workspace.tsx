@@ -18,7 +18,6 @@ import { GenerationErrorBanner } from "./chat/GenerationErrorBanner.js";
 import { MessageTimeline } from "./MessageTimeline.js";
 import { RuntimePanel } from "./RuntimePanel.js";
 import { RecipeReadyBanner } from "./RecipeReadyBanner.js";
-import { WelcomeState } from "./WelcomeState.js";
 
 /** 新会话首条消息的临时投影；真实 message.user 到达后由 App 清掉。 */
 export interface PendingPrompt {
@@ -70,14 +69,10 @@ interface WorkspaceProps {
   onRuntimeError(error: unknown): void;
   onRuntimeMutation(operation: DesktopRuntimeMutation, payload: Record<string, unknown>): Promise<void>;
   onRuntimeRefresh(): Promise<void>;
-  /** 建议 pill 点击即提交，由 App 转发给 Composer 的统一提交路径。 */
-  onSubmitPrompt(prompt: string): void;
   /** 顶栏的项目/分支选择器胶囊（含菜单），由 App 装配；无项目时缺省。 */
   workspaceContext?: React.ReactNode;
   /** 工具入口与按产出显示的右上角资源按钮相互独立。 */
   inspectorRail?: React.ReactNode;
-  /** 项目行「新建任务」直达的空白草稿：跳过欢迎态，直接渲染空白聊天 + 底部 Composer。 */
-  blankDraft?: boolean;
   /** 新会话首条消息的临时投影；真实事件到达后由 App 清掉。 */
   pendingPrompt?: PendingPrompt;
   skillNames?: ReadonlyMap<string, string>;
@@ -123,8 +118,6 @@ export function Workspace({
   onRuntimeError,
   onRuntimeMutation,
   onRuntimeRefresh,
-  onSubmitPrompt,
-  blankDraft = false,
   pendingPrompt,
   skillNames,
   workspaceContext,
@@ -140,8 +133,6 @@ export function Workspace({
     : undefined;
   const streaming = running || visiblePendingPrompt !== undefined || turns.some((turn) => turn.status === "running" || turn.status === "waiting_permission");
   const lastTurn = turns.at(-1);
-  const isHome = !loading && !runtimeError && !projectId;
-  const showWelcome = !loading && !runtimeError && !sessionId && !streaming && turns.length === 0;
   // 上限预警按会话 dismiss：换会话要重新提示，同会话点掉后不再打扰。
   const [limitBannerDismissedFor, setLimitBannerDismissedFor] = useState<string>();
   const showLimitBanner = Boolean(sessionLimits?.nearSizeLimit && sessionId && limitBannerDismissedFor !== sessionId);
@@ -149,32 +140,6 @@ export function Workspace({
     ? undefined
     : runtimeProjection?.worktrees.find((worktree) => worktree.sessionId === sessionId);
   const worktreeView = sessionIsolation === "worktree" ? desktopWorktreeView(selectedWorktree) : undefined;
-
-  // blankDraft（项目行新建）跳过欢迎态；新会话首条消息由临时投影直接进入聊天时间线。
-  const renderWelcome = !blankDraft && showWelcome;
-
-  if (isHome) {
-    return (
-      <div className="workspace biny-workspace biny-workspace-home">
-        <RuntimePanel
-          onClose={() => onRuntimePanelOpenChange(false)}
-          onError={onRuntimeError}
-          onMutation={onRuntimeMutation}
-          onRefresh={onRuntimeRefresh}
-          open={runtimePanelOpen && Boolean(projectId)}
-          projection={runtimeProjection}
-          selectedSessionId={sessionId}
-          worktreeSession={sessionIsolation === "worktree"}
-        />
-        <div className="biny-chat-body is-welcome">
-          <WelcomeState hasProject={false} onOpenProject={onOpenProject} onPickSuggestion={onSubmitPrompt}>
-            <div className="biny-welcome-composer-slot biny-hero-fade">
-                {generationError ? <GenerationErrorBanner error={generationError} onDismiss={onDismissGenerationError} /> : null}{children}</div>
-          </WelcomeState>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="workspace biny-workspace biny-workspace-chat">
@@ -219,7 +184,7 @@ export function Workspace({
           selectedSessionId={sessionId}
           worktreeSession={sessionIsolation === "worktree"}
         />
-        <div className={`biny-chat-body${renderWelcome ? " is-welcome" : ""}`}>
+        <div className="biny-chat-body">
           {showLimitBanner && sessionLimits && sessionId ? (
             <div className="biny-session-limit-banner" role="status">
               <span>
@@ -230,14 +195,7 @@ export function Workspace({
               <button aria-label="忽略" className="biny-session-limit-dismiss" onClick={() => setLimitBannerDismissedFor(sessionId)} type="button">×</button>
             </div>
           ) : null}
-          {loading ? <LoadingState /> : runtimeError ? <RuntimeError error={runtimeError} onOpenProject={onOpenProject} /> : renderWelcome ? (
-            <WelcomeState hasProject={Boolean(projectId)} onOpenProject={onOpenProject} onPickSuggestion={onSubmitPrompt}>
-              <div className="biny-welcome-composer-slot biny-hero-fade">
-                {generationError ? <GenerationErrorBanner error={generationError} onDismiss={onDismissGenerationError} /> : null}
-                {writerConflict ? <SessionWriterConflictBanner onRetry={onRetryWriterConflict} /> : children}
-              </div>
-            </WelcomeState>
-          ) : (turns.length > 0 || thinking || visiblePendingPrompt !== undefined) && projectId ? (
+          {loading ? <LoadingState /> : runtimeError ? <RuntimeError error={runtimeError} onOpenProject={onOpenProject} /> : (turns.length > 0 || streaming) && projectId ? (
             <ChatScroll sessionId={sessionId} streaming={streaming}>
               <MessageTimeline
                 onCreateBranch={onCreateBranch}
@@ -254,7 +212,7 @@ export function Workspace({
                   ? { id: visiblePendingPrompt.id, messageId: visiblePendingPrompt.messageId, content: visiblePendingPrompt.text }
                   : undefined}
                 skillNames={skillNames}
-                thinking={thinking}
+                thinking={streaming || thinking}
                 projectId={projectId}
                 turns={turns}
               />
@@ -263,8 +221,7 @@ export function Workspace({
             <div className="biny-chat-empty"><Icon name="message" size={20} /><span>开始一段新的对话</span></div>
           )}
         </div>
-        {renderWelcome ? null : (
-          <div className={`biny-chat-composer${visiblePendingPrompt ? " is-entering" : ""}`}>
+        <div className={`biny-chat-composer${visiblePendingPrompt ? " is-entering" : ""}`}>
             {recipeNotices && recipeNotices.length > 0 && projectId ? (
               <div className="biny-recipe-ready-notices">
                 <RecipeReadyBanner
@@ -278,8 +235,7 @@ export function Workspace({
               <GenerationErrorBanner error={generationError} model={generationError === lastTurn?.error ? lastTurn?.model?.label : undefined} onDismiss={onDismissGenerationError} />
             ) : null}
             {writerConflict ? <SessionWriterConflictBanner onRetry={onRetryWriterConflict} /> : children}
-          </div>
-        )}
+        </div>
       </div>
       {streaming ? <span className="biny-streaming-state" aria-hidden="true" /> : null}
     </div>
@@ -303,6 +259,8 @@ function ChatScroll({ children, sessionId, streaming }: { children: React.ReactN
   const fadeTimerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   // 「钉在底部」用 ref 不用 state：流式期间滚动事件极频繁，贴底状态翻转不该触发重渲染。
   const pinnedRef = useRef(true);
+  const scrollAnchorRef = useRef<{ element: HTMLElement; top: number; until: number } | undefined>(undefined);
+  const anchorFrameRef = useRef<number | undefined>(undefined);
 
   useEffect(() => () => {
     if (fadeTimerRef.current !== undefined) clearTimeout(fadeTimerRef.current);
@@ -311,9 +269,14 @@ function ChatScroll({ children, sessionId, streaming }: { children: React.ReactN
   // 切会话从头贴底；内容随后异步长高，由下面的 ResizeObserver 持续贴住。
   useEffect(() => {
     pinnedRef.current = true;
+    scrollAnchorRef.current = undefined;
     setJumpVisible(false);
     const container = containerRef.current;
     if (container) container.scrollTop = container.scrollHeight;
+    return () => {
+      if (anchorFrameRef.current !== undefined) cancelAnimationFrame(anchorFrameRef.current);
+      scrollAnchorRef.current = undefined;
+    };
   }, [sessionId]);
 
   useEffect(() => {
@@ -321,7 +284,7 @@ function ChatScroll({ children, sessionId, streaming }: { children: React.ReactN
     const content = contentRef.current;
     if (!container || !content) return;
     const observer = new ResizeObserver(() => {
-      if (pinnedRef.current) {
+      if (pinnedRef.current && !scrollAnchorRef.current) {
         container.scrollTop = container.scrollHeight;
       } else {
         setJumpVisible(distanceFromBottom(container) > JUMP_BUTTON_DISTANCE);
@@ -330,6 +293,41 @@ function ChatScroll({ children, sessionId, streaming }: { children: React.ReactN
     observer.observe(content);
     return () => observer.disconnect();
   }, []);
+
+  // 捕获点击时布局尚未变化。折叠动画期间锁住所点标题的位置，暂停自动贴底。
+  const anchorActivity = (event: React.MouseEvent<HTMLDivElement>): void => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const toggle = target.closest("[data-activity-toggle]:not(:disabled)");
+    const element = toggle?.closest<HTMLElement>("[data-activity-anchor]");
+    if (!element) return;
+    if (anchorFrameRef.current !== undefined) cancelAnimationFrame(anchorFrameRef.current);
+    pinnedRef.current = false;
+    scrollAnchorRef.current = { element, top: element.getBoundingClientRect().top, until: performance.now() + 600 };
+    const holdAnchor = (): void => {
+      const anchor = scrollAnchorRef.current;
+      const container = containerRef.current;
+      if (!anchor || !container || !anchor.element.isConnected) {
+        scrollAnchorRef.current = undefined;
+        return;
+      }
+      const delta = anchor.element.getBoundingClientRect().top - anchor.top;
+      if (Math.abs(delta) > 1) container.scrollTop += delta;
+      if (performance.now() < anchor.until) anchorFrameRef.current = requestAnimationFrame(holdAnchor);
+      else {
+        scrollAnchorRef.current = undefined;
+        anchorFrameRef.current = undefined;
+      }
+    };
+    anchorFrameRef.current = requestAnimationFrame(holdAnchor);
+  };
+
+  // 用户主动滚动立即接管；不拦截滚轮、不改写原生 scrollTop/scrollTo。
+  const releaseAnchor = (): void => {
+    if (anchorFrameRef.current !== undefined) cancelAnimationFrame(anchorFrameRef.current);
+    anchorFrameRef.current = undefined;
+    scrollAnchorRef.current = undefined;
+  };
 
   const revealScrollbar = (): void => {
     setScrollActive(true);
@@ -345,7 +343,7 @@ function ChatScroll({ children, sessionId, streaming }: { children: React.ReactN
     const container = containerRef.current;
     if (!container) return;
     const distance = distanceFromBottom(container);
-    pinnedRef.current = distance < PIN_DISTANCE;
+    if (!scrollAnchorRef.current) pinnedRef.current = distance < PIN_DISTANCE;
     if (distance > JUMP_BUTTON_DISTANCE) setJumpVisible(true);
     else if (distance < PIN_DISTANCE) setJumpVisible(false);
   };
@@ -354,6 +352,7 @@ function ChatScroll({ children, sessionId, streaming }: { children: React.ReactN
   const jumpToBottom = (): void => {
     const container = containerRef.current;
     if (!container) return;
+    releaseAnchor();
     pinnedRef.current = true;
     container.scrollTop = container.scrollHeight;
     setJumpVisible(false);
@@ -363,8 +362,13 @@ function ChatScroll({ children, sessionId, streaming }: { children: React.ReactN
     <>
       <div
         className={`biny-chat-scroll${scrollActive ? " is-scroll-active" : ""}`}
+        onClickCapture={anchorActivity}
+        onKeyDownCapture={(event) => {
+          if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) releaseAnchor();
+        }}
         onScroll={handleScroll}
-        onWheel={revealScrollbar}
+        onTouchStart={releaseAnchor}
+        onWheel={() => { releaseAnchor(); revealScrollbar(); }}
         ref={containerRef}
       >
         <div className="biny-chat-scroll-content" ref={contentRef}>{children}</div>
@@ -379,7 +383,7 @@ function ChatScroll({ children, sessionId, streaming }: { children: React.ReactN
         type="button"
       >
         {streaming
-          ? <ThinkingOrb aria-hidden="true" className="biny-jump-bottom-orb" size={20} state="connecting" theme="auto" />
+          ? <ThinkingOrb aria-hidden="true" className="biny-jump-bottom-orb" size={20} state="solving" theme="auto" />
           : <Icon name="arrow-down" size={16} />}
       </button>
     </>

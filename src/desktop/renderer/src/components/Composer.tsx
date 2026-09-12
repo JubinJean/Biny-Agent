@@ -51,14 +51,12 @@ interface ComposerProps {
   running: boolean;
   runtimeBusy: boolean;
   resourceState?: "loading" | "ready" | "degraded";
+  resourceRevision?: number;
+  skillWarnings?: string[];
   sessionWriterConflict: boolean;
   modelSetupRequired: boolean;
   focusToken: number;
   prefillInput?: string;
-  /** 建议 pill 直达提交：nonce 变化时以该文本走统一提交路径（首页 pill 点击即发送）。 */
-  submitDraft?: { text: string; nonce: number };
-  /** 领取单次提交信号；由 App 跨 Composer 重挂载保证同一 nonce 只消费一次。 */
-  onSubmitDraftConsumed?(nonce: number): boolean;
   capabilityDefaults: DesktopCapabilityDefaults;
   skills: DesktopSkillCatalogEntry[];
   toolCatalog: DesktopToolCatalogEntry[];
@@ -109,12 +107,12 @@ export const Composer = memo(function Composer({
   running,
   runtimeBusy,
   resourceState,
+  resourceRevision,
+  skillWarnings,
   sessionWriterConflict,
   modelSetupRequired,
   focusToken,
   prefillInput,
-  submitDraft,
-  onSubmitDraftConsumed,
   capabilityDefaults,
   skills,
   toolCatalog,
@@ -301,15 +299,6 @@ export const Composer = memo(function Composer({
     }
   };
 
-  // 建议 pill 直达提交：nonce 每次自增，文本走与手动输入完全相同的提交路径。
-  // 先在 App 侧领取再提交：欢迎态切到聊天态会让 Composer 重挂载，组件内 ref 无法跨实例去重。
-  useEffect(() => {
-    if (!submitDraft) return;
-    if (onSubmitDraftConsumed && !onSubmitDraftConsumed(submitDraft.nonce)) return;
-    void submit(undefined, submitDraft.text);
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只对 nonce 变化响应，submit 取当帧闭包
-  }, [submitDraft]);
-
   const addFiles = async (files: File[]): Promise<void> => {
     if (!project || !files.length || busy || submitFlightRef.current || running || sessionWriterConflict) return;
     setBusy(true);
@@ -467,18 +456,17 @@ export const Composer = memo(function Composer({
         : busy
           ? "当前附件或命令正在处理，请稍候。"
           : undefined;
-  const capabilitySwitchDisabled = !project || running || runtimeBusy || busy || sessionWriterConflict;
+  // MCP 重连会令 Runtime 暂忙；菜单仍需保持可见，才能展示连接进度。选择只影响下一条消息。
+  const capabilitySwitchDisabled = !project || running || busy || sessionWriterConflict;
   const capabilitySwitchDisabledReason = !project
     ? "请先打开一个项目。"
     : sessionWriterConflict
       ? "会话已在另一个应用中打开。"
       : running
         ? "回复结束后可切换工具"
-        : runtimeBusy
-          ? "正在处理其他操作，请稍候"
-          : busy
-            ? "当前附件或命令正在处理，请稍候。"
-            : undefined;
+        : busy
+          ? "当前附件或命令正在处理，请稍候。"
+          : undefined;
   useEffect(() => {
     if (capabilitySwitchDisabled && menu === "capabilities") setMenu(null);
   }, [capabilitySwitchDisabled, menu]);
@@ -556,15 +544,22 @@ export const Composer = memo(function Composer({
                 data-composer-menu="capabilities"
                 disabled={capabilitySwitchDisabled}
                 disabledReason={capabilitySwitchDisabledReason}
-                label="工具与技能"
+                label={resourceState === "loading" ? "工具与技能，正在准备" : resourceState === "degraded" ? "工具与技能，部分能力不可用" : "工具与技能"}
                 onClick={() => setMenu(menu === "capabilities" ? null : "capabilities")}
-                tooltip={menu === "capabilities" ? undefined : "工具与技能"}
+                tooltip={menu === "capabilities" ? undefined : resourceState === "loading" ? "正在准备工具与技能" : resourceState === "degraded" ? "部分能力不可用，点击查看" : "工具与技能"}
               >
-                <Icon name="sliders" size={15} />
+                <span className="capabilities-trigger-icon">
+                  {resourceState === "loading" ? <span className="capabilities-spinner" /> : <Icon name="sliders" size={15} />}
+                  {resourceState === "degraded" ? <span className="capabilities-status-dot" /> : null}
+                </span>
                 {/* 有显式选择时展示数量，auto / all 不计数，保持图标简洁。 */}
                 {explicitCapabilityCount(capabilitySelection) > 0 ? <span className="biny-capabilities-count">{explicitCapabilityCount(capabilitySelection)}</span> : null}
               </ComposerActionButton>
               <CapabilitiesMenu
+                key={project?.id}
+                resourceState={resourceState}
+                resourceRevision={resourceRevision}
+                skillWarnings={skillWarnings}
                 anchorRef={capabilityAnchorRef}
                 onChange={setCapabilitySelection}
                 onOpenMcpSettings={onOpenMcpSettings}
@@ -644,11 +639,7 @@ export const Composer = memo(function Composer({
         placeholder={placeholder}
         status={running && input.trim()
           ? { message: "Enter 排队发送 · ⌘ Enter 立即转向", type: "warning" }
-          : resourceState === "loading"
-            ? { message: "正在准备工具与技能，输入已保留", type: "warning" }
-            : resourceState === "degraded"
-              ? { message: "部分工具不可用，仍可发送消息", type: "warning" }
-              : undefined}
+          : undefined}
         statusPosition="bottom"
         sendActions={(
           <div className="biny-composer-footer-end">

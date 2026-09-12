@@ -5,6 +5,7 @@
  * 通用 IN/OUT 卡与错误输出。折叠行/标题由活动段的活动行承载，这里只渲染正文。
  */
 import React, { memo, useEffect, useMemo, useRef, useState } from "react";
+import { permissionPresentation } from "../../../../permission/presentation.js";
 import { isFullYesConfirmation } from "../../../../permission/confirmation.js";
 import type { PermissionAction, PermissionResult } from "../../../../permission/PermissionManager.js";
 import { permissionScopeForAlways } from "../../../../permission/permissionScope.js";
@@ -22,35 +23,20 @@ interface ToolActivityDetailProps {
   tool: TimelineTool;
   onPreviewFile(path: string): void;
   onOpenExternal(url: string): void;
-  onResolvePermission(requestId: string, result: PermissionResult): Promise<void>;
 }
 
-export const ToolActivityDetail = memo(function ToolActivityDetail({ projectId, tool, onPreviewFile, onOpenExternal, onResolvePermission }: ToolActivityDetailProps): React.JSX.Element {
-  const [resolving, setResolving] = useState(false);
+export const ToolActivityDetail = memo(function ToolActivityDetail({ projectId, tool, onPreviewFile, onOpenExternal }: ToolActivityDetailProps): React.JSX.Element {
   const command = useMemo(() => commandDetails(tool), [tool]);
   const diff = useMemo(() => tool.diff ? analyzeDiff(tool.diff) : undefined, [tool.diff]);
   const fileChange = useMemo(() => fileChangeDetails(tool), [tool]);
   const webSearch = useMemo(() => tool.tool === "WebSearch" ? projectWebSearchView(tool.args, tool.result) : undefined, [tool.args, tool.result, tool.tool]);
   const errorText = meaningfulError(tool, command);
 
-  const resolve = async (result: PermissionResult): Promise<void> => {
-    if (!tool.permission || resolving) return;
-    setResolving(true);
-    try {
-      await onResolvePermission(tool.permission.requestId, result);
-    } finally {
-      setResolving(false);
-    }
-  };
-
   return (
     <div className="tool-details" data-project-id={projectId}>
-      {tool.permission ? (
-        <PermissionCard disabled={resolving} permission={tool.permission} onResolve={resolve} />
-      ) : null}
-      {command ? <CommandLog command={command} running={tool.status === "running"} /> : null}
+      {command ? <CommandLog command={command} running={tool.status === "running" && (!tool.permission || tool.permission.resolved)} /> : null}
       {fileChange ? <FileChangeView change={fileChange} onPreviewFile={onPreviewFile} /> : null}
-      {diff && tool.diff ? <DiffView diff={tool.diff} info={diff} onPreviewFile={onPreviewFile} /> : null}
+      {diff && tool.diff && !fileChange ? <DiffView diff={tool.diff} info={diff} onPreviewFile={onPreviewFile} /> : null}
       {webSearch ? <WebSearchLog onOpenExternal={onOpenExternal} tool={tool} view={webSearch} /> : null}
       {!command && !diff && !webSearch && !fileChange ? <ToolPayload onPreviewFile={onPreviewFile} tool={tool} /> : null}
       {errorText ? (
@@ -66,6 +52,39 @@ export const ToolActivityDetail = memo(function ToolActivityDetail({ projectId, 
   );
 });
 
+/** 授权与工具详情并列，折叠日志时仍可操作授权。请求切换时重置提交状态。 */
+export function ToolPermission({ tool, onResolvePermission }: {
+  tool: TimelineTool;
+  onResolvePermission(requestId: string, result: PermissionResult): Promise<void>;
+}): React.JSX.Element | null {
+  return tool.permission ? <PermissionRequest key={tool.permission.requestId} tool={tool} onResolvePermission={onResolvePermission} /> : null;
+}
+
+function PermissionRequest({ tool, onResolvePermission }: {
+  tool: TimelineTool;
+  onResolvePermission(requestId: string, result: PermissionResult): Promise<void>;
+}): React.JSX.Element {
+  const [resolving, setResolving] = useState(false);
+  const [resolutionError, setResolutionError] = useState<string>();
+  const [optimisticResult, setOptimisticResult] = useState<PermissionResult>();
+  const resolve = async (result: PermissionResult): Promise<void> => {
+    if (!tool.permission || resolving) return;
+    setResolving(true);
+    setResolutionError(undefined);
+    setOptimisticResult(result);
+    try {
+      await onResolvePermission(tool.permission.requestId, result);
+    } catch (error) {
+      setOptimisticResult(undefined);
+      setResolutionError(error instanceof Error ? error.message : "授权提交失败，请重试。");
+    } finally {
+      setResolving(false);
+    }
+  };
+
+  return <PermissionCard error={resolutionError} disabled={resolving} permission={optimisticResult ? { ...tool.permission!, ...optimisticResult, resolved: true } : tool.permission!} onResolve={resolve} />;
+}
+
 // 「Command exited with code N.」只是退出码徽标的复读，不单独成段。
 function meaningfulError(tool: TimelineTool, command: TimelineCommand | undefined): string | undefined {
   if (!tool.error) return undefined;
@@ -76,10 +95,12 @@ function meaningfulError(tool: TimelineTool, command: TimelineCommand | undefine
 function PermissionCard({
   permission,
   disabled,
+  error,
   onResolve
 }: {
   permission: NonNullable<TimelineTool["permission"]>;
   disabled: boolean;
+  error?: string;
   onResolve(result: PermissionResult): Promise<void>;
 }): React.JSX.Element {
   const request = permission.request;
@@ -89,38 +110,41 @@ function PermissionCard({
   const denialReason = denialState.requestId === permission.requestId ? denialState.value : "";
   const showDenialReason = denialState.requestId === permission.requestId && denialState.open;
   const fullYesProvided = isFullYesConfirmation(confirmation);
+  const { title, details, reason } = permissionPresentation(request);
 
   if (permission.resolved) {
     return (
       <div className={`permission-card is-resolved${permission.approved ? " is-approved" : " is-denied"}`}>
-        <Icon name={permission.approved ? "check" : "close"} size={15} />
-        <span>{resolvedPermissionLabel(permission.action, permission.approved === true)}{permission.message ? `：${permission.message}` : ""}</span>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d={permission.approved ? "M20 6 9 17 4 12" : "M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11"} />{!permission.approved ? <path d="M12 8v4m0 4h.01" /> : null}</svg>
+        <span>{resolvedPermissionLabel(permission.action, permission.approved === true)}</span>
+        {permission.message ? <span className="permission-resolved-reason">· {permission.message}</span> : null}
       </div>
     );
   }
   return (
-    <section className="permission-card">
-      <header className="permission-strip">
-        <span aria-hidden="true" className="permission-strip-dot" />
-        <span className="permission-strip-title">需要授权</span>
-        <span className={`risk-badge is-${request.riskLevel}`}>{riskLabel(request.riskLevel)}</span>
-      </header>
+    <section className={`permission-card${["high", "critical"].includes(request.riskLevel) ? " is-critical" : ""}`} aria-label="工具授权" aria-busy={disabled}>
+      <span className="permission-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11" /><path d="M12 8v4m0 4h.01" /></svg></span>
       <div className="permission-body">
-        <h4 className="permission-headline">{request.title}</h4>
-        <p>{request.details}</p>
-        {request.command ? <pre className="permission-preview command-text"><code><CommandText command={request.command} /></code></pre> : null}
-        {request.targetPath ? <div className="permission-target"><Icon name="file" size={13} /><span>{request.targetPath}</span></div> : null}
-        {request.preview && !request.command ? <pre className="permission-preview"><code>{request.preview}</code></pre> : null}
-        {request.reason ? <p className="permission-reason">{request.reason}</p> : null}
+        <span className="permission-strip-title">需要你的确认</span>
+        <h4 className="permission-headline">{title}</h4>
+        <pre className="permission-preview">{[
+          request.command,
+          request.tool !== "move_file" ? request.targetPath : undefined,
+          details,
+          !request.command ? request.diff ?? request.preview : undefined,
+          reason
+        ].filter(Boolean).join("\n")}</pre>
+        {error ? <p role="alert" className="tool-error-output">{error}</p> : null}
         {showDenialReason ? (
           <label className="permission-confirmation">
-            <span>说明拒绝原因后提交</span>
+
             <input
               autoCapitalize="none"
               autoComplete="off"
               disabled={disabled}
               onChange={(event) => setDenialState({ requestId: permission.requestId, open: true, value: event.target.value.slice(0, 240) })}
-              placeholder="例如：先确认目标路径"
+              aria-label="拒绝理由"
+              placeholder="说明拒绝原因…"
               spellCheck={false}
               type="text"
               value={denialReason}
@@ -129,7 +153,7 @@ function PermissionCard({
         ) : null}
         {request.requireFullYes && !showDenialReason ? (
           <label className="permission-confirmation">
-            <span>高风险操作：输入完整的 <strong>yes</strong> 后才能允许</span>
+            <span>输入 <strong>yes</strong> 确认此操作</span>
             <input
               autoCapitalize="none"
               autoComplete="off"
@@ -137,13 +161,16 @@ function PermissionCard({
               onChange={(event) => setConfirmationState({ requestId: permission.requestId, value: event.target.value.slice(0, 16) })}
               spellCheck={false}
               type="text"
+              placeholder="yes"
               value={confirmation}
             />
           </label>
         ) : null}
+        {request.canRemember === false ? <p className="permission-reason">此操作按设置需要逐次确认。</p> : null}
         <div className="permission-actions">
           <button className="is-danger" disabled={disabled} onClick={() => void onResolve({ approved: false, action: "deny", scope: "once", message: undefined, confirmation: undefined })} type="button">拒绝</button>
           <button
+            className={showDenialReason ? "is-reason-active" : undefined}
             disabled={disabled || (showDenialReason && !denialReason.trim())}
             onClick={() => {
               if (!showDenialReason) {
@@ -156,8 +183,8 @@ function PermissionCard({
             }}
             type="button"
           >{showDenialReason ? "提交拒绝理由" : "拒绝并说明理由"}</button>
-          <button className="is-primary" disabled={disabled || (request.requireFullYes && !fullYesProvided)} onClick={() => void onResolve({ approved: true, action: "allow_once", scope: "once", confirmation: request.requireFullYes ? confirmation : undefined })} type="button">允许一次</button>
-          <button disabled={disabled || (request.requireFullYes && !fullYesProvided)} onClick={() => void onResolve({ approved: true, action: "allow_always", scope: permissionScopeForAlways(request), confirmation: request.requireFullYes ? confirmation : undefined })} type="button">始终允许</button>
+          <button className="is-primary" disabled={disabled || (request.requireFullYes && !fullYesProvided)} onClick={() => void onResolve({ approved: true, action: "allow_once", scope: "once", confirmation: request.requireFullYes ? confirmation : undefined })} type="button">{disabled ? "正在提交…" : "允许一次"}</button>
+          {request.canRemember !== false ? <button className="is-session" disabled={disabled || (request.requireFullYes && !fullYesProvided)} onClick={() => void onResolve({ approved: true, action: "allow_always", scope: permissionScopeForAlways(request), confirmation: request.requireFullYes ? confirmation : undefined })} type="button" title="仅记住当前会话中相同命令、路径或工具的授权">本会话允许</button> : null}
         </div>
       </div>
     </section>
@@ -165,7 +192,7 @@ function PermissionCard({
 }
 
 function resolvedPermissionLabel(action: PermissionAction | undefined, approved: boolean): string {
-  if (action === "allow_always") return "已始终允许";
+  if (action === "allow_always") return "已在本会话允许";
   if (action === "allow_once") return "已允许一次";
   if (action === "deny_with_reason") return "已拒绝并说明理由";
   if (action === "deny") return "已拒绝";
@@ -528,14 +555,6 @@ function friendlyResult(value: unknown): string | undefined {
   } catch {
     return "无法展示工具结果";
   }
-}
-
-function riskLabel(risk: string): string {
-  if (risk === "critical") return "关键风险";
-  if (risk === "high") return "高风险";
-  if (risk === "medium") return "中风险";
-  if (risk === "low") return "低风险";
-  return "需确认";
 }
 
 function stringField(record: Record<string, unknown> | undefined, key: string): string | undefined {

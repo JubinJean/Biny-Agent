@@ -2724,152 +2724,6 @@
   opacity: 0.5;
 }
 
-/* ===== 首页：hero + 内联 composer + 建议 pill ===== */
-
-@keyframes biny-hero-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-@keyframes biny-hero-pop {
-  0% { opacity: 0; transform: translateY(6px) scale(.85); }
-  60% { transform: translateY(0) scale(1.04); }
-  100% { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-.biny-hero-fade {
-  opacity: 0;
-  animation: .25s ease-out forwards biny-hero-fade;
-  animation-delay: var(--hero-delay, 0s);
-  will-change: opacity;
-}
-
-.biny-hero-pop {
-  opacity: 0;
-  animation: .42s cubic-bezier(.34, 1.56, .64, 1) forwards biny-hero-pop;
-  animation-delay: var(--hero-delay, 0s);
-  will-change: transform, opacity;
-}
-
-.biny-welcome-state {
-  display: flex;
-  width: 100%;
-  min-width: 0;
-  margin: auto;
-  align-items: center;
-  flex-direction: column;
-  text-align: center;
-}
-
-.biny-welcome-hero {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  flex-direction: column;
-}
-
-.biny-welcome-icon {
-  width: 96px;
-  height: 96px;
-  border-radius: 24px;
-  margin-bottom: 24px;
-  box-shadow: 0 1px 3px var(--biny-shadow-color), 0 8px 24px var(--biny-shadow-soft);
-}
-
-.biny-welcome-hero h1 {
-  margin: 0 0 12px;
-  color: var(--biny-text);
-  font-family: "Slabo 27px", "Songti SC", "STSong", Georgia, serif;
-  font-size: 34px;
-  font-weight: 600;
-  letter-spacing: -0.025em;
-}
-
-.biny-welcome-hero > p {
-  max-width: 28rem;
-  margin: 0 0 32px;
-  color: var(--biny-text-secondary);
-  font-size: 14px;
-}
-
-/* 欢迎态 Composer 插槽：首页保持舒适的最大宽度。 */
-.biny-welcome-composer-slot {
-  width: 100%;
-  max-width: 672px;
-}
-
-/* 建议 pill 区：composer 下 24px，居中换行。 */
-.biny-welcome-pills {
-  display: flex;
-  width: 100%;
-  max-width: 672px;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 6px;
-  padding-top: 24px;
-}
-
-.biny-welcome-pill {
-  display: inline-flex;
-  max-width: 100%;
-  align-items: center;
-  justify-content: center;
-  padding: 4px 12px;
-  border: 1px solid var(--biny-border);
-  border-radius: 9999px;
-  /* text-foreground/80 + bg-muted/40 —— 比 text-secondary 亮一档 */
-  color: color-mix(in srgb, var(--biny-text) 80%, transparent);
-  background: color-mix(in srgb, var(--biny-text) 5%, transparent);
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 20px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  transition: border-color .2s ease-out, color .2s ease-out, background-color .2s ease-out, box-shadow .2s ease-out, transform .2s ease-out;
-}
-
-.biny-welcome-pill:hover:not(:disabled) {
-  border-color: var(--biny-border-strong);
-  color: var(--biny-text);
-  background: color-mix(in srgb, var(--biny-text) 9%, transparent);
-  box-shadow: 0 1px 2px var(--biny-shadow-color);
-  transform: translateY(-1px);
-}
-
-.biny-welcome-pill:active:not(:disabled) {
-  transform: translateY(0) scale(.98);
-}
-
-.biny-welcome-pill:disabled {
-  pointer-events: none;
-  opacity: .5;
-}
-
-.biny-welcome-open-project {
-  display: inline-flex;
-  min-height: 30px;
-  align-items: center;
-  gap: 6px;
-  margin-top: 24px;
-  padding: 0 12px;
-  border: 1px solid var(--biny-border);
-  border-radius: 8px;
-  color: var(--biny-text-secondary);
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-size: 12px;
-}
-
-.biny-welcome-open-project:hover {
-  border-color: var(--biny-border-strong);
-  color: var(--biny-text);
-  background: var(--biny-surface-hover);
-}
-
 @keyframes biny-chat-composer-enter {
   from { opacity: 0; transform: translateY(16px) scale(.98); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -3288,6 +3142,65 @@ button.capability-check[aria-checked="true"] {
 }
 
 /* MCP 服务器折叠区：头部整行切换展开，右侧刷新/设置不参与折叠点击。 */
+/* 能力加载占用原有图标位置，详细状态留在弹层内，避免输入区随连接状态增高。 */
+.capabilities-trigger-icon {
+  position: relative;
+  display: inline-flex;
+  width: 15px;
+  height: 15px;
+  align-items: center;
+  justify-content: center;
+}
+
+.capabilities-status-dot {
+  position: absolute;
+  top: -2px;
+  right: -3px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--biny-warning);
+}
+
+.capabilities-spinner {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--biny-border);
+  border-top-color: var(--biny-text-secondary);
+  border-radius: 50%;
+  animation: biny-composer-spin 700ms linear infinite;
+}
+
+.capabilities-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin: 0;
+  padding: 16px 8px;
+  color: var(--biny-text-tertiary);
+  font-size: calc(12px * var(--font-scale));
+}
+
+.capabilities-diagnostics,
+.capabilities-mcp-error {
+  margin: 4px 0;
+  color: var(--biny-warning);
+  font-size: calc(11px * var(--font-scale));
+  overflow-wrap: anywhere;
+}
+
+.capabilities-mcp-error {
+  flex-basis: 100%;
+  padding-left: 28px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .capabilities-spinner { animation: none; }
+}
+
 .capabilities-mcp {
   border-top: 1px solid var(--biny-border);
 }
@@ -3419,6 +3332,7 @@ button.capability-check[aria-checked="true"] {
 
 .capabilities-mcp-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   padding: 4px 8px;
@@ -5441,14 +5355,6 @@ div:has(> .astryx-trigger-menu) {
 
   .biny-sidebar.is-peek-overlay {
     transition: none !important;
-  }
-
-  /* 首页入场动画降级：直接显示，不播 fade/pop。 */
-  .biny-hero-fade,
-  .biny-hero-pop {
-    opacity: 1;
-    animation: none;
-    transform: none;
   }
 
   .biny-sidebar-menu,
