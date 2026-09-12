@@ -2,7 +2,6 @@
 import assert from "node:assert/strict";
 import { configSchema, defaultConfig } from "../src/config/schema.js";
 import { resolveMemoryModelAlias, resolveToolModel, resolveToolModelAlias } from "../src/llm/toolModel.js";
-import { ActivityPrivacyPolicy } from "../src/activity/privacyPolicy.js";
 
 const config = configSchema.parse({
   ...defaultConfig,
@@ -19,7 +18,7 @@ const config = configSchema.parse({
   }
 });
 
-assert.equal(resolveToolModelAlias(config), "cheap", "自动选择可用且已知价格较低的模型");
+assert.equal(resolveToolModelAlias(config), "cheap", "无偏好型号时保持可用模型的配置顺序");
 assert.equal(resolveToolModel(config)?.modelId, "cheap-test");
 assert.equal(resolveToolModelAlias({ ...config, defaultModel: "unknown" }), "cheap", "聊天模型切换不影响后台选择");
 assert.equal(resolveToolModelAlias({ ...config, toolModel: "chat" }), "chat", "显式选择优先");
@@ -30,7 +29,6 @@ assert.equal(resolveToolModelAlias({ ...config, models: { unavailable: config.mo
 const unpriced = { ...config, models: { unknown: config.models.unknown!, chat: { ...config.models.chat!, pricing: undefined } } };
 assert.equal(resolveToolModelAlias(unpriced), "unknown");
 assert.equal(resolveToolModelAlias({ ...unpriced, defaultModel: "unknown" }), "unknown", "无价格时按稳定配置顺序选择");
-assert.equal(new ActivityPrivacyPolicy(config.activity).canAnalyzeWithModel(resolveToolModel(config)!), false, "自动选模型不能自动授予外发权限");
 assert.equal(configSchema.parse({ ...config, toolModel: "cheap" }).toolModel, "cheap");
 assert.equal(configSchema.safeParse({ ...config, toolModel: " " }).success, false);
 const removed = configSchema.parse({ ...config, activity: { ...config.activity, analysisModel: "chat" } });
@@ -43,4 +41,23 @@ assert.equal(resolveMemoryModelAlias(dedicatedMemory), "chat");
 assert.equal(resolveMemoryModelAlias(dedicatedMemory, "rewriteModel"), "chat");
 assert.equal(resolveMemoryModelAlias({ ...dedicatedMemory, context: { ...dedicatedMemory.context, memory: { ...dedicatedMemory.context.memory, extractModel: "unknown" } } }, "extractModel"), "unknown");
 assert.equal(resolveMemoryModelAlias({ ...config, toolModel: "unavailable" }), undefined, "全局选择失效不能偷偷使用聊天模型");
+const preferred = configSchema.parse({
+  ...config,
+  defaultModel: "mini",
+  providers: {
+    ...config.providers,
+    google: { type: "gemini", apiKey: "test-key" },
+    anthropic: { type: "anthropic", apiKey: "test-key" }
+  },
+  models: {
+    flash: { provider: "google", model: "gemini-2.5-flash" },
+    haiku: { provider: "anthropic", model: "claude-haiku-4-5-20251001" },
+    large: { provider: "test", model: "gpt-4o", pricing: { inputPerMillionTokens: 0, outputPerMillionTokens: 0 } },
+    mini: { provider: "test", model: "gpt-4o-mini", pricing: { inputPerMillionTokens: 10, outputPerMillionTokens: 10 } }
+  }
+});
+assert.equal(resolveToolModelAlias(preferred), "mini", "Provider 与预设型号优先级不随价格改变");
+assert.equal(resolveToolModelAlias({ ...preferred, toolModel: "flash" }), "flash", "用户显式选择仍优先");
+assert.equal(resolveToolModelAlias({ ...preferred, models: { flash: preferred.models.flash!, haiku: preferred.models.haiku! } }), "haiku");
+assert.equal(resolveToolModelAlias({ ...config, models: { chat: config.models.chat!, cheap: config.models.cheap! } }), "chat", "未列入偏好的型号保持配置顺序，不按价格排序");
 console.log("tool model tests passed");

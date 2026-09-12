@@ -4,6 +4,16 @@ import type { AgentConfig } from "../config/schema.js";
 import { ModelRegistry } from "./ModelRegistry.js";
 import { ProviderRegistry } from "./ProviderRuntime.js";
 
+// 稳定的辅助模型偏好；只匹配用户已配置的型号，不创建别名，也不探测远端目录。
+const toolModelPreferences: Record<string, readonly string[]> = {
+  openai: ["gpt-4o-mini", "gpt-4o-mini-2024-07-18", "gpt-4o", "gpt-4o-2024-11-20"],
+  anthropic: ["claude-haiku-4-5-20251001", "claude-3-5-haiku-20241022", "claude-3-haiku-20240307"],
+  gemini: ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.0-flash-exp", "gemini-1.5-flash"],
+  openrouter: [],
+  custom: [],
+  plugin: []
+};
+
 export type MemoryModelField = "memoryModel" | "rewriteModel" | "extractModel";
 
 /** 记忆可覆盖全局辅助模型；清空覆盖后回到全局选择，不随聊天模型切换。 */
@@ -20,16 +30,21 @@ export function resolveToolModelAlias(config: AgentConfig): string | undefined {
     const selected = registry.resolve(config.toolModel);
     return selected?.source === "configured" && registry.isAvailable(selected) ? selected.alias : undefined;
   }
-  // 只用已有目录中的价格，不从型号名称猜测性能或费用；同价时保持配置顺序，避免随聊天切换。
+  const providerOrder = Object.keys(toolModelPreferences);
+  const priority = (provider: string, model: string): [number, number] => {
+    const type = config.providers[provider]?.type ?? "custom";
+    const providerIndex = providerOrder.indexOf(type);
+    const modelIndex = Object.hasOwn(toolModelPreferences, type) ? toolModelPreferences[type]!.indexOf(model) : -1;
+    return [providerIndex < 0 ? providerOrder.length : providerIndex, modelIndex < 0 ? Number.MAX_SAFE_INTEGER : modelIndex];
+  };
+  // Provider 优先、型号次之，其余保持配置顺序；价格元数据变化不应悄悄切换后台模型。
   const candidates = Object.keys(config.models).flatMap((alias) => {
     const model = registry.resolve(alias);
     return model && registry.isAvailable(model) ? [model] : [];
   }).sort((left, right) => {
-    const leftPrice = left.model.pricing?.inputPerMillionTokens !== undefined && left.model.pricing.outputPerMillionTokens !== undefined
-      ? left.model.pricing.inputPerMillionTokens + left.model.pricing.outputPerMillionTokens : Number.POSITIVE_INFINITY;
-    const rightPrice = right.model.pricing?.inputPerMillionTokens !== undefined && right.model.pricing.outputPerMillionTokens !== undefined
-      ? right.model.pricing.inputPerMillionTokens + right.model.pricing.outputPerMillionTokens : Number.POSITIVE_INFINITY;
-    return leftPrice === rightPrice ? 0 : leftPrice < rightPrice ? -1 : 1;
+    const a = priority(left.providerAlias, left.model.model);
+    const b = priority(right.providerAlias, right.model.model);
+    return a[0] - b[0] || a[1] - b[1];
   });
   return candidates[0]?.alias;
 }

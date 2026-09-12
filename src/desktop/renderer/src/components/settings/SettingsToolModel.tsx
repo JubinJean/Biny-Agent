@@ -60,7 +60,7 @@ export function SettingsToolModel({ onTest }: { onTest(configuration: DesktopMod
         <p className="tool-model-status">{active
           ? snapshot.models.toolModel
             ? `当前使用：${active.displayName}。`
-            : `当前使用：${active.displayName}（自动模式，优先选择价格较低的已配置模型）。`
+            : `当前使用：${active.displayName}（自动模式，按供应商与辅助型号优先级选择已配置模型）。`
           : "暂无可用工具模型，请先在「模型供应商」中配置。"}</p>
         {testResult ? (
           <div className={`connection-test-result${testResult.ok ? " is-ok" : " is-error"}`} role="status">
