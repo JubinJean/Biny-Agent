@@ -18,6 +18,7 @@ export interface SettingsModelPickerGroup {
 export function modelPickerGroups(models: readonly ModelChoice[]): SettingsModelPickerGroup[] {
   const groups = new Map<string, SettingsModelPickerGroup>();
   for (const model of models) {
+    if (model.showInPicker === false) continue;
     const presentation = modelProviderPresentation(model);
     const key = `${model.providerType}:${model.provider}:${model.baseUrl ?? ""}`;
     const group = groups.get(key) ?? {

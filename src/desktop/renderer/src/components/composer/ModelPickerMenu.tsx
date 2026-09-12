@@ -449,6 +449,7 @@ function ThinkingSubmenu({ current, levels, onSelect }: { current?: ThinkingSele
 function groupModels(models: ModelChoice[]): ModelGroup[] {
   const groups = new Map<string, ModelGroup>();
   for (const model of models) {
+    if (model.showInPicker === false) continue;
     const catalog = catalogForConnection(
       { provider: model.provider, providerType: model.providerType },
       model.baseUrl

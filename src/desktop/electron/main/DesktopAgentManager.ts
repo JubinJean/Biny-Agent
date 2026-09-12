@@ -1147,19 +1147,32 @@ export class DesktopAgentManager {
         next = this.buildConfigWithModel(next, resolved);
       }
       const projectSettings = await loadProjectSettings(project.path);
-      for (const requestedAlias of input.models.removeAliases) {
+      const removeProviderAliases = new Set(input.models.removeProviderAliases ?? []);
+      for (const providerAlias of removeProviderAliases) {
+        if (!next.providers[providerAlias]) throw new Error(`未知服务商：${providerAlias}`);
+      }
+      const removeAliases = new Set([
+        ...input.models.removeAliases,
+        ...Object.entries(next.models).filter(([, model]) => removeProviderAliases.has(model.provider)).map(([alias]) => alias)
+      ]);
+      for (const requestedAlias of removeAliases) {
         const alias = resolveConfiguredModelAlias(next, requestedAlias);
         if (!alias) throw new Error(`未知模型：${requestedAlias}`);
         if (projectSettings.defaultModel === alias) {
           throw new Error(`不能删除项目 .biny/settings.json 当前引用的模型：${alias}`);
         }
+        const removedModel = next.models[alias]!;
+        const provider = next.providers[removedModel.provider]!;
+        const modelProfiles = { ...provider.modelProfiles };
+        delete modelProfiles[removedModel.model];
         const remaining = Object.entries(next.models).filter(([key]) => key !== alias);
         if (!remaining.length) throw new Error("至少需要保留一个可用模型。");
         next = configSchema.parse({
           ...next,
           defaultModel: next.defaultModel === alias ? remaining[0]![0] : next.defaultModel,
           toolModel: next.toolModel === alias ? undefined : next.toolModel,
-          models: Object.fromEntries(remaining)
+          models: Object.fromEntries(remaining),
+          providers: { ...next.providers, [removedModel.provider]: { ...provider, modelProfiles } }
         });
       }
       if (input.models.modelProfiles !== undefined) {
@@ -1177,6 +1190,21 @@ export class DesktopAgentManager {
             }
           });
         }
+      }
+      if (removeProviderAliases.size > 0) {
+        next = configSchema.parse({
+          ...next,
+          providers: Object.fromEntries(Object.entries(next.providers).filter(([alias]) => !removeProviderAliases.has(alias)))
+        });
+      }
+      for (const [providerAlias, format] of Object.entries(input.models.providerApiFormats ?? {})) {
+        const provider = next.providers[providerAlias];
+        if (!provider) throw new Error(`未知服务商：${providerAlias}`);
+        // 只更新连接默认值；逐模型覆盖由模型选项独立维护。
+        next = configSchema.parse({
+          ...next,
+          providers: { ...next.providers, [providerAlias]: { ...provider, apiBackend: format === "auto" ? undefined : format } }
+        });
       }
       if (input.models.defaultModel !== undefined) {
         const alias = resolveConfiguredModelAlias(next, input.models.defaultModel.alias);
@@ -2098,18 +2126,9 @@ export class DesktopAgentManager {
           provider: input.providerAlias,
           model: input.model,
           displayName: input.displayName,
-          supportsTools: input.supportsTools,
-          // 目录元数据只参与当前运行时解析，不自动写成 alias 覆盖；已有 alias 元数据
-          // 继续保留，新的上下文/输入上限/思考映射应通过 provider.modelProfiles 声明。
-          // 输入里显式给出的能力是用户在模型选项里的覆盖值：给出才写，未给出沿用现状。
-          capabilities: {
-            ...(sameModel ? existingModel.capabilities : undefined),
-            tools: input.supportsTools,
-            reasoning: input.supportsThinking ?? (sameModel ? existingModel.capabilities?.reasoning : undefined),
-            vision: input.supportsVision ?? (sameModel ? existingModel.capabilities?.vision : undefined),
-            audio: input.supportsAudio ?? (sameModel ? existingModel.capabilities?.audio : undefined),
-            parallelToolCalls: input.parallelToolCalls ?? (sameModel ? existingModel.capabilities?.parallelToolCalls : undefined)
-          },
+          supportsTools: undefined,
+          // 自动识别能力只参与运行时解析；用户覆盖统一保存在 modelProfiles。
+          capabilities: undefined,
           contextWindow: sameModel ? existingModel.contextWindow : undefined,
           maxInputTokens: sameModel ? existingModel.maxInputTokens : undefined,
           maxOutputTokens: sameModel ? existingModel.maxOutputTokens : undefined,
@@ -3264,8 +3283,7 @@ function describeModelConnections(config: AgentConfig): DesktopModelConnection[]
       providerAlias,
       providerType: provider.type,
       protocol: provider.protocol,
-      // 连接级 apiBackend 优先；老配置只有模型级时从任一模型折回，保证「API 格式」能回显。
-      apiBackend: provider.apiBackend ?? Object.values(config.models).find((model) => model.provider === providerAlias)?.apiBackend,
+      apiBackend: provider.apiBackend,
       baseUrl: provider.baseUrl ?? profile.baseUrl,
       requiresApiKey: provider.requiresApiKey ?? profile.requiresApiKey,
       hasCredential: credentialSource !== undefined,

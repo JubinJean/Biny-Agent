@@ -8,7 +8,7 @@ import type { AgentModel, ModelStreamContext, ModelStreamEvent, ModelStreamOptio
 import type { LanguageModelV4 } from "@ai-sdk/provider";
 import { completeThinkingLevelMap, effectiveThinkingSelection, isKimiAlwaysThinkingModel, isKimiK3Model, modelCapabilities, modelReasoningConfig, modelThinkingLevelMap, nativeReasoningEffort, normalizeModelMetadata, reasoningBudgetTokens, thinkingLevelMapForModel } from "../ai/capabilities.js";
 import { fetchModelCatalogSnapshot } from "../ai/modelCatalog.js";
-import { accessPathThinkingLevelMap, inferThinkingLevelMap, lookupModelMetadata, type ModelMetadata } from "../ai/modelMetadata.js";
+import { accessPathThinkingLevelMap, generatedProviderModels, inferThinkingLevelMap, lookupModelMetadata, metadataProviderForEndpoint, type ModelMetadata } from "../ai/modelMetadata.js";
 import { providerDefinition } from "../ai/provider.js";
 import type { ModelCatalogEntry, ProviderDefinition } from "../ai/types.js";
 import type { AgentConfig, ModelAliasConfig, ModelApiBackend, ModelCompatibility, ModelProfile, ProviderConfig, ThinkingLevelMap } from "../config/schema.js";
@@ -77,7 +77,12 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
     private readonly fetcher: typeof globalThis.fetch = createProxyAwareFetch()
   ) {
     this.definition = providerDefinition(config.type, ai.providers);
-    this.baselineModels = baselineModels.map((model) => ({ ...model, provider: id }));
+    // 协议类型不代表套餐：官方订阅/地区端点使用自身快照，避免继承普通 API 的容量和目录。
+    const metadataProvider = metadataProviderForEndpoint(config.baseUrl ?? this.definition.baseUrl ?? "");
+    const catalog = metadataProvider && metadataProvider !== config.type
+      ? generatedProviderModels(metadataProvider)
+      : baselineModels;
+    this.baselineModels = catalog.map((model) => ({ ...model, provider: id }));
   }
 
   getModels(): ModelCatalogEntry[] {
@@ -159,8 +164,12 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
   }
 
   resolveModel(model: ModelAliasConfig): ModelAliasConfig {
-    const catalog = this.mergedCatalog().find((entry) => entry.id === model.model);
-    const generated = lookupModelMetadata(this.config.type, model.model, this.config.baseUrl);
+    const endpoint = this.config.baseUrl ?? this.definition.baseUrl;
+    // 单模型覆盖端点时，连接原端点的缓存/基线不能跨过去覆盖新路径的限制。
+    const usesProviderEndpoint = model.baseUrl === undefined
+      || model.baseUrl.replace(/\/+$/u, "") === endpoint?.replace(/\/+$/u, "");
+    const catalog = usesProviderEndpoint ? this.mergedCatalog().find((entry) => entry.id === model.model) : undefined;
+    const generated = lookupModelMetadata(this.config.type, model.model, model.baseUrl ?? this.config.baseUrl ?? this.definition.baseUrl);
     const generatedModel = generated ? metadataToModel(this.id, this.config.type, model.model, generated) : undefined;
     const catalogModel = catalog
       ? catalogEntryToModel(catalog, generated !== undefined || catalog.reasoningEffortsSource === "inferred")
@@ -168,7 +177,13 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
     const catalogBase = catalogModel && generatedModel
       ? mergeModelMetadata(generatedModel, catalogModel)
       : catalogModel ?? generatedModel;
-    const merged = catalogBase ? mergeModelMetadata(catalogBase, model) : model;
+    // alias 里的能力曾由界面自动保存，不能作为覆盖当前目录的依据。
+    // 已知能力以当前目录为准，真正的手动覆盖统一放在 modelProfiles。
+    const merged = catalogBase ? mergeModelMetadata(catalogBase, {
+      ...model,
+      capabilities: mergeCatalogCapabilities(catalogBase.capabilities, model.capabilities),
+      supportsTools: catalogBase.capabilities?.tools ?? model.supportsTools
+    }) : model;
     // 旧默认配置把完整能力压缩成 off/high/max，并同时保存了两档 reasoning；只修复这
     // 个可识别的旧形状。profile 是用户显式覆盖，后续仍按原样保留，不能被自动补全覆盖。
     const compactReasoning = merged.reasoning?.efforts.length === 2
@@ -183,7 +198,7 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
       : merged;
     const profile = this.config.modelProfiles?.[model.model];
     const profiled = profile === undefined ? healed : applyModelProfile(healed, profile);
-    const accessPathModel = recoverKnownReasoningModel(profiled, generatedModel, profile?.thinkingLevelMap !== undefined);
+    const accessPathModel = recoverKnownReasoningModel(profiled, generatedModel, profile?.thinkingLevelMap !== undefined || profile?.capabilities?.reasoning === false);
     return normalizeModelMetadata(
       { ...accessPathModel, compatibility: mergeCompatibility(this.config.compatibility, accessPathModel.compatibility) },
       this.definition.modelDefaults
@@ -341,13 +356,12 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
   }
 
   private normalizeCatalogEntry(entry: ModelCatalogEntry): ModelCatalogEntry {
-    const generated = lookupModelMetadata(this.config.type, entry.id, this.config.baseUrl);
+    const generated = lookupModelMetadata(this.config.type, entry.id, this.config.baseUrl ?? this.definition.baseUrl);
     const model = catalogEntryToModel(entry, generated !== undefined || entry.reasoningEffortsSource === "inferred");
     const generatedModel = generated ? metadataToModel(this.id, this.config.type, entry.id, generated) : undefined;
     const metadataModel = generatedModel ? mergeModelMetadata(generatedModel, model) : model;
-    const profile = this.config.modelProfiles?.[model.model];
-    const profiled = profile === undefined ? metadataModel : applyModelProfile(metadataModel, profile);
-    const accessPathModel = recoverKnownReasoningModel(profiled, generatedModel, profile?.thinkingLevelMap !== undefined);
+    // 目录与缓存只保存自动元数据，不能混入用户覆盖后再被当成自动基准。
+    const accessPathModel = recoverKnownReasoningModel(metadataModel, generatedModel);
     const normalized = normalizeModelMetadata(accessPathModel, this.definition.modelDefaults);
     const reasoning = modelReasoningConfig(normalized);
     return {
@@ -576,11 +590,12 @@ function applyModelProfile(model: ModelAliasConfig, profile: ModelProfile): Mode
     thinkingLevelMap,
     // profile 是最低层目录和旧 alias 之后的最终用户声明；有可用档位时必须解除
     // 低优先级来源的 reasoning:false，否则 map 虽然保存了，实际请求仍永远不会带思考参数。
-    capabilities: thinkingLevelMap === undefined
-      ? undefined
-      : disablesThinking
-        ? { reasoning: false, reasoningStream: false, reasoningSummary: false }
-        : { reasoning: true }
+    capabilities: {
+      ...profile.capabilities,
+      reasoning: profile.capabilities?.reasoning ?? (thinkingLevelMap === undefined ? undefined : !disablesThinking),
+      reasoningStream: disablesThinking ? false : profile.capabilities?.reasoningStream,
+      reasoningSummary: disablesThinking ? false : profile.capabilities?.reasoningSummary
+    }
   });
 }
 

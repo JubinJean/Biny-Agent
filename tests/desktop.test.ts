@@ -1,3 +1,4 @@
+import { settingsSaveInputSchema } from "../src/desktop/electron/main/settingsSaveInputSchema.js";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { access, chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
@@ -67,7 +68,7 @@ import { reasoningDetailText } from "../src/desktop/renderer/src/reasoningPresen
 import { projectWebSearchView } from "../src/desktop/renderer/src/webSearchPresentation.js";
 import type { TimelineTool } from "../src/desktop/renderer/src/sessionTimeline.js";
 import { catalogForConnection, customCatalogEntry, providerCatalog } from "../src/desktop/renderer/src/providerCatalog.js";
-import { stagedModelChoices } from "../src/desktop/renderer/src/components/settings/providerModelProjection.js";
+import { connectionLabel, stagedModelChoices } from "../src/desktop/renderer/src/components/settings/providerModelProjection.js";
 import { thinkingLabel as composerThinkingLabel } from "../src/desktop/renderer/src/components/composer/composerLabels.js";
 import { DESKTOP_COMPOSER_COMMAND_NAMES, buildDesktopComposerItems, isSkillSlashCommand, normalizeSkillSlashCommand } from "../src/desktop/renderer/src/components/composer/desktopSlashCommands.js";
 import { highlightFencedCode, highlightWorkspaceFile } from "../src/desktop/renderer/src/syntaxHighlight.js";
@@ -2135,6 +2136,54 @@ async function testDesktopModelConfiguration(): Promise<void> {
         thinkingLevelMap: { off: "none", high: "gateway-high" }
       }
     });
+    // 停用和重新启用只改变显示偏好，模型配置、凭据与自定义元数据必须原样保留。
+    for (const showInPicker of [false, true]) {
+      const visibilitySnapshot = await commitDesktopSettings(settings, project.id, {
+        models: {
+          upserts: [],
+          removeAliases: [],
+          modelProfiles: {
+            plan: {
+              ...planConfig.providers.plan?.modelProfiles,
+              "deepseek-v4-flash": {
+                ...planConfig.providers.plan?.modelProfiles?.["deepseek-v4-flash"],
+                showInPicker
+              }
+            }
+          }
+        }
+      });
+      const persisted = await configStore.load();
+      assert.deepEqual(persisted.models, planConfig.models);
+      assert.equal(persisted.providers.plan?.apiKey, planConfig.providers.plan?.apiKey);
+      assert.equal(persisted.providers.plan?.modelProfiles?.["deepseek-v4-flash"]?.contextWindow, 512_000);
+      assert.equal(persisted.providers.plan?.modelProfiles?.["deepseek-v4-flash"]?.showInPicker, showInPicker);
+      assert.equal(visibilitySnapshot.models.configured.find((model) => model.alias === "plan-flash")?.showInPicker, showInPicker);
+    }
+    for (const format of ["responses", "auto"] as const) {
+      const formatSnapshot = await commitDesktopSettings(settings, project.id, {
+        models: { upserts: [], removeAliases: [], providerApiFormats: { plan: format } }
+      });
+      const formatConfig = await configStore.load();
+      assert.equal(formatConfig.providers.plan?.apiBackend, format === "auto" ? undefined : format);
+      assert.equal(formatSnapshot.models.connections.find((item) => item.providerAlias === "plan")?.apiBackend, format === "auto" ? undefined : format);
+      assert.deepEqual(formatConfig.models, planConfig.models, "连接格式切换保留单个模型的配置");
+    }
+    const withoutModel = await commitDesktopSettings(settings, project.id, {
+      models: { upserts: [], removeAliases: ["plan-flash"] }
+    });
+    const removedModelConfig = await configStore.load();
+    assert.equal(removedModelConfig.models["plan-flash"], undefined);
+    assert.equal(removedModelConfig.providers.plan?.modelProfiles?.["deepseek-v4-flash"], undefined);
+    assert.ok(withoutModel.models.connections.some((connection) => connection.providerAlias === "plan"));
+    const emptyConnection = connectionLabel(withoutModel.models.configured, withoutModel.models.connections).find((group) => group.provider === "plan");
+    assert.ok(emptyConnection, "删除最后一个模型后，连接仍在设置列表中");
+    assert.equal(emptyConnection.models.length, 0);
+    const withoutProvider = await commitDesktopSettings(settings, project.id, {
+      models: { upserts: [], removeAliases: [], removeProviderAliases: ["plan"] }
+    });
+    assert.equal((await configStore.load()).providers.plan, undefined);
+    assert.equal(withoutProvider.models.connections.some((connection) => connection.providerAlias === "plan"), false);
     await projects.listSessions(project, undefined, new Map());
     const attachment = await projects.saveAttachment(project, "notes.txt", "text/plain", new TextEncoder().encode("desktop only"));
     assert.match(attachment.path, /^@attachments\//);
@@ -3301,11 +3350,11 @@ async function commitDesktopSettings(
   input: Omit<DesktopSettingsSaveInput, "expectedPreferenceRevision" | "expectedConfigRevision">
 ): Promise<DesktopSettingsSnapshot> {
   const current = await settings.snapshot(projectId);
-  const result = await settings.save(projectId, {
+  const result = await settings.save(projectId, settingsSaveInputSchema.parse({
     ...input,
     expectedPreferenceRevision: current.preferenceRevision,
     expectedConfigRevision: current.configRevision
-  });
+  }));
   if (result.status !== "committed") {
     throw new Error(`Expected settings commit, received ${result.status}: ${result.message ?? ""}`);
   }
@@ -3401,12 +3450,10 @@ function testModelChoicesDeduplicateEquivalentAliases(): void {
   assert.equal(listConfiguredModelChoices(unavailable).length, 2, "saved models remain visible when credentials are unavailable");
   assert.equal(listConfiguredModelChoices(unavailable).every((model) => !model.available), true);
   config.providers.deepseek!.apiKey = "test-key";
+  // 实时快照会新增模型；这里验证重复 alias 不改变目录，不固定上游模型清单。
+  const baselineAliases = listModelChoices(config).map((model) => model.alias);
   config.models["deepseek-deepseek-v4-flash"] = { ...config.models["deepseek-v4-flash"] };
-  assert.deepEqual(listModelChoices(config).map((model) => model.alias), [
-    "deepseek-v4-flash",
-    "deepseek-v4-pro",
-    "deepseek/deepseek-v4-flash-vision-exp"
-  ]);
+  assert.deepEqual(listModelChoices(config).map((model) => model.alias), baselineAliases);
   assert.deepEqual(listConfiguredModelChoices(config).map((model) => model.alias), [
     "deepseek-v4-flash",
     "deepseek-v4-pro"
@@ -3425,6 +3472,11 @@ function testModelChoicesDeduplicateEquivalentAliases(): void {
     "deepseek-v4-flash",
     "deepseek-v4-pro"
   ]);
+
+  const disabledConfig = structuredClone(config);
+  disabledConfig.providers.deepseek!.modelProfiles = { "deepseek-v4-flash": { showInPicker: false } };
+  assert.equal(listConfiguredModelChoices(disabledConfig).some((model) => model.alias === "deepseek-v4-flash"), true);
+  assert.equal(listPickerModelChoices(disabledConfig).some((model) => model.alias === "deepseek-v4-flash"), false);
 
   const multiProviderConfig = structuredClone(config);
   multiProviderConfig.providers["opencode-ai"] = {

@@ -11,7 +11,7 @@
  * 结束由页脚保存兜底。模型选项对话框是例外：编辑只进本地缓冲，关闭时一次落盘。
  */
 import { NativeSelect } from "../NativeSelect.js";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useContext, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ModelProfile, ThinkingLevelMap } from "../../../../../config/schema.js";
 import type { ModelChoice, ThinkingSelection } from "../../../../../llm/ModelManager.js";
 import { useFluidHoverItems } from "../../useFluidHoverItems.js";
@@ -31,6 +31,8 @@ import {
   apiFormatOption,
   apiFormatOptions,
   apiFormatOptionsForConnection,
+  recommendedApiFormat,
+  type ConnectionApiFormat,
   catalogForConnection,
   customCatalogEntry,
   modelAliasFor,
@@ -46,6 +48,9 @@ import { ProviderBrandGlyph } from "../ProviderBrandGlyph.js";
 import { connectionLabel } from "./providerModelProjection.js";
 import { useSettingsDraft, type SettingsModelDraft } from "./SettingsDraftContext.js";
 import { SettingsDetailLayer } from "./SettingsDetailLayer.js";
+import { providerErrorMessage } from "./providerFeedback.js";
+
+const CatalogErrorContext = createContext<string | undefined>(undefined);
 
 interface ConnectionGroup {
   provider: string;
@@ -106,7 +111,6 @@ export function ProviderSettings({
   onStartLogin,
   onCompleteLogin,
   onCancelLogin,
-  onNotify,
   onOpenExternal
 }: ProviderSettingsProps): React.JSX.Element {
   const settingsDraft = useSettingsDraft();
@@ -114,7 +118,7 @@ export function ProviderSettings({
     connectionInfos.find((item) => item.providerAlias === providerAlias), [connectionInfos]);
 
   // ── 列表行：目录条目 + 未匹配的自定义端点，可用连接置顶 ──
-  const groups = useMemo(() => connectionLabel(models), [models]);
+  const groups = useMemo(() => connectionLabel(models, connectionInfos), [models, connectionInfos]);
   const entries = useMemo<ProviderListEntry[]>(() => {
     const groupByCatalogId = new Map<string, ConnectionGroup>();
     const leftover: ConnectionGroup[] = [];
@@ -151,7 +155,7 @@ export function ProviderSettings({
       });
     }
     // 健康连接 < 有问题的连接 < 未连接；同档内保持目录顺序，自定义行按名称排在最后。
-    const health = (row: ProviderListEntry): number => row.group ? (connectionStatus(row.connection) ? 1 : 0) : 2;
+    const health = (row: ProviderListEntry): number => row.group?.models.some((model) => model.showInPicker !== false) ? 0 : row.group ? 1 : 2;
     return rows
       .map((row, index) => ({ row, index, custom: row.key.startsWith("custom:") }))
       .sort((left, right) =>
@@ -164,6 +168,11 @@ export function ProviderSettings({
 
   const [activeKey, setActiveKey] = useState<string>();
   const activeEntry = entries.find((row) => row.key === activeKey) ?? entries[0];
+  const [notices, setNotices] = useState<Record<string, string>>({});
+  const onNotify = useCallback((message: string): void => {
+    const key = activeEntry?.key ?? "custom";
+    setNotices((current) => ({ ...current, [key]: providerErrorMessage(message) }));
+  }, [activeEntry?.key]);
   // 已有选中从列表里消失（例如删除自定义端点后）时回退到第一行。
   useEffect(() => {
     if (activeKey !== undefined && !entries.some((row) => row.key === activeKey)) setActiveKey(undefined);
@@ -183,10 +192,11 @@ export function ProviderSettings({
 
   // ── 即时提交：models 段整体计算（草稿待提交项 + 本次变更），交给 provider 串行落盘 ──
   const [saving, setSaving] = useState(false);
-  const commitModels = useCallback(async (next: SettingsModelDraft): Promise<boolean> => {
+  const commitModels = useCallback(async (next: SettingsModelDraft, removeProviderAliases?: string[]): Promise<boolean> => {
     const input: DesktopSettingsModelsInput = {
       upserts: next.upserts,
       removeAliases: next.removeAliases,
+      removeProviderAliases,
       defaultModel: next.defaultModel,
       oauthCredentialHandles: next.oauthCredentialHandles,
       modelProfiles: next.modelProfiles
@@ -275,11 +285,13 @@ export function ProviderSettings({
   // ── 实时目录缓存（按 providerAlias），获取按钮与连接后的静默刷新共用 ──
   const [liveCatalog, setLiveCatalog] = useState<Record<string, LiveCatalogState>>({});
   const [fetchingAlias, setFetchingAlias] = useState<string>();
+  const [catalogErrors, setCatalogErrors] = useState<Record<string, string | undefined>>({});
   const catalogGenerationRef = useRef(new Map<string, number>());
   const refreshCatalog = useCallback(async (providerAlias: string, options: { force?: boolean; announce?: boolean } = {}): Promise<void> => {
     const generation = (catalogGenerationRef.current.get(providerAlias) ?? 0) + 1;
     catalogGenerationRef.current.set(providerAlias, generation);
     setFetchingAlias(providerAlias);
+    setCatalogErrors((current) => ({ ...current, [providerAlias]: undefined }));
     try {
       const result = await onFetchCatalog(providerAlias, options.force ?? false);
       if (catalogGenerationRef.current.get(providerAlias) !== generation) return;
@@ -287,18 +299,26 @@ export function ProviderSettings({
         ...current,
         [providerAlias]: { models: result.models.map(catalogModelFromEntry), source: result.source }
       }));
-      if (options.announce) onNotify(`模型目录已更新 · ${String(result.models.length)} 个模型`);
+
     } catch (error) {
-      if (options.announce && catalogGenerationRef.current.get(providerAlias) === generation) {
-        onNotify(error instanceof Error ? error.message : String(error));
+      if (catalogGenerationRef.current.get(providerAlias) === generation) {
+        setCatalogErrors((current) => ({ ...current, [providerAlias]: providerErrorMessage(error) }));
       }
     } finally {
       if (catalogGenerationRef.current.get(providerAlias) === generation) setFetchingAlias(undefined);
     }
-  }, [onFetchCatalog, onNotify]);
+  }, [onFetchCatalog]);
 
   // ── 当前面板的派生数据 ──
   const group = activeEntry?.group;
+  const requestedCatalogsRef = useRef(new Set<string>());
+  useEffect(() => {
+    const alias = group?.provider;
+    if (!active || !alias || requestedCatalogsRef.current.has(alias)) return;
+    // 设置重开后恢复完整目录，而非只显示已配置模型；失败不循环请求。
+    requestedCatalogsRef.current.add(alias);
+    void refreshCatalog(alias);
+  }, [active, group?.provider, refreshCatalog]);
   const providerAlias = group?.provider ?? (activeEntry?.catalog ? providerAliasFor(activeEntry.catalog, activeEntry.catalog.baseUrl) : undefined);
   const connection = activeEntry?.connection ?? (providerAlias ? infoFor(providerAlias) : undefined);
   const catalog = activeEntry?.catalog;
@@ -336,16 +356,7 @@ export function ProviderSettings({
     if (!group || !catalog) return [];
     return mergeAvailableModels(catalog.models, group.models, liveCatalog[group.provider]?.models ?? []);
   }, [catalog, group, liveCatalog]);
-  const lastRefreshedRef = useRef<string | undefined>(undefined);
   const cancelLoginRef = useRef<() => void>(() => undefined);
-  useEffect(() => {
-    // 打开面板时静默拉一次最新目录（订阅登录连接同样有 /models 端点）；失败保留现有
-    // 模型，错误在手动刷新时展示。
-    if (!group || !catalog) return;
-    if (lastRefreshedRef.current === group.provider) return;
-    lastRefreshedRef.current = group.provider;
-    void refreshCatalog(group.provider, { force: true });
-  }, [catalog, group, refreshCatalog]);
   useEffect(() => {
     // 设置面板整体关闭时放弃未完成的登录请求。
     if (active) return;
@@ -512,54 +523,56 @@ export function ProviderSettings({
   // ── 模型开关（单个 toggle 与全选/批量启停共用；一批变更只发一次事务） ──
   const toggleModels = useCallback(async (catalogModels: CatalogModel[], enabled: boolean): Promise<void> => {
     if (!group || !catalog || !catalogModels.length) return;
-    if (enabled) {
-      const enabledModelIds = new Set(group.models.map((model) => model.model));
-      const inputs = catalogModels
-        .filter((model) => !enabledModelIds.has(model.id))
-        .map((model) => catalogModelUpsertInput(group.provider, catalog.value, connection?.protocol ?? catalog.protocol, model, {
-          baseUrl: (connection?.baseUrl ?? catalog.baseUrl) || undefined,
-          requiresApiKey: catalog.requiresApiKey,
-          modelsRequiresApiKey: catalog.modelsRequiresApiKey
-        }));
-      if (inputs.length) await applyModelBatch(inputs);
-      return;
+    const draft = settingsDraft.draft;
+    if (!draft) return;
+    const configuredModelIds = new Set(group.models.map((model) => model.model));
+    const inputs = enabled ? catalogModels
+      .filter((model) => !configuredModelIds.has(model.id))
+      .map((model) => catalogModelUpsertInput(group.provider, catalog.value, connection?.protocol ?? catalog.protocol, model, {
+        baseUrl: (connection?.baseUrl ?? catalog.baseUrl) || undefined,
+        requiresApiKey: catalog.requiresApiKey,
+        modelsRequiresApiKey: catalog.modelsRequiresApiKey
+      })) : [];
+    const providerProfiles = { ...draft.models.modelProfiles[group.provider] };
+    for (const model of catalogModels) {
+      // 开关只修改用户的显示偏好，不能删除模型或重建已保存的传输配置。
+      const profile = { ...providerProfiles[model.id], showInPicker: enabled };
+      providerProfiles[model.id] = profile;
     }
-    // 只停用真正已启用的模型：目录里未启用的条目没有配置 alias，发给主进程会被拒绝。
-    const aliasByModel = new Map(group.models.map((model) => [model.model, model.alias] as const));
-    const aliases = catalogModels
-      .filter((model) => aliasByModel.has(model.id))
-      .map((model) => aliasByModel.get(model.id)!);
-    if (aliases.length) await applyModelBatch([], aliases);
-  }, [applyModelBatch, catalog, connection, group]);
+    // 开关直接提交，不先写入手动保存草稿，避免底栏短暂变成「未保存」。
+    setSaving(true);
+    try {
+      await commitModels({
+        ...draft.models,
+        upserts: [...draft.models.upserts, ...inputs],
+        modelProfiles: { ...draft.models.modelProfiles, [group.provider]: providerProfiles }
+      });
+    } finally {
+      setSaving(false);
+    }
+  }, [catalog, commitModels, connection, group, settingsDraft]);
 
   const toggleModel = useCallback(async (catalogModel: CatalogModel, enabled: boolean): Promise<void> => {
     await toggleModels([catalogModel], enabled);
   }, [toggleModels]);
 
-  // ── 连接默认格式：组内模型在同一个事务里迁移协议 ──
-  const changeApiFormat = useCallback(async (id: ApiFormatId): Promise<void> => {
-    if (!group || !catalog) return;
-    if (apiFormatForConnection(connection?.protocol ?? catalog.protocol, connection?.apiBackend) === id) return;
-    const format = apiFormatOption(id);
-    const inputs = group.models
-      .map((model) => choiceUpsertInput(model, {
-        protocol: format.protocol,
-        apiBackend: format.apiBackend,
-        providerApiBackend: format.apiBackend
-      }))
-      .filter((input): input is DesktopModelConfigurationInput => input !== undefined);
-    if (!inputs.length) return;
-    const result = await applyModelBatch(inputs);
-    if (!result || activeProviderRef.current !== group.provider) return;
-    // 协议变了，旧目录（旧协议的 /models 形状）不可信：清缓存后按新格式重拉。
-    setLiveCatalog((current) => {
-      const next = { ...current };
-      delete next[group.provider];
-      return next;
-    });
-    onNotify("API 格式已更新");
-    void refreshCatalog(group.provider, { force: true });
-  }, [applyModelBatch, catalog, choiceUpsertInput, connection, group, onNotify, refreshCatalog]);
+  // ── 连接默认格式：直接更新连接，保留各模型的单独覆盖 ──
+  const changeApiFormat = useCallback(async (id: ConnectionApiFormat): Promise<void> => {
+    const draft = settingsDraft.draft;
+    if (!group || !draft) return;
+    if ((connection?.apiBackend ?? "auto") === id) return;
+    setSaving(true);
+    try {
+      await settingsDraft.saveModels({
+        ...draft.models,
+        providerApiFormats: { [group.provider]: id }
+      });
+    } catch (error) {
+      onNotify(error instanceof Error ? error.message : String(error));
+    } finally {
+      setSaving(false);
+    }
+  }, [connection?.apiBackend, group, onNotify, settingsDraft]);
 
   // ── 手动添加模型（目录滞后时的逃生通道） ──
   const [manualModelId, setManualModelId] = useState("");
@@ -604,12 +617,12 @@ export function ProviderSettings({
     const draft = settingsDraft.draft;
     if (!draft) return;
     const providerProfiles = { ...(draft.models.modelProfiles[providerAlias] ?? {}) };
-    if (options.profile === undefined) delete providerProfiles[model.model];
-    else providerProfiles[model.model] = options.profile;
-    // 空对象是「清空该连接全部 profile」的显式值；删掉 provider 键会让后端按未列出处理。
+    const profile = { ...options.profile, showInPicker: providerProfiles[model.model]?.showInPicker };
+    providerProfiles[model.model] = profile;
+    // 重置模型参数也保留显示开关，避免编辑停用模型时意外重新启用。
     const modelProfiles = { ...draft.models.modelProfiles, [providerAlias]: providerProfiles };
     // 乐观写入草稿，失败时由页脚保存兜底。
-    settingsDraft.setModelProfile(providerAlias, model.model, options.profile);
+    settingsDraft.setModelProfile(providerAlias, model.model, profile);
     const format = options.apiFormat === undefined ? undefined : apiFormatOption(options.apiFormat);
     const input = choiceUpsertInput(model, {
       supportsTools: options.tools,
@@ -620,7 +633,7 @@ export function ProviderSettings({
       protocol: format?.protocol ?? connection?.protocol ?? catalog?.protocol,
       apiBackend: format?.apiBackend,
       providerApiBackend: undefined,
-      modelProfile: options.profile
+      modelProfile: profile
     });
     if (input) await applyModelBatch([input], [], { modelProfiles });
   }, [applyModelBatch, catalog, choiceUpsertInput, connection, settingsDraft]);
@@ -641,8 +654,15 @@ export function ProviderSettings({
       return;
     }
     setDeleteArmed(false);
-    await applyModelBatch([], group.models.map((model) => model.alias));
-  }, [applyModelBatch, deleteArmed, group, models.length, onNotify]);
+    const draft = settingsDraft.draft;
+    if (!draft) return;
+    setSaving(true);
+    try {
+      await commitModels(draft.models, [group.provider]);
+    } finally {
+      setSaving(false);
+    }
+  }, [commitModels, deleteArmed, group, models.length, onNotify, settingsDraft]);
 
   // ── 启用服务商（未连接的 API 条目）：用种子模型建连接，密钥随后在表单里补 ──
   const enableProvider = useCallback(async (entryCatalog: ProviderCatalogItem): Promise<void> => {
@@ -675,17 +695,21 @@ export function ProviderSettings({
     setCustomFormat("chat_completions");
     setCustomModels([]);
     setCustomSelected([]);
+    setCustomFetching(false);
+    customGenerationRef.current += 1;
+    setCatalogErrors((current) => ({ ...current, custom: undefined }));
   }, [activeKey]);
 
-  const loadCustomModels = useCallback(async (announce: boolean): Promise<void> => {
+  const loadCustomModels = useCallback(async (_announce: boolean): Promise<void> => {
     if (!catalog) return;
     const baseUrl = customBaseUrl.trim();
     if (!baseUrl) {
-      if (announce) onNotify("请先填写服务地址再加载模型");
+      setCatalogErrors((current) => ({ ...current, custom: "请先填写服务地址再获取模型。" }));
       return;
     }
     const generation = ++customGenerationRef.current;
     setCustomFetching(true);
+    setCatalogErrors((current) => ({ ...current, custom: undefined }));
     try {
       const providerAlias = providerAliasFor(catalog, baseUrl);
       const seed = catalog.models[0];
@@ -710,16 +734,16 @@ export function ProviderSettings({
       setCustomModels(loaded);
       // 实时目录失败后不代替用户勾选，避免把账号未开放的模型自动存为默认。
       setCustomSelected(loaded[0] ? [loaded[0].id] : []);
-      if (announce) onNotify(`已获取 ${String(loaded.length)} 个模型`);
+
     } catch (error) {
       if (generation !== customGenerationRef.current) return;
-      setCustomModels(catalog.models);
+      setCustomModels([]);
       setCustomSelected([]);
-      if (announce) onNotify(error instanceof Error ? error.message : String(error));
+      setCatalogErrors((current) => ({ ...current, custom: providerErrorMessage(error) }));
     } finally {
       if (generation === customGenerationRef.current) setCustomFetching(false);
     }
-  }, [catalog, customApiKey, customBaseUrl, customFormat, onFetchCatalogCandidate, onNotify]);
+  }, [catalog, customApiKey, customBaseUrl, customFormat, onFetchCatalogCandidate]);
 
   /** 换格式后旧目录不可信（不同协议的 /models 形状不同），清空候选。 */
   const changeCustomFormat = (id: ApiFormatId): void => {
@@ -890,11 +914,14 @@ export function ProviderSettings({
 
   return (
     <div className="provider-settings">
-      <aside aria-label="服务商列表" className="provider-list-pane">
+      <header className="provider-settings-toolbar">
         <label className="provider-list-search">
           <Icon name="search" size={14} />
           <input onChange={(event) => setQuery(event.target.value)} placeholder="搜索服务商" value={query} />
         </label>
+        <button className="ghost-button" onClick={() => { setQuery(""); setActiveKey("openai-compatible"); }} type="button"><Icon name="add" size={14} />添加自定义服务商</button>
+      </header>
+      <aside aria-label="服务商列表" className="provider-list-pane">
         <div className="provider-list-rows" role="tablist">
           {loading && !entries.length ? (
             [0, 1, 2, 3].map((index) => (
@@ -908,7 +935,8 @@ export function ProviderSettings({
             ))
           ) : filteredEntries.map((row) => {
             const rowStatus = connectionStatus(row.connection);
-            const healthy = row.group !== undefined && rowStatus === null;
+            const rowEnabled = row.group?.models.some((model) => model.showInPicker !== false) === true;
+            const healthy = rowEnabled && rowStatus === null;
             return (
               <button
                 aria-selected={activeEntry?.key === row.key}
@@ -925,8 +953,8 @@ export function ProviderSettings({
                 </span>
                 <span
                   aria-hidden="true"
-                  className={`provider-status-dot${healthy ? " is-ok" : row.group && rowStatus ? ` is-${rowStatus.tone}` : ""}`}
-                  title={healthy ? "已连接" : row.group && rowStatus ? rowStatus.label : "未配置"}
+                  className={`provider-status-dot${healthy ? " is-ok" : rowEnabled && rowStatus ? ` is-${rowStatus.tone}` : ""}`}
+                  title={rowEnabled ? rowStatus?.label ?? "已启用" : "未启用"}
                 />
               </button>
             );
@@ -939,7 +967,9 @@ export function ProviderSettings({
         </footer>
       </aside>
 
+      <CatalogErrorContext.Provider value={catalogErrors[group?.provider ?? "custom"]}>
       <section aria-label="服务商配置" className="provider-detail-pane" ref={detailPaneRef}>
+        {notices[activeEntry?.key ?? "custom"] ? <div className="provider-inline-notice" role="status"><span>{notices[activeEntry?.key ?? "custom"]}</span><button type="button" aria-label="关闭提示" onClick={() => setNotices((current) => ({ ...current, [activeEntry?.key ?? "custom"]: "" }))}><Icon name="close" size={14} /></button></div> : null}
         {!activeEntry || (loading && !entries.length) ? (
           <div className="provider-detail-skeleton">
             <span className="skeleton-line skeleton-pulse is-wide" />
@@ -978,7 +1008,8 @@ export function ProviderSettings({
             setTestMenuOpen={setTestMenuOpen}
           />
         ) : group && catalog ? (
-      <ConnectedProviderPanel
+          <ConnectedProviderPanel
+            key={group.provider}
             catalog={catalog}
             connection={connection}
             group={group}
@@ -1057,10 +1088,13 @@ export function ProviderSettings({
           />
         ) : null}
       </section>
+      </CatalogErrorContext.Provider>
 
       {profileTarget ? (
         <ModelOptionsDialog
-          apiFormat={apiFormatForConnection(connection?.protocol ?? catalog?.protocol, profileTarget.model.apiBackend ?? connection?.apiBackend)}
+          apiFormat={profileTarget.model.apiBackend !== undefined || connection?.apiBackend !== undefined
+            ? apiFormatForConnection(connection?.protocol ?? catalog?.protocol, profileTarget.model.apiBackend ?? connection?.apiBackend)
+            : recommendedApiFormat(connection?.providerType ?? catalog?.value ?? "openai-compatible", connection?.protocol ?? catalog?.protocol)}
           apiFormatOptions={catalog?.id === "custom"
             ? apiFormatOptions
             : catalog
@@ -1164,6 +1198,7 @@ function LoginProviderPanel({
             testConfiguration={testConfiguration}
           />
         ) : null}
+      {group ? <ProviderToggle group={group} /> : null}
       </header>
 
       {testResult ? <ConnectionTestResult result={testResult} /> : null}
@@ -1299,7 +1334,7 @@ function ConnectedProviderPanel({
   onApiKeyBlur(): void;
   onBaseUrlChange(value: string): void;
   onBaseUrlBlur(): void;
-  onChangeApiFormat(id: ApiFormatId): void;
+  onChangeApiFormat(id: ConnectionApiFormat): void;
   onOpenExternal(url: string): Promise<void>;
   onRefreshCatalog(): void;
   onToggleModel(model: CatalogModel, enabled: boolean): Promise<void>;
@@ -1320,8 +1355,10 @@ function ConnectedProviderPanel({
     ? availableModels.filter((model) => `${model.displayName} ${model.id}`.toLocaleLowerCase().includes(normalizedQuery))
     : availableModels;
   const apiKeyUrl = catalog.apiKeyUrl;
-  const isCustomEndpoint = !catalog.baseUrl;
-  const apiFormat = apiFormatForConnection(connection?.protocol ?? catalog.protocol, connection?.apiBackend);
+  const isCustomEndpoint = catalog.id === "custom" || !catalog.baseUrl;
+  const [showKey, setShowKey] = useState(false);
+  const automaticFormat = recommendedApiFormat(catalog.value, connection?.protocol ?? catalog.protocol);
+  const apiFormat = connection?.apiBackend ? apiFormatForConnection(connection.protocol, connection.apiBackend) : isCustomEndpoint ? automaticFormat : "auto";
   const formatOptions = catalog.id === "custom"
     ? apiFormatOptions
     : apiFormatOptionsForConnection(
@@ -1333,6 +1370,43 @@ function ConnectedProviderPanel({
   // 未被编辑过的已保存地址不提示版本路径问题：DeepSeek / Anthropic 等官方默认地址
   // 本来就不带 /v1，照抄提示会一直吓唬用户。
   const showVersionHint = baseUrlNeedsVersionHint(baseUrlDraft) && baseUrlDraft.trim() !== savedBaseUrl;
+  const connectionFields = (
+    <div className="provider-connection-fields">
+      {isCustomEndpoint ? (
+        <div className="provider-row-item">
+          <label className="provider-row-label" htmlFor={`${fieldPrefix}-base-url`}>服务地址</label>
+          <input
+            id={`${fieldPrefix}-base-url`}
+            onBlur={onBaseUrlBlur}
+            onChange={(event) => onBaseUrlChange(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); onBaseUrlBlur(); } }}
+            placeholder="留空使用服务商默认地址"
+            value={baseUrlDraft}
+          />
+          {showVersionHint
+            ? <div className="provider-row-warning"><Icon name="info" size={12} />部分服务商要求地址以版本路径结尾（如 /v1），请求失败时可尝试追加。</div>
+            : isCustomEndpoint ? <div className="provider-row-hint">填写网关的完整地址。</div> : null}
+        </div>
+      ) : null}
+
+      {/* 内置服务商使用已知协议；仅自定义连接或已有覆盖需要显示选择入口。 */}
+      {catalog.connectionMode === "api" && (isCustomEndpoint || connection?.apiBackend !== undefined) ? (
+        <div className="provider-row-item">
+          <label className="provider-row-label" htmlFor={`${fieldPrefix}-api-format`}>API 格式</label>
+          <NativeSelect
+            className="connection-select"
+            id={`${fieldPrefix}-api-format`}
+            onChange={(event) => onChangeApiFormat(event.target.value as ConnectionApiFormat)}
+            value={apiFormat}
+          >
+            {!isCustomEndpoint ? <option value="auto">自动（厂商推荐）</option> : null}
+            {formatOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
+          </NativeSelect>
+          <div className="provider-row-hint">模型默认跟随连接，单个模型可在模型选项中覆盖。</div>
+        </div>
+      ) : null}
+    </div>
+  );
   return (
     <section className="provider-panel">
       <header className="provider-panel-head">
@@ -1342,7 +1416,7 @@ function ConnectedProviderPanel({
             {catalog.label}
             {status
               ? <span className={`status-pill is-${status.tone}`}>{status.label}</span>
-              : <span className="status-pill">已配置</span>}
+              : <span className="status-pill">{group.models.some((model) => model.showInPicker !== false) ? "已启用" : "未启用"}</span>}
           </h3>
         </div>
         <TestConnectionButton
@@ -1354,6 +1428,7 @@ function ConnectedProviderPanel({
           onTest={onTest}
           testConfiguration={testConfiguration}
         />
+      {group ? <ProviderToggle group={group} /> : null}
       </header>
 
       {testResult ? <ConnectionTestResult result={testResult} /> : null}
@@ -1387,9 +1462,10 @@ function ConnectedProviderPanel({
                 onChange={(event) => onApiKeyChange(event.target.value)}
                 onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); onApiKeyBlur(); } }}
                 placeholder={keyLoading ? "正在读取…" : connection?.requiresApiKey === false ? "可选" : "粘贴 API Key，自动保存"}
-                type="text"
+                type={showKey ? "text" : "password"}
                 value={keyDraft}
               />
+              <button className="icon-button" type="button" aria-label={showKey ? "隐藏密钥" : "显示密钥"} onClick={() => setShowKey((value) => !value)}><Icon name={showKey ? "eye-off" : "eye"} size={16} /></button>
             </div>
             <div className="provider-row-hint">
               {keySaveState === "saving" ? <span className="provider-key-state is-busy">正在保存密钥…</span>
@@ -1399,35 +1475,8 @@ function ConnectedProviderPanel({
             </div>
           </div>
 
-          <div className="provider-row-item">
-            <label className="provider-row-label" htmlFor={`${fieldPrefix}-base-url`}>服务地址</label>
-            <input
-              id={`${fieldPrefix}-base-url`}
-              onBlur={onBaseUrlBlur}
-              onChange={(event) => onBaseUrlChange(event.target.value)}
-              onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); onBaseUrlBlur(); } }}
-              placeholder="留空使用服务商默认地址"
-              value={baseUrlDraft}
-            />
-            {showVersionHint
-              ? <div className="provider-row-warning"><Icon name="info" size={12} />部分服务商要求地址以版本路径结尾（如 /v1），请求失败时可尝试追加。</div>
-              : isCustomEndpoint ? <div className="provider-row-hint">填写网关的完整地址。</div> : null}
-          </div>
+          {isCustomEndpoint || connection?.apiBackend !== undefined ? connectionFields : null}
 
-          {catalog.connectionMode === "api" ? (
-            <div className="provider-row-item">
-              <label className="provider-row-label" htmlFor={`${fieldPrefix}-api-format`}>API 格式</label>
-              <NativeSelect
-                className="connection-select"
-                id={`${fieldPrefix}-api-format`}
-                onChange={(event) => onChangeApiFormat(event.target.value as ApiFormatId)}
-                value={apiFormat}
-              >
-                {formatOptions.map((option) => <option key={option.id} value={option.id}>{option.label}</option>)}
-              </NativeSelect>
-              <div className="provider-row-hint">切换后应用于此连接的全部模型，并刷新列表。</div>
-            </div>
-          ) : null}
         </div>
       )}
 
@@ -1496,6 +1545,7 @@ function CustomProviderPanel({
   onSelectedChange(ids: string[]): void;
   onConnect(): void;
 }): React.JSX.Element {
+  const [showKey, setShowKey] = useState(false);
   const keyMissing = catalog.requiresApiKey && !apiKey.trim();
   const canConnect = !saving && !fetching && !keyMissing && Boolean(baseUrl.trim()) && selected.length > 0;
   return (
@@ -1537,14 +1587,16 @@ function CustomProviderPanel({
               id="custom-provider-api-key"
               onChange={(event) => onApiKey(event.target.value)}
               placeholder="输入或粘贴 API Key"
-              type="text"
+              type={showKey ? "text" : "password"}
               value={apiKey}
             />
+            <button className="icon-button" type="button" aria-label={showKey ? "隐藏密钥" : "显示密钥"} onClick={() => setShowKey((value) => !value)}><Icon name={showKey ? "eye-off" : "eye"} size={16} /></button>
           </div>
         </div>
       </div>
 
       <section className="provider-models">
+      <CatalogFeedback />
         <div className="provider-models-head">
           <h4>启用模型</h4>
           <div className="provider-models-actions">
@@ -1718,11 +1770,17 @@ function ModelsSection({
   onSubmitManualModel(): void;
 }): React.JSX.Element {
   const [manualOpen, setManualOpen] = useState(false);
-  const enabledChoiceByModel = new Map(enabledModels.map((model) => [model.model, model] as const));
+  const choiceByModel = new Map(enabledModels.map((model) => [model.model, model] as const));
+  const enabledChoiceByModel = new Map(enabledModels.filter((model) => model.showInPicker !== false).map((model) => [model.model, model] as const));
+  // 已启用模型置顶，同组保持目录顺序；每次切换后重新排序，不重复展示。
+  const orderedModels = [...models].sort((left, right) =>
+    Number(enabledChoiceByModel.has(right.id)) - Number(enabledChoiceByModel.has(left.id))
+  );
   // 全选只作用于当前可见（搜索过滤后）的模型，大批量启用也在一次事务里完成。
   const allVisibleEnabled = models.length > 0 && models.every((model) => enabledChoiceByModel.has(model.id));
   return (
     <section className="provider-models">
+      <CatalogFeedback />
       <div className="provider-models-head">
         <h4>模型</h4>
         <div className="provider-models-actions">
@@ -1733,12 +1791,12 @@ function ModelsSection({
               onClick={() => void onToggleMany(models, !allVisibleEnabled)}
               type="button"
             >
-              {allVisibleEnabled ? "取消全选" : "全选"}
+              {allVisibleEnabled ? "全部停用" : "全部启用"}
             </button>
           ) : null}
           <button className="ghost-button" disabled={fetchingCatalog} onClick={onRefreshCatalog} type="button">
             <Icon name="refresh" size={13} />
-            {fetchingCatalog ? "刷新中…" : "刷新"}
+            {fetchingCatalog ? "获取中…" : "获取"}
           </button>
         </div>
       </div>
@@ -1749,17 +1807,17 @@ function ModelsSection({
       <p className="provider-models-hint">
         {query.trim() ? `${String(models.length)} 个结果 · 全选仅作用于搜索结果` : `${String(models.length)} 个模型 · 已启用 ${String(enabledChoiceByModel.size)}`}
       </p>
+
       <div className="provider-model-list">
-        {models.map((model) => {
-          const choice = enabledChoiceByModel.get(model.id);
-          const enabled = choice !== undefined;
+        {orderedModels.map((model) => {
+          const choice = choiceByModel.get(model.id);
+          const enabled = enabledChoiceByModel.has(model.id);
           const isDefault = choice !== undefined && choice.alias === defaultModelAlias;
           return (
             <div
               className={`provider-model-row${enabled ? " is-enabled" : ""}`}
               key={model.id}
-              onClick={() => void onToggleModel(model, !enabled)}
-              role="presentation"
+
             >
               <div className="provider-model-copy">
                 <span className="provider-model-name" title={model.displayName}>{model.displayName}</span>
@@ -1770,7 +1828,7 @@ function ModelsSection({
                 </span>
               </div>
               <div className="provider-model-actions">
-                {choice && !isDefault ? (
+                {choice && enabled && !isDefault ? (
                   <button
                     className="text-button"
                     onClick={(event) => { event.stopPropagation(); onDefaultModel(choice.alias, choice.defaultThinking); }}
@@ -1924,7 +1982,15 @@ function ModelOptionsDialog({
       }
     }
     onSave({
-      profile: modelProfileFromFieldDraft(draft),
+      profile: {
+        ...modelProfileFromFieldDraft(draft),
+        capabilities: {
+          ...savedProfile?.capabilities,
+          vision: capabilities.vision === autoCapabilities.vision ? undefined : capabilities.vision,
+          tools: capabilities.tools === autoCapabilities.tools ? undefined : capabilities.tools,
+          reasoning: capabilities.reasoning === autoCapabilities.reasoning ? undefined : capabilities.reasoning
+        }
+      },
       vision: capabilities.vision,
       tools: capabilities.tools,
       reasoning: capabilities.reasoning,
@@ -2356,4 +2422,38 @@ function baseUrlNeedsVersionHint(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** 整组启停复用模型显示偏好事务，不删除连接或凭据。 */
+function ProviderToggle({ group }: { group: ConnectionGroup }): React.JSX.Element {
+  const { draft, saveModels } = useSettingsDraft();
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+  const enabled = group.models.some((model) => model.showInPicker !== false);
+  const toggle = async (): Promise<void> => {
+    if (!draft || saving || !group.models.length) return;
+    setSaving(true);
+    setError(undefined);
+    const profiles = { ...draft.models.modelProfiles[group.provider] };
+    for (const model of group.models) profiles[model.model] = { ...profiles[model.model], showInPicker: !enabled };
+    try {
+      const result = await saveModels({ ...draft.models, modelProfiles: { ...draft.models.modelProfiles, [group.provider]: profiles } });
+      if (result?.status !== "committed") setError("服务商状态未保存，请重试");
+    } catch {
+      setError("服务商状态未保存，请重试");
+    } finally {
+      setSaving(false);
+    }
+  };
+  return <div className="provider-master-toggle">
+    <span className="provider-toggle-status" role="status">{saving ? "保存中…" : enabled ? "已启用" : "未启用"}</span>
+    <button type="button" role="switch" aria-checked={enabled} aria-label={enabled ? "停用整个服务商" : "启用整个服务商"} disabled={saving || !draft || !group.models.length} className={`model-toggle${enabled ? " is-on" : ""}`} onClick={() => void toggle()}><span className="model-toggle-thumb" /></button>
+    {error ? <small role="alert">{error}</small> : null}
+  </div>;
+}
+
+/** 获取失败留在模型区，重新获取时清除，不用会消失的通知承载错误。 */
+function CatalogFeedback(): React.JSX.Element | null {
+  const error = useContext(CatalogErrorContext);
+  return error ? <div className="provider-catalog-error" role="alert"><Icon name="warning" size={16} /><div><strong>无法获取模型列表</strong><p>{error}</p><small>已保存的模型配置未更改。检查连接设置后可重新获取。</small></div></div> : null;
 }

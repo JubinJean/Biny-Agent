@@ -68,7 +68,7 @@ import { useDesktopSettingsActions } from "./app/useDesktopSettingsActions.js";
 import { useSidebarLayout } from "./app/useSidebarLayout.js";
 import { Composer, type ComposerMemoryState } from "./components/Composer.js";
 import { WorkspaceContextBar } from "./components/project/WorkspaceContextBar.js";
-import { type ContextUsage } from "./usagePresentation.js";
+import { resolveContextCapacity, type ContextUsage } from "./usagePresentation.js";
 import { DesktopShell } from "./components/DesktopShell.js";
 import { Sidebar } from "./components/Sidebar.js";
 import { SkillHubView } from "./components/SkillHubView.js";
@@ -1402,13 +1402,13 @@ function DesktopApp(): React.JSX.Element {
     const activeModelAlias = info?.modelAlias ?? budget?.modelAlias;
     const selectedModel = workspace?.models.find((model) => model.alias === activeModelAlias);
     const sameModel = !info?.modelAlias || !budget?.modelAlias || info.modelAlias === budget.modelAlias;
-    const contextWindow = (sameModel ? budget?.contextWindow : undefined) ?? info?.contextWindow ?? selectedModel?.contextWindow;
+    const capacity = resolveContextCapacity(info, selectedModel, sameModel ? budget : undefined);
+    const contextWindow = capacity?.contextWindow;
     if (!contextWindow) return undefined;
     return {
       usedTokens: (sameModel ? budget?.usedTokens : budget?.estimatedTokens) ?? lastReportedInputTokens(document) ?? 0,
       contextWindow,
-      contextWindowIsFallback: (sameModel ? budget?.contextWindowIsFallback : undefined)
-        ?? info?.contextWindowIsFallback ?? selectedModel?.contextWindowIsFallback ?? true,
+      contextWindowIsFallback: capacity?.contextWindowIsFallback ?? true,
       source: sameModel ? budget?.source : "estimated",
       breakdown: budget?.breakdown,
       cacheHitRate: budget?.cacheHitRate

@@ -4,8 +4,8 @@
  */
 import type { ModelProfile, ReasoningEffort, ThinkingLevelMap } from "../../../../../config/schema.js";
 import type { ModelChoice } from "../../../../../llm/ModelManager.js";
-import { completeThinkingLevelMap, isKimiAlwaysThinkingModel, thinkingLevelMapForModel } from "../../../../../ai/capabilities.js";
-import type { DesktopModelConfigurationInput } from "../../../../protocol.js";
+import { completeThinkingLevelMap, isKimiAlwaysThinkingModel, modelCapabilities, thinkingLevelMapForModel } from "../../../../../ai/capabilities.js";
+import type { DesktopModelConnection, DesktopModelConfigurationInput } from "../../../../protocol.js";
 
 const localThinkingLevels: readonly ReasoningEffort[] = ["minimal", "low", "medium", "high", "xhigh", "max"];
 
@@ -17,8 +17,11 @@ interface ConnectionGroup {
 }
 
 /** 把模型列表按 provider 归组，设置页里按「连接」为单位展示而不是罗列所有模型。 */
-export function connectionLabel(models: ModelChoice[]): ConnectionGroup[] {
+export function connectionLabel(models: ModelChoice[], connections: DesktopModelConnection[] = []): ConnectionGroup[] {
   const groups = new Map<string, ConnectionGroup>();
+  for (const connection of connections) {
+    groups.set(connection.providerAlias, { provider: connection.providerAlias, providerType: connection.providerType, models: [] });
+  }
   for (const model of models) {
     const current = groups.get(model.provider) ?? {
       provider: model.provider,
@@ -59,6 +62,8 @@ export function stagedModelChoices(
   for (const input of upserts) {
     const existing = choices.get(input.alias);
     const profile = modelProfiles[input.providerAlias]?.[input.model];
+    const previousContext = existing?.model === input.model && existing.provider === input.providerAlias
+      && (input.baseUrl === undefined || input.baseUrl === existing.baseUrl) ? existing : undefined;
     const profileThinkingLevelMap = profile?.thinkingLevelMap;
     const inputThinkingLevelMap = input.thinkingLevelMap
       ?? (input.supportsThinking === true ? thinkingLevelMapForModel(input.model, true) : undefined);
@@ -83,10 +88,11 @@ export function stagedModelChoices(
         audio: input.supportsAudio ?? false,
         streaming: true
       },
-      contextWindow: profile?.contextWindow ?? input.contextWindow,
-      contextWindowIsFallback: profile?.contextWindow === undefined
-        ? existing?.contextWindowIsFallback ?? (input.contextWindow === undefined)
-        : false,
+      contextWindow: profile?.contextWindow ?? input.contextWindow ?? previousContext?.contextWindow,
+      // 已补齐的容量必须同步清除旧 fallback 标记；未改容量时保留同一模型的运行时事实。
+      contextWindowIsFallback: profile?.contextWindow !== undefined || input.contextWindow !== undefined
+        ? false
+        : previousContext?.contextWindowIsFallback ?? true,
       maxInputTokens: profile?.maxInputTokens ?? input.maxInputTokens,
       maxOutputTokens: profile?.maxOutputTokens ?? input.maxOutputTokens ?? existing?.maxOutputTokens,
       limits: input.limits,
@@ -101,7 +107,7 @@ export function stagedModelChoices(
       baseUrl: input.baseUrl,
       headers: input.headers ?? existing?.headers,
       compatibility: input.compatibility,
-      showInPicker: true,
+      showInPicker: profile?.showInPicker ?? existing?.showInPicker ?? true,
       available: true,
       source: "configured"
     });
@@ -110,8 +116,24 @@ export function stagedModelChoices(
 }
 
 function applyModelProfileToChoice(choice: ModelChoice, profile: ModelProfile): ModelChoice {
+  const capabilities = modelCapabilities({
+    provider: choice.provider,
+    model: choice.model,
+    capabilities: {
+      ...choice.capabilities,
+      ...Object.fromEntries(Object.entries(profile.capabilities ?? {}).filter(([, value]) => value !== undefined))
+    }
+  });
+  choice = {
+    ...choice,
+    capabilities,
+    supportsTools: capabilities.tools,
+    efforts: capabilities.reasoning ? choice.efforts : [],
+    defaultThinking: capabilities.reasoning ? choice.defaultThinking : "off",
+    showInPicker: profile.showInPicker ?? choice.showInPicker
+  };
   const thinkingLevelMap = profile.thinkingLevelMap;
-  if (thinkingLevelMap === undefined) {
+  if (thinkingLevelMap === undefined || profile.capabilities?.reasoning === false) {
     return {
       ...choice,
       contextWindow: profile.contextWindow ?? choice.contextWindow,

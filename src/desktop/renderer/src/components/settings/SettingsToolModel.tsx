@@ -1,8 +1,14 @@
-/** 后台文本任务的统一模型入口，复用模型设置事务与已有模型选择器。 */
+/**
+ * 后台文本任务的统一模型入口，复用模型设置事务与已有模型选择器。
+ *
+ * 布局沿用成熟的模型设置模式：标题与说明在上，选择器与测试按钮同行，
+ * 测试结果以状态卡片展示；避免把动态状态混进说明文案后居中悬空。
+ */
 import { useState } from "react";
 import { useSettingsDraft } from "./SettingsDraftContext.js";
 import { SettingsModelPicker } from "./SettingsModelPicker.js";
 import { modelPickerGroups } from "./settingsModelPickerData.js";
+import { Icon } from "../Icon.js";
 import type { DesktopModelConfigurationInput, DesktopModelConnectionTestResult } from "../../../../protocol.js";
 
 export function SettingsToolModel({ onTest }: { onTest(configuration: DesktopModelConfigurationInput): Promise<DesktopModelConnectionTestResult> }): React.JSX.Element | null {
@@ -22,11 +28,22 @@ export function SettingsToolModel({ onTest }: { onTest(configuration: DesktopMod
       setError(reason instanceof Error ? reason.message : "工具模型保存失败，请重试。");
     }).finally(() => setSaving(false));
   };
+  const runTest = (): void => {
+    if (!active || testing) return;
+    setTesting(true);
+    setTestResult(undefined);
+    void onTest({ alias: active.alias, displayName: active.displayName, providerAlias: active.provider,
+      providerType: active.providerType as DesktopModelConfigurationInput["providerType"], model: active.model,
+      baseUrl: active.baseUrl, supportsTools: active.supportsTools === true, supportsThinking: active.efforts.length > 0
+    }).then(setTestResult).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "测试失败"))
+      .finally(() => setTesting(false));
+  };
   return (
     <div className="settings-sections">
       <section id="tool-model" tabIndex={-1}>
-        <div className="setting-row">
-          <span><strong>工具模型</strong><small>用于工具与技能筛选、会话标题、记忆、结晶和活动分析等辅助任务。</small></span>
+        <h3>工具模型</h3>
+        <p>在保证生成质量的前提下尽可能快的模型，用于工具与技能筛选、会话标题、记忆、结晶和活动分析等辅助任务。</p>
+        <div className="tool-model-row">
           <SettingsModelPicker
             ariaLabel="工具模型"
             disabled={saving || testing || snapshot.hasRunningTasks || saveState === "saving"}
@@ -36,19 +53,23 @@ export function SettingsToolModel({ onTest }: { onTest(configuration: DesktopMod
             placeholder="自动选择"
             value={snapshot.models.toolModel}
           />
+          <button aria-label="测试模型" className="icon-button tool-model-test-button" disabled={!active || testing || saving} title={testing ? "测试中…" : "测试模型"} type="button" onClick={runTest}>
+            <Icon name="flask" size={16} />
+          </button>
         </div>
-        <p>{active ? `当前使用：${active.displayName}` : "暂无可用工具模型，请先配置模型供应商。"} 自动模式优先选择价格较低的已配置模型。</p>
-        <button className="text-button" disabled={!active || testing || saving} type="button" onClick={() => {
-          if (!active || testing) return;
-          setTesting(true);
-          setTestResult(undefined);
-          void onTest({ alias: active.alias, displayName: active.displayName, providerAlias: active.provider,
-            providerType: active.providerType as DesktopModelConfigurationInput["providerType"], model: active.model,
-            baseUrl: active.baseUrl, supportsTools: active.supportsTools === true, supportsThinking: active.efforts.length > 0
-          }).then(setTestResult).catch((reason: unknown) => setError(reason instanceof Error ? reason.message : "测试失败"))
-            .finally(() => setTesting(false));
-        }}>{testing ? "测试中…" : "测试模型"}</button>
-        {testResult ? <p role="status">{testResult.ok ? "测试通过" : testResult.message}{testResult.latencyMs === undefined ? "" : ` · ${(testResult.latencyMs / 1000).toFixed(1)} 秒`}</p> : null}
+        <p className="tool-model-status">{active
+          ? snapshot.models.toolModel
+            ? `当前使用：${active.displayName}。`
+            : `当前使用：${active.displayName}（自动模式，优先选择价格较低的已配置模型）。`
+          : "暂无可用工具模型，请先在「模型供应商」中配置。"}</p>
+        {testResult ? (
+          <div className={`connection-test-result${testResult.ok ? " is-ok" : " is-error"}`} role="status">
+            <span>{testResult.ok
+              ? `测试通过${testResult.latencyMs === undefined ? "" : ` · ${(testResult.latencyMs / 1000).toFixed(1)} 秒`}`
+              : "测试失败"}</span>
+            {!testResult.ok && testResult.message ? <pre>{testResult.message}</pre> : null}
+          </div>
+        ) : null}
         {error ? <p role="alert">{error}</p> : null}
       </section>
     </div>

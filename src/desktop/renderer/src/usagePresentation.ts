@@ -17,6 +17,16 @@ export interface ContextUsage {
   cacheHitRate?: number;
 }
 
+/** 历史请求只提供用量；容量优先取当前声明，并将容量数值与来源标记成对传递。 */
+export function resolveContextCapacity(
+  runtime: Partial<Pick<ContextUsage, "contextWindow" | "contextWindowIsFallback">> | undefined,
+  model: Partial<Pick<ContextUsage, "contextWindow" | "contextWindowIsFallback">> | undefined,
+  historical: Partial<Pick<ContextUsage, "contextWindow" | "contextWindowIsFallback">> | undefined
+) {
+  const current = [runtime, model].filter((value) => value?.contextWindow !== undefined && value.contextWindow > 0);
+  return current.find((value) => value?.contextWindowIsFallback !== true) ?? current[0] ?? historical;
+}
+
 export function summarizeTimelineUsage(turns: readonly TimelineTurn[]): UsageSummary {
   const records: SessionUsage[] = [];
   for (const turn of turns) {

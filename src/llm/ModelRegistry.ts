@@ -234,7 +234,7 @@ export class ModelRegistry {
       headers: normalized.headers,
       compatibility: normalized.compatibility ?? provider?.compatibility,
       pricing: normalized.pricing,
-      showInPicker,
+      showInPicker: provider?.modelProfiles?.[model.model]?.showInPicker ?? showInPicker,
       available: providerRuntime?.isConfigured(normalized) ?? false,
       source
     };

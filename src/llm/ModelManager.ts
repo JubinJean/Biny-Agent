@@ -8,7 +8,7 @@ import {
 import {
   resolveModelConfig
 } from "./modelConfig.js";
-import { effectiveThinkingSelection, modelContextBudget, modelReasoningConfig, modelThinkingLevelMap } from "../ai/capabilities.js";
+import { effectiveThinkingSelection, modelCapabilities, modelContextBudget, modelReasoningConfig, modelThinkingLevelMap } from "../ai/capabilities.js";
 import type { ModelCatalogEntry } from "../ai/types.js";
 import {
   hasUsableModelConfiguration as hasUsableRegisteredModel,
@@ -85,6 +85,10 @@ export class ModelManager {
 
   getModelSettings(): NativeModelSettings {
     return this.activeSettings;
+  }
+
+  getCapabilities(): ReturnType<typeof modelCapabilities> {
+    return modelCapabilities(this.runtime.resolve(this.config.defaultModel).model);
   }
 
   getContextBudget(): ReturnType<typeof modelContextBudget> {
@@ -208,7 +212,7 @@ export function listModelChoices(
 
 /** 普通模型选择器只展示各服务商设置中已启用且当前可用的模型。 */
 export function filterPickerModelChoices(models: readonly ModelChoice[]): ModelChoice[] {
-  return models.filter((model) => model.source === "configured" && model.available);
+  return models.filter((model) => model.source === "configured" && model.available && model.showInPicker !== false);
 }
 
 export function listPickerModelChoices(

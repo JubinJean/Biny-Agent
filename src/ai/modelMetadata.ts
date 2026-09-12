@@ -7,6 +7,7 @@
 import {
   GENERATED_MODELS_DEV_CATALOG_PROVIDERS,
   GENERATED_MODELS_DEV_METADATA,
+  GENERATED_MODELS_DEV_METADATA_ENDPOINTS,
   GENERATED_MODELS_DEV_PROVIDER_ALIASES
 } from "./modelMetadata.generated.js";
 import { completeThinkingLevelMap, inferReasoningEfforts, isKimiAlwaysThinkingModel, projectThinkingLevelMap, thinkingLevelMapForModel } from "./capabilities.js";
@@ -58,12 +59,24 @@ export function lookupModelMetadata(
   modelId: string,
   baseUrl?: string
 ): ModelMetadata | undefined {
-  const provider = generatedProviderType(providerType);
+  const accessPath = baseUrl ? metadataProviderForEndpoint(baseUrl) ?? providerType : providerType;
+  const provider = generatedProviderType(accessPath);
   const metadata = GENERATED_MODELS_DEV_METADATA[provider]?.[modelId.trim()]
     ?? openCodeKnownModelMetadata(baseUrl, modelId);
-  if (!metadata || providerType !== "openai-codex") return metadata;
+  if (!metadata || accessPath !== "openai-codex") return metadata;
   const contextWindow = openAiCodexContextWindows[modelId.trim()];
   return contextWindow === undefined ? metadata : { ...metadata, contextWindow };
+}
+
+/** 只匹配完整的已知官方端点；同名模型在中转站或不同套餐上可能有不同限制。 */
+export function metadataProviderForEndpoint(baseUrl: string): string | undefined {
+  try {
+    const url = new URL(baseUrl.trim());
+    if (url.username || url.password || url.search || url.hash) return undefined;
+    return GENERATED_MODELS_DEV_METADATA_ENDPOINTS[`${url.origin}${url.pathname.replace(/\/+$/u, "")}`];
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -107,7 +120,8 @@ function openCodeKnownModelMetadata(baseUrl: string | undefined, modelId: string
 
 /** 返回适合 Biny tool agent 的离线模型目录；无 tool_call 声明的模型只保留为显式配置元数据。 */
 export function generatedProviderModels(providerType: string): ModelCatalogEntry[] {
-  if (!GENERATED_MODELS_DEV_CATALOG_PROVIDERS.includes(providerType)) return [];
+  // 订阅只能使用自己的快照，不能通过 provider alias 展开成普通 API 的完整目录。
+  if (!GENERATED_MODELS_DEV_METADATA[providerType]) return [];
   const provider = generatedProviderType(providerType);
   return Object.entries(GENERATED_MODELS_DEV_METADATA[provider] ?? {})
     .filter(([, metadata]) => metadata.capabilities.tools === true)

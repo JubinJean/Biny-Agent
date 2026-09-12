@@ -801,6 +801,7 @@ select option:disabled {
 }
 
 .model-menu .model-option {
+  position: relative;
   display: flex;
   min-height: 36px;
   align-items: center;
@@ -952,6 +953,7 @@ select option:disabled {
 }
 
 .model-effort-options button {
+  position: relative;
   display: flex;
   width: 100%;
   height: 34px;
@@ -1008,6 +1010,7 @@ select option:disabled {
 }
 
 .model-picker-entry {
+  position: relative;
   display: grid;
   width: 100%;
   min-height: 38px;
@@ -1141,6 +1144,7 @@ select option:disabled {
 }
 
 .model-picker-submenu-option {
+  position: relative;
   display: flex;
   width: 100%;
   min-height: 34px;
@@ -1263,8 +1267,8 @@ select option:disabled {
 /* 布局基准：14px 根字号；放在 Dialog 上，让关闭确认层也继承相同的控件参数。 */
 .desktop-settings-dialog {
   --st-rem: calc(14px * var(--font-scale, 1));
-  --st-card-padding: calc(1.4 * var(--st-rem));
-  --st-card-gap: calc(1 * var(--st-rem));
+  --st-card-padding: var(--st-rem);
+  --st-card-gap: calc(0.5 * var(--st-rem));
   --st-control-h: calc(2.4 * var(--st-rem));
   --st-control-h-sm: calc(2 * var(--st-rem));
   --st-control-px: calc(0.9 * var(--st-rem));
@@ -1757,9 +1761,8 @@ select option:disabled {
   pointer-events: none;
 }
 
-/* 分区卡片：bg-card + 1px 边 + 12px 圆角 + 细投影 + 密度内边距。
-   卡体是 flex 列、子项间距 13px（对应密度 card-gap）；只重置旧样式的
-   margin-bottom——margin-top 交给下方相邻规则，否则卡片会全部贴死。 */
+/* 分区统一密度；模块间距与内部间距分开，避免行自身留白再叠加大段 gap。
+   相邻模块的间距由下方规则负责，卡片保留边框来区分分组。 */
 .desktop-settings-dialog .settings-modal .settings-sections > section,
 .desktop-settings-dialog .settings-modal .settings-sections > .connection-section,
 .desktop-settings-dialog .settings-modal .appearance-card {
@@ -1776,7 +1779,7 @@ select option:disabled {
 
 .desktop-settings-dialog .settings-modal .settings-scroll > * + *,
 .desktop-settings-dialog .settings-modal .settings-sections > * + * {
-  margin-top: calc(1.5 * var(--st-rem));
+  margin-top: var(--st-stack-gap);
 }
 
 /* 内容列全页面统一宽度并居中；960px 在宽窗下左右留白均衡，
@@ -2000,7 +2003,8 @@ select option:disabled {
 
 .desktop-settings-dialog .setting-row > .font-size-row { flex: none; }
 .desktop-settings-dialog .setting-row:last-child { border-bottom: 0; }
-.desktop-settings-dialog .appearance-card { gap: 0; }
+/* 行已有高度、内边距和分隔线；权重须与上方分区规则一致，避免 gap 被覆盖。 */
+.desktop-settings-dialog .settings-modal .appearance-card { gap: 0; }
 
 .desktop-settings-dialog .capability-default-field {
   display: flex;
@@ -2999,7 +3003,7 @@ select option:disabled {
 .activity-memory-checkbox-row label { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: calc(12px * var(--font-scale)); font-weight: 550; cursor: pointer; }
 .activity-memory-checkbox-row input[type="checkbox"] { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
 .activity-memory-checkbox-row p { margin: 0 0 0 26px; color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); line-height: 1.5; }
-.activity-memory-nested { display: flex; flex-direction: column; gap: 22px; margin-left: 26px; }
+.activity-memory-nested { display: flex; flex-direction: column; gap: var(--st-stack-gap); margin-left: 26px; }
 .activity-memory-range { display: flex; flex-direction: column; gap: 7px; }
 .activity-memory-range label { color: var(--text); font-size: calc(14px * var(--font-scale)); font-weight: 500; }
 .activity-memory-range input[type="range"] { width: 100%; }
@@ -3007,7 +3011,7 @@ select option:disabled {
 .activity-memory-range-labels { display: flex; justify-content: space-between; color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); }
 .activity-memory-heading-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
 .activity-memory-heading-row span { min-width: 0; overflow: hidden; color: var(--text-tertiary); font-size: calc(12px * var(--font-scale)); text-overflow: ellipsis; white-space: nowrap; }
-.activity-memory-sleep-content { display: flex; flex-direction: column; gap: 20px; }
+.activity-memory-sleep-content { display: flex; flex-direction: column; gap: var(--st-stack-gap); }
 .activity-memory-last-run { display: flex; flex-direction: column; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-soft); font-size: calc(12px * var(--font-scale)); }
 .activity-memory-last-run span,
 .activity-memory-last-run small { color: var(--text-tertiary); font-size: calc(11px * var(--font-scale)); }
@@ -3658,6 +3662,7 @@ select option:disabled {
 }
 
 .desktop-settings-dialog .settings-modal .settings-model-picker-option {
+  position: relative;
   display: flex;
   width: 100%;
   min-height: 42px;
@@ -3707,6 +3712,33 @@ select option:disabled {
   color: var(--text-tertiary);
   font-size: calc(11px * var(--font-scale, 1));
   text-align: center;
+}
+
+/* 工具模型：选择器占满剩余宽度，烧瓶测试按钮为等高方形描边按钮；
+   当前使用状态独立成行，不与说明文案混排。 */
+.desktop-settings-dialog .settings-modal .tool-model-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.desktop-settings-dialog .settings-modal .tool-model-row .settings-model-picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.desktop-settings-dialog .settings-modal .tool-model-test-button {
+  width: var(--st-control-h);
+  min-height: var(--st-control-h);
+  flex: 0 0 auto;
+  border: 1px solid var(--border);
+}
+
+.desktop-settings-dialog .settings-modal .tool-model-status {
+  margin: 0;
+  color: var(--st-muted-foreground);
+  font-size: calc(11px * var(--font-scale, 1));
+  line-height: 1.5;
 }
 
 /* 滑块统一有“已完成/剩余”轨道与右侧数值，避免只看见一个难定位的圆点。 */
@@ -3811,7 +3843,7 @@ select option:disabled {
 }
 
 /* ── 模型服务商设置：主从式两栏 ─────────────────────────────
-   左栏 264px 服务商清单（搜索 + 状态圆点），右栏为所选服务商的常驻配置面板。
+   左栏 224px 服务商清单（状态圆点），右栏为所选服务商的常驻配置面板。
    两栏各自独立滚动，滚动区只做容器。 */
 
 .desktop-settings-dialog .settings-modal .settings-scroll.is-providers {
@@ -3822,16 +3854,36 @@ select option:disabled {
 }
 
 .provider-settings {
-  display: flex;
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   flex: 1 1 auto;
-  gap: calc(1.25 * var(--st-rem));
-  align-items: stretch;
+  gap: 20px;
 }
+
+.provider-settings-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.provider-settings-toolbar .provider-list-search { width: 224px; margin: 0; }
+.provider-settings-toolbar > button { flex: none; }
+
+@container settings (max-width: 720px) {
+  .provider-settings { grid-template-columns: 180px minmax(0, 1fr); gap: 12px; }
+  .provider-settings-toolbar .provider-list-search { width: 180px; }
+  .provider-detail-pane .provider-panel { padding: 16px; }
+  .provider-models-head { flex-wrap: wrap; }
+}
+
 
 .provider-list-pane {
   display: flex;
-  flex: 0 0 264px;
+  flex: 0 0 224px;
   flex-direction: column;
   min-height: 0;
   border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
@@ -3971,8 +4023,11 @@ select option:disabled {
 .provider-panel {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 2px 4px 12px 0;
+  gap: 24px;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--st-radius);
+  background: var(--surface-raised);
 }
 
 .provider-panel-head {
@@ -4033,15 +4088,18 @@ select option:disabled {
 .provider-enable-card p { margin: 0; color: var(--text-tertiary); font-size: calc(0.75 * var(--st-rem)); line-height: 1.5; }
 .provider-enable-card .settings-primary-button { margin-top: 2px; }
 
+.provider-connection-fields { display: flex; flex-direction: column; gap: 16px; }
+.provider-panel .secret-input-row > input { min-width: 0; }
+
 /* 凭据行组。 */
 .provider-rows {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--st-radius);
-  background: var(--surface-raised);
+  padding: 0;
+
+
+
 }
 
 .provider-row-item { display: flex; flex-direction: column; gap: 6px; }
@@ -4243,10 +4301,10 @@ select option:disabled {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding: 16px;
-  border: 1px solid var(--border);
-  border-radius: var(--st-radius);
-  background: var(--surface-raised);
+  padding: 0;
+
+
+
 }
 
 .provider-models-head {
@@ -4309,10 +4367,7 @@ select option:disabled {
   padding: 8px 12px;
   border-bottom: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
   background: var(--surface-raised);
-  /* 整行可点：点击行内空白等价于切换启用，按钮内部自行 stopPropagation；
-     连续快速点击时不触发文本选中。 */
-  cursor: pointer;
-  user-select: none;
+  cursor: default;
 }
 
 .provider-model-row:last-child { border-bottom: 0; }
@@ -4627,7 +4682,9 @@ select option:disabled {
 
 /* ── Fluid Functionalism 流动悬停 ─────────────────────────────
    菜单/选项列表的悬停底色统一由 FluidHoverHighlight 绘制；列表容器是
-   高亮的定位上下文，点亮行的文本提亮到主色。 */
+   高亮的定位上下文，点亮行的文本提亮到主色。
+   坑点：高亮是绝对定位元素，会绘制在所有非定位内容的文字之上；容器内的
+   选项行必须保持 position: relative，否则悬停时整行文字会被高亮盖成空白。 */
 .model-picker-submenu,
 .model-picker-primary,
 .model-options-scroll,

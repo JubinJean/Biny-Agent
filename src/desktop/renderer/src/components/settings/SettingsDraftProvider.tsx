@@ -323,12 +323,13 @@ export function SettingsDraftProvider({
         models
       });
       if (result.status === "committed") {
-        // models 段已完整包含在提交里：基线推进后把它从草稿清零，其余分页草稿保留。
+        // 模型变更可能同时改变后端派生的默认设置。未编辑字段跟随新快照，
+        // 只有真正偏离旧基线的字段才保留，避免旧默认值造成幽灵 dirty 状态。
         snapshotRef.current = result.snapshot;
         setSnapshot(result.snapshot);
         setSaveState(result.snapshot.pendingRecovery ? "recovery_required" : "clean");
         setDraft((current) => current ? {
-          ...current,
+          ...rebaseUneditedFields(current, snapshotNow, result.snapshot),
           models: {
             upserts: [],
             removeAliases: [],
@@ -480,6 +481,18 @@ function draftFromSnapshot(snapshot: DesktopSettingsSnapshot): DesktopSettingsDr
     },
     skills: skillInputFromSnapshot(snapshot.skills)
   };
+}
+
+/** 即时保存只推进未编辑字段；保存期间新增的其他分页编辑也不能被覆盖。 */
+function rebaseUneditedFields(current: DesktopSettingsDraft, previous: DesktopSettingsSnapshot, next: DesktopSettingsSnapshot): DesktopSettingsDraft {
+  const before = draftFromSnapshot(previous);
+  const after = draftFromSnapshot(next);
+  const rebased = { ...current };
+  const rebaseField = <K extends keyof DesktopSettingsDraft>(key: K): void => {
+    if (key !== "models" && sameJson(current[key], before[key])) rebased[key] = after[key];
+  };
+  for (const key of Object.keys(before) as (keyof DesktopSettingsDraft)[]) rebaseField(key);
+  return rebased;
 }
 
 function webSearchInput(value: DesktopWebSearchSettings): DesktopWebSearchSettingsInput {

@@ -22,6 +22,7 @@ export function resolveProviderRequestRoute(
 ): ProviderRequestRoute {
   const apiBackend = model?.apiBackend
     ?? config.apiBackend
+    ?? (config.protocol === "anthropic" ? "anthropic_messages" : undefined)
     ?? definition.api
     ?? (config.type === "openai-codex"
       ? "responses"
@@ -33,7 +34,7 @@ export function resolveProviderRequestRoute(
       : providerProtocol(config, definition);
   const source = model?.apiBackend !== undefined
     ? "model"
-    : config.apiBackend !== undefined
+    : config.apiBackend !== undefined || config.protocol === "anthropic"
       ? "provider"
       : definition.api !== undefined
         ? "definition"

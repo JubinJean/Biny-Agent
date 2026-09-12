@@ -7,7 +7,7 @@ import path from "node:path";
 import { fetchModelCatalogSnapshot, ModelCatalogRequestError, parseModelCatalog } from "../src/ai/modelCatalog.js";
 import { providerDefinition } from "../src/ai/provider.js";
 import type { CatalogProviderRequest } from "../src/ai/types.js";
-import { apiFormatForConnection, apiFormatOption, apiFormatOptions, apiFormatOptionsForConnection } from "../src/desktop/renderer/src/providerCatalog.js";
+import { apiFormatForConnection, apiFormatOption, apiFormatOptions, apiFormatOptionsForConnection, recommendedApiFormat } from "../src/desktop/renderer/src/providerCatalog.js";
 import { createFileConfigStore } from "../src/config/store.js";
 import { defaultConfig } from "../src/config/schema.js";
 import { DesktopAgentManager } from "../src/desktop/electron/main/DesktopAgentManager.js";
@@ -16,6 +16,14 @@ import { DesktopStateStore } from "../src/desktop/electron/main/DesktopStateStor
 import { DesktopUserDataStore } from "../src/desktop/electron/main/DesktopUserDataStore.js";
 import { modelCatalogCacheKey } from "../src/llm/ModelsStore.js";
 import { resolveProviderRequestRoute } from "../src/llm/providerRequest.js";
+
+test("内置厂商自动路由与可覆盖范围", () => {
+  assert.equal(recommendedApiFormat("anthropic"), "anthropic_messages");
+  assert.equal(recommendedApiFormat("openai-codex"), "responses");
+  assert.equal(recommendedApiFormat("deepseek"), "chat_completions");
+  assert.equal(recommendedApiFormat("kimi", "anthropic"), "anthropic_messages");
+  assert.deepEqual(apiFormatOptionsForConnection("deepseek").map((item) => item.id), ["chat_completions"]);
+});
 
 // ---------- 渲染层：格式选项与回显折回 ----------
 
@@ -184,7 +192,7 @@ test("modelCatalogCacheKey: 同一主机的不同模型目录路径使用不同�
 
 // ---------- 桌面端：连接回显携带 apiBackend ----------
 
-test("workspaceSnapshot connections 携带 apiBackend（provider 级优先，老配置从模型折回）", async () => {
+test("workspaceSnapshot 区分连接默认与模型单独覆盖", async () => {
   const dataRoot = await mkdtemp(path.join(os.tmpdir(), "biny-api-format-data-"));
   const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "biny-api-format-workspace-"));
   try {
@@ -234,8 +242,8 @@ test("workspaceSnapshot connections 携带 apiBackend（provider 级优先，老
     const gemini = snapshot.connections.find((connection) => connection.providerAlias === "gemini");
     const legacy = snapshot.connections.find((connection) => connection.providerAlias === "legacy");
     assert.equal(gemini?.apiBackend, "google_generative_ai");
-    // legacy 连接自身没存 apiBackend，从它名下模型的 apiBackend 折回，保证回显不丢。
-    assert.equal(legacy?.apiBackend, "anthropic_messages");
+    // 模型单独覆盖不能伪装成连接默认，否则自动模式无法如实回显。
+    assert.equal(legacy?.apiBackend, undefined);
     assert.equal(JSON.stringify(snapshot).includes("g-key"), false);
     assert.equal(await agents.readModelApiKey(project.id, "gemini"), "g-key");
     assert.equal(await agents.readWebSearchApiKey(project.id, "tavily"), "search-key");
@@ -251,7 +259,7 @@ test("workspaceSnapshot connections 携带 apiBackend（provider 级优先，老
       supportsVision: false,
       apiBackend: "chat_completions" as const,
       headers: {},
-      modelProfile: { contextWindow: 64_000 }
+      modelProfile: { contextWindow: 64_000, capabilities: { tools: false, reasoning: false, vision: false } }
     };
     const prepared = await agents.prepareSettingsConfig(project.id, {
       expectedPreferenceRevision: 0,
@@ -259,9 +267,9 @@ test("workspaceSnapshot connections 携带 apiBackend（provider 级优先，老
     });
     await configStore.save(prepared.after);
     const saved = await configStore.load(workspaceRoot);
-    assert.equal(saved.models["gemini-pro"]?.capabilities?.tools, false);
-    assert.equal(saved.models["gemini-pro"]?.capabilities?.reasoning, false);
-    assert.equal(saved.models["gemini-pro"]?.capabilities?.vision, false);
+    assert.equal(saved.providers.gemini?.modelProfiles?.["gemini-2.5-pro"]?.capabilities?.tools, false);
+    assert.equal(saved.providers.gemini?.modelProfiles?.["gemini-2.5-pro"]?.capabilities?.reasoning, false);
+    assert.equal(saved.providers.gemini?.modelProfiles?.["gemini-2.5-pro"]?.capabilities?.vision, false);
     assert.equal(saved.models["gemini-pro"]?.apiBackend, "chat_completions");
     assert.deepEqual(saved.models["gemini-pro"]?.headers, {});
     assert.equal(saved.providers.gemini?.apiBackend, "google_generative_ai", "model override must not change connection default");

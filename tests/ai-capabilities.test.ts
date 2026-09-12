@@ -601,6 +601,22 @@ assert.equal(catalogChoice?.source, "catalog");
 assert.deepEqual(catalogChoice?.efforts, ["low", "medium", "high"]);
 assert.equal(new ModelResolver(registry).resolve("deepseek/deepseek-v4-pro-preview").source, "catalog");
 
+// 用户停用优先于目录显示建议，刷新目录不能重新启用；已有引用仍能解析。
+const visibilityConfig = structuredClone(config);
+visibilityConfig.providers.deepseek!.modelProfiles = {
+  "small-model": { showInPicker: false },
+  "deepseek-v4-pro-preview": { showInPicker: false }
+};
+const visibilityRegistry = new ModelRegistry(visibilityConfig);
+for (let refresh = 0; refresh < 2; refresh += 1) {
+  visibilityRegistry.registerCatalog("deepseek", registry.catalog("deepseek").map((entry) => ({ ...entry, showInPicker: true })));
+  assert.equal(visibilityRegistry.listModels().find((choice) => choice.alias === "small")?.showInPicker, false);
+  assert.equal(visibilityRegistry.listModels().find((choice) => choice.model === "deepseek-v4-pro-preview")?.showInPicker, false);
+  assert.equal(new ModelResolver(visibilityRegistry).resolve("small").model.model, "small-model");
+}
+visibilityConfig.providers.deepseek!.modelProfiles["small-model"]!.showInPicker = true;
+assert.equal(new ModelRegistry(visibilityConfig).listModels().find((choice) => choice.alias === "small")?.showInPicker, true);
+
 const catalog = parseModelCatalog({
   data: [{
     id: "catalog-model",

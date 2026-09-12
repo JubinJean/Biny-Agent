@@ -2605,7 +2605,9 @@ export class AgentSession {
     const modelAlias = this.options.modelManager?.getInfo().modelAlias ?? this.options.config.defaultModel;
     const model = this.options.config.models[modelAlias];
     if (!model) throw new Error(`当前模型配置不存在：${modelAlias}`);
-    const capabilities = modelCapabilities(model);
+    // 原始配置可以省略能力；附件检查必须与请求端使用同一份补全后的元数据。
+    const capabilities = this.options.modelManager?.getCapabilities()
+      ?? modelCapabilities(new ProviderRegistry(this.options.config).forModel(modelAlias).model);
     const image = attachments.find((attachment) => attachment.mimeType.startsWith("image/"));
     if (image && !capabilities.vision) {
       throw new Error(`当前模型 ${modelAlias} 未声明 vision 能力，无法发送图片附件。请切换到支持图片的模型，或在模型配置中明确启用 capabilities.vision。`);

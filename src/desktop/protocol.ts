@@ -1273,6 +1273,10 @@ export interface DesktopSettingsSnapshot {
 }
 
 export interface DesktopSettingsModelsInput {
+  /** 修改连接默认格式；auto 清除覆盖，模型级覆盖保持独立。 */
+  providerApiFormats?: Record<string, ModelApiBackend | "auto">;
+  /** 显式删除连接及其模型；删除单个模型不会删除连接。 */
+  removeProviderAliases?: string[];
   upserts: DesktopModelConfigurationInput[];
   removeAliases: string[];
   /** 省略表示不修改，空对象表示恢复自动选择。 */

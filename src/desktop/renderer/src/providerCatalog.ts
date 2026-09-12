@@ -5,6 +5,10 @@
  * settings 页与 Composer 模型菜单都要用同一份品牌与协议事实，所以独立于设置组件。
  * 目录只服务主流厂商与访问路径；长尾服务商统一引导到「自定义 OpenAI 兼容接口」。
  */
+import { lookupModelMetadata } from "../../../ai/modelMetadata.js";
+import { providerDefinition } from "../../../ai/provider.js";
+import { resolveProviderRequestRoute } from "../../../llm/providerRequest.js";
+import type { ModelProvider } from "../../../config/schema.js";
 import type { DesktopModelConfigurationInput, DesktopModelLoginProvider } from "../../protocol.js";
 import { openAiCodexCatalogModels } from "../../../ai/codexModels.js";
 import type { ModelLimits } from "../../../config/schema.js";
@@ -85,6 +89,8 @@ function apiProvider(definition: ApiProviderDefinition): ProviderCatalogItem {
     apiKeyUrl,
     ...provider
   } = definition;
+  const metadata = lookupModelMetadata(provider.value, modelId, provider.baseUrl);
+  const resolvedContextWindow = contextWindow ?? metadata?.contextWindow;
   return {
     ...provider,
     connectionMode: "api",
@@ -94,10 +100,10 @@ function apiProvider(definition: ApiProviderDefinition): ProviderCatalogItem {
       supportsThinking,
       supportsVision,
       supportsAudio,
-      contextWindow,
-      contextWindowIsFallback: contextWindow === undefined,
-      maxInputTokens,
-      maxOutputTokens,
+      contextWindow: resolvedContextWindow,
+      contextWindowIsFallback: resolvedContextWindow === undefined,
+      maxInputTokens: maxInputTokens ?? metadata?.maxInputTokens,
+      maxOutputTokens: maxOutputTokens ?? metadata?.maxOutputTokens,
       thinkingLevelMap
     }] : [],
     apiKeyUrl: apiKeyUrl ?? providerApiKeyUrl(definition.id)
@@ -156,9 +162,11 @@ export const providerCatalog: ProviderCatalogItem[] = [
   apiProvider({ id: "google", value: "gemini", label: "Google Gemini", description: "Google AI Studio 接入，Gemini 系列模型。", baseUrl: "https://generativelanguage.googleapis.com/v1beta/openai", requiresApiKey: true, iconTone: "gemini", modelId: "gemini-3.5-flash", modelDisplayName: "Gemini 3.5 Flash", supportsThinking: false, supportsVision: true }),
   apiProvider({ id: "deepseek", value: "deepseek", label: "DeepSeek", description: "DeepSeek 官方接入。", baseUrl: "https://api.deepseek.com", requiresApiKey: true, iconTone: "deepseek", modelId: "deepseek-v4-flash", modelDisplayName: "DeepSeek V4 Flash", supportsThinking: true, contextWindow: 1_000_000, thinkingLevelMap: { off: "none", high: "high", max: "max" } }),
   apiProvider({ id: "moonshot", value: "kimi", label: "Moonshot", description: "月之暗面官方接入，Kimi 系列模型。", baseUrl: "https://api.moonshot.ai/v1", requiresApiKey: true, iconTone: "moonshot", modelId: "kimi-k3", modelDisplayName: "Kimi K3", supportsThinking: true }),
-  apiProvider({ id: "kimi-coding-plan", value: "kimi", label: "Kimi Coding Plan", description: "Kimi For Coding 订阅 · Anthropic 兼容。", badge: "订阅", baseUrl: "https://api.kimi.com/coding/v1", requiresApiKey: true, iconTone: "moonshot", modelId: "kimi-k2.5", modelDisplayName: "Kimi K2.5", supportsThinking: true, protocol: "anthropic" }),
-  apiProvider({ id: "zai", value: "zai", label: "Z.AI", description: "智谱官方接入，GLM 系列模型。", baseUrl: "https://api.z.ai/api/paas/v4", requiresApiKey: true, iconTone: "zai", modelId: "glm-5.2", modelDisplayName: "GLM-5.2", supportsThinking: true }),
-  apiProvider({ id: "zai-coding-plan", value: "openai-compatible", label: "Z.AI Coding Plan", description: "智谱 GLM Coding 订阅 · OpenAI 兼容。", badge: "订阅", baseUrl: "https://api.z.ai/api/coding/paas/v4", requiresApiKey: true, iconTone: "zai", modelId: "glm-5", modelDisplayName: "GLM-5", supportsThinking: true }),
+  apiProvider({ id: "kimi-coding-plan", value: "kimi", label: "Kimi Coding Plan", description: "Kimi For Coding 订阅 · Anthropic 兼容。", badge: "订阅", baseUrl: "https://api.kimi.com/coding/", requiresApiKey: true, iconTone: "moonshot", modelId: "k3-256k", modelDisplayName: "Kimi K3 256K", supportsThinking: true, protocol: "anthropic" }),
+  apiProvider({ id: "zhipu", value: "openai-compatible", label: "智谱（国内）", description: "智谱开放平台普通 API · open.bigmodel.cn。", baseUrl: "https://open.bigmodel.cn/api/paas/v4", requiresApiKey: true, iconTone: "zai", modelId: "glm-5.2", modelDisplayName: "GLM-5.2", supportsThinking: true }),
+  apiProvider({ id: "zhipu-coding-plan", value: "openai-compatible", label: "智谱 Coding Plan（国内）", description: "智谱国内编程套餐专用接口 · open.bigmodel.cn。", badge: "订阅", baseUrl: "https://open.bigmodel.cn/api/coding/paas/v4", requiresApiKey: true, iconTone: "zai", modelId: "glm-5.2", modelDisplayName: "GLM-5.2", supportsThinking: true }),
+  apiProvider({ id: "zai", value: "zai", label: "Z.AI（国际）", description: "智谱国际站普通 API · api.z.ai。", baseUrl: "https://api.z.ai/api/paas/v4", requiresApiKey: true, iconTone: "zai", modelId: "glm-5.2", modelDisplayName: "GLM-5.2", supportsThinking: true }),
+  apiProvider({ id: "zai-coding-plan", value: "openai-compatible", label: "Z.AI Coding Plan（国际）", description: "智谱国际站编程套餐专用接口 · api.z.ai。", badge: "订阅", baseUrl: "https://api.z.ai/api/coding/paas/v4", requiresApiKey: true, iconTone: "zai", modelId: "glm-5.2", modelDisplayName: "GLM-5.2", supportsThinking: true }),
   apiProvider({ id: "qwen", value: "qwen", label: "Qwen", description: "阿里云百炼接入，通义千问系列模型。", baseUrl: "https://dashscope.aliyuncs.com/compatible-mode/v1", requiresApiKey: true, iconTone: "qwen", modelId: "qwen3.5-plus", modelDisplayName: "Qwen 3.5 Plus", supportsThinking: true }),
   apiProvider({ id: "openrouter", value: "openrouter", label: "OpenRouter", description: "一个密钥接入各大模型厂商。", badge: "聚合", baseUrl: "https://openrouter.ai/api/v1", requiresApiKey: true, iconTone: "openrouter", modelId: "openrouter/auto", modelDisplayName: "OpenRouter Auto", supportsThinking: true }),
   apiProvider({ id: "ollama", value: "ollama", label: "Ollama", description: "本机运行 · 离线可用。", badge: "本地", baseUrl: "http://127.0.0.1:11434/v1", requiresApiKey: false, iconTone: "ollama", modelId: "llama3.2", modelDisplayName: "Llama 3.2", supportsThinking: false }),
@@ -174,6 +182,8 @@ type ProviderOption = ProviderCatalogItem;
  * `apiBackend` 是单模型覆盖（四种 adapter 之一，决定实际请求形状）。`protocol` 仍负责鉴权
  * 头与 `/models` 目录端点；两层都从显式选择写出，不依赖运行时的隐式推断。
  */
+export type ConnectionApiFormat = ApiFormatId | "auto";
+
 export type ApiFormatId = "chat_completions" | "responses" | "anthropic_messages" | "google_generative_ai";
 
 export interface ApiFormatOption {
@@ -247,7 +257,8 @@ export function apiFormatOptionsForConnection(
   if (providerType === "gemini") return [chatCompletionsFormat, apiFormatOption("google_generative_ai")];
   if (providerType === "openai-compatible" && !baseUrl) return apiFormatOptions;
   if (protocol === "anthropic") return [apiFormatOption("anthropic_messages"), chatCompletionsFormat, apiFormatOption("responses")];
-  return [chatCompletionsFormat, apiFormatOption("responses")];
+  if (providerType === "openai" || providerType === "openai-compatible") return [chatCompletionsFormat, apiFormatOption("responses")];
+  return [chatCompletionsFormat];
 }
 
 /**
@@ -261,8 +272,16 @@ export function apiFormatForConnection(protocol?: string, apiBackend?: string): 
   return "chat_completions";
 }
 
+/** 回显内置路由的实际默认值，不把缺省配置误显示为手动 Chat Completions。 */
+export function recommendedApiFormat(providerType: ModelProvider, protocol?: "anthropic" | "openai-compatible"): ApiFormatId {
+  const route = resolveProviderRequestRoute(undefined, { type: providerType, protocol }, providerDefinition(providerType));
+  return apiFormatForConnection(route.protocol, route.apiBackend);
+}
+
 export function providerAliasFor(option: ProviderOption, baseUrl: string): string {
   if (option.value !== "openai-compatible") return option.value;
+  // 同一站点的普通 API 与订阅共用域名，内置入口必须用独立别名，避免保存时互相覆盖。
+  if (option.id !== "openai-compatible" && option.id !== "custom") return option.id;
   try {
     const hostname = new URL(baseUrl).hostname.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "");
     return hostname || "custom";
@@ -284,26 +303,20 @@ function normalizedEndpoint(url: string | undefined): string {
   return (url ?? "").trim().replace(/\/+$/u, "").toLowerCase();
 }
 
-/**
- * Resolves the catalog entry that a saved connection was created from.
- *
- * Matching is deliberately strict. `openai-compatible` is a shared provider
- * *type* covering dozens of unrelated vendors plus arbitrary relays, so
- * "first entry with this type" is not a usable fallback — returning undefined
- * instead lets the caller render a neutral custom-endpoint entry.
- */
+/** 按完整端点识别已保存连接；共享协议类型和域名都不能区分普通 API 与订阅。 */
 export function catalogForConnection(
   connection: { provider: string; providerType: string },
   baseUrl?: string
 ): ProviderCatalogItem | undefined {
   const sameType = providerCatalog.filter((item) => item.value === connection.providerType);
-  // Endpoint first: two entries can share a hostname (Z.AI vs Z.AI Coding Plan),
-  // and only the full URL tells them apart.
-  const byEndpoint = baseUrl ? sameType.find((item) => normalizedEndpoint(item.baseUrl) === normalizedEndpoint(baseUrl)) : undefined;
-  if (byEndpoint) return byEndpoint;
-  const byAlias = sameType.find((item) => providerAliasFor(item, item.baseUrl) === connection.provider);
-  if (byAlias) return byAlias;
-  // Only a type that maps to exactly one vendor can be identified by type alone.
+  if (baseUrl) {
+    // 自定义兼容类型也可以连接官方端点；显式地址优先，不能被旧别名误认成另一套餐。
+    return providerCatalog.find((item) =>
+      (item.value === connection.providerType || connection.providerType === "openai-compatible" && item.connectionMode === "api")
+      && normalizedEndpoint(item.baseUrl) === normalizedEndpoint(baseUrl));
+  }
+  const byAlias = sameType.filter((item) => providerAliasFor(item, item.baseUrl) === connection.provider);
+  if (byAlias.length === 1) return byAlias[0];
   return sameType.length === 1 ? sameType[0] : undefined;
 }
 

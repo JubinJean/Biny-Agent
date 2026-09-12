@@ -39,5 +39,5 @@ function settingsSaveStatus(state: SettingsSaveState, dirtyCount: number): strin
   if (state === "rolling_back") return "回滚中…";
   if (state === "recovery_required") return "需要恢复设置后才能继续";
   if (state === "dirty" || dirtyCount > 0) return "未保存的更改";
-  return "";
+  return "所有更改已保存";
 }

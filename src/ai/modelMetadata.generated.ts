@@ -5,48 +5,9 @@ import type { ModelMetadata } from "./modelMetadata.js";
 export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelMetadata>> =
 {
   "deepseek": {
-    "deepseek-v4-flash": {
-      "displayName": "DeepSeek V4 Flash",
-      "description": "Official DeepSeek V4 Flash release with enhanced agentic capabilities and integrated DSpark speculative decoding",
-      "contextWindow": 1000000,
-      "maxOutputTokens": 384000,
-      "capabilities": {
-        "tools": true,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [
-        "low",
-        "high",
-        "max"
-      ],
-      "thinkingLevelMap": {
-        "low": "low",
-        "high": "high",
-        "max": "max"
-      },
-      "knowledgeCutoff": "2025-05",
-      "structuredOutput": true,
-      "lastUpdated": "2026-07-31",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.28,
-        "cacheReadPerMillionTokens": 0.0028
-      }
-    },
-    "deepseek-v4-flash-vision-exp": {
-      "displayName": "DeepSeek V4 Flash Vision Exp",
-      "description": "Experimental multimodal DeepSeek V4 Flash model for image understanding, coding, and agentic work",
+    "deepseek-flash": {
+      "displayName": "DeepSeek V4.1 Flash",
+      "description": "DeepSeek V4.1 Flash model for reasoning and agentic coding",
       "contextWindow": 1000000,
       "maxOutputTokens": 384000,
       "capabilities": {
@@ -66,8 +27,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "high": "high",
         "max": "max"
       },
+      "knowledgeCutoff": "2025-05",
       "structuredOutput": true,
-      "lastUpdated": "2026-08-21",
+      "lastUpdated": "2026-09-10",
       "modalities": {
         "input": [
           "text",
@@ -78,9 +40,89 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.14,
-        "outputPerMillionTokens": 0.28,
-        "cacheReadPerMillionTokens": 0.0028
+        "inputPerMillionTokens": 0.15,
+        "outputPerMillionTokens": 0.6,
+        "cacheReadPerMillionTokens": 0.003
+      }
+    },
+    "deepseek-v4-flash": {
+      "displayName": "DeepSeek V4 Flash",
+      "description": "DeepSeek V4.1 Flash model for reasoning and agentic coding",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 384000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "knowledgeCutoff": "2025-05",
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-10",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.15,
+        "outputPerMillionTokens": 0.6,
+        "cacheReadPerMillionTokens": 0.003
+      }
+    },
+    "deepseek-v4-flash-vision-exp": {
+      "displayName": "DeepSeek V4 Flash Vision Exp",
+      "description": "DeepSeek V4.1 Flash model for reasoning and agentic coding",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 384000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "knowledgeCutoff": "2025-05",
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-10",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.15,
+        "outputPerMillionTokens": 0.6,
+        "cacheReadPerMillionTokens": 0.003
       }
     },
     "deepseek-v4-pro": {
@@ -3683,7 +3725,2832 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     }
   },
+  "kimi-cn": {
+    "kimi-k2.6": {
+      "displayName": "Kimi K2.6",
+      "description": "Multimodal Kimi workhorse for agent loops, coding tasks, and visual context",
+      "contextWindow": 262144,
+      "maxOutputTokens": 262144,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-01",
+      "structuredOutput": true,
+      "lastUpdated": "2026-04-21",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.95,
+        "outputPerMillionTokens": 4,
+        "cacheReadPerMillionTokens": 0.16
+      }
+    },
+    "kimi-k2.7-code": {
+      "displayName": "Kimi K2.7 Code",
+      "description": "Coding-focused Kimi model, stronger on long-horizon repo work with less overthinking",
+      "contextWindow": 262144,
+      "maxOutputTokens": 262144,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-01",
+      "structuredOutput": true,
+      "lastUpdated": "2026-06-12",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.95,
+        "outputPerMillionTokens": 4,
+        "cacheReadPerMillionTokens": 0.19
+      }
+    },
+    "kimi-k2.7-code-highspeed": {
+      "displayName": "Kimi K2.7 Code HighSpeed",
+      "description": "Coding-focused Kimi model, stronger on long-horizon repo work with less overthinking",
+      "contextWindow": 262144,
+      "maxOutputTokens": 262144,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-01",
+      "structuredOutput": true,
+      "lastUpdated": "2026-06-12",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.9,
+        "outputPerMillionTokens": 8,
+        "cacheReadPerMillionTokens": 0.38
+      }
+    },
+    "kimi-k3": {
+      "displayName": "Kimi K3",
+      "description": "Multimodal Kimi model with 1M context and toggleable max-effort thinking for long-horizon agent work",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-07-16",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 3,
+        "outputPerMillionTokens": 15,
+        "cacheReadPerMillionTokens": 0.3
+      }
+    }
+  },
+  "kimi-coding": {
+    "k3": {
+      "displayName": "Kimi K3",
+      "description": "Multimodal Kimi model with 1M context and toggleable max-effort thinking for long-horizon agent work",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-07-16",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "k3-256k": {
+      "displayName": "Kimi K3-256K",
+      "description": "256K-context version of Kimi K3, reducing token consumption for shorter coding sessions",
+      "contextWindow": 262144,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-07-16",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "kimi-for-coding": {
+      "displayName": "Kimi K2.7 Code",
+      "description": "Coding-focused Kimi model, stronger on long-horizon repo work with less overthinking",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-01",
+      "structuredOutput": true,
+      "lastUpdated": "2026-06-12",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "kimi-for-coding-highspeed": {
+      "displayName": "Kimi For Coding HighSpeed",
+      "description": "Lower-latency Kimi Code variant for interactive edits and coding-agent loops",
+      "contextWindow": 262144,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-01",
+      "structuredOutput": true,
+      "lastUpdated": "2026-06-12",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    }
+  },
   "qwen": {
+    "deepseek-r1": {
+      "displayName": "DeepSeek R1",
+      "description": "DeepSeek reasoning model for multi-step analysis, math, coding, and tools",
+      "contextWindow": 131072,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2025-01-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.574,
+        "outputPerMillionTokens": 2.294
+      }
+    },
+    "deepseek-r1-0528": {
+      "displayName": "DeepSeek R1 0528",
+      "description": "DeepSeek reasoning model for multi-step analysis, math, coding, and tools",
+      "contextWindow": 131072,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2025-05-28",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.574,
+        "outputPerMillionTokens": 2.294
+      }
+    },
+    "deepseek-r1-distill-llama-70b": {
+      "displayName": "DeepSeek R1 Distill Llama 70B",
+      "description": "DeepSeek reasoning model for multi-step analysis, math, coding, and tools",
+      "contextWindow": 32768,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2025-01-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.287,
+        "outputPerMillionTokens": 0.861
+      }
+    },
+    "deepseek-r1-distill-llama-8b": {
+      "displayName": "DeepSeek R1 Distill Llama 8B",
+      "description": "DeepSeek reasoning model for multi-step analysis, math, coding, and tools",
+      "contextWindow": 32768,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2025-01-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0
+      }
+    },
+    "deepseek-r1-distill-qwen-1-5b": {
+      "displayName": "DeepSeek R1 Distill Qwen 1.5B",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 32768,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2025-01-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0
+      }
+    },
+    "deepseek-r1-distill-qwen-14b": {
+      "displayName": "DeepSeek R1 Distill Qwen 14B",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 32768,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2025-01-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.144,
+        "outputPerMillionTokens": 0.431
+      }
+    },
+    "deepseek-r1-distill-qwen-32b": {
+      "displayName": "DeepSeek R1 Distill Qwen 32B",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 32768,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2025-01-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.287,
+        "outputPerMillionTokens": 0.861
+      }
+    },
+    "deepseek-r1-distill-qwen-7b": {
+      "displayName": "DeepSeek R1 Distill Qwen 7B",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 32768,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2025-01-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.072,
+        "outputPerMillionTokens": 0.144
+      }
+    },
+    "deepseek-v3": {
+      "displayName": "DeepSeek V3",
+      "description": "DeepSeek chat model for instruction following, coding, and analysis",
+      "contextWindow": 65536,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2024-12-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.287,
+        "outputPerMillionTokens": 1.147
+      }
+    },
+    "deepseek-v3-1": {
+      "displayName": "DeepSeek V3.1",
+      "description": "DeepSeek chat model for instruction following, coding, and analysis",
+      "contextWindow": 131072,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2025-01-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.574,
+        "outputPerMillionTokens": 1.721
+      }
+    },
+    "deepseek-v3-2-exp": {
+      "displayName": "DeepSeek V3.2 Exp",
+      "description": "DeepSeek chat model for instruction following, coding, and analysis",
+      "contextWindow": 131072,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2025-01-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.287,
+        "outputPerMillionTokens": 0.431
+      }
+    },
+    "deepseek-v4-flash": {
+      "displayName": "DeepSeek V4 Flash",
+      "description": "Fast DeepSeek V4 lane for economical reasoning, coding, and long-context work",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 384000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "max": "max"
+      },
+      "knowledgeCutoff": "2025-05",
+      "structuredOutput": true,
+      "lastUpdated": "2026-04-24",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.14,
+        "outputPerMillionTokens": 0.28,
+        "cacheReadPerMillionTokens": 0.0028
+      }
+    },
+    "deepseek-v4-pro": {
+      "displayName": "DeepSeek V4 Pro",
+      "description": "Open MoE flagship with million-token context for coding and long agent runs",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 384000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "max": "max"
+      },
+      "knowledgeCutoff": "2025-05",
+      "structuredOutput": true,
+      "lastUpdated": "2026-04-24",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.435,
+        "outputPerMillionTokens": 0.87,
+        "cacheReadPerMillionTokens": 0.003625
+      }
+    },
+    "glm-5": {
+      "displayName": "GLM-5",
+      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
+      "contextWindow": 202752,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2026-02-11",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.573,
+        "outputPerMillionTokens": 2.58
+      }
+    },
+    "glm-5.1": {
+      "displayName": "GLM-5.1",
+      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
+      "contextWindow": 202752,
+      "maxOutputTokens": 128000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-04-14",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.825,
+        "outputPerMillionTokens": 3.301,
+        "cacheReadPerMillionTokens": 0.17
+      }
+    },
+    "glm-5.2": {
+      "displayName": "GLM-5.2",
+      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-06-13",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.1,
+        "outputPerMillionTokens": 3.851,
+        "cacheReadPerMillionTokens": 0.275,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "kimi-k2-thinking": {
+      "displayName": "Moonshot Kimi K2 Thinking",
+      "description": "Kimi reasoning model for long-horizon research, planning, and tool use",
+      "contextWindow": 262144,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2025-11-06",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.574,
+        "outputPerMillionTokens": 2.294
+      }
+    },
+    "kimi-k2.5": {
+      "displayName": "Moonshot Kimi K2.5",
+      "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
+      "contextWindow": 262144,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-01",
+      "structuredOutput": false,
+      "lastUpdated": "2026-01-27",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.574,
+        "outputPerMillionTokens": 2.411
+      }
+    },
+    "kimi-k2.6": {
+      "displayName": "Moonshot Kimi K2.6",
+      "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
+      "contextWindow": 262144,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-01",
+      "structuredOutput": false,
+      "lastUpdated": "2026-04-21",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.929,
+        "outputPerMillionTokens": 3.858
+      }
+    },
+    "kimi/kimi-k2.5": {
+      "displayName": "kimi/kimi-k2.5",
+      "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
+      "contextWindow": 262144,
+      "maxOutputTokens": 262144,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-01",
+      "structuredOutput": true,
+      "lastUpdated": "2026-01-27",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.6,
+        "outputPerMillionTokens": 3,
+        "cacheReadPerMillionTokens": 0.1
+      }
+    },
+    "MiniMax-M2.5": {
+      "displayName": "MiniMax-M2.5",
+      "description": "MiniMax model for chat, coding, office work, and agentic tasks",
+      "contextWindow": 204800,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2026-02-12",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.3,
+        "outputPerMillionTokens": 1.2
+      }
+    },
+    "MiniMax/MiniMax-M2.7": {
+      "displayName": "MiniMax-M2.7",
+      "description": "MiniMax model for chat, coding, office work, and agentic tasks",
+      "contextWindow": 204800,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2026-03-18",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.3,
+        "outputPerMillionTokens": 1.2,
+        "cacheReadPerMillionTokens": 0.06,
+        "cacheWritePerMillionTokens": 0.375
+      }
+    },
+    "moonshot-kimi-k2-instruct": {
+      "displayName": "Moonshot Kimi K2 Instruct",
+      "description": "Kimi model for long-context chat, coding, and agentic reasoning",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": false,
+      "lastUpdated": "2025-01-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.574,
+        "outputPerMillionTokens": 2.294
+      }
+    },
+    "qvq-max": {
+      "displayName": "QVQ Max",
+      "description": "Multimodal reasoning model for visual analysis, planning, and tool use",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-03-25",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.147,
+        "outputPerMillionTokens": 4.588
+      }
+    },
+    "qwen-deep-research": {
+      "displayName": "Qwen Deep Research",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 7.742,
+        "outputPerMillionTokens": 23.367
+      }
+    },
+    "qwen-doc-turbo": {
+      "displayName": "Qwen Doc Turbo",
+      "description": "Efficient Qwen model for fast chat, extraction, and high-volume workloads",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.087,
+        "outputPerMillionTokens": 0.144
+      }
+    },
+    "qwen-flash": {
+      "displayName": "Qwen Flash",
+      "description": "Efficient Qwen model for fast chat, extraction, and high-volume workloads",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-07-28",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.022,
+        "outputPerMillionTokens": 0.216
+      }
+    },
+    "qwen-long": {
+      "displayName": "Qwen Long",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 10000000,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-01-25",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.072,
+        "outputPerMillionTokens": 0.287
+      }
+    },
+    "qwen-math-plus": {
+      "displayName": "Qwen Math Plus",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 4096,
+      "maxOutputTokens": 3072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-09-19",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.574,
+        "outputPerMillionTokens": 1.721
+      }
+    },
+    "qwen-math-turbo": {
+      "displayName": "Qwen Math Turbo",
+      "description": "Efficient Qwen model for fast chat, extraction, and high-volume workloads",
+      "contextWindow": 4096,
+      "maxOutputTokens": 3072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-09-19",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.287,
+        "outputPerMillionTokens": 0.861
+      }
+    },
+    "qwen-max": {
+      "displayName": "Qwen Max",
+      "description": "Flagship Qwen model for complex reasoning, coding, and agentic workflows",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-01-25",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.345,
+        "outputPerMillionTokens": 1.377
+      }
+    },
+    "qwen-mt-plus": {
+      "displayName": "Qwen-MT Plus",
+      "description": "Translation model for multilingual conversion, localization, and cross-language workflows",
+      "contextWindow": 16384,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": false,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.259,
+        "outputPerMillionTokens": 0.775
+      }
+    },
+    "qwen-mt-turbo": {
+      "displayName": "Qwen-MT Turbo",
+      "description": "Translation model for multilingual conversion, localization, and cross-language workflows",
+      "contextWindow": 16384,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": false,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.101,
+        "outputPerMillionTokens": 0.28
+      }
+    },
+    "qwen-omni-turbo": {
+      "displayName": "Qwen-Omni Turbo",
+      "description": "Qwen omni model for text, vision, audio, and multimodal agent tasks",
+      "contextWindow": 32768,
+      "maxOutputTokens": 2048,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-03-26",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "output": [
+          "text",
+          "audio"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.058,
+        "outputPerMillionTokens": 0.23
+      }
+    },
+    "qwen-omni-turbo-realtime": {
+      "displayName": "Qwen-Omni Turbo Realtime",
+      "description": "Qwen omni model for text, vision, audio, and multimodal agent tasks",
+      "contextWindow": 32768,
+      "maxOutputTokens": 2048,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-05-08",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio"
+        ],
+        "output": [
+          "text",
+          "audio"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.23,
+        "outputPerMillionTokens": 0.918
+      }
+    },
+    "qwen-plus": {
+      "displayName": "Qwen Plus",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-09-11",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.115,
+        "outputPerMillionTokens": 0.287,
+        "cacheReadPerMillionTokens": 0.012,
+        "cacheWritePerMillionTokens": 0.144
+      }
+    },
+    "qwen-plus-character": {
+      "displayName": "Qwen Plus Character",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 32768,
+      "maxOutputTokens": 4096,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.115,
+        "outputPerMillionTokens": 0.287
+      }
+    },
+    "qwen-turbo": {
+      "displayName": "Qwen Turbo",
+      "description": "Efficient Qwen model for fast chat, extraction, and high-volume workloads",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-07-15",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.044,
+        "outputPerMillionTokens": 0.087
+      }
+    },
+    "qwen-vl-max": {
+      "displayName": "Qwen-VL Max",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-08-13",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.23,
+        "outputPerMillionTokens": 0.574
+      }
+    },
+    "qwen-vl-ocr": {
+      "displayName": "Qwen-VL OCR",
+      "description": "OCR model for extracting structured text from documents and screenshots",
+      "contextWindow": 34096,
+      "maxOutputTokens": 4096,
+      "capabilities": {
+        "tools": false,
+        "reasoning": false,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-04-13",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.717,
+        "outputPerMillionTokens": 0.717
+      }
+    },
+    "qwen-vl-plus": {
+      "displayName": "Qwen-VL Plus",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-08-15",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.115,
+        "outputPerMillionTokens": 0.287
+      }
+    },
+    "qwen2-5-14b-instruct": {
+      "displayName": "Qwen2.5 14B Instruct",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-09",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.144,
+        "outputPerMillionTokens": 0.431
+      }
+    },
+    "qwen2-5-32b-instruct": {
+      "displayName": "Qwen2.5 32B Instruct",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-09",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.287,
+        "outputPerMillionTokens": 0.861
+      }
+    },
+    "qwen2-5-72b-instruct": {
+      "displayName": "Qwen2.5 72B Instruct",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-09",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.574,
+        "outputPerMillionTokens": 1.721
+      }
+    },
+    "qwen2-5-7b-instruct": {
+      "displayName": "Qwen2.5 7B Instruct",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-09",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.072,
+        "outputPerMillionTokens": 0.144
+      }
+    },
+    "qwen2-5-coder-32b-instruct": {
+      "displayName": "Qwen2.5-Coder 32B Instruct",
+      "description": "Qwen coding model for software agents, repository edits, and code reasoning",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-11",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.287,
+        "outputPerMillionTokens": 0.861
+      }
+    },
+    "qwen2-5-coder-7b-instruct": {
+      "displayName": "Qwen2.5-Coder 7B Instruct",
+      "description": "Qwen coding model for software agents, repository edits, and code reasoning",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-11",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.144,
+        "outputPerMillionTokens": 0.287
+      }
+    },
+    "qwen2-5-math-72b-instruct": {
+      "displayName": "Qwen2.5-Math 72B Instruct",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 4096,
+      "maxOutputTokens": 3072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-09",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.574,
+        "outputPerMillionTokens": 1.721
+      }
+    },
+    "qwen2-5-math-7b-instruct": {
+      "displayName": "Qwen2.5-Math 7B Instruct",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 4096,
+      "maxOutputTokens": 3072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-09",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.144,
+        "outputPerMillionTokens": 0.287
+      }
+    },
+    "qwen2-5-omni-7b": {
+      "displayName": "Qwen2.5-Omni 7B",
+      "description": "Qwen omni model for text, vision, audio, and multimodal agent tasks",
+      "contextWindow": 32768,
+      "maxOutputTokens": 2048,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-12",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "output": [
+          "text",
+          "audio"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.087,
+        "outputPerMillionTokens": 0.345
+      }
+    },
+    "qwen2-5-vl-72b-instruct": {
+      "displayName": "Qwen2.5-VL 72B Instruct",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-09",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 2.294,
+        "outputPerMillionTokens": 6.881
+      }
+    },
+    "qwen2-5-vl-7b-instruct": {
+      "displayName": "Qwen2.5-VL 7B Instruct",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-09",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.287,
+        "outputPerMillionTokens": 0.717
+      }
+    },
+    "qwen3-14b": {
+      "displayName": "Qwen3 14B",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-04",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.144,
+        "outputPerMillionTokens": 0.574
+      }
+    },
+    "qwen3-235b-a22b": {
+      "displayName": "Qwen3 235B-A22B",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 131072,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-04",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.287,
+        "outputPerMillionTokens": 1.147
+      }
+    },
+    "qwen3-32b": {
+      "displayName": "Qwen3 32B",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 131072,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-04",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.287,
+        "outputPerMillionTokens": 1.147
+      }
+    },
+    "qwen3-8b": {
+      "displayName": "Qwen3 8B",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-04",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.072,
+        "outputPerMillionTokens": 0.287
+      }
+    },
+    "qwen3-asr-flash": {
+      "displayName": "Qwen3-ASR Flash",
+      "description": "Speech transcription model for accurate audio-to-text and captioning workflows",
+      "contextWindow": 53248,
+      "maxOutputTokens": 4096,
+      "capabilities": {
+        "tools": false,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": true
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-09-08",
+      "modalities": {
+        "input": [
+          "audio"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.032,
+        "outputPerMillionTokens": 0.032
+      }
+    },
+    "qwen3-coder-30b-a3b-instruct": {
+      "displayName": "Qwen3-Coder 30B-A3B Instruct",
+      "description": "Qwen coding model for software agents, repository edits, and code reasoning",
+      "contextWindow": 262144,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-04",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.216,
+        "outputPerMillionTokens": 0.861
+      }
+    },
+    "qwen3-coder-480b-a35b-instruct": {
+      "displayName": "Qwen3-Coder 480B-A35B Instruct",
+      "description": "Qwen coding model for software agents, repository edits, and code reasoning",
+      "contextWindow": 262144,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-04",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.861,
+        "outputPerMillionTokens": 3.441
+      }
+    },
+    "qwen3-coder-flash": {
+      "displayName": "Qwen3 Coder Flash",
+      "description": "Qwen coding model for software agents, repository edits, and code reasoning",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-07-28",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.144,
+        "outputPerMillionTokens": 0.574
+      }
+    },
+    "qwen3-coder-plus": {
+      "displayName": "Qwen3 Coder Plus",
+      "description": "Hosted Qwen coder for software agents, repo edits, and long-context code",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-07-23",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1,
+        "outputPerMillionTokens": 5
+      }
+    },
+    "qwen3-max": {
+      "displayName": "Qwen3 Max",
+      "description": "Flagship Qwen model for complex reasoning, coding, and agentic workflows",
+      "contextWindow": 262144,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-09-23",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.861,
+        "outputPerMillionTokens": 3.441
+      }
+    },
+    "qwen3-next-80b-a3b-instruct": {
+      "displayName": "Qwen3-Next 80B-A3B Instruct",
+      "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
+      "contextWindow": 131072,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-09",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.144,
+        "outputPerMillionTokens": 0.574
+      }
+    },
+    "qwen3-next-80b-a3b-thinking": {
+      "displayName": "Qwen3-Next 80B-A3B (Thinking)",
+      "description": "Qwen reasoning model for deliberate problem solving, math, and coding",
+      "contextWindow": 131072,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-09",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.144,
+        "outputPerMillionTokens": 1.434
+      }
+    },
+    "qwen3-omni-flash": {
+      "displayName": "Qwen3-Omni Flash",
+      "description": "Qwen omni model for text, vision, audio, and multimodal agent tasks",
+      "contextWindow": 65536,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-09-15",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio",
+          "video"
+        ],
+        "output": [
+          "text",
+          "audio"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.058,
+        "outputPerMillionTokens": 0.23
+      }
+    },
+    "qwen3-omni-flash-realtime": {
+      "displayName": "Qwen3-Omni Flash Realtime",
+      "description": "Qwen omni model for text, vision, audio, and multimodal agent tasks",
+      "contextWindow": 65536,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": true,
+        "audio": true
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-09-15",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "audio"
+        ],
+        "output": [
+          "text",
+          "audio"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.23,
+        "outputPerMillionTokens": 0.918
+      }
+    },
+    "qwen3-vl-235b-a22b": {
+      "displayName": "Qwen3-VL 235B-A22B",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 131072,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-04",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.286705,
+        "outputPerMillionTokens": 1.14682
+      }
+    },
+    "qwen3-vl-30b-a3b": {
+      "displayName": "Qwen3-VL 30B-A3B",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 131072,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-04",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.108,
+        "outputPerMillionTokens": 0.431
+      }
+    },
+    "qwen3-vl-plus": {
+      "displayName": "Qwen3-VL Plus",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 262144,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-09-23",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.143353,
+        "outputPerMillionTokens": 1.433525
+      }
+    },
+    "qwen3.5-397b-a17b": {
+      "displayName": "Qwen3.5 397B-A17B",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 262144,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2026-02-16",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.172,
+        "outputPerMillionTokens": 1.032
+      }
+    },
+    "qwen3.5-flash": {
+      "displayName": "Qwen3.5 Flash",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "structuredOutput": true,
+      "lastUpdated": "2026-02-23",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.172,
+        "outputPerMillionTokens": 1.72
+      }
+    },
+    "qwen3.5-plus": {
+      "displayName": "Qwen3.5 Plus",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2026-02-16",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.573,
+        "outputPerMillionTokens": 3.44
+      }
+    },
+    "qwen3.6-flash": {
+      "displayName": "Qwen3.6 Flash",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-04-27",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.1875,
+        "outputPerMillionTokens": 1.125,
+        "cacheWritePerMillionTokens": 0.234375
+      }
+    },
+    "qwen3.6-max-preview": {
+      "displayName": "Qwen3.6 Max Preview",
+      "description": "Flagship Qwen model for complex reasoning, coding, and agentic workflows",
+      "contextWindow": 245800,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-04-21",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.32,
+        "outputPerMillionTokens": 7.9,
+        "cacheReadPerMillionTokens": 0.132
+      }
+    },
+    "qwen3.6-plus": {
+      "displayName": "Qwen3.6 Plus",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2026-04-02",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.5,
+        "outputPerMillionTokens": 3,
+        "cacheReadPerMillionTokens": 0.05,
+        "cacheWritePerMillionTokens": 0.625
+      }
+    },
+    "qwen3.7-flash": {
+      "displayName": "Qwen3.7 Flash",
+      "description": "Lightweight multimodal Qwen model for high-throughput text, image, and video tasks",
+      "contextWindow": 1000000,
+      "maxInputTokens": 991000,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-07-15",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.02962,
+        "outputPerMillionTokens": 0.1185,
+        "cacheReadPerMillionTokens": 0.002962,
+        "cacheWritePerMillionTokens": 0.03703
+      }
+    },
+    "qwen3.7-max": {
+      "displayName": "Qwen3.7 Max",
+      "description": "Qwen frontier model tuned for agent frameworks, coding assistants, and long tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2026-05-21",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 2.5,
+        "outputPerMillionTokens": 7.5,
+        "cacheReadPerMillionTokens": 0.5,
+        "cacheWritePerMillionTokens": 3.125
+      }
+    },
+    "qwen3.7-plus": {
+      "displayName": "Qwen3.7 Plus",
+      "description": "Multimodal Qwen workhorse for long-context agents, visual inputs, and coding",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 64000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2026-06-02",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.5,
+        "outputPerMillionTokens": 3,
+        "cacheReadPerMillionTokens": 0.05,
+        "cacheWritePerMillionTokens": 0.625
+      }
+    },
+    "qwen3.8-flash": {
+      "displayName": "Qwen3.8 Flash",
+      "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "xhigh"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "xhigh": "xhigh"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-26",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.11875,
+        "outputPerMillionTokens": 0.40073,
+        "cacheReadPerMillionTokens": 0.01187,
+        "cacheWritePerMillionTokens": 0.14844
+      }
+    },
+    "qwen3.8-max": {
+      "displayName": "Qwen3.8 Max",
+      "description": "2.4-trillion-parameter MoE flagship for coding, professional work, multimodal understanding, and long-horizon agentic workflows",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "xhigh"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "xhigh": "xhigh"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-03",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.77744,
+        "outputPerMillionTokens": 5.33231,
+        "cacheReadPerMillionTokens": 0.22218,
+        "cacheWritePerMillionTokens": 2.22179
+      }
+    },
+    "qwq-32b": {
+      "displayName": "QwQ 32B",
+      "description": "Qwen reasoning model for deliberate problem solving, math, and coding",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-12",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.287,
+        "outputPerMillionTokens": 0.861
+      }
+    },
+    "qwq-plus": {
+      "displayName": "QwQ Plus",
+      "description": "Qwen reasoning model for deliberate problem solving, math, and coding",
+      "contextWindow": 131072,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2025-03-05",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.23,
+        "outputPerMillionTokens": 0.574
+      }
+    },
+    "siliconflow/deepseek-r1-0528": {
+      "displayName": "siliconflow/deepseek-r1-0528",
+      "description": "DeepSeek reasoning model for multi-step analysis, math, coding, and tools",
+      "contextWindow": 163840,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2025-11-25",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.5,
+        "outputPerMillionTokens": 2.18
+      }
+    },
+    "siliconflow/deepseek-v3-0324": {
+      "displayName": "siliconflow/deepseek-v3-0324",
+      "description": "DeepSeek chat model for instruction following, coding, and analysis",
+      "contextWindow": 163840,
+      "maxOutputTokens": 163840,
+      "capabilities": {
+        "tools": true,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2025-11-25",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.25,
+        "outputPerMillionTokens": 1
+      }
+    },
+    "siliconflow/deepseek-v3.1-terminus": {
+      "displayName": "siliconflow/deepseek-v3.1-terminus",
+      "description": "DeepSeek chat model for instruction following, coding, and analysis",
+      "contextWindow": 163840,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2025-11-25",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.27,
+        "outputPerMillionTokens": 1
+      }
+    },
+    "siliconflow/deepseek-v3.2": {
+      "displayName": "siliconflow/deepseek-v3.2",
+      "description": "DeepSeek chat model for instruction following, coding, and analysis",
+      "contextWindow": 163840,
+      "maxOutputTokens": 65536,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2025-12-03",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.27,
+        "outputPerMillionTokens": 0.42
+      }
+    },
+    "tongyi-intent-detect-v3": {
+      "displayName": "Tongyi Intent Detect V3",
+      "description": "General-purpose chat model for instruction following, writing, and analysis",
+      "contextWindow": 8192,
+      "maxOutputTokens": 1024,
+      "capabilities": {
+        "tools": false,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2024-04",
+      "lastUpdated": "2024-01",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.058,
+        "outputPerMillionTokens": 0.144
+      }
+    }
+  },
+  "qwen-international": {
     "deepseek-v4-flash-0731": {
       "displayName": "DeepSeek V4 Flash 0731",
       "description": "Official DeepSeek V4 Flash release with enhanced agentic capabilities and integrated DSpark speculative decoding",
@@ -5856,6 +8723,1091 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     }
   },
+  "zai-coding-plan": {
+    "glm-4.7": {
+      "displayName": "GLM-4.7",
+      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
+      "contextWindow": 204800,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-12-22",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5-turbo": {
+      "displayName": "GLM-5-Turbo",
+      "description": "Efficient GLM model for fast reasoning, coding, and agent workflows",
+      "contextWindow": 200000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-03-16",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.2": {
+      "displayName": "GLM-5.2",
+      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-06-13",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.2-highspeed": {
+      "displayName": "GLM-5.2 Highspeed",
+      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-06-13",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.3": {
+      "displayName": "GLM-5.3",
+      "description": "Flagship GLM model for long-horizon coding, agents, and complex project delivery",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-14",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.3-flash": {
+      "displayName": "GLM-5.3-Flash",
+      "description": "Native multimodal GLM model for efficient coding and long-horizon agent tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-26",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.3-highspeed": {
+      "displayName": "GLM-5.3 Highspeed",
+      "description": "Flagship GLM model for long-horizon coding, agents, and complex project delivery",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-14",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    }
+  },
+  "zhipu": {
+    "glm-4.5": {
+      "displayName": "GLM-4.5",
+      "description": "Hybrid-reasoning GLM release that made the 4.5 line broadly useful",
+      "contextWindow": 131072,
+      "maxOutputTokens": 98304,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-07-28",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.6,
+        "outputPerMillionTokens": 2.2,
+        "cacheReadPerMillionTokens": 0.11,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-4.5-air": {
+      "displayName": "GLM-4.5-Air",
+      "description": "Lighter GLM-4.5 variant for fast coding assistance and cheaper agents",
+      "contextWindow": 131072,
+      "maxOutputTokens": 98304,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-07-28",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.2,
+        "outputPerMillionTokens": 1.1,
+        "cacheReadPerMillionTokens": 0.03,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-4.5-flash": {
+      "displayName": "GLM-4.5-Flash",
+      "description": "Efficient GLM model for fast reasoning, coding, and agent workflows",
+      "contextWindow": 131072,
+      "maxOutputTokens": 98304,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-07-28",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-4.5v": {
+      "displayName": "GLM-4.5V",
+      "description": "GLM vision model for visual reasoning, documents, and multimodal agents",
+      "contextWindow": 64000,
+      "maxOutputTokens": 16384,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-08-11",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.6,
+        "outputPerMillionTokens": 1.8
+      }
+    },
+    "glm-4.6": {
+      "displayName": "GLM-4.6",
+      "description": "Late GLM-4 workhorse for coding agents, reasoning, and structured tasks",
+      "contextWindow": 204800,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-09-30",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.6,
+        "outputPerMillionTokens": 2.2,
+        "cacheReadPerMillionTokens": 0.11,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-4.6v": {
+      "displayName": "GLM-4.6V",
+      "description": "GLM vision model for visual reasoning, documents, and multimodal agents",
+      "contextWindow": 128000,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-12-08",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.3,
+        "outputPerMillionTokens": 0.9
+      }
+    },
+    "glm-4.7": {
+      "displayName": "GLM-4.7",
+      "description": "Mature GLM model for dependable coding, reasoning, and structured agent tasks",
+      "contextWindow": 204800,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-12-22",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.6,
+        "outputPerMillionTokens": 2.2,
+        "cacheReadPerMillionTokens": 0.11,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-4.7-flash": {
+      "displayName": "GLM-4.7-Flash",
+      "description": "Budget GLM lane for fast coding help, routing, and everyday automation",
+      "contextWindow": 200000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2026-01-19",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-4.7-flashx": {
+      "displayName": "GLM-4.7-FlashX",
+      "description": "Efficient GLM model for fast reasoning, coding, and agent workflows",
+      "contextWindow": 200000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2026-01-19",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.07,
+        "outputPerMillionTokens": 0.4,
+        "cacheReadPerMillionTokens": 0.01,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5": {
+      "displayName": "GLM-5",
+      "description": "General GLM flagship for coding, analysis, and tool-heavy engineering workflows",
+      "contextWindow": 204800,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2026-02-11",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1,
+        "outputPerMillionTokens": 3.2,
+        "cacheReadPerMillionTokens": 0.2,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.1": {
+      "displayName": "GLM-5.1",
+      "description": "Strong GLM coding model for agentic engineering, terminals, and repository generation",
+      "contextWindow": 200000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-03-27",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.4,
+        "outputPerMillionTokens": 4.4,
+        "cacheReadPerMillionTokens": 0.26,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.2": {
+      "displayName": "GLM-5.2",
+      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-06-13",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.4,
+        "outputPerMillionTokens": 4.4,
+        "cacheReadPerMillionTokens": 0.26,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.3": {
+      "displayName": "GLM-5.3",
+      "description": "Flagship GLM model for long-horizon coding, agents, and complex project delivery",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-14",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 1.4,
+        "outputPerMillionTokens": 4.4,
+        "cacheReadPerMillionTokens": 0.26,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.3-flash": {
+      "displayName": "GLM-5.3-Flash",
+      "description": "Native multimodal GLM model for efficient coding and long-horizon agent tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-26",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.075,
+        "outputPerMillionTokens": 0.25,
+        "cacheReadPerMillionTokens": 0.015,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5v-turbo": {
+      "displayName": "GLM-5V-Turbo",
+      "description": "Fast GLM vision model for screenshots, documents, and multimodal agent tasks",
+      "contextWindow": 200000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2026-04-01",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 5,
+        "outputPerMillionTokens": 22,
+        "cacheReadPerMillionTokens": 1.2,
+        "cacheWritePerMillionTokens": 0
+      }
+    }
+  },
+  "zhipu-coding-plan": {
+    "glm-4.6v": {
+      "displayName": "GLM-4.6V",
+      "description": "GLM vision model for visual reasoning, documents, and multimodal agents",
+      "contextWindow": 128000,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-12-08",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.3,
+        "outputPerMillionTokens": 0.9
+      }
+    },
+    "glm-4.7": {
+      "displayName": "GLM-4.7",
+      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
+      "contextWindow": 204800,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "knowledgeCutoff": "2025-04",
+      "lastUpdated": "2025-12-22",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5-turbo": {
+      "displayName": "GLM-5-Turbo",
+      "description": "Efficient GLM model for fast reasoning, coding, and agent workflows",
+      "contextWindow": 200000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-03-16",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.1": {
+      "displayName": "GLM-5.1",
+      "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
+      "contextWindow": 200000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-03-27",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.2": {
+      "displayName": "GLM-5.2",
+      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-06-13",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.2-highspeed": {
+      "displayName": "GLM-5.2 Highspeed",
+      "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-06-13",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.3": {
+      "displayName": "GLM-5.3",
+      "description": "Flagship GLM model for long-horizon coding, agents, and complex project delivery",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-14",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.3-flash": {
+      "displayName": "GLM-5.3-Flash",
+      "description": "Native multimodal GLM model for efficient coding and long-horizon agent tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-26",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5.3-highspeed": {
+      "displayName": "GLM-5.3 Highspeed",
+      "description": "Flagship GLM model for long-horizon coding, agents, and complex project delivery",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-08-14",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    },
+    "glm-5v-turbo": {
+      "displayName": "GLM-5V-Turbo",
+      "description": "GLM vision model for visual reasoning, documents, and multimodal agents",
+      "contextWindow": 200000,
+      "maxOutputTokens": 131072,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "lastUpdated": "2026-04-01",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0,
+        "cacheReadPerMillionTokens": 0,
+        "cacheWritePerMillionTokens": 0
+      }
+    }
+  },
   "openrouter": {
     "~anthropic/claude-fable-latest": {
       "displayName": "Claude Fable Latest",
@@ -5903,7 +9855,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "~anthropic/claude-haiku-latest": {
-      "displayName": "Anthropic Claude Haiku Latest",
+      "displayName": "Claude Haiku Latest",
       "description": "Fast Claude model for responsive assistance, classification, and lightweight agents",
       "contextWindow": 200000,
       "maxOutputTokens": 64000,
@@ -5980,7 +9932,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "~anthropic/claude-sonnet-latest": {
-      "displayName": "Anthropic Claude Sonnet Latest",
+      "displayName": "Claude Sonnet Latest",
       "description": "Balanced Claude model for coding, analysis, agent workflows, and cost control",
       "contextWindow": 1000000,
       "maxOutputTokens": 128000,
@@ -6058,13 +10010,13 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.05,
-        "outputPerMillionTokens": 0.16,
-        "cacheReadPerMillionTokens": 0.013
+        "inputPerMillionTokens": 0.03,
+        "outputPerMillionTokens": 0.07,
+        "cacheReadPerMillionTokens": 0.003
       }
     },
     "~google/gemini-flash-latest": {
-      "displayName": "Google Gemini Flash Latest",
+      "displayName": "Gemini Flash Latest",
       "description": "Fast Gemini model balancing multimodal reasoning, tool use, and cost",
       "contextWindow": 1048576,
       "maxOutputTokens": 65536,
@@ -6108,7 +10060,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "~google/gemini-pro-latest": {
-      "displayName": "Google Gemini Pro Latest",
+      "displayName": "Gemini Pro Latest",
       "description": "Advanced Gemini model for complex reasoning, coding, and multimodal analysis",
       "contextWindow": 1048576,
       "maxOutputTokens": 65536,
@@ -6152,7 +10104,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "~moonshotai/kimi-latest": {
-      "displayName": "MoonshotAI Kimi Latest",
+      "displayName": "Kimi Latest",
       "description": "Kimi multimodal agent model for visual understanding, coding, and planning",
       "contextWindow": 1048576,
       "maxOutputTokens": 943718,
@@ -6186,13 +10138,58 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 2.4,
-        "outputPerMillionTokens": 12,
-        "cacheReadPerMillionTokens": 0.24
+        "inputPerMillionTokens": 2.125,
+        "outputPerMillionTokens": 11.9,
+        "cacheReadPerMillionTokens": 0.2465
       }
     },
-    "~openai/gpt-latest": {
-      "displayName": "OpenAI GPT Latest",
+    "~openai/gpt-astra-latest": {
+      "displayName": "GPT Astra Latest",
+      "description": "GPT model for general reasoning, writing, coding, and tool-assisted tasks",
+      "contextWindow": 1050000,
+      "maxOutputTokens": 128000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-11",
+      "modalities": {
+        "input": [
+          "pdf",
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 10,
+        "outputPerMillionTokens": 50,
+        "cacheReadPerMillionTokens": 1,
+        "cacheWritePerMillionTokens": 12.5
+      }
+    },
+    "~openai/gpt-luna-latest": {
+      "displayName": "GPT Luna Latest",
       "description": "GPT model for general reasoning, writing, coding, and tool-assisted tasks",
       "contextWindow": 1050000,
       "maxOutputTokens": 128000,
@@ -6220,7 +10217,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       },
       "knowledgeCutoff": "2026-02-16",
       "structuredOutput": true,
-      "lastUpdated": "2026-04-27",
+      "lastUpdated": "2026-09-11",
       "modalities": {
         "input": [
           "pdf",
@@ -6232,14 +10229,14 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 2,
-        "outputPerMillionTokens": 10,
-        "cacheReadPerMillionTokens": 0.2,
-        "cacheWritePerMillionTokens": 2.5
+        "inputPerMillionTokens": 0.2,
+        "outputPerMillionTokens": 1.2,
+        "cacheReadPerMillionTokens": 0.02,
+        "cacheWritePerMillionTokens": 0.25
       }
     },
     "~openai/gpt-mini-latest": {
-      "displayName": "OpenAI GPT Mini Latest",
+      "displayName": "GPT Mini Latest",
       "description": "Compact GPT model for low-latency assistance and high-volume workloads",
       "contextWindow": 400000,
       "maxOutputTokens": 128000,
@@ -6280,6 +10277,100 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "inputPerMillionTokens": 0.75,
         "outputPerMillionTokens": 4.5,
         "cacheReadPerMillionTokens": 0.075
+      }
+    },
+    "~openai/gpt-sol-latest": {
+      "displayName": "GPT Sol Latest",
+      "description": "GPT model for general reasoning, writing, coding, and tool-assisted tasks",
+      "contextWindow": 1050000,
+      "maxOutputTokens": 128000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "knowledgeCutoff": "2026-02-16",
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-11",
+      "modalities": {
+        "input": [
+          "pdf",
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 2,
+        "outputPerMillionTokens": 10,
+        "cacheReadPerMillionTokens": 0.2,
+        "cacheWritePerMillionTokens": 2.5
+      }
+    },
+    "~openai/gpt-terra-latest": {
+      "displayName": "GPT Terra Latest",
+      "description": "GPT model for general reasoning, writing, coding, and tool-assisted tasks",
+      "contextWindow": 1050000,
+      "maxOutputTokens": 128000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "off": "none",
+        "low": "low",
+        "medium": "medium",
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "knowledgeCutoff": "2026-02-16",
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-11",
+      "modalities": {
+        "input": [
+          "pdf",
+          "image",
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 2,
+        "outputPerMillionTokens": 12,
+        "cacheReadPerMillionTokens": 0.2,
+        "cacheWritePerMillionTokens": 2.5
       }
     },
     "~x-ai/grok-latest": {
@@ -6328,7 +10419,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "GLM Flash Latest",
       "description": "GLM vision model for visual reasoning, documents, and multimodal agents",
       "contextWindow": 1310720,
-      "maxOutputTokens": 943718,
+      "maxOutputTokens": 131072,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -6367,8 +10458,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "~z-ai/glm-latest": {
       "displayName": "GLM Latest",
       "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 1048576,
-      "maxOutputTokens": 128000,
+      "contextWindow": 1310720,
+      "maxOutputTokens": 943718,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -6397,9 +10488,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 1.113,
-        "outputPerMillionTokens": 3.498,
-        "cacheReadPerMillionTokens": 0.2067
+        "inputPerMillionTokens": 0.8727,
+        "outputPerMillionTokens": 3.36,
+        "cacheReadPerMillionTokens": 0.1639
       }
     },
     "aion-labs/aion-2.0": {
@@ -7769,7 +11860,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "DeepSeek Chat",
       "description": "DeepSeek chat model for instruction following, coding, and analysis",
       "contextWindow": 163840,
-      "maxOutputTokens": 16384,
+      "maxOutputTokens": 16000,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -7790,8 +11881,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.32,
-        "outputPerMillionTokens": 0.89
+        "inputPerMillionTokens": 0.2574,
+        "outputPerMillionTokens": 1.0287
       }
     },
     "deepseek/deepseek-chat-v3-0324": {
@@ -7819,9 +11910,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.29,
-        "outputPerMillionTokens": 1.14,
-        "cacheReadPerMillionTokens": 0.11
+        "inputPerMillionTokens": 0.25,
+        "outputPerMillionTokens": 1
       }
     },
     "deepseek/deepseek-chat-v3.1": {
@@ -8063,9 +12153,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.08554,
-        "outputPerMillionTokens": 0.17108,
-        "cacheReadPerMillionTokens": 0.017108
+        "inputPerMillionTokens": 0.06678,
+        "outputPerMillionTokens": 0.13356,
+        "cacheReadPerMillionTokens": 0.013356
       }
     },
     "deepseek/deepseek-v4-flash-0731": {
@@ -8102,9 +12192,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.065,
-        "outputPerMillionTokens": 0.18,
-        "cacheReadPerMillionTokens": 0.016
+        "inputPerMillionTokens": 0.04,
+        "outputPerMillionTokens": 0.08,
+        "cacheReadPerMillionTokens": 0.008
       }
     },
     "deepseek/deepseek-v4-flash-vision-exp": {
@@ -8178,9 +12268,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.87,
-        "outputPerMillionTokens": 1.74,
-        "cacheReadPerMillionTokens": 0.0725
+        "inputPerMillionTokens": 0.799182,
+        "outputPerMillionTokens": 1.598364,
+        "cacheReadPerMillionTokens": 0.066599
       }
     },
     "deepseek/deepseek-v4-pro-0813": {
@@ -8216,9 +12306,49 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.57948,
-        "outputPerMillionTokens": 1.73844,
-        "cacheReadPerMillionTokens": 0.018438
+        "inputPerMillionTokens": 0.57816,
+        "outputPerMillionTokens": 1.73448,
+        "cacheReadPerMillionTokens": 0.018396
+      }
+    },
+    "deepseek/deepseek-v4.1-flash": {
+      "displayName": "DeepSeek V4.1 Flash",
+      "description": "Fast DeepSeek model for efficient chat, coding help, and agent loops",
+      "contextWindow": 1048576,
+      "maxOutputTokens": 384000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "low",
+        "high",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "low": "low",
+        "high": "high",
+        "max": "max"
+      },
+      "knowledgeCutoff": "2025-05",
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-10",
+      "modalities": {
+        "input": [
+          "text",
+          "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.15,
+        "outputPerMillionTokens": 0.6,
+        "cacheReadPerMillionTokens": 0.003
       }
     },
     "dots-studio/dots-3-note-preview:free": {
@@ -9118,7 +13248,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "google/gemma-3-12b-it": {
-      "displayName": "Gemma 3 12B",
+      "displayName": "Gemma 3 12B IT",
       "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
       "contextWindow": 131072,
       "maxOutputTokens": 16384,
@@ -9130,9 +13260,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "audio": false
       },
       "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-08-31",
+      "knowledgeCutoff": "2024-08",
       "structuredOutput": true,
-      "lastUpdated": "2025-03-13",
+      "lastUpdated": "2025-03-12",
       "modalities": {
         "input": [
           "text",
@@ -9148,7 +13278,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "google/gemma-3-27b-it": {
-      "displayName": "Gemma 3 27B",
+      "displayName": "Gemma 3 27B IT",
       "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
       "contextWindow": 131072,
       "maxOutputTokens": 117964,
@@ -9160,7 +13290,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "audio": false
       },
       "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-08-31",
+      "knowledgeCutoff": "2024-08",
       "structuredOutput": true,
       "lastUpdated": "2025-03-12",
       "modalities": {
@@ -9179,7 +13309,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "google/gemma-3-4b-it": {
-      "displayName": "Gemma 3 4B",
+      "displayName": "Gemma 3 4B IT",
       "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
       "contextWindow": 131072,
       "maxOutputTokens": 16384,
@@ -9191,9 +13321,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "audio": false
       },
       "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-08-31",
+      "knowledgeCutoff": "2024-08",
       "structuredOutput": true,
-      "lastUpdated": "2025-03-13",
+      "lastUpdated": "2025-03-12",
       "modalities": {
         "input": [
           "text",
@@ -9212,7 +13342,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Gemma 4 26B A4B IT",
       "description": "Open Gemma instruction model for efficient chat and self-hosted deployments",
       "contextWindow": 262144,
-      "maxOutputTokens": 16384,
+      "maxOutputTokens": 32768,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -9234,8 +13364,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.07,
-        "outputPerMillionTokens": 0.34
+        "inputPerMillionTokens": 0.042,
+        "outputPerMillionTokens": 0.22
       }
     },
     "google/gemma-4-26b-a4b-it:free": {
@@ -9675,6 +13805,123 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 0
       }
     },
+    "inclusionai/ling-3.0-flash-vl": {
+      "displayName": "Ling 3.0 Flash VL",
+      "description": "Multimodal reasoning model for visual analysis, planning, and tool use",
+      "contextWindow": 131072,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-10",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.06,
+        "outputPerMillionTokens": 0.18,
+        "cacheReadPerMillionTokens": 0.012
+      }
+    },
+    "inclusionai/ling-3.0-flash-vl:free": {
+      "displayName": "Ling 3.0 Flash VL (free)",
+      "description": "Multimodal reasoning model for visual analysis, planning, and tool use",
+      "contextWindow": 262144,
+      "maxOutputTokens": 32768,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": false,
+      "lastUpdated": "2026-09-10",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "video"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0,
+        "outputPerMillionTokens": 0
+      }
+    },
+    "inference-net/schematron-v2-small": {
+      "displayName": "Schematron V2 Small",
+      "description": "Efficient model for low-latency assistance, extraction, and routine automation",
+      "contextWindow": 128000,
+      "maxOutputTokens": 4096,
+      "capabilities": {
+        "tools": false,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-12",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.05,
+        "outputPerMillionTokens": 0.23
+      }
+    },
+    "inference-net/schematron-v2-turbo": {
+      "displayName": "Schematron V2 Turbo",
+      "description": "Efficient model for low-latency assistance, extraction, and routine automation",
+      "contextWindow": 128000,
+      "maxOutputTokens": 8192,
+      "capabilities": {
+        "tools": false,
+        "reasoning": false,
+        "streaming": true,
+        "vision": false,
+        "audio": false
+      },
+      "reasoningEfforts": [],
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-12",
+      "modalities": {
+        "input": [
+          "text"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 0.03,
+        "outputPerMillionTokens": 0.15
+      }
+    },
     "kwaipilot/kat-coder-pro-v2": {
       "displayName": "KAT-Coder-Pro V2",
       "description": "Coding model for repository understanding, refactors, and agentic engineering tasks",
@@ -9823,7 +14070,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Llama-3.1-70B-Instruct",
       "description": "Open Llama instruction model for multilingual chat, reasoning, and coding",
       "contextWindow": 131072,
-      "maxOutputTokens": 16384,
+      "maxOutputTokens": 8192,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -9844,8 +14091,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.4,
-        "outputPerMillionTokens": 0.4
+        "inputPerMillionTokens": 0.72,
+        "outputPerMillionTokens": 0.72
       }
     },
     "meta-llama/llama-3.1-8b-instruct": {
@@ -11128,7 +15375,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "mistralai/mistral-small-3.2-24b-instruct": {
       "displayName": "Mistral Small 3.2 24B",
       "description": "Efficient Mistral model for fast chat, extraction, and production assistants",
-      "contextWindow": 131072,
+      "contextWindow": 256000,
       "maxOutputTokens": 16384,
       "capabilities": {
         "tools": true,
@@ -11200,7 +15447,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       },
       "reasoningEfforts": [],
       "structuredOutput": true,
-      "lastUpdated": "2025-10-30",
+      "lastUpdated": "2025-07-15",
       "modalities": {
         "input": [
           "text",
@@ -11432,9 +15679,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 3,
-        "outputPerMillionTokens": 15,
-        "cacheReadPerMillionTokens": 0.3
+        "inputPerMillionTokens": 2.302729,
+        "outputPerMillionTokens": 11.550195,
+        "cacheReadPerMillionTokens": 0.263169
       }
     },
     "morph/morph-v3-fast": {
@@ -11502,7 +15749,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "tools": true,
         "reasoning": true,
         "streaming": true,
-        "vision": false,
+        "vision": true,
         "audio": false
       },
       "reasoningEfforts": [
@@ -11518,7 +15765,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "lastUpdated": "2026-09-08",
       "modalities": {
         "input": [
-          "text"
+          "text",
+          "image"
         ],
         "output": [
           "text"
@@ -11653,35 +15901,6 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 3
       }
     },
-    "nousresearch/hermes-4-70b": {
-      "displayName": "Hermes 4 70B",
-      "description": "Reasoning model for deliberate analysis, multi-step problem solving, and tool use",
-      "contextWindow": 131072,
-      "maxOutputTokens": 117964,
-      "capabilities": {
-        "tools": false,
-        "reasoning": true,
-        "streaming": true,
-        "vision": false,
-        "audio": false
-      },
-      "reasoningEfforts": [],
-      "knowledgeCutoff": "2024-08-31",
-      "structuredOutput": false,
-      "lastUpdated": "2025-08-26",
-      "modalities": {
-        "input": [
-          "text"
-        ],
-        "output": [
-          "text"
-        ]
-      },
-      "pricing": {
-        "inputPerMillionTokens": 0.13,
-        "outputPerMillionTokens": 0.4
-      }
-    },
     "nvidia/nemotron-3-nano-30b-a3b": {
       "displayName": "Nemotron 3 Nano 30B A3B",
       "description": "Small Nemotron 3 MoE for efficient coding, math, and long-context agents",
@@ -11762,7 +15981,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "low": "low",
         "medium": "medium"
       },
-      "structuredOutput": false,
+      "structuredOutput": true,
       "lastUpdated": "2026-03-11",
       "modalities": {
         "input": [
@@ -13950,7 +18169,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       }
     },
     "openai/gpt-oss-safeguard-20b": {
-      "displayName": "gpt-oss-safeguard-20b",
+      "displayName": "GPT OSS Safeguard 20B",
       "description": "Safety model for policy screening, moderation, and risk-aware routing workflows",
       "contextWindow": 131072,
       "maxOutputTokens": 65536,
@@ -14908,7 +19127,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Qwen3 235B A22B Instruct 2507",
       "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
       "contextWindow": 262144,
-      "maxOutputTokens": 16384,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -14929,8 +19148,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.22,
-        "outputPerMillionTokens": 0.88
+        "inputPerMillionTokens": 0.0875,
+        "outputPerMillionTokens": 0.35,
+        "cacheReadPerMillionTokens": 0.0175
       }
     },
     "qwen/qwen3-235b-a22b-thinking-2507": {
@@ -14994,7 +19214,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Qwen3 30B A3B Instruct 2507",
       "description": "Qwen instruction model for multilingual chat, reasoning, and tool use",
       "contextWindow": 262144,
-      "maxOutputTokens": 32000,
+      "maxOutputTokens": 235929,
       "capabilities": {
         "tools": true,
         "reasoning": false,
@@ -15015,8 +19235,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.04815,
-        "outputPerMillionTokens": 0.19305
+        "inputPerMillionTokens": 0.09,
+        "outputPerMillionTokens": 0.3
       }
     },
     "qwen/qwen3-30b-a3b-thinking-2507": {
@@ -15586,7 +19806,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "Qwen3.5 122B-A10B",
       "description": "Qwen vision-language model for visual reasoning, documents, and agent tasks",
       "contextWindow": 262144,
-      "maxOutputTokens": 81920,
+      "maxOutputTokens": 65536,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -15608,8 +19828,8 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.29,
-        "outputPerMillionTokens": 2.4
+        "inputPerMillionTokens": 0.26,
+        "outputPerMillionTokens": 2.08
       }
     },
     "qwen/qwen3.5-27b": {
@@ -16149,9 +20369,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.42,
-        "outputPerMillionTokens": 3,
-        "cacheReadPerMillionTokens": 0.085
+        "inputPerMillionTokens": 0.214,
+        "outputPerMillionTokens": 2.55,
+        "cacheReadPerMillionTokens": 0.15
       }
     },
     "qwen/qwen3.8-flash": {
@@ -16346,6 +20566,46 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "outputPerMillionTokens": 3
       }
     },
+    "sakana/fugu-max": {
+      "displayName": "Fugu Max",
+      "description": "Multi-agent model for routing expert agents across complex analytical tasks",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-11",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 2,
+        "outputPerMillionTokens": 6,
+        "cacheReadPerMillionTokens": 0.25
+      }
+    },
     "sakana/fugu-ultra": {
       "displayName": "Fugu Ultra",
       "description": "Quality-first multi-agent model for hard research, analysis, and competitions",
@@ -16374,6 +20634,47 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         "input": [
           "text",
           "image"
+        ],
+        "output": [
+          "text"
+        ]
+      },
+      "pricing": {
+        "inputPerMillionTokens": 5,
+        "outputPerMillionTokens": 30,
+        "cacheReadPerMillionTokens": 0.5
+      }
+    },
+    "sakana/fugu-ultra-v2": {
+      "displayName": "Fugu Ultra v2",
+      "description": "Quality-first multi-agent model for hard research, analysis, and competitions",
+      "contextWindow": 1000000,
+      "maxOutputTokens": 128000,
+      "capabilities": {
+        "tools": true,
+        "reasoning": true,
+        "streaming": true,
+        "vision": true,
+        "audio": false
+      },
+      "reasoningEfforts": [
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "thinkingLevelMap": {
+        "high": "high",
+        "xhigh": "xhigh",
+        "max": "max"
+      },
+      "knowledgeCutoff": "2026-08-28",
+      "structuredOutput": true,
+      "lastUpdated": "2026-09-11",
+      "modalities": {
+        "input": [
+          "text",
+          "image",
+          "pdf"
         ],
         "output": [
           "text"
@@ -17154,9 +21455,9 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.03,
-        "outputPerMillionTokens": 0.12,
-        "cacheReadPerMillionTokens": 0.006
+        "inputPerMillionTokens": 0.09,
+        "outputPerMillionTokens": 0.36,
+        "cacheReadPerMillionTokens": 0.018
       }
     },
     "writer/palmyra-x5": {
@@ -17666,7 +21967,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
     "z-ai/glm-4.7-flash": {
       "displayName": "GLM-4.7-Flash",
       "description": "Budget GLM lane for fast coding help, routing, and everyday automation",
-      "contextWindow": 202752,
+      "contextWindow": 200000,
       "maxOutputTokens": 117964,
       "capabilities": {
         "tools": true,
@@ -17783,7 +22084,7 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
       "displayName": "GLM-5.2",
       "description": "Open flagship GLM for long-horizon coding agents and million-token context work",
       "contextWindow": 1048576,
-      "maxOutputTokens": 131072,
+      "maxOutputTokens": 182476,
       "capabilities": {
         "tools": true,
         "reasoning": true,
@@ -17810,15 +22111,15 @@ export const GENERATED_MODELS_DEV_METADATA: Record<string, Record<string, ModelM
         ]
       },
       "pricing": {
-        "inputPerMillionTokens": 0.966,
-        "outputPerMillionTokens": 3.036,
-        "cacheReadPerMillionTokens": 0.1932
+        "inputPerMillionTokens": 0.6,
+        "outputPerMillionTokens": 2,
+        "cacheReadPerMillionTokens": 0.15
       }
     },
     "z-ai/glm-5.3": {
       "displayName": "GLM-5.3",
       "description": "Flagship GLM model for hybrid reasoning, coding, and agentic engineering",
-      "contextWindow": 1048576,
+      "contextWindow": 1310720,
       "maxOutputTokens": 943718,
       "capabilities": {
         "tools": true,
@@ -17932,6 +22233,32 @@ export const GENERATED_MODELS_DEV_PROVIDER_ALIASES: Record<string, string> =
 {
   "claude-subscription": "anthropic",
   "openai-codex": "openai"
+}
+;
+
+export const GENERATED_MODELS_DEV_METADATA_ENDPOINTS: Record<string, string> =
+{
+  "https://api.deepseek.com": "deepseek",
+  "https://api.deepseek.com/v1": "deepseek",
+  "https://api.openai.com/v1": "openai",
+  "https://api.anthropic.com": "anthropic",
+  "https://api.anthropic.com/v1": "anthropic",
+  "https://chatgpt.com/backend-api/codex": "openai-codex",
+  "https://generativelanguage.googleapis.com/v1beta/openai": "gemini",
+  "https://generativelanguage.googleapis.com/v1beta": "gemini",
+  "https://api.moonshot.ai/v1": "kimi",
+  "https://api.moonshot.cn/v1": "kimi-cn",
+  "https://api.kimi.com/coding": "kimi-coding",
+  "https://api.kimi.com/coding/v1": "kimi-coding",
+  "https://dashscope.aliyuncs.com/compatible-mode/v1": "qwen",
+  "https://dashscope-intl.aliyuncs.com/compatible-mode/v1": "qwen-international",
+  "https://api.z.ai/api/paas/v4": "zai",
+  "https://api.z.ai/api/coding/paas/v4": "zai-coding-plan",
+  "https://open.bigmodel.cn/api/paas/v4": "zhipu",
+  "https://open.bigmodel.cn/api/coding/paas/v4": "zhipu-coding-plan",
+  "https://open.bigmodel.cn/api/anthropic": "zhipu-coding-plan",
+  "https://open.bigmodel.cn/api/v1": "zhipu-coding-plan",
+  "https://openrouter.ai/api/v1": "openrouter"
 }
 ;
 

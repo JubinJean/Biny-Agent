@@ -195,7 +195,22 @@ export const thinkingLevelMapSchema = z.record(z.string(), z.string().min(1).nul
  * 这组字段与 alias 的传输配置分开，目录刷新只能更新运行时投影，不能覆盖用户在这里
  * 明确填写的上下文窗口、输入/输出上限或 thinking 参数映射。
  */
+const modelCapabilitiesSchema = z.object({
+  tools: z.boolean().optional(),
+  parallelToolCalls: z.boolean().optional(),
+  reasoning: z.boolean().optional(),
+  reasoningStream: z.boolean().optional(),
+  reasoningSummary: z.boolean().optional(),
+  vision: z.boolean().optional(),
+  audio: z.boolean().optional(),
+  streaming: z.boolean().optional()
+});
+
 export const modelProfileSchema = z.object({
+  /** 只保存用户主动修改的能力；未填写时跟随当前目录。 */
+  capabilities: modelCapabilitiesSchema.optional(),
+  /** 仅控制模型选择器可见性，停用时保留配置和已有会话引用。 */
+  showInPicker: z.boolean().optional(),
   contextWindow: z.number().int().min(4_096).max(2_000_000).optional(),
   maxInputTokens: z.number().int().min(2_048).max(2_000_000).optional(),
   maxOutputTokens: z.number().int().min(1).max(384_000).optional(),
@@ -572,16 +587,7 @@ const modelAliasSchema = z.object({
   displayName: z.string().min(1).optional(),
   description: z.string().min(1).optional(),
   supportsTools: z.boolean().optional(),
-  capabilities: z.object({
-    tools: z.boolean().optional(),
-    parallelToolCalls: z.boolean().optional(),
-    reasoning: z.boolean().optional(),
-    reasoningStream: z.boolean().optional(),
-    reasoningSummary: z.boolean().optional(),
-    vision: z.boolean().optional(),
-    audio: z.boolean().optional(),
-    streaming: z.boolean().optional()
-  }).optional(),
+  capabilities: modelCapabilitiesSchema.optional(),
   contextWindow: z.number().int().min(4_096).max(2_000_000).optional(),
   maxInputTokens: z.number().int().min(2_048).max(2_000_000).optional(),
   maxOutputTokens: z.number().int().min(1).max(384_000).optional(),
@@ -660,8 +666,8 @@ const canonicalConfigSchema = z.object({
     : activeReasoning !== undefined;
   // ProviderRuntime 还会根据 provider 默认值补齐动态目录/未知模型的能力；配置层不能因为
   // alias 没有携带完整 metadata 就提前拒绝。只有明确声明不支持时才在这里报错。
-  const activeReasoningDisabled = activeModel?.capabilities?.reasoning === false
-    || activeModel?.compatibility?.supportsReasoning === false;
+  // alias 能力可能是旧目录快照；能力开关交给 ProviderRuntime 的当前元数据与 profile 解析。
+  const activeReasoningDisabled = activeModel?.compatibility?.supportsReasoning === false;
   if (config.thinking.enabled && activeReasoningDisabled) {
     context.addIssue({
       code: z.ZodIssueCode.custom,
