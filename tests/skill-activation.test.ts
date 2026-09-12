@@ -49,6 +49,10 @@ async function main(): Promise<void> {
     const builtinNames = builtins.skills.filter((skill) => skill.scope === "builtin").map((skill) => skill.name);
     assert.deepEqual(builtinNames, ["daily-report", "memory-management", "plan-weave", "scheduler", "self-reflection", "tasks", "todo", "workspace-search"]);
     assert.equal(builtins.skills.filter((skill) => skill.scope === "builtin").every((skill) => skill.source === "builtin"), true);
+    const report = builtins.skills.find((skill) => skill.name === "daily-report")!;
+    assert.equal(report.scope, "builtin");
+    const reportCommand = await expandSkillCommand(builtins, "/skill:daily-report");
+    assert.ok(reportCommand, "日报技能必须能经运行时加载，不只是源码目录里存在");
     for (const skill of builtins.skills.filter((candidate) => candidate.scope === "builtin")) {
       const document = await readFile(skill.filePath, "utf8");
       assert.match(document, new RegExp(`name:\\s*${skill.name}\\b`));

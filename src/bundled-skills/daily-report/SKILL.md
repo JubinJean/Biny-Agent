@@ -28,7 +28,7 @@ Use this skill for a **day-level or multi-day** question about the user's own ac
 
 ## How to use
 
-Run the CLI from the current workspace. Plain output is already formatted as a readable Markdown journal; preserve its headings and structure when replying.
+Run the CLI from the current workspace. Its plain output is the finished Markdown journal; relay it verbatim.
 
 ```bash
 # Today's report
@@ -40,9 +40,6 @@ biny activity report yesterday
 # A specific date
 biny activity report 2026-09-10
 
-# Machine-readable result for careful synthesis
-biny activity report today --json
-
 # Recent timeline instead of a day-level journal
 biny activity digest --lookback-min 120
 ```
@@ -51,16 +48,14 @@ When the user asks a follow-up about one project or event, drill down with `biny
 
 ## Output rules
 
-1. If plain `biny activity report` returns a polished Markdown report, relay it without inventing a second structure or an unsupported top-level summary.
-2. If `--json` is used, treat the JSON as evidence and synthesize only from fields that are present; do not expose raw JSON unless the user asks for it.
-3. Do not turn the report into a minute-by-minute narration. The report intentionally emphasizes projects, themes, and outcomes.
-4. Match the user's language. English instructions do not require an English answer.
-5. Keep recorded facts separate from interpretation. A pending analysis count or blocked message must remain visible.
-6. Every named project, person, version, decision, or outcome must be supported by the command result.
+- Paste successful report output directly. Do not rewrite, translate, shorten, add a preface, or append another summary. Preserve partial-analysis notices and missing-data messages.
+- For multiple days, run the report once for each requested date and relay the outputs in date order, without synthesizing an additional combined report.
+- Use `--json` only if the user explicitly requests machine-readable output; do not use it as a way to rewrite the journal.
+- For a follow-up interpretation rather than a report, keep any inference separate from the recorded facts. A session or screenshot is not proof that an action completed.
 
 ## Failure modes
 
 - If `biny activity report` fails, report the failure and fall back to `biny activity digest` only when a recent overview is still useful. Say explicitly that the day-level journal could not be built.
 - If the report has no analyzed sessions, relay that there is no verifiable activity for the requested date and suggest checking `biny activity status`.
 - If only part of the activity has been analyzed, state that the report is partial; do not fill the gap from conversation context.
-- Never send local activity data to an external service, and never claim an action was completed because a session or screenshot exists.
+- The Activity pipeline may send redacted text to the configured model. Do not separately upload screenshots, databases, or raw files to another service.
