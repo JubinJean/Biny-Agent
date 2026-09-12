@@ -229,6 +229,73 @@ done
   }
 }
 
+/** 真实服务与 SQLite，模拟忽略 signal 的推理后端，确认改配置不会接受旧一轮结果。 */
+async function testSettingsFenceLateBackgroundEmbedding(): Promise<void> {
+  for (const action of ["pause", "sensitive-apps", "clear"] as const) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-settings-fence-"));
+    const store = new ActivityStore();
+    let config = { ...defaultConfig, activity: { ...defaultActivitySettings, outputDirectory: root } };
+    const timers = new FakeTimers();
+    let release: (() => void) | undefined;
+    let activeSignal: AbortSignal | undefined;
+    const runtime = fakeEmbeddingRuntime();
+    const embed = runtime.embed.bind(runtime);
+    runtime.embed = async (request) => {
+      activeSignal = request.signal;
+      await new Promise<void>((resolve) => { release = resolve; });
+      return embed(request);
+    };
+    const service = new ActivityRecorderService({
+      configStore: { load: async () => config } as AgentConfigStore,
+      sidecarPath: undefined,
+      getEmbeddingRuntime: async () => runtime,
+      embeddingInitialDelayMs: 10,
+      embeddingSweepIntervalMs: 0,
+      embeddingSchedulerTimers: timers
+    });
+    try {
+      await store.open(root);
+      const sessionId = store.startSession(new Date().toISOString());
+      await store.recordFallbackCapture({
+        sessionId, occurredAt: new Date().toISOString(), eventType: "fallback_capture",
+        application: "Editor", rawOcrText: "pending Activity text", jpeg: Buffer.from("test-jpeg")
+      });
+      await service.initialize();
+      timers.advance(10);
+      await waitFor(() => release !== undefined);
+      if (action === "clear") await service.clear();
+      else {
+        config = { ...config, activity: { ...config.activity, enabled: action !== "pause", sensitiveApplications: ["Editor"] } };
+        await service.refresh();
+      }
+      assert.equal(activeSignal?.aborted, true, "暂停、修改敏感应用或清空都会取消旧配置下的任务");
+      release!();
+      await flush();
+      await flush();
+      assert.equal(store.listOcrEmbeddingRows(runtime.fingerprint).length, 0, "迟到向量不得落库");
+      if (action === "clear") {
+        assert.equal(store.snapshot().sessions, 0, "旧任务不能复活已清空的数据");
+        const nextSession = store.startSession(new Date().toISOString());
+        await store.recordFallbackCapture({
+          sessionId: nextSession, occurredAt: new Date().toISOString(), eventType: "fallback_capture",
+          application: "Editor", rawOcrText: "new Activity text", jpeg: Buffer.from("new-jpeg")
+        });
+      }
+      config = { ...config, activity: { ...config.activity, enabled: true } };
+      await service.refresh();
+      runtime.embed = embed;
+      timers.advance(10);
+      await waitFor(() => store.listOcrEmbeddingRows(runtime.fingerprint).length === 1);
+      assert.equal(store.listOcrEmbeddingSources(runtime.fingerprint).length, 0, "新一轮可恢复缺失项");
+    } finally {
+      release?.();
+      await service.stop();
+      await store.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+}
+
 function fakeEmbeddingRuntime(): EmbeddingModelRuntime {
   return {
     fingerprint: "activity-background-test",
@@ -309,3 +376,4 @@ await testEmbeddingSchedulerRunsOnceAndStops();
 await testEmbeddingSchedulerDefersWhileActiveAndWaitsForCompletion();
 await testBackgroundEmbeddingPrecomputesOcr();
 await testDailySummaryTimerPersistsSummary();
+await testSettingsFenceLateBackgroundEmbedding();

@@ -1,24 +1,5 @@
 import { z } from "zod";
 
-/** Activity 回忆维度的外发策略；默认 local_only，外部模型需单独显式放行。 */
-export const activityExternalPolicySchema = z.enum([
-  "local_only",
-  "confirm_external",
-  "external_allowed"
-]);
-
-/**
- * Activity 分析的外发策略，与回忆（注入上下文）维度独立：
- * - local_only：只用受信任的本地模型分析；当前聊天模型是外部模型时不分析。
- * - confirm_external：默认。外部模型需用户在设置页显式确认后才放行。
- * - external_allowed：允许把脱敏后的摘要聚合送到当前配置的外部聊天模型。
- */
-export const activityAnalysisPolicySchema = z.enum([
-  "local_only",
-  "confirm_external",
-  "external_allowed"
-]);
-
 export const activityDataResidencySchema = z.enum(["local", "external"]);
 
 interface ActivitySettingsNormalizationFields {
@@ -52,7 +33,7 @@ function normalizeActivitySettingsValue<T extends ActivitySettingsNormalizationF
 }
 
 /** 已从设置里删除、但旧配置文件仍可能携带的键；解析前剥离，避免 .strict() 拒绝旧配置。 */
-const deprecatedActivitySettingKeys = new Set(["activityRecallEnabled", "analysisModel"]);
+const deprecatedActivitySettingKeys = new Set(["activityRecallEnabled", "analysisModel", "externalPolicy", "externalConfirmed", "analysisPolicy", "analysisExternalConfirmed"]);
 
 function stripDeprecatedActivitySettings(value: unknown): unknown {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return value;
@@ -64,12 +45,6 @@ function stripDeprecatedActivitySettings(value: unknown): unknown {
 const activitySettingsObjectSchema = z.object({
   /** 首次启动即开启，用户仍可在设置页一键暂停。 */
   enabled: z.boolean().default(true),
-  externalPolicy: activityExternalPolicySchema.default("local_only"),
-  externalConfirmed: z.boolean().default(false),
-  /** 分析维度策略；默认 confirm_external，即外部模型需先经用户确认。 */
-  analysisPolicy: activityAnalysisPolicySchema.default("confirm_external"),
-  /** confirm_external 下用户已确认放行外部分析；可随时在设置页撤回。 */
-  analysisExternalConfirmed: z.boolean().default(false),
   captureDebounceMs: z.number().int().min(0).max(30_000).default(4_000),
   heartbeatMs: z.number().int().min(0).max(300_000).default(120_000),
   idleTimeoutMs: z.number().int().min(0).max(600_000).default(30_000),
@@ -116,8 +91,6 @@ export const activitySettingsSchema = z.preprocess(
   activitySettingsObjectSchema
 ).transform(normalizeActivitySettingsValue).default({
   enabled: true,
-  analysisPolicy: "confirm_external",
-  analysisExternalConfirmed: false,
   captureDebounceMs: 4_000,
   heartbeatMs: 120_000,
   idleTimeoutMs: 30_000,
@@ -142,12 +115,8 @@ export const activitySettingsSchema = z.preprocess(
   ],
   maxStorageMb: 10_240,
   outputDirectory: "~/.biny/agent/activity-records",
-  externalPolicy: "local_only",
-  externalConfirmed: false
 });
 
-export type ActivityExternalPolicy = z.infer<typeof activityExternalPolicySchema>;
-export type ActivityAnalysisPolicy = z.infer<typeof activityAnalysisPolicySchema>;
 export type ActivityDataResidency = z.infer<typeof activityDataResidencySchema>;
 export type ActivitySettings = z.infer<typeof activitySettingsSchema>;
 export type ActivitySettingsInput = ActivitySettings;
@@ -155,8 +124,6 @@ export type ActivitySettingsPatch = Partial<ActivitySettingsInput>;
 
 export const defaultActivitySettings: ActivitySettings = {
   enabled: true,
-  analysisPolicy: "confirm_external",
-  analysisExternalConfirmed: false,
   captureDebounceMs: 4_000,
   heartbeatMs: 120_000,
   idleTimeoutMs: 30_000,
@@ -181,6 +148,4 @@ export const defaultActivitySettings: ActivitySettings = {
   ],
   maxStorageMb: 10_240,
   outputDirectory: "~/.biny/agent/activity-records",
-  externalPolicy: "local_only",
-  externalConfirmed: false
 };

@@ -10,10 +10,74 @@ import type { AgentModel, ModelStreamEvent } from "../src/agent/core/types.js";
 await testActivityHttpServerExposesLoopbackQueries();
 await testActivityHttpReportProjectsMemoryCallbacks();
 await testActivitySummaryReadsWithoutGeneratingAndManualAnalysisRetries();
+await testHttpCancellationDiscardsLateAnalysis();
+
+async function testHttpCancellationDiscardsLateAnalysis(): Promise<void> {
+  for (const mode of ["disconnect", "host", "shutdown"] as const) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-http-cancel-"));
+    const store = new ActivityStore();
+    await store.open(root);
+    const id = store.startSession("2026-08-31T09:00:00.000Z");
+    store.recordEvent({ sessionId: id, occurredAt: "2026-08-31T09:01:00.000Z", eventType: "app_focus", application: "Editor" });
+    store.endSession(id, "2026-08-31T10:00:00.000Z");
+    const host = new AbortController();
+    const client = new AbortController();
+    const started = Promise.withResolvers<AbortSignal>();
+    const late = Promise.withResolvers<void>();
+    const finished = Promise.withResolvers<void>();
+    let projections = 0;
+    const model: AgentModel = {
+      provider: "test", modelId: "late-test", runtime: "builtin-llama.cpp", dataResidency: "local",
+      stream: async (_input, options) => (async function* (): AsyncGenerator<ModelStreamEvent> {
+        started.resolve(options!.signal!);
+        try {
+          await late.promise; // 故意模拟不理会取消的 Provider。
+          yield { type: "text-delta", text: JSON.stringify({ worth: true, summary: "late result" }) };
+          yield { type: "finish", reason: "stop" };
+        } finally { finished.resolve(); }
+      })()
+    };
+    const api = await startActivityHttpServer({
+      loadSettings: async () => ({ ...defaultActivitySettings, outputDirectory: root }),
+      getOperationSignal: () => host.signal,
+      getModel: () => model,
+      onAnalyzed: async () => { projections += 1; }
+    });
+    let closed = false;
+    try {
+      const request = fetch(`http://${api.host}:${api.port}/api/activity-recorder/sessions/${id}/analyze`, {
+        method: "POST", signal: client.signal
+      }).catch((error: unknown) => error);
+      const signal = await started.promise;
+      const cancelled = new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
+      if (mode === "disconnect") client.abort();
+      else if (mode === "host") host.abort();
+      else { await api.close(); closed = true; }
+      await cancelled;
+      const response = await request;
+      if (mode === "host") {
+        assert.ok(response instanceof Response);
+        assert.equal(response.status, 409);
+        const history = await fetch(`http://${api.host}:${api.port}/api/activity-recorder/sessions`);
+        assert.equal(history.status, 200, "停止采集后仍可发起新的本地历史查询");
+      }
+      late.resolve();
+      await finished.promise;
+      assert.equal(store.getAnalysis(id), undefined);
+      assert.equal(projections, 0);
+      assert.deepEqual(store.listSessionsPendingAnalysis().map((session) => session.id), [id]);
+    } finally {
+      late.resolve();
+      if (!closed) await api.close();
+      await store.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  }
+}
 
 async function testActivitySummaryReadsWithoutGeneratingAndManualAnalysisRetries(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-http-analysis-"));
-  const settings: ActivitySettings = { ...defaultActivitySettings, outputDirectory: root, analysisPolicy: "external_allowed" };
+  const settings: ActivitySettings = { ...defaultActivitySettings, outputDirectory: root };
   const store = new ActivityStore();
   let calls = 0;
   const model: AgentModel = {
@@ -38,10 +102,7 @@ async function testActivitySummaryReadsWithoutGeneratingAndManualAnalysisRetries
     assert.equal(calls, 1, "恢复之前没有模型的会话");
     await handleActivityHttpRequest({ method: "POST", pathname }, deps);
     assert.equal(calls, 2, "显式重分析应绕过已有结果缓存");
-    const denied = await handleActivityHttpRequest({ method: "POST", pathname }, { ...deps, loadSettings: async () => ({ ...settings, analysisPolicy: "local_only" as const }) });
-    assert.equal((denied.body as { status: string }).status, "blocked");
-    assert.equal(calls, 2, "重分析不能绕过外发权限");
-    assert.ok(store.getAnalysis(sessionId), "授权不足不能清掉已有分析");
+    assert.ok(store.getAnalysis(sessionId), "云工具模型无需额外确认即可保存分析");
 
     const summaryPath = "/api/activity-recorder/summary/daily/2026-08-31";
     const missing = await handleActivityHttpRequest({ method: "GET", pathname: summaryPath }, deps);

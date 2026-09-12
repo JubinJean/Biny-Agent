@@ -10,6 +10,7 @@ import type { ModelProfile } from "../../../../../config/schema.js";
 import type {
   DesktopActivitySettingsInput,
   DesktopActivitySettingsPatch,
+  DesktopActivitySettingsUpdate,
   DesktopChatParamsSettings,
   DesktopChatPersonalizationOverride,
   DesktopCompactionSettings,
@@ -54,6 +55,8 @@ export function SettingsDraftProvider({
 }): React.JSX.Element {
   const [snapshot, setSnapshot] = useState<DesktopSettingsSnapshot>();
   const [draft, setDraft] = useState<DesktopSettingsDraft>();
+  const [globalActivity, setGlobalActivity] = useState<DesktopActivitySettingsUpdate>();
+  const globalActivityRef = useRef<DesktopActivitySettingsUpdate | undefined>(undefined);
   const [loadError, setLoadError] = useState<string>();
   const [saveState, setSaveState] = useState<SettingsSaveState>("clean");
   const credentialHandlesRef = useRef(new Set<string>());
@@ -85,15 +88,24 @@ export function SettingsDraftProvider({
   }, []);
 
   useEffect(() => {
-    if (!active || !projectId) return;
+    if (!active) return;
     let cancelled = false;
     setSnapshot(undefined);
     snapshotRef.current = undefined;
     setDraft(undefined);
+    setGlobalActivity(undefined);
+    globalActivityRef.current = undefined;
     setLoadError(undefined);
     setSaveState("clean");
-    window.biny.settingsSnapshot(projectId, sessionId)
-      .then((next) => { if (!cancelled) adoptSnapshot(next); })
+    // 没有项目时只读取全局 Activity 快照，不伪造项目 ID，也不加载项目模型或会话。
+    const request = projectId
+      ? window.biny.settingsSnapshot(projectId, sessionId).then((next) => { if (!cancelled) adoptSnapshot(next); })
+      : window.biny.activitySettings().then((next) => {
+        if (cancelled) return;
+        globalActivityRef.current = next;
+        setGlobalActivity(next);
+      });
+    request
       .catch((error: unknown) => {
         if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
       });
@@ -113,16 +125,18 @@ export function SettingsDraftProvider({
 
   const updateActivityImmediately = useCallback((patch: DesktopActivitySettingsPatch): Promise<void> => {
     const operation = activityUpdateTailRef.current.then(async () => {
-      const current = snapshotRef.current;
+      const current = snapshotRef.current ?? globalActivityRef.current;
       if (!current) throw new Error("Activity 设置尚未加载完成。");
       const result = await window.biny.updateActivitySettings(patch, current.configRevision);
-      const nextSnapshot: DesktopSettingsSnapshot = {
-        ...current,
-        activity: result.activity,
-        configRevision: result.configRevision
-      };
-      snapshotRef.current = nextSnapshot;
-      setSnapshot(nextSnapshot);
+      const projectSnapshot = snapshotRef.current;
+      if (projectSnapshot && projectSnapshot === current) {
+        const nextSnapshot = { ...projectSnapshot, ...result };
+        snapshotRef.current = nextSnapshot;
+        setSnapshot(nextSnapshot);
+      } else if (globalActivityRef.current === current) {
+        globalActivityRef.current = result;
+        setGlobalActivity(result);
+      } else return;
       setDraft((draftCurrent) => draftCurrent ? {
         ...draftCurrent,
         activity: activityInputFromSnapshot(result.activity)
@@ -398,6 +412,7 @@ export function SettingsDraftProvider({
   const value = useMemo<SettingsDraftContextValue>(() => ({
     snapshot,
     draft,
+    activity: draft?.activity ?? globalActivity?.activity,
     loadError,
     dirtyCount,
     preferencesOnly,
@@ -431,6 +446,7 @@ export function SettingsDraftProvider({
     dirtyCount,
     discard,
     draft,
+    globalActivity,
     invalid,
     loadError,
     releaseCredential,

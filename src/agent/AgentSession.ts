@@ -93,7 +93,6 @@ import {
   EmotionAnalysisScheduler,
   type EmotionAnalysisMessage
 } from "./context/emotionAnalysis.js";
-import { ActivityPrivacyPolicy } from "../activity/privacyPolicy.js";
 import { isActivityMemory } from "../activity/modelContext.js";
 import { FatigueService } from "./context/fatigue.js";
 import { runMemoryCommand } from "./context/memoryCommands.js";
@@ -183,8 +182,6 @@ export interface AgentSessionOptions {
   runtimeEventSink?: RuntimeEventSink;
   /** Host-owned MCP/Plugin 调用的统一 Capability authority。 */
   capabilities?: CapabilityStore;
-  /** 由 composition root 提供的 Activity 被动上下文；失败时不得阻断普通聊天。 */
-  activityContext?: (input: string, model: AgentModel | undefined, signal?: AbortSignal) => Promise<string | undefined>;
   /** 回合完成后识别出可复用 Recipe；只通知界面，不创建任何对象。 */
   onRecipeReady?: (notice: { recipe: import("../session/recipes.js").RecipeSuggestion; runId?: string }) => void;
   onTitleGenerated?: (sessionId: string, title: string) => void;
@@ -459,7 +456,6 @@ export class AgentSession {
           : { currentWorkspace: Math.max(threshold, configured.currentWorkspace), crossWorkspace: Math.max(threshold, configured.crossWorkspace) };
       },
       queryRewriteEnabled: () => this.activePersonalization.queryRewrite,
-      allowEntry: (entry) => !isActivityMemory(entry) || this.activityRecallAllowed(),
       rewriteQuery: async (query, signal) => {
         const result = await generateNativeText(this.memoryModelFor("rewriteModel"), [{
           role: "user",
@@ -483,7 +479,6 @@ export class AgentSession {
     this.crystalService = new CrystalService({
       getModel: this.toolModel,
       getConfig: () => this.activeConfig.crystal,
-      allowActivity: () => this.activityRecallAllowed(),
       readAnchorText: async ({ threadId, anchorId }) => {
         if (!threadId || !/^[A-Za-z0-9_-]+$/u.test(threadId)) return undefined;
         const filePath = threadId === this.recorder.sessionId
@@ -579,7 +574,7 @@ export class AgentSession {
 
   private async dailyNotesPrompt(now = new Date()): Promise<string | undefined> {
     try {
-      return await readFileMemoryPrompt(now, { allowActivity: this.activityRecallAllowed() });
+      return await readFileMemoryPrompt(now, { allowActivity: true });
     } catch {
       return undefined;
     }
@@ -660,18 +655,7 @@ export class AgentSession {
     } catch {
       // 辅助引用读取失败不扩大到其他会话或阻断当前对话。
     }
-    let activityPrompt: string | undefined;
-    if (this.options.activityContext !== undefined) {
-      try {
-        activityPrompt = await this.options.activityContext(
-          input,
-          this.options.modelManager?.getModel() ?? this.options.model,
-          signal
-        );
-      } catch {
-        // Activity 是辅助上下文，索引/权限/模型不可用时继续正常聊天。
-      }
-    }
+    signal?.throwIfAborted();
     return buildPromptBundle({
       permissionMode,
       extensionPrompt: this.extensionPrompt(capabilitySelection),
@@ -683,7 +667,6 @@ export class AgentSession {
       parentThreadPrompt,
       emotionPrompt,
       soulSource: soulSnapshot.source,
-      activityPrompt,
       dailyNotesPrompt,
       crystalPrompt,
       now: promptNow,
@@ -749,10 +732,6 @@ export class AgentSession {
     }
     yield { type: "preparation.updated", stage: "ready" };
     return selected;
-  }
-
-  private activityRecallAllowed(model = this.options.modelManager?.getModel() ?? this.options.model): boolean {
-    return model !== undefined && new ActivityPrivacyPolicy(this.activeConfig.activity).canUseWithModel(model);
   }
 
   /** 每次 provider 请求前重新读取情绪，但只替换动态 prompt，不触发上下文重建。 */
@@ -970,7 +949,7 @@ export class AgentSession {
     }
     const result = await refreshChatDailyDiary(dateKey, {
       model,
-      allowActivity: this.activityRecallAllowed(model),
+      allowActivity: true,
       signal: options.signal,
       force: options.force,
       onUsage: (usage, operation, modelAlias) => { this.recordModelUsage(usage, operation, modelAlias); },
@@ -984,7 +963,7 @@ export class AgentSession {
         soulStorage: this.soulStorage,
         emotionStorage: this.emotionStorage,
         sessionId: this.recorder.sessionId,
-        allowActivity: this.activityRecallAllowed(model),
+        allowActivity: true,
         signal: options.signal,
         model,
         memoryContext: memories?.entries.filter((entry) => entry.metadata?.source !== "self_reflection" && !isActivityMemory(entry)).map((entry) => `- ${entry.summary}`).join("\n"),

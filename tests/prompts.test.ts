@@ -20,7 +20,6 @@ const bundle = buildPromptBundle({
   extensionPrompt: "Available Skill metadata",
   emotionPrompt: emotion,
   dailyNotesPrompt: "private daily note",
-  activityPrompt: "private activity",
   crystalPrompt: "private crystal"
 });
 
@@ -28,8 +27,8 @@ assert.match(bundle.systemPrompt, /Available Skill metadata/u);
 assert.doesNotMatch(bundle.systemPrompt, /private daily note|private activity|private crystal|Current emotion/u);
 assert.ok(bundle.turnContext.indexOf("<local_time") < bundle.turnContext.indexOf("<!-- biny-emotion:start -->"));
 assert.ok(bundle.turnContext.indexOf("<local_time") < bundle.turnContext.indexOf("private daily note"));
-assert.ok(bundle.turnContext.indexOf("private daily note") < bundle.turnContext.indexOf("private activity"));
-assert.ok(bundle.turnContext.indexOf("private activity") < bundle.turnContext.indexOf("private crystal"));
+assert.ok(bundle.turnContext.indexOf("private daily note") < bundle.turnContext.indexOf("private crystal"));
+assert.doesNotMatch(bundle.turnContext, /biny-activity|Activity Recorder/u, "每轮不再被动注入 Activity");
 
 const datedAgain = buildPromptBundle({ ...buildOptions(), now: new Date("2026-09-12T04:05:06.000Z") });
 assert.equal(bundle.systemPrompt, datedAgain.systemPrompt, "date changes must not invalidate the static system prompt");
@@ -79,7 +78,6 @@ function buildOptions() {
     extensionPrompt: "Available Skill metadata",
     emotionPrompt: emotion,
     dailyNotesPrompt: "private daily note",
-    activityPrompt: "private activity",
     crystalPrompt: "private crystal"
   };
 }

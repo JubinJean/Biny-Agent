@@ -5,6 +5,8 @@
  * 这里负责 JSONL IPC、事件/截图落盘、事件驱动的 Session 生命周期、容量淘汰和运行态广播。
  */
 import { access, readFile } from "node:fs/promises";
+import { watch, type FSWatcher } from "node:fs";
+import { isDeepStrictEqual } from "node:util";
 import path from "node:path";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { createInterface, type Interface } from "node:readline";
@@ -12,7 +14,7 @@ import type { AgentConfigStore } from "../../../config/store.js";
 import { activitySettingsSchema, type ActivitySettings } from "../../../activity/settings.js";
 import { ConfigRevisionConflictError } from "../../../config/versioned.js";
 import { ActivityStore, type ActivitySearchResult } from "../../../activity/store.js";
-import { ActivityPrivacyPolicy } from "../../../activity/privacyPolicy.js";
+import { createActivityOperation } from "../../../activity/operation.js";
 import {
   analyzePendingActivitySessions,
   buildActivityReport,
@@ -107,7 +109,13 @@ interface SidecarErrorMessage {
   message: string;
 }
 
-type SidecarMessage = SidecarEventMessage | SidecarCaptureMessage | SidecarOcrMessage | SidecarStatusMessage | SidecarErrorMessage;
+interface SidecarDesktopCaptureMessage {
+  type: "desktop_capture";
+  requestId: string;
+  maxWidth: number;
+}
+
+type SidecarMessage = SidecarEventMessage | SidecarCaptureMessage | SidecarOcrMessage | SidecarStatusMessage | SidecarErrorMessage | SidecarDesktopCaptureMessage;
 type PersistableSidecarMessage = SidecarEventMessage | SidecarCaptureMessage | SidecarOcrMessage;
 
 /**
@@ -123,6 +131,8 @@ export interface ActivityRecorderServiceOptions {
   emit?: (snapshot: ActivityRuntimeSnapshot) => void;
   /** 当前桌面 Runtime 的本地 Activity embedding；没有驻留 Runtime 时后台任务自然跳过。 */
   getEmbeddingRuntime?: () => Promise<EmbeddingModelRuntime | undefined>;
+  /** Electron 备用截图；无桌面宿主的 CLI 不宣告这项能力。 */
+  captureDesktopScreen?: (maxWidth: number) => Promise<Buffer>;
   /** 测试可注入 Activity 日报/向量调度器的时钟；生产保持默认节奏。 */
   embeddingSchedulerTimers?: import("../../../activity/embeddingScheduler.js").ActivityEmbeddingSchedulerTimers;
   embeddingInitialDelayMs?: number;
@@ -130,7 +140,7 @@ export interface ActivityRecorderServiceOptions {
   dailySummaryTimers?: import("../../../activity/analysisScheduler.js").ActivityAnalysisSchedulerTimers;
   dailySummaryInitialDelayMs?: number;
   dailySummaryIntervalMs?: number;
-  writeDailyNote?: (dateKey: string, content: string) => Promise<string>;
+  writeDailyNote?: typeof writeDailyActivityNote;
   /** Activity 分析提取出的稳定事实写入统一记忆库。 */
   writeMemories?: ActivityAnalyzerDeps["writeMemories"];
   /** Activity 分析完成后更新主题材料。 */
@@ -145,6 +155,9 @@ export class ActivityRecorderService {
   private child?: ChildProcessWithoutNullStreams;
   private output?: Interface;
   private sessionId?: string;
+  private recordingRevision?: string;
+  private configWatcher?: FSWatcher;
+  private configRefreshTimer?: ReturnType<typeof setTimeout>;
   private sessionIdleTimer?: ReturnType<typeof setTimeout>;
   private snapshotRotationInitialTimer?: ReturnType<typeof setTimeout>;
   private snapshotRotationTimer?: ReturnType<typeof setInterval>;
@@ -166,10 +179,11 @@ export class ActivityRecorderService {
   private readonly analysisScheduler: ActivityAnalysisScheduler;
   private readonly embeddingScheduler: ActivityEmbeddingScheduler;
   private readonly getEmbeddingRuntime: (() => Promise<EmbeddingModelRuntime | undefined>) | undefined;
+  private readonly captureDesktopScreen: ((maxWidth: number) => Promise<Buffer>) | undefined;
   private readonly dailySummaryTimers: import("../../../activity/analysisScheduler.js").ActivityAnalysisSchedulerTimers;
   private readonly dailySummaryInitialDelayMs: number;
   private readonly dailySummaryIntervalMs: number;
-  private readonly writeDailyNote: (dateKey: string, content: string) => Promise<string>;
+  private readonly writeDailyNote: typeof writeDailyActivityNote;
   private readonly writeMemories: ActivityAnalyzerDeps["writeMemories"];
   private readonly onAnalyzed: ActivityAnalyzerDeps["onAnalyzed"];
   private dailySummaryInitialTimer?: ReturnType<typeof setTimeout>;
@@ -190,6 +204,7 @@ export class ActivityRecorderService {
     this.sidecarPath = options.sidecarPath;
     this.emit = options.emit;
     this.getEmbeddingRuntime = options.getEmbeddingRuntime;
+    this.captureDesktopScreen = options.captureDesktopScreen;
     this.dailySummaryTimers = options.dailySummaryTimers ?? {
       setTimeout: (callback, ms) => setTimeout(callback, ms),
       clearTimeout: (handle) => clearTimeout(handle)
@@ -199,8 +214,7 @@ export class ActivityRecorderService {
     this.writeDailyNote = options.writeDailyNote ?? writeDailyActivityNote;
     this.writeMemories = options.writeMemories;
     this.onAnalyzed = options.onAnalyzed;
-    // 分析由启动后的首次检查和周期 sweep 触发；门禁与模型
-    // 选择在 runAnalysisSweep 里每次新鲜加载。
+    // 分析由启动后的首次检查和周期 sweep 触发，每次都重新读取工具模型配置。
     this.analysisScheduler = new ActivityAnalysisScheduler({
       run: () => this.runAnalysisSweep(),
       isUserActive: () => this.isUserActive()
@@ -216,21 +230,26 @@ export class ActivityRecorderService {
 
   async initialize(): Promise<void> {
     await this.enqueue(async () => {
-      this.resetAbortControllerIfNeeded();
       const config = await this.configStore.load();
       await this.applySettings(config.activity);
+      this.watchConfig();
     });
   }
 
   async refresh(): Promise<void> {
+    this.analysisAbort.abort();
     await this.enqueue(async () => {
-      this.resetAbortControllerIfNeeded();
       const config = await this.configStore.load();
       await this.applySettings(config.activity);
+      this.watchConfig();
     });
   }
 
   async stop(): Promise<void> {
+    this.configWatcher?.close();
+    this.configWatcher = undefined;
+    if (this.configRefreshTimer) clearTimeout(this.configRefreshTimer);
+    this.configRefreshTimer = undefined;
     // 先停调度并中止在途分析，再停采集，避免退出过程中重新排期。
     this.analysisScheduler.stop();
     this.embeddingScheduler.stop();
@@ -243,9 +262,47 @@ export class ActivityRecorderService {
     return structuredClone(this.createSnapshot(true));
   }
 
+  private watchConfig(): void {
+    const configPath = this.configStore.configPath?.();
+    if (!configPath || this.configWatcher) return;
+    // 监听目录而非文件 inode，覆盖编辑器/CLI 的临时文件 + rename 原子保存。
+    const watcher = watch(path.dirname(configPath), { persistent: false }, (_event, filename) => {
+      if (filename !== null && String(filename) !== path.basename(configPath)) return;
+      if (this.configRefreshTimer) clearTimeout(this.configRefreshTimer);
+      this.configRefreshTimer = setTimeout(() => {
+        this.configRefreshTimer = undefined;
+        void this.enqueue(async () => {
+          if (this.configWatcher !== watcher) return;
+          try {
+            const config = await this.configStore.load();
+            if (this.configWatcher !== watcher) return;
+            if (!isDeepStrictEqual(config.activity, this.settings) || this.state === "error") {
+              await this.applySettings(config.activity);
+            }
+          } catch (error) {
+            if (this.configWatcher !== watcher) return;
+            // 无法读取新策略时停止采集；保留监听，配置修复后再恢复。
+            this.analysisScheduler.stop();
+            this.embeddingScheduler.stop();
+            this.analysisAbort.abort();
+            await this.stopInternal();
+            this.setState("error", safeError(error));
+          }
+        }).catch((error: unknown) => this.setState("error", safeError(error)));
+      }, 100);
+      this.configRefreshTimer.unref?.();
+    });
+    watcher.on("error", (error) => {
+      void this.stop().then(() => this.setState("error", safeError(error)));
+    });
+    this.configWatcher = watcher;
+  }
+
   /** 读取全局活动设置；QuickChat 不应借用需要 projectId 的设置事务快照。 */
-  async settingsSnapshot(): Promise<ActivitySettings> {
-    return structuredClone((await this.configStore.load()).activity);
+  async settingsSnapshot(): Promise<DesktopActivitySettingsUpdate> {
+    if (!this.configStore.loadVersioned) throw new Error("当前配置存储不支持 Activity 版本快照。");
+    const { config, revision } = await this.configStore.loadVersioned();
+    return { activity: structuredClone(config.activity), configRevision: revision };
   }
 
   /**
@@ -270,11 +327,18 @@ export class ActivityRecorderService {
       activity: activitySettingsSchema.parse({ ...current.config.activity, ...patch })
     };
     const saved = await saveVersioned(next, current.revision);
+    // 保存成功即撤销旧配置下的在途任务，不等待采集写队列完成才生效。
+    this.analysisAbort.abort();
     await this.enqueue(async () => await this.applySettings(saved.config.activity));
     return {
       activity: structuredClone(saved.config.activity),
       configRevision: saved.revision
     };
+  }
+
+  /** 本地 HTTP 等入口复用宿主的取消边界，不另建一套任务状态。 */
+  getOperationSignal(): AbortSignal {
+    return this.analysisAbort.signal;
   }
 
   async search(query: string, limit = 20): Promise<ActivitySearchResult[]> {
@@ -315,14 +379,19 @@ export class ActivityRecorderService {
    * 做多次模型调用，占用采集器那条写连接会把事件落盘队列堵住。这里开一条独立连接读分析表、补分析。
    */
   async buildReport(date?: string): Promise<ActivityReportResult> {
+    const signal = this.analysisAbort.signal;
+    signal.throwIfAborted();
     const config = await this.configStore.load();
-    const policy = new ActivityPrivacyPolicy(config.activity);
+    signal.throwIfAborted();
+
     const model = resolveToolModel(config);
     const store = new ActivityStore();
     await store.open(config.activity.outputDirectory);
     try {
-      const result = await buildActivityReport({ store, policy, model, writeMemories: this.writeMemories, onAnalyzed: this.onAnalyzed }, date ?? "today");
-      await this.writeDailyNote(result.date, formatActivityDailyNote(result));
+      const operation = createActivityOperation(store, config.activity, async () => (await this.configStore.load()).activity, signal);
+      const result = await buildActivityReport({ store, model, ...operation, writeMemories: this.writeMemories, onAnalyzed: this.onAnalyzed }, date ?? "today");
+      await operation.checkpoint();
+      await this.writeDailyNote(result.date, formatActivityDailyNote(result), { checkpoint: operation.checkpoint });
       return result;
     } finally {
       await store.close();
@@ -331,11 +400,15 @@ export class ActivityRecorderService {
 
   /** 首页只消费已分析且获准使用的活动，生成结果沿用领域层的缓存。 */
   async suggestions(): Promise<ActivitySuggestionsResult> {
+    const signal = this.analysisAbort.signal;
+    signal.throwIfAborted();
     const config = await this.configStore.load();
+    signal.throwIfAborted();
     const store = new ActivityStore();
     await store.open(config.activity.outputDirectory);
     try {
-      return await generateActivitySuggestions({ store, model: resolveToolModel(config), policy: new ActivityPrivacyPolicy(config.activity) });
+      const operation = createActivityOperation(store, config.activity, async () => (await this.configStore.load()).activity, signal);
+      return await generateActivitySuggestions({ store, model: resolveToolModel(config), ...operation });
     } finally {
       await store.close();
     }
@@ -344,14 +417,17 @@ export class ActivityRecorderService {
   /** 后台补齐本地 embedding；没有当前桌面 Runtime 或模型未下载时保持无副作用。 */
   private async runEmbeddingSweep(): Promise<void> {
     if (!this.getEmbeddingRuntime) return;
+    const signal = this.analysisAbort.signal;
+    signal.throwIfAborted();
     const config = await this.configStore.load();
+    signal.throwIfAborted();
     const store = new ActivityStore();
     await store.open(config.activity.outputDirectory);
     try {
       await precomputeActivityEmbeddings({
         store,
         getEmbeddingRuntime: this.getEmbeddingRuntime,
-        signal: this.analysisAbort.signal
+        ...createActivityOperation(store, config.activity, async () => (await this.configStore.load()).activity, signal)
       });
     } finally {
       await store.close();
@@ -361,17 +437,21 @@ export class ActivityRecorderService {
   /**
    * 周期分析的统一入口：首次检查和后续 sweep 都跑这一个。
    * 与 buildReport 同理开一条独立 store 连接，避免多次模型调用堵住采集写队列。
-   * 每次新鲜加载 config，因此 analysisPolicy/toolModel 的改动下一轮即生效；
-   * 策略未放行时 session 保持待分析；无模型或失败则记录对应终态，供显式重分析。
+   * 每次新鲜加载 config，因此工具模型的改动下一轮即生效；
+   * 无模型或失败则记录对应终态，供显式重分析。
    */
   private async runAnalysisSweep(): Promise<void> {
+    const signal = this.analysisAbort.signal;
+    signal.throwIfAborted();
     const config = await this.configStore.load();
-    const policy = new ActivityPrivacyPolicy(config.activity);
+    signal.throwIfAborted();
+
     const model = resolveToolModel(config);
     const store = new ActivityStore();
     await store.open(config.activity.outputDirectory);
     try {
-      await analyzePendingActivitySessions({ store, policy, model, signal: this.analysisAbort.signal, writeMemories: this.writeMemories, onAnalyzed: this.onAnalyzed });
+      const operation = createActivityOperation(store, config.activity, async () => (await this.configStore.load()).activity, signal);
+      await analyzePendingActivitySessions({ store, model, ...operation, writeMemories: this.writeMemories, onAnalyzed: this.onAnalyzed });
     } finally {
       await store.close();
     }
@@ -394,9 +474,10 @@ export class ActivityRecorderService {
   }
 
   async clear(): Promise<ActivityRuntimeSnapshot> {
-    // 清空期间暂停后台分析/向量任务，避免独立连接在删除同一批数据；如果当前确实在采集，
-    // 完成后再恢复两套调度器。显式 stop 后调用 clear 不应偷偷重新启动 sidecar。
-    const shouldRestart = this.child !== undefined;
+    // 清空只删除 Activity 原始记录及其库内派生数据，不跨库删除长期记忆、结晶或导出文件。
+    // 启用时恢复完整调度（包括日报），但显式 stop 后清空不能偷偷重新启动。
+    const previousState = this.state;
+    const shouldRestart = previousState !== "stopped" && this.settings?.enabled === true;
     this.analysisScheduler.stop();
     this.embeddingScheduler.stop();
     this.analysisAbort.abort();
@@ -405,10 +486,10 @@ export class ActivityRecorderService {
       await this.store.clear();
       this.invalidateStoreSnapshot();
       if (shouldRestart && this.settings) {
+        await this.applySettings(this.settings);
+      } else if (previousState !== "stopped") {
         this.resetAbortControllerIfNeeded();
-        this.analysisScheduler.start();
-        this.embeddingScheduler.start();
-        await this.startSidecar(this.settings);
+        this.setState(previousState);
       }
     });
     this.publish();
@@ -418,12 +499,18 @@ export class ActivityRecorderService {
   private async applySettings(nextSettings: ActivitySettings): Promise<void> {
     // updateConfig 会完整 stop/reconfigure/start；除了让配置边界可观察，也会重置
     // sidecar 的截图去重、输入聚合和浏览器状态，不能在当前 session 内原地 update。
+    this.analysisScheduler.stop();
+    this.embeddingScheduler.stop();
+    this.analysisAbort.abort();
     await this.stopInternal();
+    this.resetAbortControllerIfNeeded();
     this.settings = nextSettings;
     // 库可能被重开到新目录，closeOpenSessions 也会改写 session；旧缓存一律作废。
     this.invalidateStoreSnapshot();
     try {
       await this.store.open(nextSettings.outputDirectory);
+      await this.store.reconcileSnapshotFiles();
+      this.recordingRevision = this.store.clearRevision();
       // 启动采集器时先关闭上次异常退出留下的 open session。
       this.store.closeOpenSessions(new Date().toISOString());
     } catch (error) {
@@ -490,7 +577,7 @@ export class ActivityRecorderService {
     });
     // session 是懒创建的：只有收到首个输入/焦点事件或首张截图时才落库，
     // 启动 sidecar 本身不能制造一个空 session。
-    this.send({ type: "start", settings });
+    this.send({ type: "start", settings, desktopCaptureAvailable: this.captureDesktopScreen !== undefined });
     this.setState("running");
     this.scheduleSnapshotRotation(settings.maxStorageMb);
   }
@@ -542,10 +629,25 @@ export class ActivityRecorderService {
     while (this.bufferedSidecarMessages.length > 0) {
       const messages = this.bufferedSidecarMessages.splice(0);
       for (const message of messages) {
-        if (message.type === "event") await this.persistEvent(message);
-        else if (message.type === "capture") await this.persistFallbackCapture(message);
-        else await this.persistOcr(message);
+        await this.persistSidecarMessage(message, this.child);
       }
+    }
+  }
+
+  private async persistSidecarMessage(message: PersistableSidecarMessage, child: ChildProcessWithoutNullStreams | undefined): Promise<void> {
+    if (!child || child !== this.child) return;
+    try {
+      if (this.recordingRevision !== this.store.clearRevision()) {
+        // 其他进程清空后，旧 session 和 sidecar 缓冲都已失效。重新启动采集，不能把
+        // 旧消息挂到新 session；stop 冲刷出的消息也必须丢弃，且不能递归重启。
+        if (!this.sidecarStopping) await this.applySettings((await this.configStore.load()).activity);
+        return;
+      }
+      if (message.type === "event") await this.persistEvent(message);
+      else if (message.type === "capture") await this.persistFallbackCapture(message);
+      else await this.persistOcr(message);
+    } catch (error) {
+      this.setState("error", safeError(error));
     }
   }
 
@@ -557,18 +659,17 @@ export class ActivityRecorderService {
       this.setState("error", "Activity sidecar 返回了无效 JSON。");
       return;
     }
+    if (message.type === "desktop_capture") {
+      void this.respondDesktopCapture(message);
+      return;
+    }
     if (message.type === "event" || message.type === "capture" || message.type === "ocr") {
       if (this.sidecarStopping) {
         this.bufferedSidecarMessages.push(message);
         return;
       }
-      if (message.type === "event") {
-        void this.enqueue(async () => await this.persistEvent(message));
-      } else if (message.type === "capture") {
-        void this.enqueue(async () => await this.persistFallbackCapture(message));
-      } else {
-        void this.enqueue(async () => await this.persistOcr(message));
-      }
+      const child = this.child;
+      void this.enqueue(async () => await this.persistSidecarMessage(message, child));
       return;
     }
     if (message.type === "status") {
@@ -587,6 +688,31 @@ export class ActivityRecorderService {
       return;
     }
     this.setState("error", message.message);
+  }
+
+  private async respondDesktopCapture(message: SidecarDesktopCaptureMessage): Promise<void> {
+    const child = this.child;
+    if (!child || this.sidecarStopping) return;
+    let imageBase64: string | undefined;
+    let error: string | undefined;
+    try {
+      if (!this.captureDesktopScreen || !this.settings?.enabled || this.screenLocked || !this.screenRecordingGranted) {
+        throw new Error("备用截图当前不可用或未获屏幕录制权限。");
+      }
+      if (!Number.isInteger(message.maxWidth) || message.maxWidth < 1 || message.maxWidth > 2_560) throw new Error("无效截图尺寸。");
+      const image = await this.captureDesktopScreen(message.maxWidth);
+      if (image.byteLength > 20 * 1024 * 1024) throw new Error("备用截图超过大小限制。");
+      imageBase64 = image.toString("base64");
+    } catch (cause) {
+      error = safeError(cause);
+    }
+    // 截图后可能发生锁屏、停止或 sidecar 重启；迟到响应不能进入下一代采集器。
+    if (this.child !== child || this.sidecarStopping || this.state === "stopped") return;
+    if (this.screenLocked || !this.settings?.enabled || !this.screenRecordingGranted) {
+      imageBase64 = undefined;
+      error = "采集状态已改变，丢弃备用截图。";
+    }
+    this.send({ type: "desktop_capture_result", requestId: message.requestId, imageBase64, error }, child);
   }
 
   private async persistEvent(message: SidecarEventMessage): Promise<void> {
@@ -797,6 +923,7 @@ export class ActivityRecorderService {
 
   private generateYesterdaysSummary(): void {
     if (this.dailySummaryInFlight) return;
+    const signal = this.analysisAbort.signal;
     this.dailySummaryInFlight = true;
     void (async () => {
       try {
@@ -805,7 +932,8 @@ export class ActivityRecorderService {
         yesterday.setDate(yesterday.getDate() - 1);
         const dateKey = formatLocalDateKey(yesterday);
         const config = await this.configStore.load();
-        const policy = new ActivityPrivacyPolicy(config.activity);
+        signal.throwIfAborted();
+
         // 独立连接让事件在生成日报期间继续落盘。
         const store = new ActivityStore();
         await store.open(config.activity.outputDirectory);
@@ -815,8 +943,8 @@ export class ActivityRecorderService {
           // 自动日结只维护 SQLite 摘要；工作日报的文件导出由显式请求触发。
           await refreshActivitySummaryWithNarrative(store, "daily", dateKey, {
             model: resolveToolModel(config),
-            policy,
-            signal: this.analysisAbort.signal,
+
+            ...createActivityOperation(store, config.activity, async () => (await this.configStore.load()).activity, signal),
             now,
             withNarrative: true
           });

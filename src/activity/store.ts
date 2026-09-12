@@ -24,6 +24,8 @@ import type {
 } from "./summary.js";
 import { ACTIVITY_FTS_INDEX_VERSION, activityFtsMatch, segmentActivityText } from "./ftsText.js";
 import { activitySummary, redactActivityOcrText, redactActivityText } from "./redaction.js";
+import type { ActivityMemoryCandidate } from "./analyzer.js";
+import { withLocalFileWriteLock } from "../utils/localFileLock.js";
 
 export interface ActivityEventInput {
   sessionId: string;
@@ -321,6 +323,11 @@ export class ActivityStore {
       // WAL + busy_timeout：采集器持续写事件，分析层（activity_report / 桌面报告）用独立连接
       // 并发读写同一个库；没有 busy_timeout 时写冲突会立刻报 SQLITE_BUSY 而不是短暂等待。
       database.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
+      database.exec("CREATE TABLE IF NOT EXISTS activity_generation (id INTEGER PRIMARY KEY CHECK (id = 1), revision TEXT NOT NULL);");
+      database.prepare("INSERT OR IGNORE INTO activity_generation (id, revision) VALUES (1, ?)").run(randomUUID());
+      if (!(database.prepare("PRAGMA table_info(activity_generation)").all() as Array<{ name: string }>).some((column) => column.name === "data_revision")) {
+        database.exec("ALTER TABLE activity_generation ADD COLUMN data_revision INTEGER NOT NULL DEFAULT 0");
+      }
       database.exec(`
         CREATE TABLE IF NOT EXISTS activity_sessions (
           id TEXT PRIMARY KEY,
@@ -450,6 +457,11 @@ export class ActivityStore {
       this.migrateActivityRecordIds(database);
       database.exec("CREATE INDEX IF NOT EXISTS activity_events_capture_id_idx ON activity_events(capture_id);");
       this.ensureSnapshotRows(database);
+      // 撤掉实验性的分块派生索引；保留原始 OCR 和原有整帧向量。
+      database.exec(`
+        DROP TRIGGER IF EXISTS activity_ocr_chunks_text_changed;
+        DROP TABLE IF EXISTS activity_ocr_chunks;
+      `);
       // 分析层输出表：一个 session 一行的结构化分析结果，与原始事件分表存放。
       database.exec(`
         CREATE TABLE IF NOT EXISTS activity_session_analysis (
@@ -480,7 +492,11 @@ export class ActivityStore {
           entity_details_json TEXT NOT NULL DEFAULT '{}',
           confidence   REAL NOT NULL DEFAULT 0,
           source_event_count INTEGER NOT NULL DEFAULT 0,
-          input_hash   TEXT NOT NULL
+          input_hash   TEXT NOT NULL,
+          memory_candidates_json TEXT NOT NULL DEFAULT '[]',
+          crystal_pending INTEGER NOT NULL DEFAULT 0,
+          projection_checked_at INTEGER NOT NULL DEFAULT 0,
+          projection_revision TEXT NOT NULL DEFAULT ''
         );
         CREATE INDEX IF NOT EXISTS activity_analysis_time_idx ON activity_session_analysis(analyzed_at);
         CREATE INDEX IF NOT EXISTS activity_analysis_project_idx ON activity_session_analysis(project);
@@ -500,7 +516,16 @@ export class ActivityStore {
         CREATE INDEX IF NOT EXISTS activity_analysis_embeddings_fp_idx ON activity_analysis_embeddings(model_fingerprint);
       `);
       this.ensureSearchIndex(database);
-      await this.reconcileSnapshotFiles(database, root);
+      // 缓存版本跟随数据提交，而不是数量或输入 hash：同一输入重新分析也会改变输出。
+      // SQLite 触发器覆盖独立进程、级联删除与事务回滚；开库和向量回填本身不递增。
+      for (const table of ["activity_sessions", "activity_events", "activity_session_analysis"]) {
+        for (const operation of ["INSERT", "UPDATE", "DELETE"]) {
+          database.exec(`CREATE TRIGGER IF NOT EXISTS ${table}_cache_${operation.toLowerCase()}
+            AFTER ${operation} ON ${table} BEGIN
+              UPDATE activity_generation SET data_revision = data_revision + 1 WHERE id = 1;
+            END;`);
+        }
+      }
       this.database = database;
       this.root = root;
     } catch (error) {
@@ -554,49 +579,51 @@ export class ActivityStore {
 
   async recordFallbackCapture(input: ActivityFallbackCaptureInput): Promise<ActivityStoredEvent> {
     const root = this.requireRoot();
-    const captureId = normalizeShortText(input.captureId);
-    if (captureId) {
-      const existing = this.findStoredEventByCaptureId(captureId);
-      if (existing) return existing;
-    }
-    const timestamp = safeSnapshotTimestamp(input.occurredAt);
-    const dateKey = snapshotDateKey(input.occurredAt);
-    // 文件名后缀是随机 ID；内容 hash 只放在 snapshot 元数据里，避免同一毫秒内
-    // 相同画面因 hash 相同而发生文件路径碰撞。
-    const relativeSnapshotPath = path.join("snapshots", dateKey, `${timestamp}-${randomUUID().slice(0, 8)}.jpg`);
-    const snapshotPath = path.join(root, relativeSnapshotPath);
-    await mkdir(path.dirname(snapshotPath), { recursive: true, mode: 0o700 });
-    const temporaryDirectory = path.join(root, ".capture-tmp");
-    await mkdir(temporaryDirectory, { recursive: true, mode: 0o700 });
-    const temporaryPath = path.join(temporaryDirectory, `${randomUUID()}.tmp`);
-    await writeFile(temporaryPath, input.jpeg, { mode: 0o600 });
-    try {
-      await rename(temporaryPath, snapshotPath);
-      await chmod(snapshotPath, 0o600);
-      const stored = this.insertEvent({
-        ...input,
-        source: "screenshot_fallback",
-        eventType: input.eventType || "fallback_capture"
-      }, {
-        relativeSnapshotPath,
-        bytes: input.jpeg.byteLength,
-        width: input.width,
-        height: input.height,
-        trigger: input.captureTrigger ?? input.fallbackReason ?? input.eventType,
-        contentHash: input.contentHash,
-        histogramChange: input.histogramChange,
-        pixelDiff: input.pixelDiff
-      });
-      if (stored.snapshotPath !== relativeSnapshotPath) {
-        await unlink(snapshotPath).catch(() => undefined);
+    return await withLocalFileWriteLock(root, ".activity.files.lock", async () => {
+      const captureId = normalizeShortText(input.captureId);
+      if (captureId) {
+        const existing = this.findStoredEventByCaptureId(captureId);
+        if (existing) return existing;
       }
-      const current = this.requireDatabase().prepare("SELECT snapshot_path FROM activity_events WHERE id = ?").get(stored.id) as { snapshot_path: string | null } | undefined;
-      return { ...stored, snapshotPath: current?.snapshot_path ?? undefined };
-    } catch (error) {
-      await unlink(temporaryPath).catch(() => undefined);
-      await unlink(snapshotPath).catch(() => undefined);
-      throw error;
-    }
+      const timestamp = safeSnapshotTimestamp(input.occurredAt);
+      const dateKey = snapshotDateKey(input.occurredAt);
+      // 文件名后缀是随机 ID；内容 hash 只放在 snapshot 元数据里，避免同一毫秒内
+      // 相同画面因 hash 相同而发生文件路径碰撞。
+      const relativeSnapshotPath = path.join("snapshots", dateKey, `${timestamp}-${randomUUID().slice(0, 8)}.jpg`);
+      const snapshotPath = path.join(root, relativeSnapshotPath);
+      await mkdir(path.dirname(snapshotPath), { recursive: true, mode: 0o700 });
+      const temporaryDirectory = path.join(root, ".capture-tmp");
+      await mkdir(temporaryDirectory, { recursive: true, mode: 0o700 });
+      const temporaryPath = path.join(temporaryDirectory, `${randomUUID()}.tmp`);
+      await writeFile(temporaryPath, input.jpeg, { mode: 0o600 });
+      try {
+        await rename(temporaryPath, snapshotPath);
+        await chmod(snapshotPath, 0o600);
+        const stored = this.insertEvent({
+          ...input,
+          source: "screenshot_fallback",
+          eventType: input.eventType || "fallback_capture"
+        }, {
+          relativeSnapshotPath,
+          bytes: input.jpeg.byteLength,
+          width: input.width,
+          height: input.height,
+          trigger: input.captureTrigger ?? input.fallbackReason ?? input.eventType,
+          contentHash: input.contentHash,
+          histogramChange: input.histogramChange,
+          pixelDiff: input.pixelDiff
+        });
+        if (stored.snapshotPath !== relativeSnapshotPath) {
+          await unlink(snapshotPath).catch(() => undefined);
+        }
+        const current = this.requireDatabase().prepare("SELECT snapshot_path FROM activity_events WHERE id = ?").get(stored.id) as { snapshot_path: string | null } | undefined;
+        return { ...stored, snapshotPath: current?.snapshot_path ?? undefined };
+      } catch (error) {
+        await unlink(temporaryPath).catch(() => undefined);
+        await unlink(snapshotPath).catch(() => undefined);
+        throw error;
+      }
+    });
   }
 
   snapshot(limit = 10): ActivityStoreSnapshot {
@@ -833,23 +860,15 @@ export class ActivityStore {
     return mergedCount;
   }
 
-  /** 原始事件/分析输入的轻量版本，用于让日报缓存随新数据和分析变更失效。 */
+  /** 独立进程清空后也会变化；旧操作不能只依赖本进程的 AbortSignal。 */
+  clearRevision(): string {
+    return (this.requireDatabase().prepare("SELECT revision FROM activity_generation WHERE id = 1").get() as { revision: string }).revision;
+  }
+
+  /** 原始活动和分析输出的提交版本；读取为常数开销，不扫描历史数据。 */
   activityRevision(): string {
-    const row = this.requireDatabase().prepare(`
-      SELECT
-        (SELECT COUNT(*) FROM activity_sessions) AS session_count,
-        (SELECT COUNT(*) FROM activity_events) AS event_count,
-        (SELECT COALESCE(MAX(occurred_at), '') FROM activity_events) AS last_event_at,
-        (SELECT COUNT(*) FROM activity_session_analysis) AS analysis_count,
-        (SELECT COALESCE(MAX(input_hash), '') FROM activity_session_analysis) AS last_input_hash
-    `).get() as Record<string, unknown>;
-    return [
-      row.session_count,
-      row.event_count,
-      row.last_event_at,
-      row.analysis_count,
-      row.last_input_hash
-    ].map(String).join(":");
+    const row = this.requireDatabase().prepare("SELECT revision, data_revision FROM activity_generation WHERE id = 1").get() as { revision: string; data_revision: number };
+    return `${row.revision}:${row.data_revision}`;
   }
 
   /** 分析前的 session 元数据；未找到或尚未结束（进行中）时返回 undefined。 */
@@ -1269,16 +1288,16 @@ export class ActivityStore {
     }));
   }
 
-  /** 当前 embedding 指纹下尚未向量化的 OCR 帧。 */
+  /** 当前 embedding 指纹下尚未向量化的整帧 OCR；只读，供后台限量补齐。 */
   listOcrEmbeddingSources(fingerprint: string, limit = 400): ActivityOcrEmbeddingSource[] {
     const rows = this.requireDatabase().prepare(`
-      SELECT id, session_id, text
-      FROM activity_ocr_frames
+      SELECT id, session_id, text FROM activity_ocr_frames
       WHERE text <> '' AND (embedding IS NULL OR model_fingerprint IS NULL OR model_fingerprint <> ?)
-      ORDER BY created_at ASC
-      LIMIT ?
+      ORDER BY created_at ASC, rowid ASC LIMIT ?
     `).all(fingerprint, limit) as Array<Record<string, unknown>>;
-    return rows.map((row) => ({ id: String(row.id), sessionId: String(row.session_id), text: String(row.text) }));
+    return rows.map((row) => ({
+      id: String(row.id), sessionId: String(row.session_id), text: String(row.text)
+    }));
   }
 
   upsertOcrEmbedding(
@@ -1287,8 +1306,9 @@ export class ActivityStore {
     embedding: Float32Array,
     embeddedAt: string,
     modelId = "multilingual-e5-small"
-  ): void {
-    this.requireDatabase().prepare(`
+  ): boolean {
+    // OCR 更新会替换 frame ID；推理迟到时不能把旧向量写回新正文。
+    const result = this.requireDatabase().prepare(`
       UPDATE activity_ocr_frames
       SET model_fingerprint = ?, embedding = ?, embedded_at = ?, embedding_model = ?, embedding_dim = ?,
           char_count = CASE WHEN char_count = 0 THEN length(text) ELSE char_count END,
@@ -1302,6 +1322,7 @@ export class ActivityStore {
       embedding.length,
       frameId
     );
+    return result.changes > 0;
   }
 
   listOcrEmbeddingRows(fingerprint: string, limit = 2_000): ActivityOcrEmbeddingRow[] {
@@ -1311,7 +1332,7 @@ export class ActivityStore {
       FROM activity_ocr_frames f
       JOIN activity_sessions s ON s.id = f.session_id
       WHERE f.model_fingerprint = ? AND f.embedding IS NOT NULL
-      ORDER BY f.created_at DESC
+      ORDER BY f.created_at DESC, f.rowid DESC
       LIMIT ?
     `).all(fingerprint, limit) as Array<Record<string, unknown>>;
     return rows.map((row) => {
@@ -1371,7 +1392,7 @@ export class ActivityStore {
   }
 
   /** 幂等写入：同一 session 重复分析时按主键覆盖。 */
-  recordAnalysis(analysis: ActivitySessionAnalysis): void {
+  recordAnalysis(analysis: ActivitySessionAnalysis, memoryCandidates: readonly ActivityMemoryCandidate[] = []): void {
     const database = this.requireDatabase();
     const analysisStatus = analysis.analysisStatus ?? "analyzed";
     database.prepare(`
@@ -1381,11 +1402,11 @@ export class ActivityStore {
         entities_json, highlights_json, worth_memory, worth_knowledge, is_meeting, storage_tier,
         title, description, commits_json, identifiers_json, repos_json, events_json, urls_json,
         entity_details_json,
-        confidence, source_event_count, input_hash
+        confidence, source_event_count, input_hash, memory_candidates_json, crystal_pending, projection_revision
       ) VALUES (
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
         ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-        ?, ?, ?, ?, ?, ?, ?, ?
+        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
       )
       ON CONFLICT(session_id) DO UPDATE SET
         analyzed_at = excluded.analyzed_at,
@@ -1414,7 +1435,11 @@ export class ActivityStore {
         entity_details_json = excluded.entity_details_json,
         confidence = excluded.confidence,
         source_event_count = excluded.source_event_count,
-        input_hash = excluded.input_hash
+        input_hash = excluded.input_hash,
+        memory_candidates_json = excluded.memory_candidates_json,
+        crystal_pending = excluded.crystal_pending,
+        projection_revision = excluded.projection_revision,
+        projection_checked_at = 0
     `).run(
       analysis.sessionId,
       analysis.analyzedAt,
@@ -1443,7 +1468,10 @@ export class ActivityStore {
       JSON.stringify(analysis.entityDetails ?? {}),
       analysis.confidence,
       analysis.sourceEventCount,
-      analysis.inputHash
+      analysis.inputHash,
+      JSON.stringify(analysis.worthMemory ? memoryCandidates : []),
+      analysisStatus === "analyzed" ? 1 : 0,
+      randomUUID()
     );
     // analysis embedding 是摘要内容的派生缓存；覆盖分析结果后旧向量不能继续命中。
     database.prepare("DELETE FROM activity_analysis_embeddings WHERE session_id = ?").run(analysis.sessionId);
@@ -1483,6 +1511,46 @@ export class ActivityStore {
     );
     database.prepare("UPDATE activity_sessions SET updated_at = ? WHERE id = ?")
       .run(Date.now(), analysis.sessionId);
+  }
+
+  /** 待沉淀信息只供后台读取，不随分析查询投影给聊天、HTTP 或界面。 */
+  getPendingAnalysisProjection(analysis: ActivitySessionAnalysis): { memoryCandidates: ActivityMemoryCandidate[]; crystalPending: boolean; revision: string } {
+    const row = this.requireDatabase().prepare(`
+      SELECT memory_candidates_json, crystal_pending, projection_revision FROM activity_session_analysis
+      WHERE session_id = ? AND input_hash = ? AND analyzed_at = ?
+    `).get(analysis.sessionId, analysis.inputHash, analysis.analyzedAt) as Record<string, unknown> | undefined;
+    return {
+      memoryCandidates: parseJsonArray<ActivityMemoryCandidate>(row?.memory_candidates_json),
+      crystalPending: Number(row?.crystal_pending) === 1,
+      revision: String(row?.projection_revision ?? "")
+    };
+  }
+
+  completeAnalysisProjection(sessionId: string, kind: "memory" | "crystal", revision: string): void {
+    // 只确认本次读取的分析版本，迟到回调不能确认重分析后产生的新候选。
+    this.requireDatabase().prepare(`
+      UPDATE activity_session_analysis SET
+        memory_candidates_json = CASE WHEN ? = 'memory' THEN '[]' ELSE memory_candidates_json END,
+        crystal_pending = CASE WHEN ? = 'crystal' THEN 0 ELSE crystal_pending END
+      WHERE session_id = ? AND projection_revision = ?
+    `).run(kind, kind, sessionId, revision);
+  }
+
+  markAnalysisProjectionChecked(analysis: ActivitySessionAnalysis): void {
+    this.requireDatabase().prepare(`
+      UPDATE activity_session_analysis SET projection_checked_at = ?
+      WHERE session_id = ? AND input_hash = ? AND analyzed_at = ?
+    `).run(Date.now(), analysis.sessionId, analysis.inputHash, analysis.analyzedAt);
+  }
+
+  listAnalysesPendingProjection(limit = 10): ActivitySessionAnalysis[] {
+    const rows = this.requireDatabase().prepare(`
+      SELECT a.*, s.analysis_status AS activity_analysis_status FROM activity_session_analysis a
+      JOIN activity_sessions s ON s.id = a.session_id
+      WHERE a.memory_candidates_json <> '[]' OR a.crystal_pending = 1
+      ORDER BY a.projection_checked_at, a.analyzed_at, a.session_id LIMIT ?
+    `).all(limit) as Record<string, unknown>[];
+    return rows.map(parseAnalysisRow);
   }
 
   /** 指定时间范围（按 session 开始时间）内的分析行，按时间升序，供报告渲染。 */
@@ -1631,21 +1699,32 @@ export class ActivityStore {
   async clear(): Promise<void> {
     const database = this.requireDatabase();
     const root = this.requireRoot();
-    const paths = database.prepare(`
-      SELECT file_path AS snapshot_path FROM activity_snapshots WHERE file_path IS NOT NULL
-      UNION
-      SELECT snapshot_path FROM activity_events WHERE snapshot_path IS NOT NULL
-    `).all() as Array<{ snapshot_path: string }>;
-    database.exec("DELETE FROM activity_fts; DELETE FROM activity_summaries; DELETE FROM activity_analysis_embeddings; DELETE FROM activity_session_analysis; DELETE FROM activity_ocr_frames; DELETE FROM activity_snapshots; DELETE FROM activity_events; DELETE FROM activity_sessions;");
-    for (const row of paths) {
-      const snapshotPath = safeStoredSnapshotPath(root, row.snapshot_path);
-      if (snapshotPath) await unlink(snapshotPath).catch(() => undefined);
-    }
-    const snapshots = path.join(root, "snapshots");
-    await rm(snapshots, { recursive: true, force: true });
-    await mkdir(snapshots, { recursive: true, mode: 0o700 });
-    await chmod(snapshots, 0o700);
-    await rm(path.join(root, ".capture-tmp"), { recursive: true, force: true });
+    await withLocalFileWriteLock(root, ".activity.files.lock", async () => {
+      database.exec("BEGIN IMMEDIATE;");
+      let paths: Array<{ snapshot_path: string }>;
+      try {
+        database.prepare("UPDATE activity_generation SET revision = ? WHERE id = 1").run(randomUUID());
+        paths = database.prepare(`
+          SELECT file_path AS snapshot_path FROM activity_snapshots WHERE file_path IS NOT NULL
+          UNION
+          SELECT snapshot_path FROM activity_events WHERE snapshot_path IS NOT NULL
+        `).all() as Array<{ snapshot_path: string }>;
+        database.exec("DELETE FROM activity_fts; DELETE FROM activity_summaries; DELETE FROM activity_analysis_embeddings; DELETE FROM activity_session_analysis; DELETE FROM activity_ocr_frames; DELETE FROM activity_snapshots; DELETE FROM activity_events; DELETE FROM activity_sessions;");
+        database.exec("COMMIT;");
+      } catch (error) {
+        database.exec("ROLLBACK;");
+        throw error;
+      }
+      for (const row of paths) {
+        const snapshotPath = safeStoredSnapshotPath(root, row.snapshot_path);
+        if (snapshotPath) await unlink(snapshotPath).catch(() => undefined);
+      }
+      const snapshots = path.join(root, "snapshots");
+      await rm(snapshots, { recursive: true, force: true });
+      await mkdir(snapshots, { recursive: true, mode: 0o700 });
+      await chmod(snapshots, 0o700);
+      await rm(path.join(root, ".capture-tmp"), { recursive: true, force: true });
+    });
   }
 
   private findStoredEventByCaptureId(captureId: string): ActivityStoredEvent | undefined {
@@ -1689,45 +1768,50 @@ export class ActivityStore {
     };
   }
 
-  private async reconcileSnapshotFiles(database: DatabaseSync, root: string): Promise<void> {
-    const referenced = new Set<string>();
-    const rows = database.prepare(`
-      SELECT file_path AS snapshot_path FROM activity_snapshots WHERE file_path IS NOT NULL
-      UNION
-      SELECT snapshot_path FROM activity_events WHERE snapshot_path IS NOT NULL
-    `).all() as Array<{ snapshot_path: unknown }>;
-    for (const row of rows) {
-      const relativePath = typeof row.snapshot_path === "string" ? row.snapshot_path : undefined;
-      const absolutePath = relativePath === undefined ? undefined : safeStoredSnapshotPath(root, relativePath);
-      if (absolutePath) referenced.add(path.resolve(absolutePath));
-    }
-
-    const snapshotsRoot = path.join(root, "snapshots");
-    const walk = async (directory: string): Promise<void> => {
-      let entries;
-      try {
-        entries = await readdir(directory, { withFileTypes: true });
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
-        throw error;
+  /** 宿主启动时修复孤儿文件；普通查询开库不扫描目录，也不等待截图文件锁。 */
+  async reconcileSnapshotFiles(): Promise<void> {
+    const database = this.requireDatabase();
+    const root = this.requireRoot();
+    await withLocalFileWriteLock(root, ".activity.files.lock", async () => {
+      const referenced = new Set<string>();
+      const rows = database.prepare(`
+        SELECT file_path AS snapshot_path FROM activity_snapshots WHERE file_path IS NOT NULL
+        UNION
+        SELECT snapshot_path FROM activity_events WHERE snapshot_path IS NOT NULL
+      `).all() as Array<{ snapshot_path: unknown }>;
+      for (const row of rows) {
+        const relativePath = typeof row.snapshot_path === "string" ? row.snapshot_path : undefined;
+        const absolutePath = relativePath === undefined ? undefined : safeStoredSnapshotPath(root, relativePath);
+        if (absolutePath) referenced.add(path.resolve(absolutePath));
       }
-      for (const entry of entries) {
-        const absolutePath = path.join(directory, entry.name);
-        if (entry.isDirectory() && !entry.isSymbolicLink()) {
-          await walk(absolutePath);
-          continue;
-        }
-        if (referenced.has(path.resolve(absolutePath))) continue;
+
+      const snapshotsRoot = path.join(root, "snapshots");
+      const walk = async (directory: string): Promise<void> => {
+        let entries;
         try {
-          await unlink(absolutePath);
+          entries = await readdir(directory, { withFileTypes: true });
         } catch (error) {
-          if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          if ((error as NodeJS.ErrnoException).code === "ENOENT") return;
+          throw error;
         }
-      }
-    };
+        for (const entry of entries) {
+          const absolutePath = path.join(directory, entry.name);
+          if (entry.isDirectory() && !entry.isSymbolicLink()) {
+            await walk(absolutePath);
+            continue;
+          }
+          if (referenced.has(path.resolve(absolutePath))) continue;
+          try {
+            await unlink(absolutePath);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+          }
+        }
+      };
 
-    await walk(snapshotsRoot);
-    await rm(path.join(root, ".capture-tmp"), { recursive: true, force: true });
+      await walk(snapshotsRoot);
+      await rm(path.join(root, ".capture-tmp"), { recursive: true, force: true });
+    });
   }
 
   private insertEvent(input: ActivityEventInput, snapshot: {
@@ -1976,109 +2060,113 @@ export class ActivityStore {
   async rotateSnapshots(maxStorageMb: number, now = new Date()): Promise<void> {
     const database = this.requireDatabase();
     const root = this.requireRoot();
-    const processTier = async (
-      tier: ActivitySnapshotStorageTier,
-      nextTier: ActivitySnapshotStorageTier,
-      thresholdMs: number,
-      target: { width: number; height: number; quality: number }
-    ): Promise<void> => {
-      const rows = database.prepare(`
-        SELECT id, event_id, file_path, bytes, storage_tier, captured_at
-        FROM activity_snapshots
-        WHERE storage_tier = ?
-        ORDER BY captured_at ASC, id ASC
-        LIMIT 500
-      `).all(tier) as Array<Record<string, unknown>>;
-      for (const row of rows) {
-        const capturedAt = Date.parse(String(row.captured_at));
-        const ageMs = Number.isFinite(capturedAt) ? now.getTime() - capturedAt : 0;
-        if (ageMs <= thresholdMs) continue;
-        const snapshotId = String(row.id);
-        const eventId = String(row.event_id);
-        const relativePath = nullableString(row.file_path);
-        const originalBytes = Number(row.bytes);
-        if (!relativePath || originalBytes <= 0) {
-          this.updateSnapshotTier(snapshotId, nextTier);
-          continue;
-        }
-        const absolutePath = safeStoredSnapshotPath(root, relativePath);
-        if (!absolutePath) {
-          this.updateSnapshotTier(snapshotId, nextTier);
-          continue;
-        }
-        try {
-          const encoded = await sharp(absolutePath)
-            .resize({ width: target.width, height: target.height, fit: "inside", withoutEnlargement: true })
-            .jpeg({ quality: target.quality })
-            .toBuffer({ resolveWithObject: true });
-          // 只有在新 JPEG 更小的时候替换文件；否则仍然完成 tier 降级，避免反复重压缩。
-          if (encoded.data.byteLength >= originalBytes) {
+    await withLocalFileWriteLock(root, ".activity.files.lock", async () => {
+      const processTier = async (
+        tier: ActivitySnapshotStorageTier,
+        nextTier: ActivitySnapshotStorageTier,
+        thresholdMs: number,
+        target: { width: number; height: number; quality: number }
+      ): Promise<void> => {
+        const rows = database.prepare(`
+          SELECT id, event_id, file_path, bytes, storage_tier, captured_at
+          FROM activity_snapshots
+          WHERE storage_tier = ?
+          ORDER BY captured_at ASC, id ASC
+          LIMIT 500
+        `).all(tier) as Array<Record<string, unknown>>;
+        for (const row of rows) {
+          const capturedAt = Date.parse(String(row.captured_at));
+          const ageMs = Number.isFinite(capturedAt) ? now.getTime() - capturedAt : 0;
+          if (ageMs <= thresholdMs) continue;
+          const snapshotId = String(row.id);
+          const eventId = String(row.event_id);
+          const relativePath = nullableString(row.file_path);
+          const originalBytes = Number(row.bytes);
+          if (!relativePath || originalBytes <= 0) {
             this.updateSnapshotTier(snapshotId, nextTier);
             continue;
           }
-          const temporaryPath = path.join(path.dirname(absolutePath), `.${path.basename(absolutePath)}.${randomUUID()}.tmp`);
-          await writeFile(temporaryPath, encoded.data, { mode: 0o600 });
-          try {
-            await rename(temporaryPath, absolutePath);
-            await chmod(absolutePath, 0o600);
-          } catch (error) {
-            await unlink(temporaryPath).catch(() => undefined);
-            throw error;
+          const absolutePath = safeStoredSnapshotPath(root, relativePath);
+          if (!absolutePath) {
+            this.updateSnapshotTier(snapshotId, nextTier);
+            continue;
           }
-          this.updateSnapshotStorage(
-            snapshotId,
-            eventId,
-            encoded.data.byteLength,
-            encoded.info.width,
-            encoded.info.height,
-            nextTier
-          );
-        } catch {
-          // 旧库里可能存在损坏/非 JPEG 文件；仍标记降级，下一轮不会重复尝试该档位。
-          this.updateSnapshotTier(snapshotId, nextTier);
+          try {
+            const encoded = await sharp(absolutePath)
+              .resize({ width: target.width, height: target.height, fit: "inside", withoutEnlargement: true })
+              .jpeg({ quality: target.quality })
+              .toBuffer({ resolveWithObject: true });
+            // 只有在新 JPEG 更小的时候替换文件；否则仍然完成 tier 降级，避免反复重压缩。
+            if (encoded.data.byteLength >= originalBytes) {
+              this.updateSnapshotTier(snapshotId, nextTier);
+              continue;
+            }
+            const temporaryPath = path.join(path.dirname(absolutePath), `.${path.basename(absolutePath)}.${randomUUID()}.tmp`);
+            await writeFile(temporaryPath, encoded.data, { mode: 0o600 });
+            try {
+              await rename(temporaryPath, absolutePath);
+              await chmod(absolutePath, 0o600);
+            } catch (error) {
+              await unlink(temporaryPath).catch(() => undefined);
+              throw error;
+            }
+            this.updateSnapshotStorage(
+              snapshotId,
+              eventId,
+              encoded.data.byteLength,
+              encoded.info.width,
+              encoded.info.height,
+              nextTier
+            );
+          } catch {
+            // 旧库里可能存在损坏/非 JPEG 文件；仍标记降级，下一轮不会重复尝试该档位。
+            this.updateSnapshotTier(snapshotId, nextTier);
+          }
+        }
+      };
+
+      await processTier("hot", "warm", SNAPSHOT_WARM_AGE_MS, SNAPSHOT_WARM_SIZE);
+      await processTier("warm", "cold", SNAPSHOT_COLD_AGE_MS, SNAPSHOT_COLD_SIZE);
+
+      const coldRows = database.prepare(`
+        SELECT id, event_id, file_path, bytes
+        FROM activity_snapshots
+        WHERE storage_tier = 'cold' AND captured_at < ?
+        ORDER BY captured_at ASC, id ASC
+        LIMIT 1000
+      `).all(new Date(now.getTime() - SNAPSHOT_COLD_DELETE_AGE_MS).toISOString()) as Array<Record<string, unknown>>;
+      for (const row of coldRows) {
+        await this.deleteSnapshot(
+          String(row.id),
+          String(row.event_id),
+          nullableString(row.file_path)
+        );
+      }
+
+      const maxBytes = Math.max(1, Math.trunc(maxStorageMb)) * 1024 * 1024;
+      const targetBytes = Math.floor(maxBytes * SNAPSHOT_TARGET_STORAGE_RATIO);
+      const currentBytes = database.prepare("SELECT COALESCE(SUM(bytes), 0) AS bytes FROM activity_snapshots").get() as { bytes: number };
+      if (Number(currentBytes.bytes) <= maxBytes) return;
+      let remainingBytes = Number(currentBytes.bytes);
+      // 档位优先于时间，不能把三档重新全局排序。分页删除直到低水位，避免大库只清首批。
+      for (const tier of ["cold", "warm", "hot"] as const) {
+        while (remainingBytes > targetBytes) {
+          const candidates = database.prepare(`
+            SELECT id, event_id, file_path, bytes
+            FROM activity_snapshots
+            WHERE storage_tier = ? AND file_path IS NOT NULL AND bytes > 0
+            ORDER BY captured_at ASC, id ASC
+            LIMIT 500
+          `).all(tier) as Array<Record<string, unknown>>;
+          if (!candidates.length) break;
+          for (const row of candidates) {
+            if (remainingBytes <= targetBytes) break;
+            await this.deleteSnapshot(String(row.id), String(row.event_id), nullableString(row.file_path));
+            remainingBytes -= Math.max(0, Number(row.bytes));
+          }
         }
       }
-    };
-
-    await processTier("hot", "warm", SNAPSHOT_WARM_AGE_MS, SNAPSHOT_WARM_SIZE);
-    await processTier("warm", "cold", SNAPSHOT_COLD_AGE_MS, SNAPSHOT_COLD_SIZE);
-
-    const coldRows = database.prepare(`
-      SELECT id, event_id, file_path, bytes
-      FROM activity_snapshots
-      WHERE storage_tier = 'cold' AND captured_at < ?
-      ORDER BY captured_at ASC, id ASC
-      LIMIT 1000
-    `).all(new Date(now.getTime() - SNAPSHOT_COLD_DELETE_AGE_MS).toISOString()) as Array<Record<string, unknown>>;
-    for (const row of coldRows) {
-      await this.deleteSnapshot(
-        String(row.id),
-        String(row.event_id),
-        nullableString(row.file_path)
-      );
-    }
-
-    const maxBytes = Math.max(1, Math.trunc(maxStorageMb)) * 1024 * 1024;
-    const targetBytes = Math.floor(maxBytes * SNAPSHOT_TARGET_STORAGE_RATIO);
-    const currentBytes = database.prepare("SELECT COALESCE(SUM(bytes), 0) AS bytes FROM activity_snapshots").get() as { bytes: number };
-    if (Number(currentBytes.bytes) <= maxBytes) return;
-    const candidates = ( ["cold", "warm", "hot"] as const).flatMap((tier) => database.prepare(`
-      SELECT id, event_id, file_path, bytes, captured_at
-      FROM activity_snapshots
-      WHERE storage_tier = ? AND file_path IS NOT NULL AND bytes > 0
-      ORDER BY captured_at ASC, id ASC
-      LIMIT 2000
-    `).all(tier) as Array<Record<string, unknown>>).sort((left, right) => {
-      const time = Date.parse(String(left.captured_at)) - Date.parse(String(right.captured_at));
-      return time || String(left.id).localeCompare(String(right.id));
     });
-    let remainingBytes = Number(currentBytes.bytes);
-    for (const row of candidates) {
-      if (remainingBytes <= targetBytes) break;
-      const bytes = Math.max(0, Number(row.bytes));
-      await this.deleteSnapshot(String(row.id), String(row.event_id), nullableString(row.file_path));
-      remainingBytes -= bytes;
-    }
   }
 
   private updateSnapshotTier(snapshotId: ActivityRecordId, tier: ActivitySnapshotStorageTier): void {
@@ -2304,6 +2392,10 @@ export class ActivityStore {
       && columns.has("events_json")
       && columns.has("urls_json")
       && columns.has("entity_details_json")
+      && columns.has("memory_candidates_json")
+      && columns.has("crystal_pending")
+      && columns.has("projection_checked_at")
+      && columns.has("projection_revision")
     ) return;
     const additions: ReadonlyArray<readonly [string, string]> = [
       ["entities_json", "TEXT NOT NULL DEFAULT '[]'"],
@@ -2319,7 +2411,11 @@ export class ActivityStore {
       ["repos_json", "TEXT NOT NULL DEFAULT '[]'"],
       ["events_json", "TEXT NOT NULL DEFAULT '[]'"],
       ["urls_json", "TEXT NOT NULL DEFAULT '[]'"],
-      ["entity_details_json", "TEXT NOT NULL DEFAULT '{}'" ]
+      ["entity_details_json", "TEXT NOT NULL DEFAULT '{}'" ],
+      ["memory_candidates_json", "TEXT NOT NULL DEFAULT '[]'"],
+      ["crystal_pending", "INTEGER NOT NULL DEFAULT 0"],
+      ["projection_checked_at", "INTEGER NOT NULL DEFAULT 0"],
+      ["projection_revision", "TEXT NOT NULL DEFAULT ''"]
     ];
     for (const [column, definition] of additions) {
       if (columns.has(column)) continue;

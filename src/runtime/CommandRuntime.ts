@@ -17,9 +17,6 @@ import { ensureAgentDirs } from "../session/store.js";
 import { createToolRegistry } from "../tools/registry.js";
 import { createTodoTool } from "../tools/todo.js";
 import type { ActivitySettings } from "../activity/settings.js";
-import { ActivityPrivacyPolicy } from "../activity/privacyPolicy.js";
-import { ActivityStore } from "../activity/store.js";
-import { buildActivityChatContext } from "../activity/context.js";
 
 import { TodoStore } from "../session/todoStore.js";
 import { CheckpointStore } from "../session/checkpointStore.js";
@@ -309,32 +306,6 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     const loadActivitySettings = async (): Promise<ActivitySettings> =>
       (await configStore.load(workspaceRoot)).activity;
 
-    const activityContext = async (
-      input: string,
-      model: import("../agent/core/types.js").AgentModel | undefined,
-      signal?: AbortSignal
-    ): Promise<string | undefined> => {
-      if (!model) return undefined;
-      const settings = await loadActivitySettings();
-      if (!settings.enabled) return undefined;
-      const policy = new ActivityPrivacyPolicy(settings);
-      const decision = await policy.run(model, async () => {
-        const store = new ActivityStore();
-        await store.open(settings.outputDirectory);
-        try {
-          return await buildActivityChatContext(input, {
-            settings,
-            store,
-            getEmbeddingRuntime: async () => await agent?.getActivityEmbeddingRuntime(),
-            signal
-          });
-        } finally {
-          await store.close();
-        }
-      });
-      return decision.value;
-    };
-
     const getActivityChatModel = () => modelManager?.getModel();
     toolRegistry.registerBuiltinTool(createActivityReportTool({
       getChatModel: getActivityChatModel,
@@ -382,7 +353,6 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
       attachmentRoot: projectAttachmentRoot,
       runtimeEventSink: runtimeAuthority.asSink(),
       capabilities,
-      activityContext,
       createSelfReflectionTask: async (candidate) => {
         taskRuns.create({
           taskRunId: candidate.taskRunId,

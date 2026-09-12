@@ -6,7 +6,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { AgentModel } from "../src/agent/core/types.js";
 import { defaultConfig } from "../src/config/schema.js";
 import type { AgentConfigStore } from "../src/config/store.js";
-import { ActivityPrivacyPolicy } from "../src/activity/privacyPolicy.js";
+import { createFileConfigStore } from "../src/config/store.js";
 import { defaultActivitySettings } from "../src/activity/settings.js";
 import { ActivityStore } from "../src/activity/store.js";
 import { refreshActivitySummary, refreshActivitySummaryWithNarrative } from "../src/activity/summary.js";
@@ -18,6 +18,7 @@ await testActivityServiceLifecycleQueue();
 await testSidecarInputFailureDoesNotCrashService();
 await testPermissionRequestStartsStandaloneSidecar();
 await testActivitySettingsRestartSidecar();
+await testGlobalActivitySettingsUseVersionedSnapshot();
 await testSidecarPersistsCaptureBeforeOcr();
 await testEventAndFallbackStorage();
 await testSnapshotOrphanRecovery();
@@ -25,6 +26,7 @@ await testKeyBurstFirstTimestamp();
 await testLegacyScreenshotMigration();
 await testSessionClosePersistsDuration();
 await testStorageLimitKeepsEventSemantics();
+await testStorageLimitEvictsColdBeforeOlderHot();
 await testBrowserTabUrlStructuredStorageAndSearch();
 await testFtsRebuildIncludesBrowserUrl();
 await testRecordEventRollsBackWhenFtsInsertFails();
@@ -53,6 +55,30 @@ function testDefaultActivitySidecarPath(): void {
     }),
     expectedPath
   );
+}
+
+async function testGlobalActivitySettingsUseVersionedSnapshot(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-global-settings-"));
+  const configStore = createFileConfigStore(root, { globalDir: root });
+  const service = new ActivityRecorderService({ configStore, sidecarPath: undefined });
+  try {
+    await configStore.save({ ...defaultConfig, activity: { ...defaultActivitySettings, enabled: false, outputDirectory: path.join(root, "activity") } });
+    const first = await service.settingsSnapshot();
+    assert.equal(first.activity.enabled, false);
+    assert.ok(first.configRevision);
+    const updated = await service.updateSettings({ jpegQuality: 60 }, first.configRevision);
+    assert.equal(updated.activity.jpegQuality, 60);
+    assert.deepEqual(await service.settingsSnapshot(), updated);
+    await assert.rejects(service.updateSettings({ jpegQuality: 65 }, first.configRevision), /revision|版本/iu);
+    assert.equal((await service.settingsSnapshot()).activity.jpegQuality, 60, "过期快照不能覆盖新的全局设置");
+    const copy = await service.settingsSnapshot();
+    copy.activity.sensitiveApplications.length = 0;
+    assert.ok((await service.settingsSnapshot()).activity.sensitiveApplications.length > 0, "读取结果不能修改配置权威");
+    assert.equal(service.snapshot().state, "paused", "全局设置读写不应启动采集或聊天");
+  } finally {
+    await service.stop();
+    await rm(root, { recursive: true, force: true });
+  }
 }
 
 async function testCanonicalActivitySchema(): Promise<void> {
@@ -298,7 +324,8 @@ async function testEventAndFallbackStorage(): Promise<void> {
     assert.equal(event.source, "event");
     assert.equal(event.snapshotPath, undefined);
     assert.match(event.summary, /\[redacted\]/u);
-    assert.doesNotMatch(event.summary, /secret|user@example\.com|\/Users\/think/iu);
+    assert.doesNotMatch(event.summary, /window-secret|token=secret/iu);
+    assert.match(event.summary, /user@example\.com|\/Users\/think\/private.txt/u, "保留非凭据的活动线索");
     assert.equal(store.snapshot().events, 1);
     assert.equal(store.snapshot().fallbackCaptures, 0);
     assert.equal(store.snapshot().storageBytes, 0);
@@ -357,7 +384,9 @@ async function testEventAndFallbackStorage(): Promise<void> {
       const oldestFirst = [...frames].reverse().map((frame) => String(frame.id));
       assert.deepEqual(store.listOcrEmbeddingSources("ordering-test").map((frame) => frame.id), oldestFirst);
       assert.equal(store.listOcrEmbeddingSources("ordering-test", 1)[0]?.id, oldestFirst[0]);
-      for (const frame of frames) store.upsertOcrEmbedding(String(frame.id), "ordering-test", new Float32Array([1, 0]), new Date().toISOString());
+      for (const frame of frames) {
+        store.upsertOcrEmbedding(String(frame.id), "ordering-test", new Float32Array([1, 0]), new Date().toISOString());
+      }
       assert.deepEqual(store.listOcrEmbeddingSources("ordering-test"), []);
       assert.deepEqual(store.listOcrEmbeddingRows("ordering-test").map((frame) => frame.id), frames.map((frame) => String(frame.id)));
       assert.equal(store.listOcrEmbeddingRows("ordering-test", 1)[0]?.id, String(frames[0]!.id));
@@ -425,6 +454,8 @@ async function testSnapshotOrphanRecovery(): Promise<void> {
     await mkdir(path.join(root, ".capture-tmp"), { recursive: true });
     await writeFile(path.join(root, ".capture-tmp", "stale.tmp"), Buffer.from("stale"));
     await store.open(root);
+    assert.ok(await stat(orphanPath), "普通开库不触发文件清理");
+    await store.reconcileSnapshotFiles();
     await assert.rejects(stat(orphanPath));
     await assert.rejects(stat(path.join(root, ".capture-tmp", "stale.tmp")));
   } finally {
@@ -589,6 +620,40 @@ async function testStorageLimitKeepsEventSemantics(): Promise<void> {
     await rm(root, { recursive: true, force: true });
   }
 }
+
+async function testStorageLimitEvictsColdBeforeOlderHot(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-tier-order-"));
+  const store = new ActivityStore();
+  try {
+    await store.open(root);
+    const now = new Date();
+    const sessionId = store.startSession(now.toISOString());
+    const database = new DatabaseSync(path.join(root, "activity.sqlite"));
+    try {
+      for (const [index, tier] of ["hot", "warm", "cold"].entries()) {
+        await store.recordFallbackCapture({
+          sessionId,
+          occurredAt: new Date(now.getTime() - (3 - index) * 60_000).toISOString(),
+          eventType: "fallback_capture", application: tier,
+          jpeg: Buffer.alloc(500_000 - index * 100_000, 1)
+        });
+        database.prepare(`UPDATE activity_snapshots SET storage_tier = ? WHERE event_id IN
+          (SELECT id FROM activity_events WHERE application = ?)`).run(tier, tier);
+      }
+      await store.rotateSnapshots(1, now);
+      assert.equal(store.snapshot().storageBytes, 500_000);
+      assert.ok(store.search("hot")[0]?.snapshotPath, "即使热数据更旧，也先保留高质量热图");
+      assert.equal(store.search("warm")[0]?.snapshotPath, undefined);
+      assert.equal(store.search("cold")[0]?.snapshotPath, undefined);
+    } finally {
+      database.close();
+    }
+  } finally {
+    await store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
 
 async function testBrowserTabUrlStructuredStorageAndSearch(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-browser-"));
@@ -884,14 +949,12 @@ async function testActivitySummaryNarrativePersistence(): Promise<void> {
         yield { type: "finish" as const, reason: "stop" as const };
       })()
     };
-    const settings = { ...defaultActivitySettings, analysisPolicy: "external_allowed" as const };
     const summary = await refreshActivitySummaryWithNarrative(
       store,
       "daily",
       "2026-08-28",
       {
         model,
-        policy: new ActivityPrivacyPolicy(settings),
         withNarrative: true,
         now: new Date("2026-08-30T12:00:00.000Z")
       }

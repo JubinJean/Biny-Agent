@@ -5,7 +5,7 @@
  * 获取模型设置，项目覆盖由 workspaceRoot 决定。
  */
 import path from "node:path";
-import { loadConfig, saveConfig, type ConfigPathOptions } from "./loader.js";
+import { CONFIG_FILE, loadConfig, saveConfig, type ConfigPathOptions } from "./loader.js";
 import {
   applyStoredCredentials,
   CREDENTIAL_TRANSACTION_JOURNAL,
@@ -32,6 +32,8 @@ const configUpdateMaxAttempts = 3;
 
 /** 运行时面向的配置存储接口。 */
 export interface AgentConfigStore {
+  /** 文件型配置的监听入口；内存实现无需提供。 */
+  configPath?(): string;
   load(workspaceRoot?: string): Promise<AgentConfig>;
   save(config: AgentConfig, workspaceRoot?: string): Promise<void>;
   /** 凭据是否能被独立 Runtime Host 进程读取；Desktop safeStorage 只在主进程可用。 */
@@ -163,6 +165,7 @@ export function createFileConfigStore(workspaceRoot: string, options: FileConfig
     revision += 1;
   };
   return {
+    configPath: () => path.join(configRoot, CONFIG_FILE),
     supportsDetachedRuntimeHost: true,
     load,
     save: async (config, requestedWorkspaceRoot) => {

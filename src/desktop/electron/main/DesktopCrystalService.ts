@@ -8,7 +8,6 @@ import { resolveSessionFile, sessionIdFromFile } from "../../../session/store.js
 import { activeSessionMessageIds, sessionMessageTree } from "../../../session/messageTree.js";
 import { redactSecrets } from "../../../utils/secrets.js";
 import { ActivityStore } from "../../../activity/store.js";
-import { ActivityPrivacyPolicy } from "../../../activity/privacyPolicy.js";
 import { desktopCrystalRequestSchema, type DesktopCrystalRequest, type DesktopCrystalSnapshot } from "../../crystalProtocol.js";
 
 export class DesktopCrystalService {
@@ -28,10 +27,6 @@ export class DesktopCrystalService {
       storage: this.createStorage(),
       getConfig: () => config.crystal,
       getModel: () => resolveToolModel(config),
-      allowActivity: () => {
-        const model = resolveToolModel(config);
-        return model !== undefined && new ActivityPrivacyPolicy(config.activity).canAnalyzeWithModel(model);
-      },
       readAnchorText: async ({ threadId, anchorId }) => {
         if (!threadId) return undefined;
         if (threadId.startsWith("activity:") && anchorId.startsWith("activity:")) {

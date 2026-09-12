@@ -11,10 +11,10 @@
  */
 import { z } from "zod";
 import type { AgentModel } from "../../agent/core/types.js";
-import { ActivityPrivacyPolicy } from "../../activity/privacyPolicy.js";
 import { redactSecrets } from "../../utils/secrets.js";
 import { buildActivityDigest, type ActivityDigestResult } from "../../activity/digest.js";
 import { ActivityStore } from "../../activity/store.js";
+import { createActivityOperation } from "../../activity/operation.js";
 import type { ActivitySettings } from "../../activity/settings.js";
 import { ToolAccesses } from "../access.js";
 import type { Tool } from "../types.js";
@@ -68,20 +68,22 @@ export function createActivityDigestTool(deps: ActivityDigestToolDeps): Tool<Act
         display: { kind: "generic", summary: "生成近期活动时间线" },
         description: "Build a recent activity digest timeline",
         approvalRule: "activity_digest",
-        async execute() {
+        async execute({ signal }) {
+          signal?.throwIfAborted();
           const settings = await deps.loadSettings();
           const model = deps.getChatModel();
           if (!model) return "当前聊天模型不可用。";
-          const decision = new ActivityPrivacyPolicy(settings).evaluate(model);
-          if (!decision.allowed) return decision.message;
           const store = new ActivityStore();
           await store.open(settings.outputDirectory);
           try {
+            const operation = createActivityOperation(store, settings, deps.loadSettings, signal);
+            await operation.checkpoint();
             const result = await buildActivityDigest({
               store,
               lookbackMin: args.lookbackMin,
               now: deps.now
             });
+            await operation.checkpoint();
             return redactSecrets(result.markdown);
           } finally {
             await store.close();

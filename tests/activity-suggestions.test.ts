@@ -2,14 +2,12 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { ActivityPrivacyPolicy } from "../src/activity/privacyPolicy.js";
 import { createInMemoryActivitySuggestionCache, generateActivitySuggestions } from "../src/activity/suggestions.js";
-import { defaultActivitySettings } from "../src/activity/settings.js";
 import { ActivityStore } from "../src/activity/store.js";
 import type { AgentModel, ModelStreamEvent } from "../src/agent/core/types.js";
 
 await testActivitySuggestionsAreGroundedAndCached();
-await testActivitySuggestionsRespectAnalysisPolicy();
+await testActivitySuggestionsUseExternalModel();
 
 async function testActivitySuggestionsAreGroundedAndCached(): Promise<void> {
   await withStore(async (store) => {
@@ -65,7 +63,6 @@ async function testActivitySuggestionsAreGroundedAndCached(): Promise<void> {
     const cache = createInMemoryActivitySuggestionCache();
     const deps = {
       store,
-      policy: new ActivityPrivacyPolicy({ ...defaultActivitySettings, analysisPolicy: "external_allowed" as const }),
       model,
       now: new Date("2026-09-01T12:00:00.000Z"),
       cache
@@ -79,13 +76,30 @@ async function testActivitySuggestionsAreGroundedAndCached(): Promise<void> {
     const second = await generateActivitySuggestions(deps);
     assert.equal(second.cached, true);
     assert.equal(calls, 1);
+    store.recordAnalysis({ ...store.getAnalysis(sessionId)!, summary: "同一输入的新分析", topics: ["NEW_SUGGESTION_SOURCE_731"] });
+    const updated = await generateActivitySuggestions(deps);
+    assert.equal(updated.cached, false);
+    assert.equal(calls, 2, "同一输入重新分析后不能继续使用旧建议");
+    assert.match(prompt, /NEW_SUGGESTION_SOURCE_731/u);
     const forced = await generateActivitySuggestions({ ...deps, force: true });
     assert.equal(forced.cached, false);
-    assert.equal(calls, 2);
+    assert.equal(calls, 3);
+    const controller = new AbortController();
+    const stream = model.stream.bind(model);
+    model.stream = async (...args) => {
+      controller.abort();
+      return stream(...args);
+    };
+    let writes = 0;
+    await assert.rejects(generateActivitySuggestions({
+      ...deps, signal: controller.signal,
+      cache: { get: () => undefined, set: () => { writes += 1; } }
+    }), { name: "AbortError" });
+    assert.equal(writes, 0, "取消后的建议不能进入缓存");
   });
 }
 
-async function testActivitySuggestionsRespectAnalysisPolicy(): Promise<void> {
+async function testActivitySuggestionsUseExternalModel(): Promise<void> {
   await withStore(async (store) => {
     const sessionId = store.startSession("2026-08-31T09:00:00.000Z");
     store.endSession(sessionId, "2026-08-31T10:00:00.000Z");
@@ -108,7 +122,7 @@ async function testActivitySuggestionsRespectAnalysisPolicy(): Promise<void> {
       storageTier: "standard",
       confidence: 1,
       sourceEventCount: 3,
-      inputHash: "blocked-suggestions-test"
+      inputHash: "external-suggestions-test"
     });
     let calls = 0;
     const model: AgentModel = {
@@ -118,19 +132,19 @@ async function testActivitySuggestionsRespectAnalysisPolicy(): Promise<void> {
       stream: async () => {
         calls += 1;
         return (async function* (): AsyncGenerator<ModelStreamEvent> {
+          yield { type: "text-delta", text: '["继续处理项目"]' };
           yield { type: "finish", reason: "stop" };
         })();
       }
     };
     const result = await generateActivitySuggestions({
       store,
-      policy: new ActivityPrivacyPolicy({ ...defaultActivitySettings, analysisPolicy: "local_only" as const }),
       model,
       now: new Date("2026-09-01T12:00:00.000Z")
     });
-    assert.deepEqual(result.suggestions, []);
-    assert.equal(result.reason, "blocked");
-    assert.equal(calls, 0);
+    assert.deepEqual(result.suggestions, ["继续处理项目"]);
+    assert.equal(result.reason, undefined);
+    assert.equal(calls, 1);
   });
 }
 

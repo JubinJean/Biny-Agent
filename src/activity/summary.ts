@@ -8,7 +8,6 @@
 import type { ActivitySessionAnalysis, ActivityStore } from "./store.js";
 import type { AgentModel } from "../agent/core/types.js";
 import { generateNativeText, nativeJsonMessages } from "../llm/nativeJson.js";
-import type { ActivityPrivacyPolicy } from "./privacyPolicy.js";
 
 export type ActivitySummaryKind = "daily" | "weekly";
 
@@ -55,8 +54,8 @@ export interface ActivitySummaryRecord {
 
 export interface ActivitySummaryNarrativeOptions {
   model?: AgentModel;
-  policy?: ActivityPrivacyPolicy;
   signal?: AbortSignal;
+  checkpoint?: () => Promise<void>;
   now?: Date;
   withNarrative?: boolean;
 }
@@ -124,7 +123,7 @@ export function refreshActivitySummary(
 
 /**
  * 生成并持久化 narrative 日结。模型只接收聚合后的日期统计和 session 标题，
- * 不接触截图/OCR 原文；策略拒绝、无模型或调用失败时保留本地确定性摘要。
+ * 不接触截图/OCR 原文；无模型或调用失败时保留本地确定性摘要。
  */
 export async function refreshActivitySummaryWithNarrative(
   store: ActivityStore,
@@ -132,35 +131,36 @@ export async function refreshActivitySummaryWithNarrative(
   dateKey: string,
   options: ActivitySummaryNarrativeOptions = {}
 ): Promise<ActivitySummaryRecord> {
+  await options.checkpoint?.();
+  options.signal?.throwIfAborted();
   const base = buildActivitySummary(store, kind, dateKey, options.now ?? new Date());
   let summary = base.summary;
   let model: string | undefined;
-  if (options.withNarrative && options.model && options.policy) {
+  if (options.withNarrative && options.model) {
     try {
-      const run = await options.policy.runAnalysis(options.model, async () => {
-        const result = await generateNativeText(
-          options.model!,
-          nativeJsonMessages(
-            "You write short narrative summaries of the user's computing activity. 3-6 sentences. Neutral, factual, avoid speculation or value judgements. Write in the same language the apps/OCR text are in (default English).",
-            activitySummaryNarrativePrompt(base.stats)
-          ),
-          {
-            signal: options.signal,
-            maxOutputTokens: 600,
-            reasoning: "off",
-          }
-        );
-        const text = result.text.trim();
-        return text || undefined;
-      });
-      if (run.value) {
-        summary = run.value;
+      const result = await generateNativeText(
+        options.model,
+        nativeJsonMessages(
+          "You write short narrative summaries of the user's computing activity. 3-6 sentences. Neutral, factual, avoid speculation or value judgements. Write in the same language the apps/OCR text are in (default English).",
+          activitySummaryNarrativePrompt(base.stats)
+        ),
+        {
+          signal: options.signal,
+          maxOutputTokens: 600,
+          reasoning: "off",
+        }
+      );
+      const text = result.text.trim();
+      if (text) {
+        summary = text;
         model = options.model.modelId;
       }
     } catch {
       // 日报是派生缓存；模型瞬时失败时先保留统计 fallback，下一轮自动检查可重试。
     }
   }
+  await options.checkpoint?.();
+  options.signal?.throwIfAborted();
   const result: ActivitySummaryRecord = { ...base, summary, model };
   store.upsertSummary(result);
   return result;

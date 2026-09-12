@@ -2,7 +2,8 @@ import { redactSecrets } from "../utils/redaction.js";
 
 /**
  * Activity 原始 OCR 只在 sidecar 到主进程的短暂内存链路中存在；写入 SQLite 前先做规则脱敏和
- * 长度限制。输入监听只保存计数，不接收具体键值，因此不会把按键内容带入这条链路。
+ * 展示裁剪。OCR 保留完整脱敏文本，模型输入在消费端按预算截取，避免长屏幕内容永久丢失。
+ * 输入监听不接收具体键值，因此不会把按键内容带入这条链路。
  */
 export function redactActivityText(value: string | undefined): string | undefined {
   if (!value?.trim()) return undefined;
@@ -20,14 +21,26 @@ export function redactActivityOcrText(value: string | undefined): string | undef
     .replace(/\r\n?/gu, "\n")
     .replace(/\n{3,}/gu, "\n\n")
     .trim();
-  return redacted ? redacted.slice(0, 2_000) : undefined;
+  return redacted || undefined;
 }
 
 function redactSensitiveText(value: string): string {
   return redactSecrets(value)
-    .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/gu, "[redacted email]")
-    .replace(/https?:\/\/[^\s]+/giu, "[redacted url]")
-    .replace(/(?:\/Users\/|\/private\/var\/folders\/)[^\s]+/gu, "[redacted path]")
+    .replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gu, "[redacted token]")
+    .replace(/\b\d{3}-\d{2}-\d{4}\b/gu, "[redacted number]")
+    // 保留可定位工作的站点和路径；URL 中的账号、查询参数和片段不进入活动文字。
+    .replace(/https?:\/\/[^\s<>"']+/giu, (value) => {
+      try {
+        const url = new URL(value);
+        url.username = "";
+        url.password = "";
+        url.search = "";
+        url.hash = "";
+        return url.toString();
+      } catch {
+        return "[redacted url]";
+      }
+    })
     .replace(/\b(?:\d[ -]?){13,19}\b/gu, "[redacted number]")
     .replace(/\b(password|passwd|token|secret|api[-_ ]?key|access[-_ ]?token)\s*([:=：])\s*[^\s,;，；]+/giu, "$1$2[redacted]");
 }

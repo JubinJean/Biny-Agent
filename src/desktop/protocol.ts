@@ -1573,7 +1573,7 @@ export interface DesktopApi {
    */
   setDefaultModel(projectId: string, alias: string, thinking: ThinkingSelection, expectedConfigRevision: string, sessionId?: string): Promise<DesktopSettingsSnapshot>;
   activitySnapshot(): Promise<ActivityRuntimeSnapshot>;
-  activitySettings(): Promise<DesktopActivitySettings>;
+  activitySettings(): Promise<DesktopActivitySettingsUpdate>;
   updateActivitySettings(patch: DesktopActivitySettingsPatch, expectedConfigRevision: string): Promise<DesktopActivitySettingsUpdate>;
   requestActivityPermission(pane: DesktopSystemSettingsPane): Promise<void>;
   searchActivity(query: string, limit?: number): Promise<ActivitySearchResult[]>;

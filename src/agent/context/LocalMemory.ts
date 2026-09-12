@@ -150,8 +150,9 @@ export class LocalMemory {
    */
   async writeAutoEntry(
     input: MemoryEntryInput,
-    options: MemoryMutationOptions & { requireSemantic?: boolean }
+    options: MemoryMutationOptions & { requireSemantic?: boolean; checkpoint?: () => Promise<void> }
   ): Promise<MemoryWriteResult> {
+    await options.checkpoint?.();
     options.signal?.throwIfAborted();
     const safe = sanitizeMemoryEntryInput(input);
     const person = parsePersonMemory(safe.summary);
@@ -162,12 +163,15 @@ export class LocalMemory {
     assertAllowedMemoryEntry(safe, this.workspaceRoot);
 
     const candidates = await this.findSemanticMemoryEntries(safe.summary, 5, 0.3, options.signal);
+    await options.checkpoint?.();
     if (options.requireSemantic && candidates === undefined) {
-      return { written: false, revision: (await this.getOverview({ signal: options.signal })).storeRevision };
+      return { written: false, deferred: true, revision: (await this.getOverview({ signal: options.signal })).storeRevision };
     }
     const duplicate = candidates?.length
       ? await this.findDuplicateMemory(safe.summary, candidates, options.signal)
       : undefined;
+    await options.checkpoint?.();
+    options.signal?.throwIfAborted();
     if (duplicate) {
       return {
         written: false,

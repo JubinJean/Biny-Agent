@@ -1,5 +1,5 @@
 /** Agent 权限策略设置：控制工具执行前的批准边界，不改变工具/Skill 的可见性选择。 */
-import { useRef, useState } from "react";
+import { useRef } from "react";
 import type { PermissionMode } from "../../../../../permission/PermissionManager.js";
 import type { DesktopPermissionSettings } from "../../../../protocol.js";
 import { useFluidHoverItems } from "../../useFluidHoverItems.js";
@@ -15,13 +15,11 @@ const permissionOptions: Array<{ mode: PermissionMode; label: string; detail: st
 ];
 
 export function SettingsPermissions(): React.JSX.Element {
-  const { draft, setPermission, updateActivityImmediately } = useSettingsDraft();
-  const [activitySaving, setActivitySaving] = useState(false);
-  const [activityError, setActivityError] = useState<string>();
+  const { draft, loadError, setPermission } = useSettingsDraft();
   // 流动悬停：权限模式选项按选择器自动注册。Hooks 必须在提前 return 之前。
   const optionsRef = useRef<HTMLDivElement>(null);
   const optionsHover = useFluidHoverItems(optionsRef, ".agent-permission-option");
-  if (!draft) return <div className="settings-sections"><section><p>正在加载权限设置…</p></section></div>;
+  if (!draft) return <div className="settings-sections"><section><p role={loadError ? "alert" : "status"}>{loadError ?? "打开项目后可管理 Agent 工具权限。"}</p></section></div>;
 
   const permission = draft.permission;
   const update = (patch: Partial<DesktopPermissionSettings>): void => setPermission({ ...permission, ...patch });
@@ -68,24 +66,6 @@ export function SettingsPermissions(): React.JSX.Element {
           <span><strong>允许路径</strong><small>{permission.allowPaths.length ? `${String(permission.allowPaths.length)} 条` : "未指定"}</small></span>
           <span><strong>拒绝路径</strong><small>{permission.denyPaths.length ? `${String(permission.denyPaths.length)} 条` : "未指定"}</small></span>
         </div>
-      </section>
-
-      <section id="activity-analysis-permission" tabIndex={-1}>
-        <h3>活动记录</h3>
-        <SettingsSwitch
-          checked={draft.activity.analysisPolicy === "external_allowed" || (draft.activity.analysisPolicy === "confirm_external" && draft.activity.analysisExternalConfirmed)}
-          disabled={activitySaving}
-          detail="允许工具模型在外部处理脱敏后的活动文本。原始截图始终保存在本地；关闭后仅允许内置本地模型分析。"
-          label="允许外部模型分析活动"
-          onChange={(allowed) => {
-            setActivitySaving(true);
-            setActivityError(undefined);
-            void updateActivityImmediately({ analysisPolicy: allowed ? "external_allowed" : "local_only", analysisExternalConfirmed: false })
-              .catch((error: unknown) => setActivityError(error instanceof Error ? error.message : "活动分析权限保存失败，请重试。"))
-              .finally(() => setActivitySaving(false));
-          }}
-        />
-        {activityError ? <p role="alert">{activityError}</p> : null}
       </section>
 
     </div>

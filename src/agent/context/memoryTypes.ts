@@ -218,6 +218,8 @@ export interface MemoryEntriesResult {
 
 export interface MemoryWriteResult {
   written: boolean;
+  /** 必需的语义检索暂不可用，不等同于已写入或已确认重复。 */
+  deferred?: boolean;
   entry?: MemoryEntry;
   path?: string;
   revision: number;

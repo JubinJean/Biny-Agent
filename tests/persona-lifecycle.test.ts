@@ -96,10 +96,10 @@ try {
   assert.equal((await reflectionSoul.read()).revision, afterFirst.revision, "catch-up cannot grow today's persona");
   assert.deepEqual(await emotions.readBase(), previousBase, "catch-up cannot overwrite current mood");
 
-  const blocked = createActivitySessionsTool({ getChatModel: () => model, loadSettings: async () => ({ ...defaultActivitySettings, outputDirectory: path.join(root, "must-not-open") }) });
-  const execution = await blocked.resolveExecution({});
+  const activity = createActivitySessionsTool({ getChatModel: () => model, loadSettings: async () => ({ ...defaultActivitySettings, outputDirectory: path.join(root, "activity") }) });
+  const execution = await activity.resolveExecution({});
   assert.ok(!("isError" in execution));
-  assert.match(await execution.execute({ toolCallId: "test", operationId: "test" }), /阻止/u);
-  await assert.rejects(readFile(path.join(root, "must-not-open", "activity.sqlite")), /ENOENT/u);
+  assert.match(await execution.execute({ toolCallId: "test", operationId: "test" }), /还没有录到/u, "云聊天模型可直接查询 Activity，无额外授权");
+  assert.ok((await readFile(path.join(root, "activity", "activity.sqlite"))).length > 0);
 } finally { await rm(root, { recursive: true, force: true }); }
 console.log("persona lifecycle tests passed");

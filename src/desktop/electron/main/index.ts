@@ -12,6 +12,7 @@ import type { DesktopBootstrap, DesktopSessionHandoff } from "../../protocol.js"
 import { desktopIpc } from "../../protocol.js";
 import { DesktopAgentManager } from "./DesktopAgentManager.js";
 import { ActivityRecorderService, defaultActivitySidecarPath } from "./ActivityRecorderService.js";
+import { captureActivityDesktopScreen } from "./activityCapture.js";
 import { DesktopBrowserService } from "./DesktopBrowserService.js";
 import { DesktopConfigStore } from "./DesktopConfigStore.js";
 import { DesktopMcpService } from "./DesktopMcpService.js";
@@ -152,6 +153,7 @@ async function startDesktopApplication(): Promise<void> {
   });
   const activity = new ActivityRecorderService({
     configStore,
+    captureDesktopScreen: captureActivityDesktopScreen,
     sidecarPath: defaultActivitySidecarPath({
       packaged: app.isPackaged,
       resourcesPath: process.resourcesPath,

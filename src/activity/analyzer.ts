@@ -2,12 +2,10 @@
  * Activity 分析层：把单个已结束 session 的脱敏事件与 OCR 投影归纳成结构化 SessionAnalysis 落库，
  * 并把指定日期的分析结果聚合成一份确定性的「打工日记」。
  *
- * 隐私边界（与 privacyPolicy 的注释一一对应）：
+ * 模型输入边界：
  * - 送给分析模型的只有 store.listSessionEventSummaries 提供的时间、应用、事件摘要和已脱敏
  *   OCR。它们在写入 SQLite 前已经过了 redactActivityText；原始截图和 snapshot 路径从查询层
- *   就不在这条链路上，任何策略下都不出设备。
- * - 是否放行由 ActivityPrivacyPolicy 的 analysis 维度（analysisPolicy）统一决定；未放行时
- *   runAnalysis 不执行回调，对应 session 保持「待分析」，等策略放开后由 sweep 补分析。
+ *   就不在这条链路上。选到云工具模型时，脱敏文字会发送给对应 Provider。
  * - 只有同时满足“时长小于 30 秒、事件少于 20 条、截图少于 3 张”的 session 才直接落一条低
  *   置信度占位记录；短 session 中有足够事件或截图时仍允许分析。
  */
@@ -16,7 +14,6 @@ import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import type { AgentModel } from "../agent/core/types.js";
 import { generateNativeText, nativeJsonMessages } from "../llm/nativeJson.js";
-import type { ActivityAnalysisDecision, ActivityPrivacyPolicy } from "./privacyPolicy.js";
 import type {
   ActivityAnalysisCommit,
   ActivityAnalysisReference,
@@ -128,7 +125,6 @@ type AnalysisOutput = z.infer<typeof analysisOutputSchema>;
 export type ActivityAnalysisOutcome =
   | { status: "analyzed"; analysis: ActivitySessionAnalysis; cached: boolean }
   | { status: "trivial"; analysis: ActivitySessionAnalysis }
-  | { status: "blocked"; decision: ActivityAnalysisDecision }
   | { status: "skipped"; reason: "session_not_ended" | "no_model" }
   | { status: "error"; error: string };
 
@@ -144,17 +140,19 @@ export interface ActivityMemoryWriteContext {
   project?: string;
   /** Activity 分析和记忆写入共用同一个模型实例，避免模型漂移和重复创建。 */
   model: AgentModel;
+  signal?: AbortSignal;
+  checkpoint?: () => Promise<void>;
 }
 
 export interface ActivityAnalyzerDeps {
   store: ActivityStore;
-  policy: ActivityPrivacyPolicy;
   /**
    * 分析所用模型。省略时需要模型的 session 标记为 skipped，不生成伪分析内容；
-   * 调用方据此区分「策略拒绝」与「没有模型可用」。
+   * 配置工具模型后可显式重分析。
    */
   model?: AgentModel;
   signal?: AbortSignal;
+  checkpoint?: () => Promise<void>;
   /** 可注入时钟，便于测试固定 analyzedAt 与「今天」。 */
   now?: () => Date;
   /** false 时只消费已落库的分析行；用于每日摘要，避免在日结阶段临时调用模型。 */
@@ -165,7 +163,7 @@ export interface ActivityAnalyzerDeps {
     context: ActivityMemoryWriteContext
   ) => Promise<void>;
   /** 分析完成后的统一主题投影；重复调用必须由下游锚点去重。 */
-  onAnalyzed?: (analysis: ActivitySessionAnalysis, session: ActivityPendingAnalysisSession) => Promise<void>;
+  onAnalyzed?: (analysis: ActivitySessionAnalysis, session: ActivityPendingAnalysisSession, signal?: AbortSignal) => Promise<void>;
 }
 
 export interface ActivitySweepResult {
@@ -191,11 +189,11 @@ export interface ActivityReportResult {
   sessionCount: number;
   /** 本次调用新分析（含零星占位）的 session 数。 */
   analyzedNow: number;
-  /** 范围内仍需模型但本次未分析的 session 数（策略拒绝或无可用模型）。 */
+  /** 范围内仍需模型但本次未分析的 session 数。 */
   pendingModel: number;
-  /** 是否有 session 因策略拒绝或无模型而未分析。 */
+  /** 是否有 session 因未请求补分析或无模型而未分析。 */
   blocked: boolean;
-  /** blocked 时携带的原因说明（策略消息或「未配置模型」）。 */
+  /** blocked 时携带的原因说明。 */
   message?: string;
 }
 
@@ -286,6 +284,8 @@ export async function analyzeActivitySession(
   sessionId: string,
   force = false
 ): Promise<ActivityAnalysisOutcome> {
+  await deps.checkpoint?.();
+  deps.signal?.throwIfAborted();
   const { store } = deps;
   const session = store.getEndedSession(sessionId);
   if (!session) return { status: "skipped", reason: "session_not_ended" };
@@ -301,7 +301,7 @@ export async function analyzeActivitySession(
       return { status: "error", error: "LLM did not return parseable JSON" };
     }
     if (existing.analysisStatus !== "not_worth") {
-      await deps.onAnalyzed?.(existing, session).catch(() => undefined);
+      await projectActivityAnalysis(deps, existing, session);
     }
     return { status: "analyzed", analysis: existing, cached: true };
   }
@@ -329,14 +329,15 @@ export async function analyzeActivitySession(
 
   let parsed: AnalysisOutput;
   try {
-    const run = await deps.policy.runAnalysis(model, async () => await requestSessionAnalysis(
+    const value = await requestSessionAnalysis(
       model,
       session,
       events,
-      deps.signal
-    ));
-    if (run.status === "blocked") return { status: "blocked", decision: run.decision };
-    if (!run.value) {
+      deps.signal,
+      deps.checkpoint
+    );
+    deps.signal?.throwIfAborted();
+    if (!value) {
       store.recordAnalysisStatus(session.id, "failed", {
         model: model.modelId,
         error: "LLM did not return parseable JSON",
@@ -344,8 +345,11 @@ export async function analyzeActivitySession(
       });
       return { status: "error", error: "LLM did not return parseable JSON" };
     }
-    parsed = run.value;
+    parsed = value;
   } catch (error) {
+    // 取消不是分析失败，保留 pending 以便恢复，不保存迟到的状态或结果。
+    await deps.checkpoint?.();
+    deps.signal?.throwIfAborted();
     store.recordAnalysisStatus(session.id, "failed", {
       model: model.modelId,
       error: errorMessage(error),
@@ -400,27 +404,48 @@ export async function analyzeActivitySession(
     sourceEventCount: semanticEventCount,
     inputHash
   };
-  store.recordAnalysis(analysis);
-  if (parsed.worth && memoryCandidates.length > 0) {
-    try {
-      await deps.writeMemories?.(memoryCandidates, {
-        sessionId: session.id,
-        analyzedAt,
-        project,
-        model
-      });
-    } catch {
-      // 统一记忆库是分析结果的旁路投影；写入失败不能让 Activity 分析失败或阻塞下次 sweep。
-    }
-  }
-  if (parsed.worth) {
-    try {
-      await deps.onAnalyzed?.(analysis, session);
-    } catch {
-      // 主题投影是派生旁路；分析结果已经落库，投影可在下次读取时重试。
-    }
-  }
+  // 候选与分析正文在同一行原子落库；沉淀失败只重试旁路，不重新请求分析模型。
+  store.recordAnalysis(analysis, memoryCandidates);
+  if (parsed.worth) await projectActivityAnalysis(deps, analysis, session);
+  deps.signal?.throwIfAborted();
   return { status: "analyzed", analysis, cached: false };
+}
+
+async function projectActivityAnalysis(deps: ActivityAnalyzerDeps, analysis: ActivitySessionAnalysis, session: ActivityPendingAnalysisSession): Promise<void> {
+  await deps.checkpoint?.();
+  deps.signal?.throwIfAborted();
+  const pending = deps.store.getPendingAnalysisProjection(analysis);
+  // 未关联项目或暂时无法投影的旧候选不能永久占满首批，下一轮先检查其它候选。
+  deps.store.markAnalysisProjectionChecked(analysis);
+  if (pending.memoryCandidates.length && deps.writeMemories && deps.model) {
+    try {
+      await deps.writeMemories(pending.memoryCandidates, {
+        sessionId: session.id,
+        analyzedAt: analysis.analyzedAt,
+        project: analysis.project,
+        model: deps.model,
+        signal: deps.signal,
+        checkpoint: deps.checkpoint
+      });
+      await deps.checkpoint?.();
+      deps.signal?.throwIfAborted();
+      deps.store.completeAnalysisProjection(analysis.sessionId, "memory", pending.revision);
+    } catch {
+      // 保留候选，等后台下一轮恢复；下游确定性去重处理写入成功但未确认的情况。
+    }
+  }
+  deps.signal?.throwIfAborted();
+  if (pending.crystalPending && deps.onAnalyzed) {
+    try {
+      await deps.checkpoint?.();
+      await deps.onAnalyzed(analysis, session, deps.signal);
+      deps.signal?.throwIfAborted();
+      deps.store.completeAnalysisProjection(analysis.sessionId, "crystal", pending.revision);
+    } catch {
+      // 结晶按 anchor 去重；中断只重试这个未确认的投影。
+    }
+  }
+  deps.signal?.throwIfAborted();
 }
 
 /** 兜底 sweep：分析所有「已结束但还没分析行」的 session，按结束时间升序逐个处理。 */
@@ -428,18 +453,25 @@ export async function analyzePendingActivitySessions(
   deps: ActivityAnalyzerDeps,
   limit = 10
 ): Promise<ActivitySweepResult> {
+  await deps.checkpoint?.();
+  deps.signal?.throwIfAborted();
+  for (const analysis of deps.store.listAnalysesPendingProjection(limit)) {
+    const session = deps.store.getEndedSession(analysis.sessionId);
+    if (session) await projectActivityAnalysis(deps, analysis, session);
+  }
   deps.store.mergePendingAdjacent();
   const pending = deps.store.listSessionsPendingAnalysis(limit);
   const result: ActivitySweepResult = { evaluated: pending.length, analyzed: 0, trivial: 0, blocked: 0, errors: 0 };
   for (const session of pending) {
-    if (deps.signal?.aborted) break;
+    deps.signal?.throwIfAborted();
     try {
       const outcome = await analyzeActivitySession(deps, session.id);
       if (outcome.status === "analyzed") result.analyzed += 1;
       else if (outcome.status === "trivial") result.trivial += 1;
-      else if (outcome.status === "blocked" || outcome.status === "skipped") result.blocked += 1;
+      else if (outcome.status === "skipped") result.blocked += 1;
       else if (outcome.status === "error") result.errors += 1;
     } catch {
+      deps.signal?.throwIfAborted();
       result.errors += 1;
     }
     // 积压会话逐条处理，给前台交互与模型服务留出间隔；停止时直接取消等待。
@@ -456,6 +488,8 @@ export async function buildActivityReport(
   deps: ActivityAnalyzerDeps,
   date: string
 ): Promise<ActivityReportResult> {
+  await deps.checkpoint?.();
+  deps.signal?.throwIfAborted();
   const now = deps.now?.() ?? new Date();
   const range = resolveActivityReportRange(date, now);
   const pending = deps.store.listSessionsPendingAnalysisForDateRange(range.startIso, range.endIso, 200);
@@ -466,14 +500,10 @@ export async function buildActivityReport(
   let message: string | undefined;
   if (deps.analyzePending !== false) {
     for (const session of pending) {
-      if (deps.signal?.aborted) break;
+      deps.signal?.throwIfAborted();
       const outcome = await analyzeActivitySession(deps, session.id);
       if (outcome.status === "analyzed" || outcome.status === "trivial") analyzedNow += 1;
-      else if (outcome.status === "blocked") {
-        blocked = true;
-        pendingModel += 1;
-        message = outcome.decision.message;
-      } else if (outcome.status === "skipped" && outcome.reason === "no_model") {
+      else if (outcome.status === "skipped" && outcome.reason === "no_model") {
         blocked = true;
         pendingModel += 1;
         message ??= "未配置可用的分析模型。";
@@ -481,6 +511,7 @@ export async function buildActivityReport(
     }
   }
 
+  deps.signal?.throwIfAborted();
   const remaining = deps.store.listSessionsPendingAnalysisForDateRange(range.startIso, range.endIso, 200);
   if (remaining.length > 0) {
     blocked = true;
@@ -509,7 +540,7 @@ export function formatActivityReportResult(result: ActivityReportResult): string
   const notes: string[] = [];
   if (result.blocked && result.message) notes.push(result.message);
   if (result.pendingModel > 0) {
-    notes.push(`还有 ${String(result.pendingModel)} 个已结束会话尚未分析（策略未放行或没有可用模型），上面的日记只覆盖已分析的部分。`);
+    notes.push(`还有 ${String(result.pendingModel)} 个已结束会话尚未分析，上面的日记只覆盖已分析的部分。`);
   }
   return [result.markdown, ...notes].join("\n\n");
 }
@@ -787,11 +818,14 @@ async function requestSessionAnalysis(
   model: AgentModel,
   session: ActivityPendingAnalysisSession,
   events: readonly ActivityEventSummary[],
-  signal: AbortSignal | undefined
+  signal: AbortSignal | undefined,
+  checkpoint: (() => Promise<void>) | undefined
 ): Promise<AnalysisOutput | undefined> {
   const prompt = buildAnalysisPrompt(session, events);
   for (let attempt = 0; attempt < 2; attempt += 1) {
+    await checkpoint?.();
     const result = await generateNativeText(model, nativeJsonMessages(ANALYSIS_SYSTEM_PROMPT, prompt), { signal });
+    await checkpoint?.();
     try {
       const parsed = parseActivityAnalysisOutput(result.text);
       if (!parsed) throw new Error("analysis output is not parseable");

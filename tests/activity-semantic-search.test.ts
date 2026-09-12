@@ -1,5 +1,5 @@
 /**
- * P3 语义检索测试：searchActivitySemantic 用本地嵌入补 analysis 行向量 + cosine top N；
+ * 语义检索与后台索引分离测试：后台补向量，前台只计算查询向量和 cosine top N；
  * 本地嵌入不可用时返回友好降级（ok=false, no_runtime），由工具层引导回退关键词检索。
  *
  * 用 fake EmbeddingModelRuntime 提供确定性向量：不依赖任何下载/网络。
@@ -8,7 +8,8 @@ import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { searchActivitySemantic } from "../src/activity/semanticSearch.js";
+import { DatabaseSync } from "node:sqlite";
+import { precomputeActivityEmbeddings, searchActivitySemantic } from "../src/activity/semanticSearch.js";
 import { ActivityStore, type ActivitySessionAnalysis } from "../src/activity/store.js";
 import type { EmbeddingModelRuntime, EmbeddingResult } from "../src/llm/embedding/types.js";
 
@@ -23,11 +24,124 @@ await testSemanticSearchExcludesPlaceholderSessions();
 await testSemanticSearchSkipsTrivialSessionsInBackfill();
 await testSemanticSearchToleratesPassageBatchFailure();
 await testSemanticSearchKeepsExistingVectorsWhenBatchFails();
+await testSearchNeverBackfills();
+await testLateEmbeddingDoesNotPersist();
+await testLongOcrUsesOneFrameVector();
+await testOcrFramesDiscardLateResults();
+await testDiscardChunkIndexKeepsFrames();
+
+async function testDiscardChunkIndexKeepsFrames(): Promise<void> {
+  await withStore(async (store, root) => {
+    const sessionId = store.startSession(todayAt(9));
+    const text = "保留已有 OCR 正文和整帧向量";
+    await store.recordFallbackCapture({
+      sessionId, occurredAt: todayAt(9), eventType: "fallback_capture",
+      rawOcrText: text, jpeg: Buffer.from("test-jpeg")
+    });
+    const frame = store.listOcrEmbeddingSources(FINGERPRINT)[0]!;
+    store.upsertOcrEmbedding(frame.id, FINGERPRINT, vec([1, 0, 0, 0]), todayAt(9));
+    await store.close();
+    const database = new DatabaseSync(path.join(root, "activity.sqlite"));
+    try {
+      database.exec(`
+        CREATE TABLE activity_ocr_chunks (id TEXT PRIMARY KEY, frame_id TEXT, embedding BLOB);
+        CREATE INDEX activity_ocr_chunks_fp_idx ON activity_ocr_chunks(frame_id);
+        CREATE TRIGGER activity_ocr_chunks_text_changed AFTER UPDATE OF text ON activity_ocr_frames
+        BEGIN DELETE FROM activity_ocr_chunks WHERE frame_id = NEW.id; END;
+      `);
+      database.prepare("INSERT INTO activity_ocr_chunks VALUES (?, ?, ?)").run("old-chunk", frame.id, Buffer.from([1]));
+      await store.open(root);
+      assert.equal(database.prepare("SELECT count(*) AS n FROM sqlite_master WHERE name LIKE 'activity_ocr_chunks%'").get()?.n, 0);
+      assert.equal(store.listRecentOcrFrames(todayAt(9))[0]?.text, text);
+      assert.deepEqual(store.listOcrEmbeddingSources(FINGERPRINT), []);
+      assert.deepEqual(store.listOcrEmbeddingRows(FINGERPRINT)[0]?.embedding, vec([1, 0, 0, 0]));
+    } finally {
+      database.close();
+    }
+  });
+}
+
+async function testLongOcrUsesOneFrameVector(): Promise<void> {
+  await withStore(async (store, root) => {
+    const sessionId = store.startSession(todayAt(9));
+    const text = "数据库锁等待排查。" + "普通正文".repeat(2_000) + "完整尾部";
+    await store.recordFallbackCapture({
+      sessionId, occurredAt: todayAt(9), eventType: "fallback_capture",
+      rawOcrText: text, jpeg: Buffer.from("test-jpeg")
+    });
+    const sources = store.listOcrEmbeddingSources(FINGERPRINT);
+    assert.equal(sources.length, 1, "长 OCR 也只对应一个整帧向量");
+    assert.equal(sources[0]?.text, text);
+    const runtime = ruleRuntime([{ match: /数据库锁等待/u, vector: vec([1, 0, 0, 0]) }]);
+    const embed = runtime.embed.bind(runtime);
+    const passages: string[] = [];
+    runtime.embed = async (request) => {
+      if (request.inputType === "passage") passages.push(...request.texts);
+      return embed(request);
+    };
+    const first = await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => runtime });
+    assert.ok(first.ok);
+    assert.equal(first.embedded, 1);
+    assert.equal(store.listOcrEmbeddingRows(FINGERPRINT).length, 1);
+    await store.close();
+    await store.open(root);
+    const resumed = await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => runtime });
+    assert.ok(resumed.ok);
+    assert.equal(resumed.embedded, 0, "重启不重算已有的整帧向量");
+    assert.deepEqual(passages, [text], "整帧正文完整交给嵌入运行时，不自行分块或截断");
+    assert.equal(store.listRecentOcrFrames(todayAt(9))[0]?.text, text, "完整正文仍保存在本地");
+    store.listOcrEmbeddingSources = () => { throw new Error("前台搜索不得回填向量"); };
+    const result = await searchActivitySemantic({ store, getEmbeddingRuntime: async () => runtime, query: "数据库锁等待" });
+    assert.ok(result.ok);
+    assert.equal(result.hits.length, 1);
+    assert.equal(result.hits[0]?.sessionId, sessionId);
+    assert.equal(result.hits[0]?.excerpt, text.slice(0, 2_000));
+    assert.deepEqual(passages, [text], "前台只嵌入查询文本");
+    assert.equal(store.listOcrEmbeddingRows("replacement-model").length, 0);
+  });
+}
+
+async function testOcrFramesDiscardLateResults(): Promise<void> {
+  for (const mutation of ["update", "clear"] as const) {
+    await withStore(async (store, root) => {
+      const sessionId = store.startSession(todayAt(9));
+      const capture = await store.recordFallbackCapture({
+        sessionId, occurredAt: todayAt(9), eventType: "fallback_capture",
+        rawOcrText: "旧 OCR 结论", jpeg: Buffer.from("test-jpeg")
+      });
+      const sources = store.listOcrEmbeddingSources(FINGERPRINT);
+      const runtime = ruleRuntime([{ match: /结论/u, vector: vec([1, 0, 0, 0]) }]);
+      const embed = runtime.embed.bind(runtime);
+      const other = new ActivityStore();
+      await other.open(root);
+      try {
+        runtime.embed = async (request) => {
+          if (mutation === "update") other.updateSnapshotOcr(capture.snapshotId!, "新 OCR 结论");
+          else await other.clear();
+          return embed(request);
+        };
+        const result = await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => runtime });
+        assert.ok(result.ok);
+        assert.equal(result.embedded, 0, "另一连接更新或清空 OCR 后，迟到向量不能落库");
+        assert.equal(store.listOcrEmbeddingRows(FINGERPRINT).length, 0);
+        assert.equal(store.upsertOcrEmbedding(sources[0]!.id, FINGERPRINT, vec([1, 0, 0, 0]), todayAt(9)), false);
+        runtime.embed = embed;
+        const resumed = await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => runtime });
+        assert.ok(resumed.ok);
+        assert.equal(resumed.embedded, mutation === "update" ? 1 : 0);
+        if (mutation === "update") assert.equal(store.listOcrEmbeddingRows(FINGERPRINT)[0]?.text, "新 OCR 结论");
+      } finally {
+        await other.close();
+      }
+    });
+  }
+}
 
 async function testSemanticQueryPreservesWhitespace(): Promise<void> {
   await withStore(async (store) => {
     seedAnalyzedSession(store, todayAt(9), { summary: "登录", sourceEventCount: 5 });
     const runtime = ruleRuntime([{ match: /登录/u, vector: vec([1, 0, 0, 0]) }]);
+    await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => runtime });
     const embed = runtime.embed.bind(runtime);
     const queries: string[][] = [];
     const listOcrRows = store.listOcrEmbeddingRows.bind(store);
@@ -55,7 +169,7 @@ async function testSemanticQueryPreservesWhitespace(): Promise<void> {
   });
 }
 
-/** 语义检索：补嵌入缺失向量 → 查询向量 → cosine top N 命中相关 session。 */
+/** 后台补嵌入缺失向量后，查询命中相关 session。 */
 async function testSemanticSearchEmbedsAndRanks(): Promise<void> {
   await withStore(async (store) => {
     const login = seedAnalyzedSession(store, todayAt(9), {
@@ -75,16 +189,17 @@ async function testSemanticSearchEmbedsAndRanks(): Promise<void> {
       { match: /写文章/u, vector: vec([0, 0, 1, 0]) }
     ]);
 
+    const indexed = await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => runtime });
+    assert.ok(indexed.ok);
+    assert.equal(indexed.embedded, 2);
     const hit = await searchActivitySemantic({
       store,
       getEmbeddingRuntime: async () => runtime,
       query: "修复登录",
-      limit: 3,
-      now: () => new Date()
+      limit: 3
     });
     assert.equal(hit.ok, true);
     if (!hit.ok) return;
-    assert.equal(hit.embedded, 2, "两个缺失向量的 analysis 行都应补嵌入");
     assert.equal(hit.hits.length, 1, "相似度 > 0 的才上榜");
     assert.equal(hit.hits[0]?.sessionId, login);
     assert.ok(hit.hits[0]!.similarity > 0.9);
@@ -102,6 +217,7 @@ async function testSemanticSearchHonorsTop100Limit(): Promise<void> {
       });
     }
     const runtime = ruleRuntime([{ match: /登录/u, vector: vec([1, 0, 0, 0]) }]);
+    await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => runtime });
     const result = await searchActivitySemantic({
       store,
       getEmbeddingRuntime: async () => runtime,
@@ -137,6 +253,7 @@ async function testSemanticSearchExcludesPlaceholderSessions(): Promise<void> {
     seedAnalyzedSession(store, todayAt(9), { summary: "零星活动", sourceEventCount: 1 });
     seedAnalyzedSession(store, todayAt(10), { summary: "活动分析失败", sourceEventCount: 5 });
     const runtime = ruleRuntime([{ match: /登录/u, vector: vec([1, 0, 0, 0]) }]);
+    await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => runtime });
     const result = await searchActivitySemantic({
       store,
       getEmbeddingRuntime: async () => runtime,
@@ -158,6 +275,9 @@ async function testSemanticSearchSkipsTrivialSessionsInBackfill(): Promise<void>
     seedAnalyzedSession(store, todayAt(9), { summary: "闪了一下", sourceEventCount: 2 });
     const real = seedAnalyzedSession(store, todayAt(10), { summary: "修 bug", sourceEventCount: 5 });
     const runtime = ruleRuntime([{ match: /修 bug/u, vector: vec([1, 0, 0, 0]) }]);
+    const indexed = await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => runtime });
+    assert.ok(indexed.ok);
+    assert.equal(indexed.embedded, 1, "后台只补真实行的向量");
     const result = await searchActivitySemantic({
       store,
       getEmbeddingRuntime: async () => runtime,
@@ -165,7 +285,6 @@ async function testSemanticSearchSkipsTrivialSessionsInBackfill(): Promise<void>
     });
     assert.equal(result.ok, true);
     if (!result.ok) return;
-    assert.equal(result.embedded, 1, "只补真实行的向量");
     assert.deepEqual(result.hits.map((hit) => hit.sessionId), [real]);
   });
 }
@@ -175,6 +294,7 @@ async function testSemanticSearchToleratesPassageBatchFailure(): Promise<void> {
   await withStore(async (store) => {
     seedAnalyzedSession(store, todayAt(9), { summary: "修复登录崩溃", sourceEventCount: 5 });
     const runtime = failingPassageRuntime([{ match: /登录/u, vector: vec([1, 0, 0, 0]) }]);
+    await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => runtime });
     const result = await searchActivitySemantic({
       store,
       getEmbeddingRuntime: async () => runtime,
@@ -195,6 +315,7 @@ async function testSemanticSearchKeepsExistingVectorsWhenBatchFails(): Promise<v
       sourceEventCount: 5
     });
     const healthy = ruleRuntime([{ match: /登录/u, vector: vec([1, 0, 0, 0]) }]);
+    await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => healthy });
     const first = await searchActivitySemantic({
       store,
       getEmbeddingRuntime: async () => healthy,
@@ -204,6 +325,9 @@ async function testSemanticSearchKeepsExistingVectorsWhenBatchFails(): Promise<v
 
     seedAnalyzedSession(store, todayAt(11), { summary: "写公众号文章", sourceEventCount: 5 });
     const degraded = failingPassageRuntime([{ match: /登录/u, vector: vec([1, 0, 0, 0]) }]);
+    const indexed = await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => degraded });
+    assert.ok(indexed.ok);
+    assert.equal(indexed.embedded, 0);
     const second = await searchActivitySemantic({
       store,
       getEmbeddingRuntime: async () => degraded,
@@ -211,10 +335,80 @@ async function testSemanticSearchKeepsExistingVectorsWhenBatchFails(): Promise<v
     });
     assert.equal(second.ok, true, "新批次失败不应拖垮整体检索");
     if (!second.ok) return;
-    assert.equal(second.embedded, 0, "失败批次不计入新嵌入数");
     assert.deepEqual(second.hits.map((hit) => hit.sessionId), [login], "已有向量仍可命中");
     assert.equal(store.listAnalysisEmbeddingSources(FINGERPRINT).length, 1, "失败批次的行仍缺向量，留给下次补");
   });
+}
+
+async function testSearchNeverBackfills(): Promise<void> {
+  await withStore(async (store) => {
+    const indexed = seedAnalyzedSession(store, todayAt(9), { summary: "登录", sourceEventCount: 5 });
+    const runtime = ruleRuntime([{ match: /登录/u, vector: vec([1, 0, 0, 0]) }]);
+    const embed = runtime.embed.bind(runtime);
+    let queries = 0;
+    runtime.embed = async (request) => {
+      assert.equal(request.inputType, "query", "前台查询不能补算 passage");
+      queries += 1;
+      return embed(request);
+    };
+    const empty = await searchActivitySemantic({ store, getEmbeddingRuntime: async () => runtime, query: "登录" });
+    assert.ok(!empty.ok);
+    assert.equal(empty.reason, "no_vectors");
+    assert.equal(queries, 0, "空索引不必计算查询向量");
+    assert.equal(store.listAnalysisEmbeddingRows(FINGERPRINT).length, 0);
+    store.upsertAnalysisEmbedding(indexed, FINGERPRINT, vec([1, 0, 0, 0]), NOW.toISOString());
+    seedAnalyzedSession(store, todayAt(11), { summary: "登录待处理", sourceEventCount: 5 });
+    const result = await searchActivitySemantic({ store, getEmbeddingRuntime: async () => runtime, query: "登录" });
+    assert.ok(result.ok);
+    assert.deepEqual(result.hits.map((hit) => hit.sessionId), [indexed]);
+    assert.equal(queries, 1);
+    assert.equal(store.listAnalysisEmbeddingSources(FINGERPRINT).length, 1, "积压项仍由后台处理");
+    const controller = new AbortController();
+    runtime.embed = async (request) => {
+      controller.abort();
+      return embed(request);
+    };
+    await assert.rejects(searchActivitySemantic({
+      store, getEmbeddingRuntime: async () => runtime, query: "登录", signal: controller.signal
+    }), { name: "AbortError" });
+  });
+}
+
+async function testLateEmbeddingDoesNotPersist(): Promise<void> {
+  for (const source of ["ocr", "analysis"] as const) {
+    await withStore(async (store) => {
+      const sessionId = seedAnalyzedSession(store, todayAt(9), { summary: "登录", sourceEventCount: 5 });
+      if (source === "ocr") {
+        await store.recordFallbackCapture({
+          sessionId, occurredAt: todayAt(9), eventType: "fallback_capture",
+          application: "Editor", rawOcrText: "登录", jpeg: Buffer.from("test-jpeg")
+        });
+      }
+      const runtime = ruleRuntime([{ match: /登录/u, vector: vec([1, 0, 0, 0]) }]);
+      const embed = runtime.embed.bind(runtime);
+      const controller = new AbortController();
+      let calls = 0;
+      runtime.embed = async (request) => {
+        calls += 1;
+        controller.abort();
+        return embed(request);
+      };
+      await assert.rejects(precomputeActivityEmbeddings({
+        store, getEmbeddingRuntime: async () => runtime, signal: controller.signal
+      }), { name: "AbortError" });
+      assert.equal(calls, 1);
+      assert.equal(store.listOcrEmbeddingRows(FINGERPRINT).length, 0);
+      assert.equal(store.listAnalysisEmbeddingRows(FINGERPRINT).length, 0);
+      runtime.embed = embed;
+      const resumed = await precomputeActivityEmbeddings({ store, getEmbeddingRuntime: async () => runtime });
+      assert.ok(resumed.ok);
+      assert.equal(resumed.embedded, 1, "取消项保持待处理，可在下一轮恢复；新增 OCR 会使旧分析失效");
+      await assert.rejects(precomputeActivityEmbeddings({
+        store, signal: controller.signal,
+        getEmbeddingRuntime: async () => { throw new Error("取消后不应加载模型"); }
+      }), { name: "AbortError" });
+    });
+  }
 }
 
 /** passage 嵌入必失败、query 按规则返回的 fake 运行时：验证批次失败被容错而非穿透。 */
@@ -263,12 +457,12 @@ function ruleRuntime(rules: ReadonlyArray<{ match: RegExp; vector: Float32Array 
   };
 }
 
-async function withStore(run: (store: ActivityStore) => Promise<void>): Promise<void> {
+async function withStore(run: (store: ActivityStore, root: string) => Promise<void>): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-semantic-"));
   const store = new ActivityStore();
   try {
     await store.open(root);
-    await run(store);
+    await run(store, root);
   } finally {
     await store.close();
     await rm(root, { recursive: true, force: true });

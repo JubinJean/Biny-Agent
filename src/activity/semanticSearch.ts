@@ -1,9 +1,9 @@
 /**
- * activity_search_semantic 的业务实现：优先检索 OCR frame，再以 analysis 行作补充。
+ * activity_search_semantic 的业务实现：优先检索整帧 OCR，再以 analysis 行作补充。
  *
  * 主检索对象是屏幕 OCR 文本；已分析 session 的 project+summary+topics+highlights
- * 作为 OCR 不足时的补充。每次调用先补当前指纹缺失的向量（本地模型批量嵌入，失败只留
- * 待下次），再嵌入查询做 cosine top N。
+ * 作为 OCR 不足时的补充。查询只使用已有索引，缺失向量由后台补齐，避免积压采集数据
+ * 把一次前台搜索变成批量推理和写库。
  *
  * 固定使用本地 multilingual-e5-small；模型未下载/不可用
  * 时返回 ok=false，工具层渲染成友好提示，由模型回退到关键词 activity_search，不抛给调用方。
@@ -16,6 +16,7 @@ import { ACTIVITY_ANALYSIS_FAILED_SUMMARY, ACTIVITY_TRIVIAL_SUMMARY } from "./an
 
 /** 单次调用最多补嵌入的分析行数；其余留到下一次调用继续补。 */
 const EMBED_BATCH_LIMIT = 200;
+/** 每轮最多补齐 32 帧，剩余帧下轮续接。 */
 const OCR_EMBED_BATCH_LIMIT = 32;
 /** 参与 cosine 排序的向量上限（取最新 N 条，防库体无限增长拖慢检索）。 */
 const EMBED_SCORE_LIMIT = 1_000;
@@ -29,13 +30,14 @@ export interface ActivitySemanticSearchDeps {
   query: string;
   limit?: number;
   signal?: AbortSignal;
-  now?: () => Date;
+  checkpoint?: () => Promise<void>;
 }
 
 export interface ActivityEmbeddingPrecomputeDeps {
   store: ActivityStore;
   getEmbeddingRuntime: () => Promise<EmbeddingModelRuntime | undefined>;
   signal?: AbortSignal;
+  checkpoint?: () => Promise<void>;
   now?: () => Date;
 }
 
@@ -51,15 +53,13 @@ export interface ActivitySemanticHit {
   summary: string;
   topics: string[];
   highlights: string[];
-  /** OCR 命中是否已经关联到结构化分析；被动聊天上下文只接受 true。 */
-  analysisAvailable?: boolean;
   source?: "ocr" | "analysis";
   excerpt?: string;
   occurredAt?: string;
 }
 
 export type ActivitySemanticSearchResult =
-  | { ok: true; hits: ActivitySemanticHit[]; embedded: number; model: string; dimensions: number }
+  | { ok: true; hits: ActivitySemanticHit[]; model: string; dimensions: number }
   | { ok: false; reason: "no_runtime" | "no_vectors"; message: string };
 
 const PLACEHOLDER_SUMMARIES = new Set([ACTIVITY_TRIVIAL_SUMMARY, ACTIVITY_ANALYSIS_FAILED_SUMMARY]);
@@ -71,7 +71,11 @@ const PLACEHOLDER_SUMMARIES = new Set([ACTIVITY_TRIVIAL_SUMMARY, ACTIVITY_ANALYS
 export async function precomputeActivityEmbeddings(
   deps: ActivityEmbeddingPrecomputeDeps
 ): Promise<ActivityEmbeddingPrecomputeResult> {
+  await deps.checkpoint?.();
+  deps.signal?.throwIfAborted();
   const runtime = await resolveActivityEmbeddingRuntime(deps.getEmbeddingRuntime);
+  await deps.checkpoint?.();
+  deps.signal?.throwIfAborted();
   if (!runtime) return unsupportedRuntimeResult();
   const embedded = await embedMissingActivitySources(deps, runtime);
   return {
@@ -83,38 +87,52 @@ export async function precomputeActivityEmbeddings(
 }
 
 export async function searchActivitySemantic(deps: ActivitySemanticSearchDeps): Promise<ActivitySemanticSearchResult> {
+  await deps.checkpoint?.();
+  deps.signal?.throwIfAborted();
   if (!deps.query.trim()) return { ok: false, reason: "no_vectors", message: "查询不能为空。" };
 
   const runtime = await resolveActivityEmbeddingRuntime(deps.getEmbeddingRuntime);
+  await deps.checkpoint?.();
+  deps.signal?.throwIfAborted();
   if (!runtime) return unsupportedRuntimeResult();
-  const embedded = await embedMissingActivitySources(deps, runtime);
   const fingerprint = runtime.fingerprint;
 
   const ocrRows = deps.store.listOcrEmbeddingRows(fingerprint, OCR_SCORE_LIMIT);
   const analysisRows = deps.store.listAnalysisEmbeddingRows(fingerprint, EMBED_SCORE_LIMIT);
-  if (!ocrRows.length && !analysisRows.length) return { ok: false, reason: "no_vectors", message: "还没有可检索的 Activity 文本记录。" };
+  if (!ocrRows.length && !analysisRows.length) return { ok: false, reason: "no_vectors", message: "还没有可检索的 Activity 向量；后台会补齐索引，当前可用 activity_search 的 keyword 模式查询。" };
 
   const queryResult = await runtime.embed({ texts: [deps.query], inputType: "query", signal: deps.signal });
+  // 推理后端未必能中断在途计算；取消后不再读取或返回迟到结果。
+  await deps.checkpoint?.();
+  deps.signal?.throwIfAborted();
   const queryVector = queryResult.embeddings[0];
   if (!queryVector) return { ok: false, reason: "no_vectors", message: "查询向量生成失败。" };
 
+  const seenOcrSessions = new Set<string>();
   const ocrScored = ocrRows
     .map((row) => ({ row, similarity: cosineSimilarity(queryVector, row.embedding) }))
     .filter((item) => Number.isFinite(item.similarity) && item.similarity > 0)
     .sort((left, right) => right.similarity - left.similarity)
+    .filter(({ row }) => {
+      // 先按会话取最佳帧，避免为同一会话反复查询分析。
+      if (seenOcrSessions.has(row.sessionId)) return false;
+      seenOcrSessions.add(row.sessionId);
+      return true;
+    })
     .map(({ row, similarity }) => {
       const analysis = deps.store.getAnalysis(row.sessionId);
+      // 整帧参与向量检索，返回时才截短；完整脱敏原文仍留在本地。
+      const excerpt = row.text.slice(0, 2_000);
       return {
         sessionId: row.sessionId,
         startedAt: row.startedAt,
         similarity,
         project: analysis?.project,
-        summary: analysis?.summary ?? row.text,
+        summary: analysis?.summary ?? excerpt,
         topics: analysis?.topics ?? [],
         highlights: analysis?.highlights ?? [],
-        analysisAvailable: analysis !== undefined,
         source: "ocr" as const,
-        excerpt: row.text,
+        excerpt,
         occurredAt: row.occurredAt
       };
     });
@@ -122,7 +140,7 @@ export async function searchActivitySemantic(deps: ActivitySemanticSearchDeps): 
     .map((row) => ({ row, similarity: cosineSimilarity(queryVector, row.embedding) }))
     .filter((item) => Number.isFinite(item.similarity) && item.similarity > 0)
     .sort((left, right) => right.similarity - left.similarity)
-    .map(({ row, similarity }) => ({ ...row, similarity, analysisAvailable: true, source: "analysis" as const }));
+    .map(({ row, similarity }) => ({ ...row, similarity, source: "analysis" as const }));
   const bestBySession = new Map<string, ActivitySemanticHit>();
   for (const hit of [...ocrScored, ...analysisScored]) {
     const previous = bestBySession.get(hit.sessionId);
@@ -135,7 +153,6 @@ export async function searchActivitySemantic(deps: ActivitySemanticSearchDeps): 
         summary: hit.summary,
         topics: hit.topics,
         highlights: hit.highlights,
-        analysisAvailable: hit.analysisAvailable,
         source: hit.source,
         excerpt: "excerpt" in hit ? hit.excerpt : undefined,
         occurredAt: "occurredAt" in hit ? hit.occurredAt : undefined
@@ -148,7 +165,6 @@ export async function searchActivitySemantic(deps: ActivitySemanticSearchDeps): 
 
   return {
     ok: true,
-    embedded,
     model: activityEmbeddingModelName(runtime),
     dimensions: queryResult.dimensions,
     hits: scored
@@ -206,19 +222,23 @@ async function embedOcrPassages(
 ): Promise<number> {
   let embedded = 0;
   for (const [index, source] of sources.entries()) {
+    await deps.checkpoint?.();
     deps.signal?.throwIfAborted();
     try {
       const result = await runtime.embed({ texts: [source.text], inputType: "passage", signal: deps.signal });
+      // 本地推理可能忽略取消；结果提交前再次检查，保留缺失项供下一轮恢复。
+      await deps.checkpoint?.();
+      deps.signal?.throwIfAborted();
       const vector = result.embeddings[0];
       if (vector?.length) {
-        deps.store.upsertOcrEmbedding(
+        const saved = deps.store.upsertOcrEmbedding(
           source.id,
           fingerprint,
           vector,
           (deps.now?.() ?? new Date()).toISOString(),
           runtime.descriptor.ref.model
         );
-        embedded += 1;
+        if (saved) embedded += 1;
       }
     } catch (error) {
       if (deps.signal?.aborted) throw error;
@@ -238,11 +258,14 @@ async function embedAnalysisPassages(
 ): Promise<number> {
   let embedded = 0;
   for (let offset = 0; offset < sources.length; offset += EMBED_BATCH_SIZE) {
+    await deps.checkpoint?.();
     deps.signal?.throwIfAborted();
     const batch = sources.slice(offset, offset + EMBED_BATCH_SIZE);
     let result: EmbeddingResult;
     try {
       result = await runtime.embed({ texts: batch.map(embeddingText), inputType: "passage", signal: deps.signal });
+      await deps.checkpoint?.();
+      deps.signal?.throwIfAborted();
     } catch (error) {
       if (deps.signal?.aborted) throw error;
       continue;

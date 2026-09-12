@@ -1,21 +1,10 @@
 /**
  * Activity 与模型之间共享的最小数据契约。
  *
- * 这里不放截图、OCR 原文或输入事件类型。模型只能读取脱敏后的事件、OCR 和分析投影：来源可以是
- * 用户主动调用 activity_report、后台 session 分析或每日叙事摘要；是否放行由
- * ActivityPrivacyPolicy 统一决定，原始截图/OCR 任何策略下都不出设备。
+ * 分析模型只读取脱敏后的事件、OCR 和分析投影，不接收截图原图。
+ * 查询统一返回已脱敏的 OCR 摘录和摘要，不因聊天模型位置而隐藏尚未分析的命中。
  */
-import type { ActivityDataResidency } from "./settings.js";
-
 export type ActivityModelRuntime = "builtin-llama.cpp" | "provider";
-
-/** 策略层只读取这些字段，不从 provider 名称或 endpoint 猜测本地性。 */
-export interface ActivityModelIdentity {
-  runtime?: ActivityModelRuntime;
-  dataResidency?: ActivityDataResidency;
-  provider?: string;
-  modelId?: string;
-}
 
 /**
  * 分析结果的存储档位：影响记忆重要性、摘要裁剪与未来的保留策略。

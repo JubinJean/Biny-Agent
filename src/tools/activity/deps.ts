@@ -9,9 +9,9 @@ import type { ActivitySettings } from "../../activity/settings.js";
 import type { EmbeddingModelRuntime } from "../../llm/embedding/types.js";
 
 export interface ActivityToolsDeps {
-  /** 取当前聊天模型；report/digest 补分析时由分析策略决定是否可用。 */
+  /** 取当前聊天模型；Activity 查询只返回已脱敏的文字。 */
   getModel(): AgentModel | undefined;
-  /** 读取最新的 activity 设置（策略与存储目录），避免沿用回合开始时的旧快照。 */
+  /** 读取最新的采集设置与存储目录，避免沿用回合开始时的旧快照。 */
   loadSettings(): Promise<ActivitySettings>;
   /** 语义搜索的本地嵌入运行时；缺省时 activity_search 的 semantic 模式提示不可用。 */
   getEmbeddingRuntime?(): Promise<EmbeddingModelRuntime | undefined>;

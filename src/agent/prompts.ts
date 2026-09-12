@@ -117,8 +117,6 @@ export interface BuildSystemPromptOptions {
   parentThreadPrompt?: string;
   /** 当前 blended 情绪；只放在每轮 user context，不进入稳定 system prompt。 */
   emotionPrompt?: string;
-  /** Activity 的本地回忆说明与按输入检索出的上下文；只放在每轮 user context。 */
-  activityPrompt?: string;
   /** 今天和昨天的文件型每日摘要；与 durable memory 分离，且不进入 system prompt。 */
   dailyNotesPrompt?: string;
   /** 从历史材料沉淀出的主题实体；只作为每轮参考，不覆盖当前任务。 */
@@ -146,6 +144,7 @@ const parentThreadPromptStart = "<!-- biny-parent-thread:start -->";
 const parentThreadPromptEnd = "<!-- biny-parent-thread:end -->";
 const emotionPromptStart = "<!-- biny-emotion:start -->";
 const emotionPromptEnd = "<!-- biny-emotion:end -->";
+// 不再生产 Activity 被动上下文；历史会话中的活动块仍须在遥测中脱敏。
 const activityPromptStart = "<!-- biny-activity:start -->";
 const activityPromptEnd = "<!-- biny-activity:end -->";
 const dailyNotesPromptStart = "<!-- biny-daily-notes:start -->";
@@ -188,7 +187,6 @@ export function buildPromptBundle(options: BuildSystemPromptOptions): PromptBund
     turnContext: renderTurnContext({
       now: options.now ?? new Date(),
       emotionPrompt: options.emotionPrompt,
-      activityPrompt: options.activityPrompt,
       dailyNotesPrompt: options.dailyNotesPrompt,
       crystalPrompt: options.crystalPrompt
     })
@@ -320,7 +318,6 @@ function securityPromptBlock(securityPrompt: string | undefined): string {
 function renderTurnContext(options: {
   now: Date;
   emotionPrompt?: string;
-  activityPrompt?: string;
   dailyNotesPrompt?: string;
   crystalPrompt?: string;
 }): string {
@@ -343,7 +340,6 @@ function renderTurnContext(options: {
     `<local_time date="${localDate}" timezone="${escapeXmlAttribute(timezone)}">${localTime}</local_time>`,
     emotionPromptBlock(options.emotionPrompt),
     dailyNotesPromptBlock(options.dailyNotesPrompt),
-    activityPromptBlock(options.activityPrompt),
     crystalPromptBlock(options.crystalPrompt),
     "</biny_turn_context>",
     turnContextEnd
@@ -353,11 +349,6 @@ function renderTurnContext(options: {
 function emotionPromptBlock(emotionPrompt: string | undefined): string {
   const trimmed = emotionPrompt?.trim();
   return trimmed ? [emotionPromptStart, trimmed, emotionPromptEnd].join("\n") : "";
-}
-
-function activityPromptBlock(activityPrompt: string | undefined): string {
-  const trimmed = activityPrompt?.trim();
-  return trimmed ? [activityPromptStart, trimmed, activityPromptEnd].join("\n") : "";
 }
 
 function dailyNotesPromptBlock(dailyNotesPrompt: string | undefined): string {

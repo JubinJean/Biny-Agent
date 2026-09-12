@@ -366,7 +366,7 @@ async function testActivitySettingsUseConfigCas(): Promise<void> {
   await withFixture(async ({ state, agents }) => {
     const transaction = new DesktopSettingsTransaction(state, agents);
     const initial = await transaction.snapshot("project");
-    const { externalPolicy: _externalPolicy, ...activity } = initial.activity;
+    const activity = initial.activity;
     const result = await transaction.save("project", {
       expectedPreferenceRevision: initial.preferenceRevision,
       expectedConfigRevision: initial.configRevision,
@@ -375,7 +375,7 @@ async function testActivitySettingsUseConfigCas(): Promise<void> {
     assert.equal(result.status, "committed", JSON.stringify(result));
     assert.deepEqual(result.appliedFields, ["activity"]);
     assert.equal(agents.config.activity.heartbeatMs, 90_000);
-    assert.equal(agents.config.activity.externalPolicy, "local_only");
+    assert.equal("externalPolicy" in agents.config.activity, false);
   });
 }
 

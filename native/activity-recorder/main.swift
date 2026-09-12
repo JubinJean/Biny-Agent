@@ -74,6 +74,17 @@ private struct SidecarCommand: Decodable {
     let type: String
     let settings: ActivitySettings?
     let permission: String?
+    let desktopCaptureAvailable: Bool?
+    let requestId: String?
+    let imageBase64: String?
+    let error: String?
+}
+
+/// 备用截图只在本机父进程与 sidecar 间传输；去重、隐私检查和 OCR 仍由 sidecar 负责。
+private struct DesktopCaptureRequest: Encodable {
+    let type = "desktop_capture"
+    let requestId: String
+    let maxWidth: Int
 }
 
 private struct SidecarStatus: Encodable {
@@ -266,15 +277,28 @@ private final class ActivityRecorder {
     private var keyBurstApplication: NSRunningApplication?
     private var keyBurstFirstOccurredAt: Date?
     private var keyBurstLastOccurredAt: Date?
-    private var sessionActive = false
+    private var captureContextEpoch: UInt64 = 0
+    private var sessionActive = false {
+        didSet { if oldValue != sessionActive { captureContextEpoch &+= 1 } }
+    }
     private var captureInFlight = false
-    private var currentContext = AXContext.unavailable
-    private var currentApplication: NSRunningApplication?
+    private var currentContext = AXContext.unavailable {
+        didSet { if oldValue.secureTextField != currentContext.secureTextField { captureContextEpoch &+= 1 } }
+    }
+    private var currentApplication: NSRunningApplication? {
+        didSet { if oldValue?.processIdentifier != currentApplication?.processIdentifier { captureContextEpoch &+= 1 } }
+    }
     private var lastAccessibilityGranted = false
-    private var screenLocked = false
+    private var screenLocked = false {
+        didSet { if oldValue != screenLocked { captureContextEpoch &+= 1 } }
+    }
     /// 睡眠唤醒本身不产生 unlock 事件；若系统随后再发 screenIsUnlocked，吞掉这一次通知。
     private var powerWakePendingUnlock = false
     private var lastStatusError: String?
+    private var desktopCaptureAvailable = false
+    // 原生失败后保持降级直到进程退出，避免每个轮询都重复调用已失败的原生后端。
+    private var nativeCaptureFailed = false
+    private var pendingDesktopCapture: (id: String, continuation: CheckedContinuation<CGImage, Error>)?
 
     init(output: SidecarOutput) {
         self.output = output
@@ -287,7 +311,18 @@ private final class ActivityRecorder {
                 output.write(SidecarError(message: "start 缺少 Activity 设置。"))
                 return
             }
+            desktopCaptureAvailable = command.desktopCaptureAvailable == true
             start(settings)
+        case "desktop_capture_result":
+            guard let pending = pendingDesktopCapture, pending.id == command.requestId else { return }
+            pendingDesktopCapture = nil
+            if command.error == nil, let encoded = command.imageBase64,
+               encoded.count <= 28_000_000,
+               let data = Data(base64Encoded: encoded), let bitmap = NSBitmapImageRep(data: data), let image = bitmap.cgImage {
+                pending.continuation.resume(returning: image)
+            } else {
+                pending.continuation.resume(throwing: NSError(domain: "BinyActivityRecorder", code: 3))
+            }
         case "stop":
             stop()
         case "status":
@@ -322,6 +357,10 @@ private final class ActivityRecorder {
     }
 
     func stop() {
+        if let pending = pendingDesktopCapture {
+            pendingDesktopCapture = nil
+            pending.continuation.resume(throwing: CancellationError())
+        }
         if sessionActive {
             flushKeyBurst()
         }
@@ -1293,13 +1332,15 @@ private final class ActivityRecorder {
         let bundleId = application?.bundleIdentifier
         let appName = application?.localizedName
         let capturedInputEventCount = inputEventCount
+        // 异步截图期间即使切到敏感应用后又切回，也不能接受中间时刻捕获的旧画面。
+        let captureEpoch = captureContextEpoch
         Task { @MainActor [weak self] in
             guard let self else { return }
             defer { self.captureInFlight = false }
             do {
                 // Task 从 @MainActor 的 beginCapture 继承主队列；这里直接访问状态，不能再
                 // DispatchQueue.main.sync，否则第一次截图时会触发 libdispatch 自同步 SIGTRAP。
-                guard self.fallbackCaptureAllowed() else { return }
+                guard self.captureContextEpoch == captureEpoch, self.fallbackCaptureAllowed() else { return }
                 let image: CGImage
                 let jpeg: Data
                 let signature: FrameSignature
@@ -1308,6 +1349,7 @@ private final class ActivityRecorder {
                     // compare-only 路径先以 JPEG quality 40 抓最多 160px 宽的图，
                     // 再从编码后的 JPEG 生成 160×90 指纹；不能直接对原始 CGImage 去重。
                     let thumbnailCapture = try await self.captureScreenJPEG(maxWidth: 160, quality: 40)
+                    guard self.captureContextEpoch == captureEpoch, self.fallbackCaptureAllowed() else { return }
                     self.recordCaptureSuccess()
                     guard let thumbnailSignature = self.frameSignature(image: thumbnailCapture.image) else {
                         self.lastStatusError = "无法生成屏幕画面指纹。"
@@ -1335,7 +1377,7 @@ private final class ActivityRecorder {
                     acceptance = self.compareFrame(fullSignature, trigger: reason, settings: settings)
                     guard acceptance.accepted else { return }
                 }
-                guard self.fallbackCaptureAllowed() else { return }
+                guard self.captureContextEpoch == captureEpoch, self.fallbackCaptureAllowed() else { return }
                 let shouldRunOcr: Bool
                 if settings.ocrEnabled {
                     // OCR 关闭时仍保留已接受帧的计数；重新打开后，如果已经
@@ -1352,7 +1394,7 @@ private final class ActivityRecorder {
                     self.snapshotsSinceLastOcr += 1
                     shouldRunOcr = false
                 }
-                guard self.fallbackCaptureAllowed() else { return }
+                guard self.captureContextEpoch == captureEpoch, self.fallbackCaptureAllowed() else { return }
                 // 先提交并发送完整 JPEG；OCR 是后续投影，不能阻塞截图本身的持久化。
                 // 缩略图变化但整屏捕获或编码失败时，下一次 visual poll 仍会重新尝试。
                 self.commitFrame(signature)
@@ -1383,7 +1425,11 @@ private final class ActivityRecorder {
                     let ocrText = self.recognizeText(jpeg: jpeg, languages: settings.ocrLanguages)
                     self.output.write(SidecarOcr(captureId: captureId, ocrText: ocrText))
                 }
+            } catch is CancellationError {
+                // 停止或隐私状态变化不算截图后端故障，也不能覆盖停止后的状态。
+                return
             } catch {
+                guard self.captureContextEpoch == captureEpoch, self.fallbackCaptureAllowed() else { return }
                 self.recordCaptureFailure()
                 self.lastStatusError = "无法读取当前屏幕画面。"
             }
@@ -1401,6 +1447,28 @@ private final class ActivityRecorder {
     }
 
     private func captureScreen(maxWidth: Int? = nil) async throws -> CGImage {
+        if !nativeCaptureFailed || !desktopCaptureAvailable {
+            do {
+                return try await captureNativeScreen(maxWidth: maxWidth)
+            } catch {
+                guard desktopCaptureAvailable else { throw error }
+                nativeCaptureFailed = true
+            }
+        }
+        guard fallbackCaptureAllowed(), CGPreflightScreenCaptureAccess() else { throw CancellationError() }
+        let requestId = UUID().uuidString
+        return try await withCheckedThrowingContinuation { continuation in
+            pendingDesktopCapture = (requestId, continuation)
+            output.write(DesktopCaptureRequest(requestId: requestId, maxWidth: min(2_560, max(1, maxWidth ?? 2_560))))
+            DispatchQueue.main.asyncAfter(deadline: .now() + 10) { [weak self] in
+                guard let self, let pending = self.pendingDesktopCapture, pending.id == requestId else { return }
+                self.pendingDesktopCapture = nil
+                pending.continuation.resume(throwing: NSError(domain: "BinyActivityRecorder", code: 4))
+            }
+        }
+    }
+
+    private func captureNativeScreen(maxWidth: Int?) async throws -> CGImage {
         let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
         guard let display = content.displays.first(where: { $0.displayID == CGMainDisplayID() }) ?? content.displays.first else {
             throw NSError(domain: "BinyActivityRecorder", code: 1)

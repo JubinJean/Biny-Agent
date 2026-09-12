@@ -51,6 +51,8 @@ export interface DesktopSettingsDraft {
 export interface SettingsDraftContextValue {
   snapshot?: DesktopSettingsSnapshot;
   draft?: DesktopSettingsDraft;
+  /** Activity 是全局即时配置，无项目时也可读取和更新。 */
+  activity?: DesktopActivitySettingsInput;
   loadError?: string;
   dirtyCount: number;
   preferencesOnly: boolean;

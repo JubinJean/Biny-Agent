@@ -45,9 +45,14 @@ export async function createActivityMemoryPipeline(options: ActivityMemoryPipeli
     candidates: readonly ActivityMemoryCandidate[],
     context: ActivityMemoryWriteContext
   ): Promise<void> => {
+    context.signal?.throwIfAborted();
     const workspaceRoot = await options.resolveWorkspace?.(context.project);
     for (const candidate of candidates) {
-      if (workspaceRoot === undefined && options.skipUnknownWorkspace === true && candidate.type !== "user") continue;
+      await context.checkpoint?.();
+      context.signal?.throwIfAborted();
+      if (workspaceRoot === undefined && options.skipUnknownWorkspace === true && candidate.type !== "user") {
+        throw new Error("活动对应的项目尚未关联，保留候选等待工作区确认。");
+      }
       const memory = new LocalMemory(
         workspaceRoot ?? options.workspaceRoot,
         () => context.model,
@@ -61,11 +66,14 @@ export async function createActivityMemoryPipeline(options: ActivityMemoryPipeli
       );
       try {
         const input = activityMemoryInput(candidate, context);
-        await withFreshRevision(memory, undefined, async (expectedRevision) => await memory.writeAutoEntry(input, {
+        const result = await withFreshRevision(memory, context.signal, async (expectedRevision) => await memory.writeAutoEntry(input, {
           expectedRevision,
+          signal: context.signal,
+          checkpoint: context.checkpoint,
           now: new Date(context.analyzedAt),
           requireSemantic: options.requireSemantic === true
         }));
+        if (result.deferred) throw new Error("本地语义检索暂不可用，保留活动记忆候选。");
       } finally {
         memory.close();
       }
@@ -74,7 +82,8 @@ export async function createActivityMemoryPipeline(options: ActivityMemoryPipeli
 
   const onAnalyzed = async (
     analysis: ActivitySessionAnalysis,
-    session: ActivityPendingAnalysisSession
+    session: ActivityPendingAnalysisSession,
+    signal?: AbortSignal
   ): Promise<void> => {
     const terms = [
       analysis.project,
@@ -83,6 +92,7 @@ export async function createActivityMemoryPipeline(options: ActivityMemoryPipeli
       ...analysis.entities
     ].filter((value): value is string => Boolean(value?.trim()));
     await crystals.processAnchor({
+      signal,
       threadId: `activity:${analysis.project?.trim() || "unclassified"}`,
       anchorId: `activity:${session.id}`,
       day: session.startedAt.slice(0, 10),

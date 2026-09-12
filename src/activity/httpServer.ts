@@ -8,9 +8,9 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { readFile } from "node:fs/promises";
 import { URL } from "node:url";
 import type { AgentModel } from "../agent/core/types.js";
-import { ActivityPrivacyPolicy } from "./privacyPolicy.js";
 import type { ActivitySettings } from "./settings.js";
 import { ActivityStore } from "./store.js";
+import { createActivityOperation } from "./operation.js";
 import { buildActivityDigest } from "./digest.js";
 import { analyzeActivitySession, buildActivityReport, resolveActivityReportRange, type ActivityAnalyzerDeps } from "./analyzer.js";
 import { refreshActivitySummaryWithNarrative } from "./summary.js";
@@ -25,6 +25,8 @@ export interface ActivityHttpApiDependencies {
   onAnalyzed?: ActivityAnalyzerDeps["onAnalyzed"];
   crystal?: CrystalHttpDependencies;
   getRuntimeSnapshot?(): ActivityRuntimeSnapshot | Promise<ActivityRuntimeSnapshot>;
+  /** 使用采集宿主现有的一代任务信号，stop/clear/配置变更时共同失效。 */
+  getOperationSignal?(): AbortSignal;
   start?(): Promise<void>;
   stop?(): Promise<void>;
   clear?(): Promise<unknown>;
@@ -35,6 +37,7 @@ export interface ActivityHttpRequest {
   pathname: string;
   searchParams?: URLSearchParams;
   body?: unknown;
+  signal?: AbortSignal;
 }
 
 export interface ActivityHttpResponse {
@@ -92,10 +95,18 @@ export async function handleActivityHttpRequest(
     if (pathname === "/api/activity-recorder/stop" && method === "POST") return await control(deps.stop, "stop");
     if (pathname === "/api/activity-recorder/clear" && method === "POST") return await control(deps.clear, "clear");
 
+    const hostSignal = deps.getOperationSignal?.();
+    // 停止时取消在途请求，但停止后新发起的本地历史查询仍可用；模型任务另行检查宿主状态。
+    const signals = [request.signal, hostSignal?.aborted ? undefined : hostSignal].filter((value): value is AbortSignal => value !== undefined);
+    const signal = AbortSignal.any(signals);
+    signal.throwIfAborted();
     const settings = await deps.loadSettings();
+    signal.throwIfAborted();
     const store = new ActivityStore();
     await store.open(settings.outputDirectory);
     try {
+      const operation = createActivityOperation(store, settings, deps.loadSettings, signal);
+      await operation.checkpoint();
       if (pathname === "/api/activity-recorder/search" && method === "GET") {
         const query = searchParams.get("query")?.trim() ?? "";
         if (!query) return badRequest("query 不能为空。");
@@ -111,14 +122,15 @@ export async function handleActivityHttpRequest(
         return { status: 200, body: store.listRecentSessionsWithAnalysis(since, boundedLimit(searchParams.get("limit"), 50, 200)) };
       }
       if (pathname.startsWith("/api/activity-recorder/sessions/") && pathname.endsWith("/analyze") && method === "POST") {
+        hostSignal?.throwIfAborted();
         const sessionId = decodePathPart(pathname.slice("/api/activity-recorder/sessions/".length, -"/analyze".length));
         if (!store.getSessionDetail(sessionId)) return notFound("没有找到 Activity session。");
         return {
           status: 200,
           body: await analyzeActivitySession({
             store,
-            policy: new ActivityPrivacyPolicy(settings),
             model: await deps.getModel?.(),
+            ...operation,
             writeMemories: deps.writeMemories,
             onAnalyzed: deps.onAnalyzed
           }, sessionId, true)
@@ -143,16 +155,17 @@ export async function handleActivityHttpRequest(
         return { status: 200, body: result };
       }
       if (pathname.startsWith("/api/activity-recorder/report/") && method === "GET") {
+        hostSignal?.throwIfAborted();
         const date = decodePathPart(pathname.slice("/api/activity-recorder/report/".length));
         const range = resolveActivityReportRange(date, new Date());
         const model = await deps.getModel?.();
-        const policy = new ActivityPrivacyPolicy(settings);
+
         return {
           status: 200,
           body: await buildActivityReport({
             store,
-            policy,
             model,
+            ...operation,
             writeMemories: deps.writeMemories,
             onAnalyzed: deps.onAnalyzed
           }, range.label)
@@ -162,23 +175,26 @@ export async function handleActivityHttpRequest(
         const dateKey = decodePathPart(pathname.slice("/api/activity-recorder/summary/daily/".length));
         if (!/^\d{4}-\d{2}-\d{2}$/u.test(dateKey)) return badRequest("summary date 必须是 YYYY-MM-DD。");
         if (method === "GET") return { status: 200, body: store.getSummary("daily", dateKey) ?? null };
+        hostSignal?.throwIfAborted();
         const model = await deps.getModel?.();
-        const policy = new ActivityPrivacyPolicy(settings);
+
         return {
           status: 200,
           body: await refreshActivitySummaryWithNarrative(store, "daily", dateKey, {
             model,
-            policy,
+
+            ...operation,
             withNarrative: searchParams.get("narrative") === "true"
           })
         };
       }
       if (pathname === "/api/activity-recorder/suggestions" && method === "GET") {
+        hostSignal?.throwIfAborted();
         const model = await deps.getModel?.();
         const result = await generateActivitySuggestions({
           store,
-          policy: new ActivityPrivacyPolicy(settings),
           model,
+          ...operation,
           force: searchParams.get("force") === "true"
         });
         return { status: 200, body: result };
@@ -190,6 +206,7 @@ export async function handleActivityHttpRequest(
         const snapshotPath = store.getSnapshotPath(snapshotId);
         if (!snapshotPath) return notFound("没有找到可预览的截图。");
         const bytes = await readFile(snapshotPath);
+        await operation.checkpoint();
         if (bytes.byteLength > 20 * 1024 * 1024) return { status: 413, body: { error: "snapshot too large" } };
         return { status: 200, body: { dataUrl: `data:image/jpeg;base64,${bytes.toString("base64")}` } };
       }
@@ -198,6 +215,7 @@ export async function handleActivityHttpRequest(
       await store.close();
     }
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") return { status: 409, body: { error: "Activity 请求已取消。" } };
     return { status: 500, body: { error: error instanceof Error ? error.message : String(error) } };
   }
 }
@@ -207,8 +225,9 @@ export async function startActivityHttpServer(
   options: { host?: string; port?: number } = {}
 ): Promise<ActivityHttpServer> {
   const host = options.host ?? "127.0.0.1";
+  const shutdown = new AbortController();
   const server = createServer((request, response) => {
-    void respond(request, response, deps);
+    void respond(request, response, deps, shutdown.signal);
   });
   await new Promise<void>((resolve, reject) => {
     const onError = (error: Error): void => {
@@ -230,7 +249,9 @@ export async function startActivityHttpServer(
     host,
     port,
     close: async () => await new Promise<void>((resolve, reject) => {
+      shutdown.abort();
       server.close((error) => error ? reject(error) : resolve());
+      server.closeAllConnections();
     })
   };
 }
@@ -238,35 +259,45 @@ export async function startActivityHttpServer(
 async function respond(
   request: IncomingMessage,
   response: ServerResponse,
-  deps: ActivityHttpApiDependencies
+  deps: ActivityHttpApiDependencies,
+  shutdownSignal: AbortSignal
 ): Promise<void> {
-  const url = new URL(request.url ?? "/", "http://127.0.0.1");
-  let body: unknown;
-  if (["POST", "PUT", "PATCH"].includes((request.method ?? "GET").toUpperCase())) {
-    const parsed = await readJsonBody(request);
-    if (!parsed.ok) {
-      response.statusCode = parsed.status;
-      response.setHeader("Content-Type", "application/json; charset=utf-8");
-      response.setHeader("Cache-Control", "no-store");
-      response.end(JSON.stringify({ error: parsed.error }));
+  const disconnected = new AbortController();
+  const onClose = (): void => { if (!response.writableFinished) disconnected.abort(); };
+  response.once("close", onClose);
+  try {
+    const url = new URL(request.url ?? "/", "http://127.0.0.1");
+    let body: unknown;
+    if (["POST", "PUT", "PATCH"].includes((request.method ?? "GET").toUpperCase())) {
+      const parsed = await readJsonBody(request);
+      if (!parsed.ok) {
+        response.statusCode = parsed.status;
+        response.setHeader("Content-Type", "application/json; charset=utf-8");
+        response.setHeader("Cache-Control", "no-store");
+        response.end(JSON.stringify({ error: parsed.error }));
+        return;
+      }
+      body = parsed.body;
+    }
+    const result = await handleActivityHttpRequest({
+      method: request.method ?? "GET",
+      pathname: url.pathname,
+      searchParams: url.searchParams,
+      body,
+      signal: AbortSignal.any([disconnected.signal, shutdownSignal])
+    }, deps);
+    if (response.destroyed) return;
+    response.statusCode = result.status;
+    response.setHeader("Content-Type", "application/json; charset=utf-8");
+    response.setHeader("Cache-Control", "no-store");
+    if (result.status === 204) {
+      response.end();
       return;
     }
-    body = parsed.body;
+    response.end(JSON.stringify(result.body));
+  } finally {
+    response.off("close", onClose);
   }
-  const result = await handleActivityHttpRequest({
-    method: request.method ?? "GET",
-    pathname: url.pathname,
-    searchParams: url.searchParams,
-    body
-  }, deps);
-  response.statusCode = result.status;
-  response.setHeader("Content-Type", "application/json; charset=utf-8");
-  response.setHeader("Cache-Control", "no-store");
-  if (result.status === 204) {
-    response.end();
-    return;
-  }
-  response.end(JSON.stringify(result.body));
 }
 
 async function readJsonBody(
@@ -294,6 +325,7 @@ async function readJsonBody(
       chunks.push(buffer);
     });
     request.on("error", (error: Error) => finish({ ok: false, status: 400, error: error.message }));
+    request.on("aborted", () => finish({ ok: false, status: 400, error: "request aborted" }));
     request.on("end", () => {
       if (settled) return;
       const text = Buffer.concat(chunks).toString("utf8").trim();

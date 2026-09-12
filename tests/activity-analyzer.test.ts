@@ -13,12 +13,12 @@ import {
   type ActivityAnalyzerDeps,
   type ActivityReportResult
 } from "../src/activity/analyzer.js";
-import { ActivityPrivacyPolicy } from "../src/activity/privacyPolicy.js";
 import { activityMemoryInput } from "../src/activity/memoryInput.js";
 import { ActivityStore, type ActivitySessionAnalysis } from "../src/activity/store.js";
 import type { ActivityDataResidency } from "../src/activity/settings.js";
 import type { ActivityModelRuntime } from "../src/activity/types.js";
 import type { AgentModel, ModelStreamEvent } from "../src/agent/core/types.js";
+import { refreshActivitySummaryWithNarrative } from "../src/activity/summary.js";
 
 const NOW = new Date(2026, 7, 26, 15, 30, 0); // 本地 2026-08-26 15:30
 
@@ -56,19 +56,112 @@ await testUnendedSessionSkipped();
 await testAnalyzeThenCacheIsIdempotent();
 await testLateOcrRequeuesAnalyzedSession();
 await testAnalysisFeedsMemoryAndCrystalCallbacks();
+await testPendingProjectionSurvivesRestartWithoutReanalysis();
 await testWorthGateSkipsLongTermProjections();
-await testPolicyBlocksExternalModel();
-await testSweepRespectsAnalysisPolicyGate();
+await testExternalModelWithoutExtraConsent();
+await testSweepUsesExternalModel();
 await testSweepRetriesAfterModelError();
 await testSweepCancellationKeepsRemainingSessionsPending();
+await testCancelledAnalysisAndSummaryLeaveNoResult();
   await testAnalysisModelErrorRecordsFailed();
   await testParseFailureRecordsFailedStatus();
 await testBuildReportGroupsAndFilters();
 await testBuildReportAnalyzesPendingInRange();
-await testBuildReportBlockedPolicy();
+await testBuildReportUsesExternalModel();
 await testBuildReportCanRenderStoredAnalysesOnly();
 testDailyNoteFormatter();
 testReportRangeParsing();
+
+async function testCancelledAnalysisAndSummaryLeaveNoResult(): Promise<void> {
+  await withStore(async (store) => {
+    const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
+    const controller = new AbortController();
+    const { model } = scriptedModel([ANALYSIS_JSON]);
+    const stream = model.stream.bind(model);
+    model.stream = async (...args) => {
+      controller.abort();
+      return stream(...args);
+    };
+    let projections = 0;
+    await assert.rejects(analyzeActivitySession({
+      ...deps(store, model), signal: controller.signal,
+      writeMemories: async () => { projections += 1; },
+      onAnalyzed: async () => { projections += 1; }
+    }, sessionId), { name: "AbortError" });
+    assert.equal(store.getAnalysis(sessionId), undefined);
+    assert.deepEqual(store.listSessionsPendingAnalysis().map((session) => session.id), [sessionId]);
+    assert.equal(projections, 0);
+    const dateKey = resolveActivityReportRange("today", NOW).label;
+    const summaryController = new AbortController();
+    model.stream = async (...args) => {
+      summaryController.abort();
+      return stream(...args);
+    };
+    await assert.rejects(refreshActivitySummaryWithNarrative(store, "daily", dateKey, {
+      model, signal: summaryController.signal, withNarrative: true, now: NOW
+    }), { name: "AbortError" });
+    assert.equal(store.getSummary("daily", dateKey), undefined, "取消后也不能落盘 fallback 日结");
+    await assert.rejects(buildActivityReport({ ...deps(store, model), signal: controller.signal }, "today"), { name: "AbortError" });
+    const healthy = scriptedModel([ANALYSIS_JSON]);
+    const resumed = await analyzeActivitySession(deps(store, healthy.model), sessionId);
+    assert.equal(resumed.status, "analyzed");
+    assert.equal(healthy.calls(), 1);
+  });
+}
+
+async function testPendingProjectionSurvivesRestartWithoutReanalysis(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "biny-activity-projection-recovery-"));
+  const store = new ActivityStore();
+  await store.open(root);
+  const candidate = { type: "project" as const, content: "项目持续采用分阶段发布流程", why: "重复出现的稳定约束" };
+  const scripted = scriptedModel([JSON.stringify({ ...JSON.parse(ANALYSIS_JSON), memoryCandidates: [candidate] })]);
+  const controller = new AbortController();
+  let memoryCalls = 0;
+  let crystalCalls = 0;
+  try {
+    const id = seedEndedSession(store, todayAt(9), todayAt(10), 3);
+    await assert.rejects(analyzeActivitySession({
+      ...deps(store, scripted.model), signal: controller.signal,
+      writeMemories: async () => { memoryCalls += 1; controller.abort(); },
+      onAnalyzed: async () => { crystalCalls += 1; }
+    }, id), { name: "AbortError" });
+    assert.equal(scripted.calls(), 1);
+    assert.equal(crystalCalls, 0);
+    await store.close();
+    await store.open(root);
+    assert.deepEqual(store.getPendingAnalysisProjection(store.getAnalysis(id)!).memoryCandidates, [candidate]);
+    // 候选不属于对外分析投影，API/聊天不能从普通分析读取顺带拿到它。
+    assert.doesNotMatch(JSON.stringify(store.getAnalysis(id)), /项目持续采用分阶段发布流程/u);
+    const resumed: ActivityAnalyzerDeps = {
+      ...deps(store, scripted.model),
+      writeMemories: async () => { memoryCalls += 1; },
+      onAnalyzed: async () => { crystalCalls += 1; throw new Error("temporary crystal failure"); }
+    };
+    await analyzePendingActivitySessions(resumed);
+    assert.equal(memoryCalls, 2);
+    assert.equal(crystalCalls, 1);
+    assert.equal(scripted.calls(), 1, "恢复旁路不能重跑分析模型");
+    await analyzePendingActivitySessions({ ...resumed, onAnalyzed: async () => { crystalCalls += 1; } });
+    assert.equal(memoryCalls, 2, "已确认记忆不能随结晶重试重复执行");
+    assert.equal(crystalCalls, 2);
+    assert.deepEqual(store.listAnalysesPendingProjection(), []);
+    await analyzePendingActivitySessions(resumed);
+    assert.equal(scripted.calls(), 1);
+    assert.equal(memoryCalls, 2);
+    assert.equal(crystalCalls, 2);
+    store.recordAnalysis(store.getAnalysis(id)!, [candidate]);
+    const before = store.getPendingAnalysisProjection(store.getAnalysis(id)!);
+    store.recordAnalysis(store.getAnalysis(id)!, [{ ...candidate, content: "新的发布约束需要独立确认" }]);
+    store.completeAnalysisProjection(id, "memory", before.revision);
+    assert.equal(store.getPendingAnalysisProjection(store.getAnalysis(id)!).memoryCandidates.length, 1,
+      "即使输入 hash 和毫秒时间相同，旧回调也不能确认新一版候选");
+    await store.clear();
+    assert.deepEqual(store.listAnalysesPendingProjection(), []);
+  } finally {
+    await store.close();
+    await rm(root, { recursive: true, force: true });
+  }
+}
 
 async function testSweepCancellationKeepsRemainingSessionsPending(): Promise<void> {
   await withStore(async (store) => {
@@ -77,7 +170,7 @@ async function testSweepCancellationKeepsRemainingSessionsPending(): Promise<voi
     const controller = new AbortController();
     const { model, calls } = scriptedModel([ANALYSIS_JSON]);
     await assert.rejects(analyzePendingActivitySessions({
-      ...deps(store, localPolicy(), model),
+      ...deps(store, model),
       signal: controller.signal,
       onAnalyzed: async () => { controller.abort(); }
     }), { name: "AbortError" });
@@ -97,7 +190,7 @@ async function testTrivialSessionSkipsModel(): Promise<void> {
       2
     );
     const { model, calls } = scriptedModel([ANALYSIS_JSON]);
-    const outcome = await analyzeActivitySession(deps(store, localPolicy(), model), sessionId);
+    const outcome = await analyzeActivitySession(deps(store, model), sessionId);
     assert.equal(outcome.status, "trivial");
     assert.equal(calls(), 0, "零星 session 不应调用模型");
     const stored = store.getAnalysis(sessionId);
@@ -135,7 +228,7 @@ async function testUnendedSessionSkipped(): Promise<void> {
       });
     }
     const { model, calls } = scriptedModel([ANALYSIS_JSON]);
-    const outcome = await analyzeActivitySession(deps(store, localPolicy(), model), sessionId);
+    const outcome = await analyzeActivitySession(deps(store, model), sessionId);
     assert.equal(outcome.status, "skipped");
     assert.equal(outcome.status === "skipped" ? outcome.reason : undefined, "session_not_ended");
     assert.equal(calls(), 0);
@@ -148,7 +241,7 @@ async function testAnalyzeThenCacheIsIdempotent(): Promise<void> {
   await withStore(async (store) => {
     const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
     const { model, calls } = scriptedModel([ANALYSIS_JSON]);
-    const dependencies = deps(store, localPolicy(), model);
+    const dependencies = deps(store, model);
 
     const first = await analyzeActivitySession(dependencies, sessionId);
     assert.equal(first.status, "analyzed");
@@ -175,7 +268,7 @@ async function testLateOcrRequeuesAnalyzedSession(): Promise<void> {
   await withStore(async (store) => {
     const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
     const { model } = scriptedModel([ANALYSIS_JSON]);
-    assert.equal((await analyzeActivitySession(deps(store, localPolicy(), model), sessionId)).status, "analyzed");
+    assert.equal((await analyzeActivitySession(deps(store, model), sessionId)).status, "analyzed");
     const capture = await store.recordFallbackCapture({
       sessionId,
       occurredAt: todayAt(10),
@@ -204,7 +297,7 @@ async function testAnalysisFeedsMemoryAndCrystalCallbacks(): Promise<void> {
     const memories: string[] = [];
     const analyzed: string[] = [];
     const dependencies = {
-      ...deps(store, localPolicy(), model),
+      ...deps(store, model),
       writeMemories: async (candidates: readonly { content: string }[]) => {
         memories.push(...candidates.map((candidate) => candidate.content));
       },
@@ -219,7 +312,7 @@ async function testAnalysisFeedsMemoryAndCrystalCallbacks(): Promise<void> {
     const cached = await analyzeActivitySession(dependencies, sessionId);
     assert.equal(cached.status, "analyzed");
     assert.deepEqual(memories, ["项目采用主动活动回顾"]);
-    assert.deepEqual(analyzed, [sessionId, sessionId]);
+    assert.deepEqual(analyzed, [sessionId], "已确认的投影不重复执行");
   });
 }
 
@@ -238,7 +331,7 @@ async function testWorthGateSkipsLongTermProjections(): Promise<void> {
     const memories: string[] = [];
     const analyzed: string[] = [];
     const outcome = await analyzeActivitySession({
-      ...deps(store, localPolicy(), model),
+      ...deps(store, model),
       writeMemories: async (candidates) => { memories.push(...candidates.map((candidate) => candidate.content)); },
       onAnalyzed: async (analysis) => { analyzed.push(analysis.sessionId); }
     }, sessionId);
@@ -257,37 +350,50 @@ async function testWorthGateSkipsLongTermProjections(): Promise<void> {
   });
 }
 
-/** 外部模型 + local_only 策略：不分析、不落库，session 保持待分析。 */
-async function testPolicyBlocksExternalModel(): Promise<void> {
+/** 外部工具模型直接分析并落库，不需要额外授权。 */
+async function testExternalModelWithoutExtraConsent(): Promise<void> {
   await withStore(async (store) => {
     const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
+    const capture = await store.recordFallbackCapture({
+      sessionId, occurredAt: todayAt(9), eventType: "fallback_capture",
+      rawOcrText: "CLOUD_OCR_TEXT_731 token=private-ocr-secret\n" + "正文".repeat(1_500) + "AFTER_2K_731\n" + "正文".repeat(10_000) + "LONG_FRAME_END_731",
+      jpeg: Buffer.from("PRIVATE_JPEG_CONTENT_731"), fallbackReason: "test"
+    });
     const { model, calls } = scriptedModel([ANALYSIS_JSON], { runtime: "provider" });
-    const policy = new ActivityPrivacyPolicy({ analysisPolicy: "local_only" });
-    const outcome = await analyzeActivitySession(deps(store, policy, model), sessionId);
-    assert.equal(outcome.status, "blocked");
-    assert.equal(outcome.status === "blocked" ? outcome.decision.reason : undefined, "external_blocked");
-    assert.equal(calls(), 0, "策略拒绝时模型不应被调用");
-    assert.equal(store.getAnalysis(sessionId), undefined);
-    assert.ok(store.listSessionsPendingAnalysis().some((session) => session.id === sessionId));
+    let sent = "";
+    const stream = model.stream.bind(model);
+    model.stream = async (...args) => {
+      sent = JSON.stringify(args[0]);
+      return stream(...args);
+    };
+    const outcome = await analyzeActivitySession(deps(store, model), sessionId);
+    assert.equal(outcome.status, "analyzed");
+    assert.equal(calls(), 1, "云模型分析不需要额外确认");
+    assert.ok(store.getAnalysis(sessionId));
+    assert.equal(store.listSessionsPendingAnalysis().length, 0);
+    assert.match(sent, /CLOUD_OCR_TEXT_731/u, "脱敏 OCR 文字进入云工具模型输入");
+    assert.match(sent, /AFTER_2K_731/u, "两千字之后的内容仍能参与分析");
+    assert.doesNotMatch(sent, /LONG_FRAME_END_731/u, "完整帧入库后，分析输入仍按会话预算裁剪");
+    assert.ok(store.listSessionEventSummaries(sessionId).some((event) => event.ocrText?.includes("LONG_FRAME_END_731")), "模型预算不能截断持久化 OCR");
+    assert.doesNotMatch(sent, /private-ocr-secret|PRIVATE_JPEG_CONTENT_731|data:image|\.jpg/u);
+    assert.ok(capture.snapshotId, "本地确实保存了截图，不能用无截图输入冒充未外发测试");
   });
 }
 
-/** 周期 sweep 触发路径同样过 analysisPolicy 门禁：被拦截的 session 不计入已分析、保持待分析。 */
-async function testSweepRespectsAnalysisPolicyGate(): Promise<void> {
+/** 周期分析与手动分析使用同样的工具模型路径。 */
+async function testSweepUsesExternalModel(): Promise<void> {
   await withStore(async (store) => {
     const first = seedEndedSession(store, todayAt(9), todayAt(10), 3);
     const second = seedEndedSession(store, todayAt(11), todayAt(12), 3);
-    const { model, calls } = scriptedModel([ANALYSIS_JSON], { runtime: "provider" });
-    const policy = new ActivityPrivacyPolicy({ analysisPolicy: "local_only" });
-    const result = await analyzePendingActivitySessions(deps(store, policy, model));
+    const { model, calls } = scriptedModel([ANALYSIS_JSON, ANALYSIS_JSON], { runtime: "provider" });
+    const result = await analyzePendingActivitySessions(deps(store, model));
     assert.equal(result.evaluated, 2);
-    assert.equal(result.blocked, 2, "门禁拦截应计入 blocked 而非 analyzed");
-    assert.equal(result.analyzed, 0);
-    assert.equal(calls(), 0, "策略拒绝时模型不应被调用");
-    assert.equal(store.getAnalysis(first), undefined);
-    assert.equal(store.getAnalysis(second), undefined);
-    const pending = store.listSessionsPendingAnalysis();
-    assert.equal(pending.length, 2, "被拦截的 session 保持待分析，供策略放开后的下一轮 sweep 补");
+    assert.equal(result.blocked, 0);
+    assert.equal(result.analyzed, 2);
+    assert.equal(calls(), 2);
+    assert.ok(store.getAnalysis(first));
+    assert.ok(store.getAnalysis(second));
+    assert.equal(store.listSessionsPendingAnalysis().length, 0);
   });
 }
 
@@ -296,7 +402,7 @@ async function testSweepRetriesAfterModelError(): Promise<void> {
   await withStore(async (store) => {
     const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
     const failing = scriptedModel([new Error("boom")]);
-    const first = await analyzePendingActivitySessions(deps(store, localPolicy(), failing.model));
+    const first = await analyzePendingActivitySessions(deps(store, failing.model));
     assert.equal(first.evaluated, 1);
     assert.equal(first.errors, 1);
     assert.equal(first.analyzed, 0);
@@ -305,7 +411,7 @@ async function testSweepRetriesAfterModelError(): Promise<void> {
 
     store.recordAnalysisStatus(sessionId, "pending");
     const recovering = scriptedModel([ANALYSIS_JSON]);
-    const second = await analyzePendingActivitySessions(deps(store, localPolicy(), recovering.model));
+    const second = await analyzePendingActivitySessions(deps(store, recovering.model));
     assert.equal(second.errors, 0);
     assert.equal(second.analyzed, 1);
     assert.ok(store.getAnalysis(sessionId), "下一轮 sweep 自然重试成功");
@@ -317,7 +423,7 @@ async function testAnalysisModelErrorRecordsFailed(): Promise<void> {
   await withStore(async (store) => {
     const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
     const { model, calls } = scriptedModel([new Error("boom")]);
-    const outcome = await analyzeActivitySession(deps(store, localPolicy(), model), sessionId);
+    const outcome = await analyzeActivitySession(deps(store, model), sessionId);
     assert.equal(outcome.status, "error");
     assert.equal(outcome.status === "error" ? outcome.error : undefined, "boom");
     assert.equal(calls(), 1);
@@ -331,7 +437,7 @@ async function testParseFailureRecordsFailedStatus(): Promise<void> {
   await withStore(async (store) => {
     const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
     const { model, calls } = scriptedModel(["not json", "still not json"]);
-    const outcome = await analyzeActivitySession(deps(store, localPolicy(), model), sessionId);
+    const outcome = await analyzeActivitySession(deps(store, model), sessionId);
     assert.equal(outcome.status, "error");
     assert.equal(calls(), 2, "解析失败重试一次后记录 failed");
     assert.equal(store.getAnalysis(sessionId), undefined);
@@ -359,7 +465,7 @@ async function testBuildReportGroupsAndFilters(): Promise<void> {
     store.recordAnalysis(analysisRow(e, { project: "side", topics: ["昨日任务"], confidence: 0.8 }));
 
     const { model, calls } = scriptedModel([ANALYSIS_JSON]);
-    const result = await buildActivityReport(deps(store, localPolicy(), model), "today");
+    const result = await buildActivityReport(deps(store, model), "today");
     assert.equal(result.sessionCount, 2, "只统计可入报告的 session（过滤占位）");
     assert.equal(result.blocked, false);
     assert.equal(result.analyzedNow, 0, "范围内没有待分析 session");
@@ -380,7 +486,7 @@ async function testBuildReportAnalyzesPendingInRange(): Promise<void> {
   await withStore(async (store) => {
     const sessionId = seedEndedSession(store, todayAt(9), todayAt(10), 3);
     const { model, calls } = scriptedModel([ANALYSIS_JSON]);
-    const result = await buildActivityReport(deps(store, localPolicy(), model), "today");
+    const result = await buildActivityReport(deps(store, model), "today");
     assert.equal(result.analyzedNow, 1);
     assert.equal(result.sessionCount, 1);
     assert.equal(calls(), 1);
@@ -389,19 +495,16 @@ async function testBuildReportAnalyzesPendingInRange(): Promise<void> {
   });
 }
 
-/** 范围内的待分析 session 因策略被拦截时：报告只渲染已分析部分并说明原因。 */
-async function testBuildReportBlockedPolicy(): Promise<void> {
+/** 报告可使用外部工具模型补全待分析 session。 */
+async function testBuildReportUsesExternalModel(): Promise<void> {
   await withStore(async (store) => {
     seedEndedSession(store, todayAt(9), todayAt(10), 3);
     const { model, calls } = scriptedModel([ANALYSIS_JSON], { runtime: "provider" });
-    const policy = new ActivityPrivacyPolicy({ analysisPolicy: "local_only" });
-    const result = await buildActivityReport(deps(store, policy, model), "today");
-    assert.equal(result.blocked, true);
-    assert.equal(result.pendingModel, 1);
-    assert.ok(result.message);
-    assert.equal(result.sessionCount, 0);
-    assert.equal(calls(), 0);
-    assert.ok(result.markdown.includes("没有已分析的活动记录"));
+    const result = await buildActivityReport(deps(store, model), "today");
+    assert.equal(result.blocked, false);
+    assert.equal(result.pendingModel, 0);
+    assert.equal(result.sessionCount, 1);
+    assert.equal(calls(), 1);
   });
 }
 
@@ -410,7 +513,7 @@ async function testBuildReportCanRenderStoredAnalysesOnly(): Promise<void> {
     seedEndedSession(store, todayAt(9), todayAt(10), 3);
     const { model, calls } = scriptedModel([ANALYSIS_JSON]);
     const result = await buildActivityReport({
-      ...deps(store, localPolicy(), model),
+      ...deps(store, model),
       analyzePending: false
     }, "today");
     assert.equal(result.analyzedNow, 0);
@@ -431,12 +534,12 @@ function testDailyNoteFormatter(): void {
     analyzedNow: 1,
     pendingModel: 1,
     blocked: true,
-    message: "外部模型分析需要确认。"
+    message: "尚未配置工具模型。"
   };
   const note = formatActivityDailyNote(result);
   assert.match(note, /^# 2026-08-26 每日摘要/u);
   assert.match(note, /### biny/u);
-  assert.match(note, /外部模型分析需要确认/u);
+  assert.match(note, /尚未配置工具模型/u);
   assert.match(note, /尚未分析/u);
 }
 
@@ -462,12 +565,8 @@ function testReportRangeParsing(): void {
   assert.equal(leapDay.label, "2028-02-29", "真正的闰日仍应解析成功");
 }
 
-function localPolicy(): ActivityPrivacyPolicy {
-  return new ActivityPrivacyPolicy();
-}
-
-function deps(store: ActivityStore, policy: ActivityPrivacyPolicy, model?: AgentModel): ActivityAnalyzerDeps {
-  return { store, policy, model, now: () => new Date(NOW.getTime()) };
+function deps(store: ActivityStore, model?: AgentModel): ActivityAnalyzerDeps {
+  return { store, model, now: () => new Date(NOW.getTime()) };
 }
 
 /** 本地某时刻的 ISO；同一本地日历日，必然落在 resolveActivityReportRange("today") 的 [start,end) 内。 */

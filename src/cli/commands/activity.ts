@@ -8,7 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { updateConfig, createFileConfigStore } from "../../config/store.js";
 import { resolveToolModel } from "../../llm/toolModel.js";
-import { ActivityPrivacyPolicy } from "../../activity/privacyPolicy.js";
+import { createActivityOperation } from "../../activity/operation.js";
 import { buildActivityDigest } from "../../activity/digest.js";
 import { analyzeActivitySession, buildActivityReport, formatActivityDailyNote, formatActivityReportResult } from "../../activity/analyzer.js";
 import { writeDailyActivityNote } from "../../activity/dailyNotes.js";
@@ -140,22 +140,24 @@ export async function activityDigestCommand(
 
 /** 显式重分析可恢复 skipped/failed 会话，仍经过同一模型选择和外发权限判断。 */
 export async function activityAnalyzeCommand(workspaceRoot: string, sessionId: string, options: ActivityOutputOptions = {}): Promise<void> {
-  const config = await createFileConfigStore(workspaceRoot).load();
+  const configStore = createFileConfigStore(workspaceRoot);
+  const config = await configStore.load();
   const store = await openActivityStore(config.activity);
   let memoryPipeline: Awaited<ReturnType<typeof createActivityMemoryPipeline>> | undefined;
   try {
+    const operation = createActivityOperation(store, config.activity, async () => (await configStore.load()).activity);
+    await operation.checkpoint();
     if (!store.getSessionDetail(sessionId)) throw new Error("没有找到活动会话。");
     memoryPipeline = await createActivityMemoryPipeline({ workspaceRoot, getCrystalConfig: () => config.crystal, requireSemantic: false });
     const result = await analyzeActivitySession({
       store,
-      policy: new ActivityPrivacyPolicy(config.activity),
       model: resolveToolModel(config),
+      ...operation,
       writeMemories: memoryPipeline.writeMemories,
       onAnalyzed: memoryPipeline.onAnalyzed
     }, sessionId, true);
     if (options.json) console.log(JSON.stringify(result));
     else if (result.status === "analyzed" || result.status === "trivial") console.log(result.analysis.summary);
-    else if (result.status === "blocked") console.log(result.decision.message);
     else if (result.status === "error") throw new Error(result.error);
     else console.log(result.reason === "no_model" ? "暂无可用工具模型。" : "会话尚未结束，请稍后再试。");
   } finally {
@@ -169,24 +171,27 @@ export async function activityReportCommand(
   date = "today",
   options: ActivityOutputOptions = {}
 ): Promise<void> {
-  const config = await createFileConfigStore(workspaceRoot).load();
+  const configStore = createFileConfigStore(workspaceRoot);
+  const config = await configStore.load();
   const store = await openActivityStore(config.activity);
   let memoryPipeline: Awaited<ReturnType<typeof createActivityMemoryPipeline>> | undefined;
   try {
+    const operation = createActivityOperation(store, config.activity, async () => (await configStore.load()).activity);
+    await operation.checkpoint();
     memoryPipeline = await createActivityMemoryPipeline({
       workspaceRoot,
       getCrystalConfig: () => config.crystal,
       requireSemantic: false
     });
-    const policy = new ActivityPrivacyPolicy(config.activity);
+
     const result = await buildActivityReport({
       store,
-      policy,
       model: resolveToolModel(config),
+      ...operation,
       writeMemories: memoryPipeline.writeMemories,
       onAnalyzed: memoryPipeline.onAnalyzed
     }, date);
-    await writeDailyActivityNote(result.date, formatActivityDailyNote(result));
+    await writeDailyActivityNote(result.date, formatActivityDailyNote(result), { checkpoint: operation.checkpoint });
     if (options.json) console.log(JSON.stringify(result));
     else console.log(formatActivityReportResult(result));
   } finally {
@@ -200,12 +205,16 @@ export async function activitySummaryCommand(
   dateKey: string,
   options: ActivityOutputOptions = {}
 ): Promise<void> {
-  const config = await createFileConfigStore(workspaceRoot).load();
+  const configStore = createFileConfigStore(workspaceRoot);
+  const config = await configStore.load();
   const store = await openActivityStore(config.activity);
   try {
+    const operation = createActivityOperation(store, config.activity, async () => (await configStore.load()).activity);
+    await operation.checkpoint();
     const result = await refreshActivitySummaryWithNarrative(store, "daily", dateKey, {
       model: resolveToolModel(config),
-      policy: new ActivityPrivacyPolicy(config.activity),
+      ...operation,
+
       withNarrative: true
     });
     if (options.json) console.log(JSON.stringify(result));
@@ -219,13 +228,16 @@ export async function activitySuggestionsCommand(
   workspaceRoot: string,
   options: { force?: boolean; json?: boolean } = {}
 ): Promise<void> {
-  const config = await createFileConfigStore(workspaceRoot).load();
+  const configStore = createFileConfigStore(workspaceRoot);
+  const config = await configStore.load();
   const store = await openActivityStore(config.activity);
   try {
+    const operation = createActivityOperation(store, config.activity, async () => (await configStore.load()).activity);
+    await operation.checkpoint();
     const result = await generateActivitySuggestions({
       store,
-      policy: new ActivityPrivacyPolicy(config.activity),
       model: resolveToolModel(config),
+      ...operation,
       force: options.force
     });
     if (options.json) console.log(JSON.stringify(result));
@@ -240,14 +252,14 @@ export async function activityClearCommand(
   workspaceRoot: string,
   options: { yes?: boolean; json?: boolean } = {}
 ): Promise<void> {
-  if (!options.yes) throw new Error("清空 Activity 会删除本地截图、事件、OCR 和分析；请加 --yes 确认。");
+  if (!options.yes) throw new Error("清空 Activity 会删除本地会话、截图、事件、OCR、分析和摘要；长期记忆、结晶及已导出日报保留。请加 --yes 确认。");
   const config = await createFileConfigStore(workspaceRoot).load();
   const store = await openActivityStore(config.activity);
   try {
     await store.clear();
     const result = store.snapshot();
     if (options.json) console.log(JSON.stringify(result));
-    else console.log("Activity 数据已清空。");
+    else console.log("Activity 数据已清空；长期记忆、结晶及已导出日报保留。");
   } finally {
     await store.close();
   }
@@ -303,6 +315,7 @@ export async function activityServeCommand(
         return resolveToolModel(currentConfig);
       },
       getRuntimeSnapshot: () => recorder.snapshot(),
+      getOperationSignal: () => recorder.getOperationSignal(),
       start: async () => {
         currentConfig = await updateConfig(configStore, undefined, (config) => ({
           ...config,

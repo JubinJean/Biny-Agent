@@ -2,12 +2,11 @@
  * Activity 新对话建议。
  *
  * 建议只从最近三天的已分析 session 生成，输入是分析层的项目、标题、摘要和主题，
- * 不把截图/OCR 原文直接送给模型。外部模型仍由 ActivityPrivacyPolicy 的分析维度拦截。
+ * 不把截图/OCR 原文直接送给模型，统一使用配置选出的工具模型。
  */
 import { z } from "zod";
 import type { AgentModel } from "../agent/core/types.js";
 import { generateNativeText, nativeJsonMessages, parseNativeJson } from "../llm/nativeJson.js";
-import { ActivityPrivacyPolicy } from "./privacyPolicy.js";
 import type { ActivityStore } from "./store.js";
 import { ACTIVITY_ANALYSIS_FAILED_SUMMARY, ACTIVITY_TRIVIAL_SUMMARY } from "./analyzer.js";
 
@@ -23,18 +22,19 @@ export interface ActivitySuggestionCache {
 
 export interface ActivitySuggestionsDeps {
   store: ActivityStore;
-  policy: ActivityPrivacyPolicy;
   model?: AgentModel;
   now?: Date;
   force?: boolean;
   cache?: ActivitySuggestionCache;
+  signal?: AbortSignal;
+  checkpoint?: () => Promise<void>;
 }
 
 export interface ActivitySuggestionsResult {
   suggestions: string[];
   model?: string;
   cached: boolean;
-  reason?: "no_model" | "blocked" | "no_activity" | "generation_failed";
+  reason?: "no_model" | "no_activity" | "generation_failed";
 }
 
 export function createInMemoryActivitySuggestionCache(ttlMs = SUGGESTION_CACHE_TTL_MS): ActivitySuggestionCache {
@@ -60,6 +60,8 @@ const defaultSuggestionCache = createInMemoryActivitySuggestionCache();
 export async function generateActivitySuggestions(
   deps: ActivitySuggestionsDeps
 ): Promise<ActivitySuggestionsResult> {
+  await deps.checkpoint?.();
+  deps.signal?.throwIfAborted();
   const model = deps.model;
   if (!model) return { suggestions: [], cached: false, reason: "no_model" };
   const now = deps.now ?? new Date();
@@ -72,9 +74,6 @@ export async function generateActivitySuggestions(
     })
     .slice(0, SUGGESTION_SESSION_LIMIT);
   if (sessions.length === 0) return { suggestions: [], cached: false, reason: "no_activity" };
-
-  const decision = deps.policy.evaluateAnalysis(model);
-  if (!decision.allowed) return { suggestions: [], cached: false, reason: "blocked" };
 
   const cache = deps.cache ?? defaultSuggestionCache;
   const cacheKey = [
@@ -91,21 +90,23 @@ export async function generateActivitySuggestions(
 
   const prompt = buildSuggestionPrompt(sessions, now);
   try {
-    const run = await deps.policy.runAnalysis(model, async () => {
-      const result = await generateNativeText(
-        model,
-        nativeJsonMessages(
-          "You turn recent, analyzed computing activity into grounded new-chat suggestions.",
-          prompt
-        ),
-        { maxOutputTokens: 500, reasoning: "off" }
-      );
-      return parseSuggestions(result.text);
-    });
-    if (!run.value?.length) return { suggestions: [], cached: false, reason: "generation_failed" };
-    cache.set(cacheKey, run.value);
-    return { suggestions: run.value, model: model.modelId, cached: false };
+    const result = await generateNativeText(
+      model,
+      nativeJsonMessages(
+        "You turn recent, analyzed computing activity into grounded new-chat suggestions.",
+        prompt
+      ),
+      { maxOutputTokens: 500, reasoning: "off", signal: deps.signal }
+    );
+    const suggestions = parseSuggestions(result.text);
+    await deps.checkpoint?.();
+    deps.signal?.throwIfAborted();
+    if (!suggestions.length) return { suggestions: [], cached: false, reason: "generation_failed" };
+    cache.set(cacheKey, suggestions);
+    return { suggestions, model: model.modelId, cached: false };
   } catch {
+    await deps.checkpoint?.();
+    deps.signal?.throwIfAborted();
     return { suggestions: [], cached: false, reason: "generation_failed" };
   }
 }

@@ -11,10 +11,10 @@
  */
 import { z } from "zod";
 import type { AgentModel } from "../../agent/core/types.js";
-import { ActivityPrivacyPolicy, isTrustedLocalActivityModel } from "../../activity/privacyPolicy.js";
 import { redactSecrets } from "../../utils/secrets.js";
 import { searchActivitySemantic, type ActivitySemanticSearchResult } from "../../activity/semanticSearch.js";
 import { ActivityStore } from "../../activity/store.js";
+import { createActivityOperation } from "../../activity/operation.js";
 import type { ActivitySettings } from "../../activity/settings.js";
 import type { EmbeddingModelRuntime } from "../../llm/embedding/types.js";
 import { ToolAccesses } from "../access.js";
@@ -79,28 +79,23 @@ export function createActivitySearchTool(deps: ActivitySearchToolDeps): Tool<Act
         description: semantic ? `Semantic search analyzed activity sessions: ${args.query}` : `Keyword search recorded activity for: ${args.query}`,
         approvalRule: "activity_search",
         async execute({ signal }) {
+          signal?.throwIfAborted();
           const settings = await deps.loadSettings();
           const model = deps.getChatModel();
           if (!model) return "当前聊天模型不可用。";
-          const decision = new ActivityPrivacyPolicy(settings).evaluate(model);
-          if (!decision.allowed) return decision.message;
           const store = new ActivityStore();
           await store.open(settings.outputDirectory);
           try {
+            const operation = createActivityOperation(store, settings, deps.loadSettings, signal);
+            await operation.checkpoint();
             if (semantic) {
               const result = await searchActivitySemantic({
                 store,
                 getEmbeddingRuntime: async () => await deps.getEmbeddingRuntime?.(),
                 query: args.query,
                 limit: args.limit,
-                signal,
-                now: deps.now
+                ...operation
               });
-              if (result.ok && !isTrustedLocalActivityModel(model)) {
-                const analyzed = result.hits.filter((hit) => hit.analysisAvailable === true);
-                if (result.hits.length && !analyzed.length) return "找到相关活动，但尚无可外发的分析摘要；OCR 内容保留在本机。";
-                result.hits = analyzed.map((hit) => ({ ...hit, excerpt: undefined }));
-              }
               return redactSecrets(renderSemanticSearchResult(args.query, result));
             }
             const rows = store.search(args.query, args.limit ?? 20);
@@ -142,8 +137,7 @@ function renderSemanticSearchResult(query: string, result: ActivitySemanticSearc
       : "";
     return `- ${formatLocalTime(hit.occurredAt ?? hit.startedAt)}${project} 相似度 ${hit.similarity.toFixed(3)}（${source}）\n  ${hit.summary.trim()}${excerpt}${topics}${highlights}`;
   });
-  const note = result.embedded > 0 ? `\n（本次补嵌入 ${String(result.embedded)} 个会话）` : "";
-  return [head, "", ...sections, "", `模型：${result.model}${note}`].join("\n");
+  return [head, "", ...sections, "", `模型：${result.model}`].join("\n");
 }
 
 /** UTC ISO → 本地 HH:MM。 */

@@ -2274,7 +2274,8 @@ async function testDesktopModelSwitchDoesNotStartDetachedHost(): Promise<void> {
 
     // 全局活动设置不依赖项目；这个读取路径不能再借用 settingsSnapshot("")。
     const activity = new ActivityRecorderService({ configStore, sidecarPath: undefined });
-    assert.deepEqual(await activity.settingsSnapshot(), (await configStore.load()).activity);
+    const activityConfig = await configStore.loadVersioned();
+    assert.deepEqual(await activity.settingsSnapshot(), { activity: activityConfig.config.activity, configRevision: activityConfig.revision });
 
     const switched = await agents.switchModel(project.id, "test-model", "off");
     assert.equal(switched.modelAlias, "test-model");

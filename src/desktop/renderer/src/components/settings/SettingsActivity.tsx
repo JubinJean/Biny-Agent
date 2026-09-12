@@ -8,10 +8,10 @@ import { useSettingsDraft } from "./SettingsDraftContext.js";
 import { useActivityRuntime } from "./ActivityRuntimeContext.js";
 
 export function SettingsActivity(): React.JSX.Element {
-  const { draft, updateActivityImmediately } = useSettingsDraft();
+  const { activity, loadError, updateActivityImmediately } = useSettingsDraft();
   const { runtime, refresh, updateRuntime } = useActivityRuntime();
-  if (!draft) return <div aria-busy="true" className="settings-sections"><section><p role="status">正在加载活动记录设置…</p></section></div>;
-  return <SettingsActivityForm activity={draft.activity} onChange={updateActivityImmediately} onRefreshRuntime={refresh} onRuntimeChange={updateRuntime} runtime={runtime} />;
+  if (!activity) return <div aria-busy={!loadError} className="settings-sections"><section><p role={loadError ? "alert" : "status"}>{loadError ? `活动记录设置加载失败：${loadError}。请关闭设置后重试。` : "正在加载活动记录设置…"}</p></section></div>;
+  return <SettingsActivityForm activity={activity} onChange={updateActivityImmediately} onRefreshRuntime={refresh} onRuntimeChange={updateRuntime} runtime={runtime} />;
 }
 
 function SettingsActivityForm({ activity, onChange, onRefreshRuntime, onRuntimeChange, runtime }: { activity: DesktopActivitySettingsInput; onChange(patch: Partial<DesktopActivitySettingsInput>): Promise<void>; onRefreshRuntime(): Promise<ActivityRuntimeSnapshot>; onRuntimeChange(next: ActivityRuntimeSnapshot): void; runtime: ActivityRuntimeSnapshot | undefined }): React.JSX.Element {
@@ -182,19 +182,8 @@ function SettingsActivityForm({ activity, onChange, onRefreshRuntime, onRuntimeC
         {feedback ? <p aria-live="polite" className="activity-feedback" role="status">{feedback}</p> : null}
       </section>
 
-      <ActivitySection id="activity-recall-policy" icon="shield" title="聊天回忆">
-        <p className="activity-section-description">聊天可以根据近期活动接住话题。外部模型只接收脱敏摘要，原始截图和 OCR 留在本机；活动分析权限单独设置。</p>
-        <label className="activity-field" htmlFor="activity-external-policy">
-          <span>摘要使用范围</span>
-          <select id="activity-external-policy" value={activity.externalPolicy} disabled={activityUpdating}
-            onChange={(event) => updateActivity({ externalPolicy: event.target.value as DesktopActivitySettingsInput["externalPolicy"], externalConfirmed: false })}>
-            <option value="local_only">仅内置本地模型</option>
-            <option value="confirm_external">确认后允许外部模型</option>
-            <option value="external_allowed">允许当前聊天模型使用脱敏摘要</option>
-          </select>
-        </label>
-        {activity.externalPolicy === "confirm_external" ? <ActivitySwitch checked={activity.externalConfirmed} disabled={activityUpdating}
-          label="我确认允许脱敏活动摘要发送给当前聊天模型" onChange={(externalConfirmed) => updateActivity({ externalConfirmed })} /> : null}
+      <ActivitySection id="activity-model-use" icon="shield" title="模型使用">
+        <p className="activity-section-description">活动记录和 OCR 文字经脱敏后交给工具模型分析；聊天也可按需查询脱敏 OCR 和摘要，不会每轮自动注入。使用云模型时，这些文字会发送给其服务商，不发送截图原图。规则脱敏不能保证去除所有敏感信息。</p>
       </ActivitySection>
 
       <ActivitySection
@@ -274,7 +263,7 @@ function SettingsActivityForm({ activity, onChange, onRefreshRuntime, onRuntimeC
 
       <section className="activity-card activity-danger-zone" id="activity-danger" tabIndex={-1}>
         <div className="activity-section-title is-danger"><Icon name="trash" size={15} /><h3>危险区</h3></div>
-        <p className="activity-section-description">删除全部已记录的活动（会话、事件、OCR 文本和所有截图 JPEG）。不可撤销。</p>
+        <p className="activity-section-description">删除活动会话、事件、OCR、截图、分析和摘要。不可撤销；已沉淀的长期记忆、结晶和已导出日报保留，需在各自位置单独删除。</p>
         <button className="activity-danger-button" disabled={clearing || runtime?.sessions === 0 || runtime === undefined} onClick={clearActivity} type="button"><Icon name="trash" size={14} />{clearing ? "清除中…" : "清除全部活动数据"}</button>
         <small className="activity-disabled-hint">{runtime?.sessions ? undefined : runtime?.collectorAvailable === false ? "采集服务尚未接入，清除操作暂不可用。" : "暂无可清除的活动数据。"}</small>
       </section>
@@ -285,7 +274,7 @@ function SettingsActivityForm({ activity, onChange, onRefreshRuntime, onRuntimeC
         <SettingsDetailLayer onClose={() => { if (!clearing) setClearOpen(false); }}>
           <section aria-describedby="activity-clear-description" aria-labelledby="activity-clear-title" aria-modal="true" className="settings-confirm-panel activity-clear-panel" role="dialog">
             <h3 id="activity-clear-title">清除全部 Activity 数据？</h3>
-            <p id="activity-clear-description">将永久删除 {runtime?.sessions ?? 0} 个会话、{runtime?.events ?? 0} 个事件、截图和 OCR。此操作不可撤销。</p>
+            <p id="activity-clear-description">将永久删除 {runtime?.sessions ?? 0} 个会话、{runtime?.events ?? 0} 个事件，以及截图、OCR、分析和摘要。此操作不可撤销。已沉淀的长期记忆、结晶和已导出日报不会删除。</p>
             <div className="settings-confirm-actions"><button className="ghost-button" disabled={clearing} onClick={() => setClearOpen(false)} type="button">取消</button><button className="ghost-button is-danger" disabled={clearing} onClick={confirmClearActivity} type="button"><Icon name="trash" size={14} />{clearing ? "清除中…" : "永久清除"}</button></div>
           </section>
         </SettingsDetailLayer>

@@ -12,6 +12,11 @@ const dailyNoteQueues = new Map<string, Promise<void>>();
 const dailyNoteLockTimeoutMs = 5_000;
 const dailyNoteLockPollMs = 25;
 
+interface DailyNoteWriteOptions {
+  configDir?: string;
+  checkpoint?: () => Promise<void>;
+}
+
 export async function writeDailyMemoryNote(
   dateKey: string,
   content: string,
@@ -70,7 +75,7 @@ export async function upsertDailyMemorySection(
   dateKey: string,
   sectionTitle: string,
   content: string,
-  options: { configDir?: string } = {}
+  options: DailyNoteWriteOptions = {}
 ): Promise<string> {
   assertDailyDate(dateKey);
   const heading = normalizeSectionHeading(sectionTitle);
@@ -107,7 +112,7 @@ export async function appendDailyMemoryEntry(
 export async function writeDailyActivityNote(
   dateKey: string,
   content: string,
-  options: { configDir?: string } = {}
+  options: DailyNoteWriteOptions = {}
 ): Promise<string> {
   assertDailyDate(dateKey);
   let body = content.trim();
@@ -120,7 +125,7 @@ export async function writeDailyActivityNote(
 
 async function mutateDailyMemoryNote(
   dateKey: string,
-  options: { configDir?: string },
+  options: DailyNoteWriteOptions,
   mutate: (existing: string) => string
 ): Promise<string> {
   assertDailyDate(dateKey);
@@ -132,6 +137,7 @@ async function mutateDailyMemoryNote(
   dailyNoteQueues.set(target, queued);
   let releaseFileLock: (() => Promise<void>) | undefined;
   try {
+    await options.checkpoint?.();
     await previous;
     await mkdir(path.dirname(target), { recursive: true, mode: 0o700 });
     releaseFileLock = await acquireDailyNoteLock(target);
@@ -139,7 +145,9 @@ async function mutateDailyMemoryNote(
     const next = `${mutate(existing).trim()}\n`;
     const temporary = `${target}.tmp-${process.pid}-${Date.now()}`;
     try {
+      await options.checkpoint?.();
       await writeFile(temporary, next, { encoding: "utf8", mode: 0o600 });
+      await options.checkpoint?.();
       await rename(temporary, target);
     } catch (error) {
       await rm(temporary, { force: true }).catch(() => undefined);

@@ -10,7 +10,6 @@ import {
   activityDataResidencySchema,
   activitySettingsSchema,
   type ActivityDataResidency,
-  type ActivityExternalPolicy,
   type ActivitySettings,
   defaultActivitySettings
 } from "../activity/settings.js";
@@ -774,7 +773,7 @@ export type WebFetchConfig = z.infer<typeof webFetchSchema>;
 export type WebSearchConfig = z.infer<typeof webSearchSchema>;
 export type WebCookiesConfig = z.infer<typeof webCookiesSchema>;
 export type WebConfig = z.infer<typeof webSchema>;
-export type { ActivityDataResidency, ActivityExternalPolicy, ActivitySettings, MemoryPolicy };
+export type { ActivityDataResidency, ActivitySettings, MemoryPolicy };
 
 const defaultWorkspaceIgnore = [
   "node_modules",

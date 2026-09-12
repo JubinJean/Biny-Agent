@@ -9,9 +9,9 @@
  */
 import { z } from "zod";
 import type { AgentModel } from "../../agent/core/types.js";
-import { ActivityPrivacyPolicy } from "../../activity/privacyPolicy.js";
 import { redactSecrets } from "../../utils/secrets.js";
 import { ActivityStore } from "../../activity/store.js";
+import { createActivityOperation } from "../../activity/operation.js";
 import type { ActivitySettings } from "../../activity/settings.js";
 import { ToolAccesses } from "../access.js";
 import type { Tool } from "../types.js";
@@ -62,15 +62,16 @@ export function createActivitySessionsTool(deps: ActivitySessionsToolDeps): Tool
         display: { kind: "generic", summary: detail ? `查看活动会话 ${sessionId.slice(0, 8)}` : "列出最近的活动会话" },
         description: detail ? "Show activity session detail" : "List recent activity sessions",
         approvalRule: "activity_sessions",
-        async execute() {
+        async execute({ signal }) {
+          signal?.throwIfAborted();
           const settings = await deps.loadSettings();
           const model = deps.getChatModel();
           if (!model) return "当前聊天模型不可用。";
-          const decision = new ActivityPrivacyPolicy(settings).evaluate(model);
-          if (!decision.allowed) return decision.message;
           const store = new ActivityStore();
           await store.open(settings.outputDirectory);
           try {
+            const operation = createActivityOperation(store, settings, deps.loadSettings, signal);
+            await operation.checkpoint();
             if (sessionId !== undefined) {
               const record = store.getSessionRecord(sessionId);
               if (!record) return `没有找到会话 ${sessionId}。`;
