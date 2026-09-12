@@ -15,9 +15,9 @@ export function MarkdownCodeBlock({ code, language }: { code: string; language?:
       <div className="markdown-code-header">
         <span className="markdown-code-language">
           <Icon name="code" size={12} />
-          {language ?? "文本"}
+          {language ?? "代码"}
         </span>
-        <CopyButton className="markdown-code-copy" label="复制代码" showLabel value={code} />
+        <CopyButton className="copy-button markdown-code-copy" label="复制代码" showLabel value={code} />
       </div>
       <pre><code className="shiki" dangerouslySetInnerHTML={{ __html: highlighted.html }} /></pre>
     </div>

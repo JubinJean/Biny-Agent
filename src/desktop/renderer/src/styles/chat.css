@@ -750,9 +750,9 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  min-height: 34px;
-  padding: 6px 8px 6px 12px;
-  border-bottom: 1px solid var(--biny-border);
+  min-height: 30px;
+  padding: 4px 8px 4px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--biny-border) 65%, transparent);
 }
 
 .tool-output-command {
@@ -1144,9 +1144,9 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 34px;
-  padding: 6px 8px 6px 12px;
-  border-bottom: 1px solid var(--biny-border);
+  min-height: 30px;
+  padding: 4px 8px 4px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--biny-border) 65%, transparent);
 }
 
 .chat-codeview-title {
@@ -2230,82 +2230,89 @@
 /* ============ Markdown 正文 ============ */
 
 .biny-chat-scroll .markdown-body {
+  max-width: 78ch;
+  min-width: 0;
   font-size: calc(14px * var(--font-scale, 1));
-  line-height: 1.65;
+  line-height: 1.75;
   color: var(--biny-text);
   overflow-wrap: break-word;
-  min-width: 0;
 }
 
 .biny-chat-scroll .markdown-body > :first-child { margin-top: 0; }
 .biny-chat-scroll .markdown-body > :last-child { margin-bottom: 0; }
 
 .biny-chat-scroll .markdown-body p {
-  margin: 0 0 10px;
+  margin: 0 0 0.9em;
+  font-size: inherit;
+  line-height: inherit;
 }
 
-.biny-chat-scroll .markdown-body h1,
-.biny-chat-scroll .markdown-body h2,
-.biny-chat-scroll .markdown-body h3,
-.biny-chat-scroll .markdown-body h4,
-.biny-chat-scroll .markdown-body h5,
-.biny-chat-scroll .markdown-body h6 {
-  margin: 18px 0 8px;
-  line-height: 1.35;
-  font-weight: 600;
+.biny-chat-scroll .markdown-body :is(h1, h2, h3, h4, h5, h6) {
+  margin: 1.5em 0 0.55em;
+  line-height: 1.4;
+  font-weight: 650;
+  text-wrap: pretty;
 }
 
-.biny-chat-scroll .markdown-body h1 { font-size: calc(19px * var(--font-scale, 1)); }
-.biny-chat-scroll .markdown-body h2 { font-size: calc(17px * var(--font-scale, 1)); }
-.biny-chat-scroll .markdown-body h3 { font-size: calc(15.5px * var(--font-scale, 1)); }
-.biny-chat-scroll .markdown-body h4 { font-size: calc(14px * var(--font-scale, 1)); }
+.biny-chat-scroll .markdown-body h1 { font-size: 1.5em; }
+.biny-chat-scroll .markdown-body h2 { font-size: 1.3em; }
+.biny-chat-scroll .markdown-body h3 { font-size: 1.12em; }
+.biny-chat-scroll .markdown-body :is(h4, h5, h6) { font-size: 1em; }
+.biny-chat-scroll .markdown-body strong { font-weight: 650; }
+.biny-chat-scroll .markdown-body em { font-style: italic; }
 
-.biny-chat-scroll .markdown-body ul,
-.biny-chat-scroll .markdown-body ol {
-  margin: 0 0 10px;
-  padding-left: 22px;
+/* 全局 reset 会清除列表标记；正文显式恢复语义，嵌套和任务列表分别处理。 */
+.biny-chat-scroll .markdown-body :is(ul, ol) {
+  margin: 0.4em 0 1em;
+  padding-left: 1.55em;
+  list-style-position: outside;
 }
 
-.biny-chat-scroll .markdown-body li {
-  margin: 3px 0;
-}
-
-.biny-chat-scroll .markdown-body li::marker {
-  color: var(--biny-text-tertiary);
-}
+.biny-chat-scroll .markdown-body ul { list-style-type: disc; }
+.biny-chat-scroll .markdown-body ol { list-style-type: decimal; }
+.biny-chat-scroll .markdown-body ul ul { list-style-type: circle; }
+.biny-chat-scroll .markdown-body ol ol { list-style-type: lower-alpha; }
+.biny-chat-scroll .markdown-body li { padding-left: 0.2em; margin: 0.35em 0; }
+.biny-chat-scroll .markdown-body li > p { margin: 0.35em 0; }
+.biny-chat-scroll .markdown-body li > :is(ul, ol) { margin-block: 0.25em; }
+.biny-chat-scroll .markdown-body li::marker { color: var(--biny-text-secondary); font-weight: 500; }
+.biny-chat-scroll .markdown-body .contains-task-list { padding-left: 0; list-style: none; }
+.biny-chat-scroll .markdown-body .task-list-item { padding-left: 0; list-style: none; }
+.biny-chat-scroll .markdown-body .task-list-item input { margin-right: 0.55em; accent-color: var(--biny-focus); }
 
 .biny-chat-scroll .markdown-body blockquote {
-  margin: 0 0 10px;
-  padding: 2px 0 2px 12px;
-  border-left: 3px solid var(--biny-border);
+  margin: 1em 0;
+  padding: 0.2em 0 0.2em 1em;
+  border-left: 2px solid var(--biny-border);
   color: var(--biny-text-secondary);
 }
 
+.biny-chat-scroll .markdown-body blockquote > :last-child { margin-bottom: 0; }
+
 .biny-chat-scroll .markdown-body hr {
-  margin: 16px 0;
+  margin: 1.5em 0;
   border: none;
   border-top: 1px solid var(--biny-border);
 }
 
 .biny-chat-scroll .markdown-body a {
   color: var(--biny-focus);
-  text-decoration: none;
-}
-
-.biny-chat-scroll .markdown-body a:hover {
   text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--biny-focus) 35%, transparent);
+  text-underline-offset: 0.2em;
 }
 
-/* 行内代码 */
+.biny-chat-scroll .markdown-body a:hover { text-decoration-color: currentColor; }
+
+/* 行内代码维持正文节奏，不把每个标识符做成醒目的小卡片。 */
 .biny-chat-scroll .markdown-body :not(pre) > code {
-  padding: 1.5px 5px;
-  border: 1px solid var(--biny-border);
-  border-radius: 5px;
+  padding: 0.12em 0.35em;
+  border-radius: 4px;
   background: var(--biny-surface-soft);
   font-family: var(--font-mono);
-  font-size: 0.86em;
+  font-size: 0.88em;
   color: var(--biny-text);
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 
 /* 表格 */
@@ -2360,7 +2367,7 @@
 /* ============ 代码块（高亮 + 语言标签 + 复制） ============ */
 
 .markdown-code-block {
-  margin: 0 0 10px;
+  margin: 0.75em 0 1em;
   border: 1px solid var(--biny-border);
   border-radius: var(--biny-radius-card, 10px);
   background: var(--biny-surface-soft);
@@ -2372,10 +2379,22 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 34px;
-  padding: 6px 8px 6px 12px;
-  border-bottom: 1px solid var(--biny-border);
+  min-height: 30px;
+  padding: 4px 8px 4px 14px;
+  border-bottom: 1px solid color-mix(in srgb, var(--biny-border) 65%, transparent);
 }
+
+.biny-chat-scroll .markdown-code-copy {
+  position: static;
+  flex: none;
+  width: auto;
+  height: 24px;
+  line-height: 1;
+  opacity: 0.7;
+}
+
+.biny-chat-scroll .markdown-code-copy:hover,
+.biny-chat-scroll .markdown-code-copy:focus-visible { opacity: 1; }
 
 .markdown-code-language {
   display: inline-flex;
@@ -2390,7 +2409,7 @@
 
 .markdown-code-block pre {
   margin: 0;
-  padding: 10px 12px;
+  padding: 12px 14px;
   overflow-x: auto;
   font-family: var(--font-mono);
   font-size: calc(12.5px * var(--font-scale, 1));

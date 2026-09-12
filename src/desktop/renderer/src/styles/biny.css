@@ -3211,7 +3211,8 @@
   color: var(--biny-text);
 }
 
-/* 列表行：复选框 + 名称/描述；勾选态只落在复选框上，行本身只保留 hover 反馈。 */
+/* 列表行：复选框 + 名称/描述；勾选态只落在复选框上，行本身只保留 hover 反馈。
+   position: relative 让行内容浮在流动悬停高亮之上（高亮是绝对定位元素）。 */
 .capability-row {
   position: relative;
   display: grid;
