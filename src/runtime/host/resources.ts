@@ -43,6 +43,7 @@ export type RuntimeResourceReadiness = Pick<RuntimeResourceSnapshot, "revision" 
 
 const defaultSkillBundle: SkillBundle = { skills: [], paths: [], prompt: "", warnings: [], conflicts: [], errors: [] };
 const mcpBaselineBudgetMs = 10_000;
+const skillCacheTtlMs = 30_000;
 
 export class RuntimeHostResourceScope {
   private readonly listeners = new Set<(snapshot: RuntimeResourceSnapshot) => void>();
@@ -53,6 +54,7 @@ export class RuntimeHostResourceScope {
   private mcpPending = false;
   private baselinePromise: Promise<void> | undefined;
   private skillRefreshPromise: Promise<void> | undefined;
+  private skillsLoadedAt: number | undefined;
   private closePromise: Promise<void> | undefined;
   private references = 0;
 
@@ -86,7 +88,7 @@ export class RuntimeHostResourceScope {
 
   start(): Promise<void> {
     if (this.baselinePromise) return this.baselinePromise;
-    const skillPromise = this.loadSkillBundle();
+    const skillPromise = this.refreshSkills();
     const mcpPromise = this.startMcp();
     this.baselinePromise = Promise.all([skillPromise, mcpPromise]).then(
       () => {
@@ -138,8 +140,12 @@ export class RuntimeHostResourceScope {
     return this.mcpHost.hasEnabledServers() ? [...createMcpResourceTools(this.mcpHost), ...createMcpPromptTools(this.mcpHost)] : [];
   }
 
-  refreshSkills(): Promise<void> {
-    // 同一资源 scope 的并行会话共享一次扫描，完成后下一轮仍可发现外部修改。
+  refreshSkills(force = false): Promise<void> {
+    // 安装后必须看到新文件；若旧扫描仍在进行，先等它完成再强制刷新。
+    if (force && this.skillRefreshPromise) return this.skillRefreshPromise.then(() => this.refreshSkills(true));
+    if (this.skillRefreshPromise) return this.skillRefreshPromise;
+    if (!force && this.skillsLoadedAt !== undefined && Date.now() - this.skillsLoadedAt < skillCacheTtlMs) return Promise.resolve();
+    // 同一 workspace 短期复用目录；显式安装绕过缓存，外部编辑最迟下一次过期刷新可见。
     this.skillRefreshPromise ??= this.loadSkillBundle().finally(() => { this.skillRefreshPromise = undefined; });
     return this.skillRefreshPromise;
   }
@@ -171,6 +177,7 @@ export class RuntimeHostResourceScope {
       this.refreshState();
       this.publish();
     }
+    this.skillsLoadedAt = nextBundle.errors.length ? undefined : Date.now();
   }
 
   private async startMcp(): Promise<void> {

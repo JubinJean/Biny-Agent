@@ -194,8 +194,8 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
       }
     }
   };
-  const refreshSkills = async (): Promise<void> => {
-    await resourceScope.refreshSkills();
+  const refreshSkills = async (force = false): Promise<void> => {
+    await resourceScope.refreshSkills(force);
     skills = resourceScope.skills;
   };
   const releaseResourceScope = async (): Promise<void> => {
@@ -248,7 +248,7 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
       }
     }));
     toolRegistry.registerBuiltinTool(createSkillInstallTool({
-      refreshSkills
+      refreshSkills: async () => await refreshSkills(true)
     }));
     refreshExtensionTools();
     const pluginsPerfStartedAt = perfNow();

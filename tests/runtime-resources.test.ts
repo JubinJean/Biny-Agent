@@ -40,14 +40,22 @@ try {
   assert.deepEqual(first.readiness(), { revision: first.snapshot().revision, state: "ready" });
   assert.ok(Buffer.byteLength(JSON.stringify(first.readiness())) < 100, "高频就绪摘要不应包含能力目录");
   const revision = first.snapshot().revision;
-  const refresh = first.refreshSkills();
+  const refresh = first.refreshSkills(true);
   assert.equal(first.refreshSkills(), refresh, "并发会话复用同一次 Skill 扫描");
   await refresh;
   assert.equal(first.snapshot().revision, revision, "未变化的 Skill 不应递增资源版本或发布快照");
   await writeFile(path.join(workspaceRoot, ".biny", "skills", "duplicate-skill", "SKILL.md"), duplicateSkill.replace("Duplicate test", "Updated test"));
   await first.refreshSkills();
+  assert.equal(first.skills.skills.find((skill) => skill.name === "duplicate-skill")?.description, "Duplicate test skill", "短期复用目录，不重复扫描");
+  mock.timers.enable({ apis: ["Date"], now: Date.now() });
+  mock.timers.tick(30_001);
+  await first.refreshSkills();
+  mock.timers.reset();
   assert.equal(first.skills.skills.find((skill) => skill.name === "duplicate-skill")?.description, "Updated test skill");
   assert.equal(first.snapshot().revision, revision + 1, "变化的目录仅发布一次");
+  await writeFile(path.join(workspaceRoot, ".biny", "skills", "duplicate-skill", "SKILL.md"), duplicateSkill.replace("Duplicate test", "Installed test"));
+  await first.refreshSkills(true);
+  assert.equal(first.skills.skills.find((skill) => skill.name === "duplicate-skill")?.description, "Installed test skill", "安装后的强制刷新不等待 TTL");
 
   const slow = new RuntimeHostResourceScope(workspaceRoot, {
     ...defaultConfig,
