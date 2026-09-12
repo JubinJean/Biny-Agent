@@ -163,6 +163,7 @@ export class HybridMemoryRetriever {
     if (entries.some(({ id }) => id === query)) return query;
     const timeout = AbortSignal.timeout(queryRewriteTimeoutMs);
     const rewriteSignal = signal === undefined ? timeout : AbortSignal.any([signal, timeout]);
+    const startedAt = perfNow();
     try {
       const rewritten = (await raceWithAbort(this.options.rewriteQuery(query, rewriteSignal), rewriteSignal))
         .trim().replace(/\s+/gu, " ").slice(0, 1_000);
@@ -170,6 +171,8 @@ export class HybridMemoryRetriever {
     } catch {
       signal?.throwIfAborted();
       return query;
+    } finally {
+      recordPerfPhase("memory.rewrite", startedAt);
     }
   }
 
@@ -209,6 +212,7 @@ export class HybridMemoryRetriever {
       signal?.throwIfAborted();
       rewritten = await this.rewrite(query, entries, signal);
       const embedded = await runtime.embed({ texts: [rewritten], inputType: "query", signal });
+      signal?.throwIfAborted();
       const queryVector = embedded.embeddings[0];
       if (!queryVector || embedded.embeddings.length !== 1 || embedded.fingerprint !== runtime.descriptor.fingerprint) {
         return { available: false, results: [] };

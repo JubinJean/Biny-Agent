@@ -20,7 +20,7 @@ class RecordingModel {
       return (async function* (): AsyncIterable<ModelStreamEvent> {
         options?.signal?.throwIfAborted();
         yield { type: "start" as const };
-        yield { type: "text-delta" as const, text: "摘要：测试压缩。" };
+        yield { type: "text-delta" as const, text: "## Goal\n测试压缩。\n## Next Steps\n继续当前任务。" };
         yield { type: "finish" as const, reason: "stop" as const, usage: { inputTokens: 0, outputTokens: 1, totalTokens: 1 } };
       })();
     }
@@ -68,7 +68,7 @@ async function testTriggerPercentFiresAndHolds(): Promise<void> {
 
     // ~4000 token 的历史超过阈值，应触发。
     const busy = makeMemory(workspaceRoot, new RecordingModel(), { triggerPercent: 0.8, keepRecentTokens: 100 });
-    busy.replaceHistory([userMessage(12_000)]);
+    busy.replaceHistory([userMessage(12_000), userMessage(10)]);
     assert.ok(await autoCompactedCount(busy) > 0);
   });
 }
@@ -78,7 +78,7 @@ async function testExplicitReserveBeatsTriggerPercent(): Promise<void> {
     // triggerPercent 0.5 → 阈值 2000；显式 reserve 3900 → 阈值 100。
     // ~400 token 的历史只在 reserve 优先时触发。
     const memory = makeMemory(workspaceRoot, new RecordingModel(), { triggerPercent: 0.5, reserveTokens: 3_900, keepRecentTokens: 100 });
-    memory.replaceHistory([userMessage(1_200)]);
+    memory.replaceHistory([userMessage(1_200), userMessage(10)]);
     assert.ok(await autoCompactedCount(memory) > 0);
   });
 }

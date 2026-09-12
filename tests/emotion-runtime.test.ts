@@ -107,9 +107,13 @@ async function startProviderServer(): Promise<ProviderServer> {
   let selectionCount = 0;
   const server = createServer(async (request, response) => {
     const body = await readRequest(request);
-    if (JSON.stringify(body.messages).includes("skillIds")) {
+    if (JSON.stringify(body.messages).includes("工具目录：")) {
       selectionCount += 1;
-      sendProviderText(response, JSON.stringify({ tools: selectionCount === 1 ? ["update_emotion"] : [], skillIds: [] }));
+      sendProviderText(response, JSON.stringify({ tools: selectionCount === 1 ? ["update_emotion"] : [] }));
+      return;
+    }
+    if (JSON.stringify(body.messages).includes("技能目录：")) {
+      sendProviderText(response, JSON.stringify({ skillIds: [] }));
       return;
     }
     // 自动标题等辅助请求不执行工具，也不计入正文的两步工具回合。

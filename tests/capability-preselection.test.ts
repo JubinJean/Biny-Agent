@@ -26,6 +26,7 @@ const options = {
   skills: [{ id: "review-id", name: "review", description: "Review changes" }]
 };
 const result = await preselectCapabilities(options);
+assert.equal(calls, 2, "工具与技能分别调用同一辅助模型");
 assert.deepEqual(new Set(result.tools), new Set(["Read", "WebSearch", "WebFetch", "Task", "TaskOutput", "mcp_docs_read", "mcp_docs_search", "Skill", "read_skill_resource"]));
 assert.deepEqual(result.skills, ["review-id"]);
 const before = calls;
@@ -37,7 +38,41 @@ assert.deepEqual(await preselectCapabilities({ ...options, input: "你好", prev
 answer = "invalid JSON";
 assert.deepEqual(await preselectCapabilities(options), { tools: ["Read"], skills: [] });
 assert.deepEqual(await preselectCapabilities({ ...options, model: undefined, input: "/skill:review" }), { tools: ["Read", "Skill", "read_skill_resource"], skills: ["review-id"] });
+assert.deepEqual(await preselectCapabilities({ ...options, model: undefined, input: "$review", previousTools: [], selection: { tools: "auto", skills: "none" } }), { tools: [], skills: "none" }, "显式关闭技能不能被点名检测重新启用");
 const controller = new AbortController();
 controller.abort();
 await assert.rejects(preselectCapabilities({ ...options, signal: controller.signal }), { name: "AbortError" });
+assert.equal(calls, before + 4, "预先取消不能发起额外请求");
+
+let concurrentCalls = 0;
+let release!: () => void;
+const bothStarted = new Promise<void>((resolve) => { release = resolve; });
+const parallelModel: AgentModel = {
+  provider: "test", modelId: "parallel-selector",
+  stream: async (context) => {
+    concurrentCalls++;
+    if (concurrentCalls === 2) release();
+    await bothStarted;
+    const skillRequest = context.systemPrompt?.includes("技能目录：");
+    assert.equal(context.systemPrompt?.includes("工具目录："), !skillRequest, "只发送本次分析需要的目录");
+    return (async function* (): AsyncGenerator<ModelStreamEvent> {
+      yield { type: "text-delta", text: skillRequest ? '{"skillIds":["review"]}' : "invalid" };
+      yield { type: "finish", reason: "stop" };
+    })();
+  }
+};
+assert.deepEqual(await preselectCapabilities({ ...options, model: parallelModel, signal: AbortSignal.timeout(1_000) }), {
+  tools: ["Read", "Skill", "read_skill_resource"], skills: ["review-id"]
+}, "工具解析失败不影响并发成功的技能选择");
+let isolatedCalls = 0;
+const isolatedModel: AgentModel = { ...parallelModel, stream: async () => {
+  isolatedCalls++;
+  return (async function* (): AsyncGenerator<ModelStreamEvent> {
+    yield { type: "text-delta", text: '{"tools":["Write"],"skillIds":["review"]}' };
+  })();
+} };
+await preselectCapabilities({ ...options, model: isolatedModel, selection: { tools: "auto", skills: "none" } });
+assert.equal(isolatedCalls, 1, "显式关闭技能时只分析工具");
+await preselectCapabilities({ ...options, model: isolatedModel, tools: [], skills: [] });
+assert.equal(isolatedCalls, 1, "空目录不调用模型");
 console.log("capability preselection tests passed");
