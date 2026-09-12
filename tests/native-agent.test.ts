@@ -133,7 +133,8 @@ async function main(): Promise<void> {
   try {
     const events: AgentSessionEvent[] = [];
     for await (const event of agent.prompt("answer briefly", {
-      confirmPermission: async () => ({ approved: true, scope: "once" })
+      confirmPermission: async () => ({ approved: true, scope: "once" }),
+      emotionAnalysis: false
     })) {
       if (event.type === "tool.progress") {
         assert.equal(echoCompleted, false, "session progress must arrive while the tool is running");
