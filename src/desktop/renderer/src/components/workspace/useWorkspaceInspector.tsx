@@ -1,33 +1,25 @@
 /* eslint-disable react-refresh/only-export-components -- Inspector 请求状态与私有视图必须共享同一生命周期。 */
-/**
- * Workspace 右侧工具区的状态与命令。
- *
- * 右缘是一条常驻的浮动 rail（文件/终端/审阅/侧聊/浏览器），点击前四个打开 tab 化的
- * dock 面板，浏览器是直接动作。文件树、文件预览的展示在 FilePreviewPanel；这里只负责
- * 预览/目录的请求状态、面板尺寸与 previewFile 命令，会话区只拿到 rail/dock 节点。
- */
+/** 文件详情与工作区工具的并排面板；产出菜单独立于面板开合状态。 */
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { DesktopWorkspaceDirectory, DesktopWorkspaceFilePreview, DesktopSlashResult } from "../../../../protocol.js";
+import type { DesktopWorkspaceDirectory, DesktopWorkspaceFilePreview } from "../../../../protocol.js";
 import {
   clampFilePanelWidth,
   MAX_FILE_PANEL_WIDTH,
   MIN_FILE_PANEL_WIDTH
 } from "../../../../filePanelSizing.js";
+import type { TimelineTool } from "../../sessionTimeline.js";
 import type { SessionFileChange } from "../../sessionChanges.js";
 import { Icon, type IconName } from "../Icon.js";
 import { TerminalView } from "../TerminalView.js";
 import { useClosingPresence } from "../../useClosingPresence.js";
 import { FilePreviewPanel, type FileDirectoryState, type FilePreviewState } from "./FilePreviewPanel.js";
 import { SessionChangesPanel } from "./SessionChangesPanel.js";
-import {
-  InspectorReview,
-  InspectorSideChat,
-  type InspectorCommandState
-} from "./InspectorToolLauncher.js";
+import { WorkspaceBrowserPanel, WorkspaceCommitPanel, WorkspaceToolsPanel } from "./WorkspaceUtilityPanels.js";
 
 interface UseWorkspaceInspectorOptions {
   /** 当前会话 Agent 改过的文件（「变更」视图数据 + tab/rail 徽标计数）。 */
   changes: SessionFileChange[];
+  tools: TimelineTool[];
   filePanelResizing: boolean;
   filePanelWidth: number;
   projectId?: string;
@@ -39,29 +31,30 @@ interface UseWorkspaceInspectorOptions {
   onOpenFile(path: string): void;
   onOpenBrowser(): Promise<void>;
   onReadFile(path: string): Promise<DesktopWorkspaceFilePreview>;
-  onRunCommand(command: string): Promise<DesktopSlashResult>;
   /** rail 动作（浏览器打开等）失败的提示通道。 */
   onWarning(message: string): void;
 }
 
-type InspectorView = "files" | "changes" | "terminal" | "review" | "side-chat";
+type InspectorView = "files" | "changes" | "commit" | "terminal" | "browser" | "tools";
 
 const inspectorViewMetadata: Record<InspectorView, { icon: IconName; label: string }> = {
-  files: { icon: "folder", label: "文件" },
-  changes: { icon: "diff", label: "变更" },
+  files: { icon: "list-tree", label: "文件" },
+  changes: { icon: "file-diff", label: "变更" },
+  commit: { icon: "commit", label: "提交" },
   terminal: { icon: "terminal", label: "终端" },
-  review: { icon: "shield", label: "审阅" },
-  "side-chat": { icon: "message", label: "侧聊" }
+  browser: { icon: "globe", label: "浏览器" },
+  tools: { icon: "wrench", label: "工具" }
 };
 
-/** rail 上「审阅」先打开面板再触发 /review，其余面板视图直接切换；浏览器是纯动作。 */
+/** 所有面板入口只切换视图，模型任务由面板中的明确操作触发。 */
 type RailAction = InspectorView | "browser";
 
 /** 面板宽度低于该值时 tab 收成纯图标（对齐 alma dock 的 compact tabs）。 */
-const COMPACT_TABS_WIDTH = 420;
+const inspectorViews = Object.keys(inspectorViewMetadata) as InspectorView[];
 
 export function useWorkspaceInspector({
   changes,
+  tools,
   filePanelResizing,
   filePanelWidth,
   projectId,
@@ -72,7 +65,6 @@ export function useWorkspaceInspector({
   onListDirectory,
   onOpenFile,
   onOpenBrowser,
-  onRunCommand,
   onReadFile,
   onWarning
 }: UseWorkspaceInspectorOptions): {
@@ -83,28 +75,28 @@ export function useWorkspaceInspector({
     resizing: boolean;
     width: number;
   };
-  open: boolean;
   filesOpen: boolean;
   terminalOpen: boolean;
   openFiles(): void;
   previewFile(path: string): void;
-  toggleInspector(): void;
   toggleTerminal(): void;
 } {
   const previewRequestRef = useRef(0);
   const directoryRequestIdRef = useRef(0);
   const directoryRequestRef = useRef(new Map<string, number>());
-  const reviewRequestRef = useRef(0);
-  const reviewRunningRef = useRef(false);
-  const sideChatRequestRef = useRef(0);
-  const sideChatRunningRef = useRef(false);
   const [inspectorOpen, setInspectorOpen] = useState(false);
+  const [visitedViews, setVisitedViews] = useState<Set<InspectorView>>(() => new Set());
+  const [compactTabs, setCompactTabs] = useState(false);
+  const tabStripRef = useRef<HTMLElement>(null);
+  const tabMeasureRef = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [availableWidth, setAvailableWidth] = useState(window.innerWidth);
+  // 右栏只能使用聊天区之外的空间；保留用户拖拽宽度作为偏好，不把临时收窄写回设置。
+  const panelWidth = Math.min(filePanelWidth, Math.max(0, Math.min(availableWidth * 0.45, availableWidth - 360)));
   const [inspectorView, setInspectorView] = useState<InspectorView>("files");
   const [preview, setPreview] = useState<FilePreviewState>();
   const [directoryStates, setDirectoryStates] = useState<Map<string, FileDirectoryState>>(new Map());
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set());
-  const [reviewState, setReviewState] = useState<InspectorCommandState>({ status: "idle" });
-  const [sideChatState, setSideChatState] = useState<InspectorCommandState>({ status: "idle" });
   // 和左侧侧栏共用 250ms 的几何过渡，关闭时要等宽度动画结束后再卸载。
   const inspectorPresence = useClosingPresence(inspectorOpen && Boolean(projectId), 250);
   const activePreview = preview?.source === source ? preview : undefined;
@@ -113,15 +105,10 @@ export function useWorkspaceInspector({
     previewRequestRef.current += 1;
     directoryRequestIdRef.current += 1;
     directoryRequestRef.current.clear();
+    setInspectorOpen(false);
     setPreview(undefined);
     setDirectoryStates(new Map());
     setExpandedDirectories(new Set());
-    reviewRequestRef.current += 1;
-    reviewRunningRef.current = false;
-    sideChatRequestRef.current += 1;
-    sideChatRunningRef.current = false;
-    setReviewState({ status: "idle" });
-    setSideChatState({ status: "idle" });
   }, [source]);
 
   const loadDirectory = useCallback((relativePath: string): void => {
@@ -154,17 +141,10 @@ export function useWorkspaceInspector({
   const openInspector = useCallback((view: InspectorView): void => {
     if (!projectId) return;
     setInspectorView(view);
+    setVisitedViews((current) => new Set(current).add(view));
     setInspectorOpen(true);
     if (view === "files" && !directoryStates.has(".")) loadDirectory(".");
   }, [directoryStates, loadDirectory, projectId]);
-
-  const toggleInspector = useCallback((): void => {
-    if (inspectorOpen) {
-      setInspectorOpen(false);
-      return;
-    }
-    openInspector(inspectorView);
-  }, [inspectorOpen, inspectorView, openInspector]);
 
   const openFiles = useCallback((): void => {
     openInspector("files");
@@ -182,6 +162,7 @@ export function useWorkspaceInspector({
     const request = previewRequestRef.current + 1;
     previewRequestRef.current = request;
     setInspectorView("files");
+    setVisitedViews((current) => new Set(current).add("files"));
     setInspectorOpen(true);
     setPreview({ source, path, status: "loading", file: undefined, error: undefined });
     void onReadFile(path).then((file) => {
@@ -213,62 +194,18 @@ export function useWorkspaceInspector({
     if (willExpand && (!state || state.status === "error")) loadDirectory(normalizedPath);
   }, [directoryStates, expandedDirectories, loadDirectory]);
 
-  const runReview = useCallback((): void => {
-    if (reviewRunningRef.current) return;
-    reviewRunningRef.current = true;
-    const request = reviewRequestRef.current + 1;
-    reviewRequestRef.current = request;
-    setReviewState({ status: "loading" });
-    void onRunCommand("/review").then((result) => {
-      if (reviewRequestRef.current !== request) return;
-      setReviewState({ status: "ready", result });
-    }).catch((error: unknown) => {
-      if (reviewRequestRef.current !== request) return;
-      setReviewState({ status: "error", error: errorMessage(error) });
-    }).finally(() => {
-      if (reviewRequestRef.current === request) reviewRunningRef.current = false;
-    });
-  }, [onRunCommand]);
-
-  const runSideChat = useCallback((input: string): void => {
-    if (sideChatRunningRef.current) return;
-    sideChatRunningRef.current = true;
-    const request = sideChatRequestRef.current + 1;
-    sideChatRequestRef.current = request;
-    setSideChatState({ status: "loading" });
-    // `--` 明确要求走前台问答，避免问题恰好以 status/start/cancel/agents 开头时触发控制命令。
-    void onRunCommand(`/subagent -- ${input}`).then((result) => {
-      if (sideChatRequestRef.current !== request) return;
-      setSideChatState({ status: "ready", result });
-    }).catch((error: unknown) => {
-      if (sideChatRequestRef.current !== request) return;
-      setSideChatState({ status: "error", error: errorMessage(error) });
-    }).finally(() => {
-      if (sideChatRequestRef.current === request) sideChatRunningRef.current = false;
-    });
-  }, [onRunCommand]);
-
   const openBrowser = useCallback((): void => {
     void onOpenBrowser().catch((error: unknown) => onWarning(errorMessage(error)));
   }, [onOpenBrowser, onWarning]);
 
   const openRailAction = useCallback((action: RailAction): void => {
-    if (action === "browser") {
-      openBrowser();
-      return;
-    }
-    if (action === "review") {
-      openInspector("review");
-      runReview();
-      return;
-    }
     // rail 上点当前已打开的 tab 再点一次是收起面板。
     if (inspectorOpen && inspectorView === action) {
       setInspectorOpen(false);
       return;
     }
     openInspector(action);
-  }, [inspectorOpen, inspectorView, openBrowser, openInspector, runReview]);
+  }, [inspectorOpen, inspectorView, openInspector]);
 
   useEffect(() => {
     if (!projectId) return;
@@ -276,7 +213,7 @@ export function useWorkspaceInspector({
       if (event.defaultPrevented || event.repeat || isTextEntryTarget(event.target) || !event.metaKey) return;
       if (event.shiftKey && !event.altKey && event.code === "KeyG") {
         event.preventDefault();
-        openRailAction("review");
+        openRailAction("commit");
         return;
       }
       if (event.shiftKey && !event.altKey && event.code === "KeyD") {
@@ -286,7 +223,7 @@ export function useWorkspaceInspector({
       }
       if (!event.shiftKey && !event.altKey && event.code === "KeyT") {
         event.preventDefault();
-        openRailAction("browser");
+        openBrowser();
         return;
       }
       if (!event.shiftKey && !event.altKey && event.code === "KeyP") {
@@ -296,52 +233,91 @@ export function useWorkspaceInspector({
       }
       if (!event.shiftKey && event.altKey && event.code === "KeyS") {
         event.preventDefault();
-        openRailAction("side-chat");
+        openRailAction("tools");
       }
     };
     window.addEventListener("keydown", handleShortcut);
     return () => window.removeEventListener("keydown", handleShortcut);
-  }, [openRailAction, projectId]);
+  }, [openBrowser, openRailAction, projectId]);
 
-  const toolContent = !projectId ? null : inspectorView === "terminal" ? <TerminalView projectId={projectId} />
-    : inspectorView === "files" ? (
-      <FilePreviewPanel
-        directoryStates={directoryStates}
-        expandedDirectories={expandedDirectories}
-        onOpenFile={onOpenFile}
-        onPreviewFile={previewFile}
-        onShowFiles={showFileBrowser}
-        onToggleDirectory={toggleDirectory}
-        preview={activePreview}
-        projectId={projectId}
-      />
-    ) : inspectorView === "changes" ? <SessionChangesPanel changes={changes} onPreviewFile={previewFile} />
-      : inspectorView === "review" ? <InspectorReview onRetry={runReview} state={reviewState} />
-        : <InspectorSideChat onSend={runSideChat} state={sideChatState} />;
-
-  // 变更数同时挂在 tab 和 rail 徽标上；99+ 封顶，与 alma 的徽标口径一致。
+  const refreshFiles = (): void => {
+    loadDirectory(".");
+    for (const path of expandedDirectories) loadDirectory(path);
+    if (activePreview) previewFile(activePreview.path);
+  };
+  const toolContent = (view: InspectorView): React.JSX.Element | null => !projectId ? null : view === "terminal" ? <TerminalView projectId={projectId} active={inspectorOpen && inspectorView === "terminal"} />
+    : view === "files" ? <FilePreviewPanel directoryStates={directoryStates} expandedDirectories={expandedDirectories} onOpenFile={onOpenFile} onPreviewFile={previewFile} onShowFiles={showFileBrowser} onToggleDirectory={toggleDirectory} preview={activePreview} projectId={projectId} onRefresh={refreshFiles} onCollapse={() => setExpandedDirectories(new Set())} />
+      : view === "changes" ? <SessionChangesPanel changes={changes} onPreviewFile={previewFile} />
+        : view === "commit" ? <WorkspaceCommitPanel changes={changes} onOpenTerminal={() => openInspector("terminal")} />
+          : view === "browser" ? <WorkspaceBrowserPanel onWarning={onWarning} />
+            : <WorkspaceToolsPanel tools={tools} />;
   const changeCount = changes.length;
-  const compactTabs = filePanelWidth < COMPACT_TABS_WIDTH;
+  // 以真正可用的标签宽度决定折叠；留出滞回空间，避免拖动临界宽度时来回闪动。
+  useLayoutEffect(() => {
+    const strip = tabStripRef.current;
+    const measure = tabMeasureRef.current;
+    if (!strip || !measure) return;
+    const update = (): void => {
+      if (!strip.clientWidth) return;
+      setCompactTabs((current) => strip.clientWidth < measure.scrollWidth + (current ? 24 : 0));
+    };
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(strip);
+    observer.observe(measure);
+    return () => observer.disconnect();
+  }, [inspectorPresence.present, projectId]);
 
-  const inspector = inspectorPresence.present && projectId ? (
+  useLayoutEffect(() => {
+    const root = panelRef.current?.closest<HTMLElement>(".biny-app-shell");
+    if (!root) return;
+    const sidebar = root.querySelector<HTMLElement>(":scope > .biny-sidebar-block");
+    const measure = (): void => {
+      const available = root.clientWidth - (sidebar?.getBoundingClientRect().width ?? 0);
+      setAvailableWidth(available);
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(root);
+    if (sidebar) observer.observe(sidebar);
+    return () => observer.disconnect();
+  }, [filePanelWidth, inspectorPresence.present]);
+
+  const inspector = visitedViews.size > 0 && projectId ? (
     <div
+      ref={panelRef}
       className={`desktop-inspector-wrap is-${inspectorPresence.phase}${filePanelResizing ? " is-resizing" : ""}`}
+      style={{ display: inspectorPresence.present ? undefined : "none" }}
+      inert={!inspectorOpen}
+      aria-hidden={!inspectorOpen}
     >
       <FilePanelResizer
         onResizeEnd={onFilePanelResizeEnd}
         onResizeStart={onFilePanelResizeStart}
         onWidthChange={onFilePanelWidthChange}
-        width={filePanelWidth}
+        width={panelWidth}
       />
       <aside aria-label="工作区工具" className="desktop-inspector" role="complementary">
         <header className="desktop-inspector-header">
-          <nav aria-label="工具切换" className="biny-inspector-tabs">
+          <nav aria-label="工具切换" className="biny-inspector-tabs" role="tablist" ref={tabStripRef} onKeyDown={(event) => {
+            if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+            const index = inspectorViews.indexOf(inspectorView);
+            const next = event.key === "Home" ? 0 : event.key === "End" ? inspectorViews.length - 1 : (index + (event.key === "ArrowRight" ? 1 : -1) + inspectorViews.length) % inspectorViews.length;
+            event.preventDefault();
+            openInspector(inspectorViews[next]!);
+            event.currentTarget.querySelectorAll<HTMLButtonElement>(':scope > button')[next]?.focus();
+          }}>
+            <div className="inspector-tab-measure" aria-hidden="true" ref={tabMeasureRef}>{inspectorViews.map((view) => <span key={view}><Icon name={inspectorViewMetadata[view].icon} size={14} />{inspectorViewMetadata[view].label}{view === "changes" && changeCount > 0 ? "99+" : ""}</span>)}</div>
             {(Object.keys(inspectorViewMetadata) as InspectorView[]).map((view) => {
               const active = inspectorView === view;
               const badge = view === "changes" && changeCount > 0 ? (changeCount > 99 ? "99+" : String(changeCount)) : undefined;
               return (
                 <button
-                  aria-current={active ? "page" : undefined}
+                  role="tab"
+                  aria-selected={active}
+                  aria-controls={`inspector-panel-${view}`}
+                  id={`inspector-tab-${view}`}
+                  tabIndex={active ? 0 : -1}
                   aria-label={inspectorViewMetadata[view].label}
                   className={`biny-inspector-tab${active ? " is-active" : ""}${compactTabs ? " is-compact" : ""}`}
                   key={view}
@@ -349,7 +325,7 @@ export function useWorkspaceInspector({
                   title={inspectorViewMetadata[view].label}
                   type="button"
                 >
-                  <Icon name={inspectorViewMetadata[view].icon} size={13} />
+                  <Icon name={inspectorViewMetadata[view].icon} size={compactTabs ? 16 : 14} />
                   {!compactTabs ? <span>{inspectorViewMetadata[view].label}</span> : null}
                   {badge !== undefined ? <span className="biny-inspector-badge">{badge}</span> : null}
                 </button>
@@ -357,65 +333,46 @@ export function useWorkspaceInspector({
             })}
           </nav>
           <button aria-label="收起工作区工具" className="desktop-inspector-close" onClick={() => setInspectorOpen(false)} title="收起工作区工具" type="button">
-            <Icon name="panel-right" size={15} />
+            <Icon name="close" size={15} />
           </button>
         </header>
         <div className="desktop-inspector-body" id="desktop-inspector-panel">
-          <div className="biny-inspector-view-content" key={inspectorView}>{toolContent}</div>
+          {inspectorViews.filter((view) => visitedViews.has(view)).map((view) => <div className="biny-inspector-view-content" role="tabpanel" aria-labelledby={`inspector-tab-${view}`} id={`inspector-panel-${view}`} hidden={inspectorView !== view} key={view === "terminal" ? `${projectId}:${view}` : `${source}:${view}`}>{toolContent(view)}</div>)}
         </div>
       </aside>
     </div>
   ) : undefined;
 
-  // rail 常驻右缘（有项目即可见）；right 随 dock 流宽度变量滑动，与面板开合同帧。
-  const rail = projectId ? (
-    <div aria-label="工作区工具" className="biny-inspector-rail" role="toolbar">
-      {(Object.keys(inspectorViewMetadata) as InspectorView[]).map((view) => (
-        <RailButton
-          active={inspectorOpen && inspectorView === view}
-          badge={view === "changes" && changeCount > 0 ? (changeCount > 99 ? "99+" : String(changeCount)) : undefined}
-          icon={inspectorViewMetadata[view].icon}
-          key={view}
-          label={inspectorViewMetadata[view].label}
-          onClick={() => openRailAction(view)}
-        />
-      ))}
-      <RailButton active={false} icon="site" label="浏览器" onClick={openBrowser} />
-    </div>
-  ) : undefined;
-
   return {
     dock: inspector,
-    rail,
+    rail: projectId && !inspectorOpen ? (
+      <div aria-label="工作区工具" className="biny-inspector-rail" role="toolbar">
+        {inspectorViews.map((view) => (
+          <button
+            aria-label={inspectorViewMetadata[view].label}
+            className="biny-inspector-rail-btn"
+            key={view}
+            onClick={() => openRailAction(view)}
+            title={inspectorViewMetadata[view].label}
+            type="button"
+          >
+            <Icon name={inspectorViewMetadata[view].icon} size={16} />
+            {view === "changes" && changeCount > 0 ? <span className="biny-inspector-badge is-corner">{changeCount > 99 ? "99+" : changeCount}</span> : null}
+          </button>
+        ))}
+      </div>
+    ) : undefined,
     layout: {
       open: inspectorOpen && Boolean(projectId),
       resizing: filePanelResizing,
-      width: filePanelWidth
+      width: panelWidth
     },
-    open: inspectorOpen && Boolean(projectId),
     filesOpen: inspectorOpen && inspectorView === "files",
     terminalOpen: inspectorOpen && inspectorView === "terminal",
     openFiles,
     previewFile,
-    toggleInspector,
     toggleTerminal
   };
-}
-
-function RailButton({ active, badge, icon, label, onClick }: { active: boolean; badge?: string; icon: IconName; label: string; onClick(): void }): React.JSX.Element {
-  return (
-    <button
-      aria-label={label}
-      aria-pressed={active}
-      className={`biny-inspector-rail-btn${active ? " is-active" : ""}`}
-      onClick={onClick}
-      title={label}
-      type="button"
-    >
-      <Icon name={icon} size={16} />
-      {badge !== undefined ? <span className="biny-inspector-badge is-corner">{badge}</span> : null}
-    </button>
-  );
 }
 
 function FilePanelResizer({ width, onWidthChange, onResizeStart, onResizeEnd }: {

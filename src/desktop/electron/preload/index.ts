@@ -61,6 +61,7 @@ const api: DesktopApi = {
   switchMessageVersion: async (projectId, sessionId, messageId, direction) => await ipcRenderer.invoke(desktopIpc.switchMessageVersion, projectId, sessionId, messageId, direction),
   cancelRun: async (projectId, runId) => await ipcRenderer.invoke(desktopIpc.cancelRun, projectId, runId),
   runSlashCommand: async (projectId, sessionId, command) => await ipcRenderer.invoke(desktopIpc.runSlashCommand, projectId, sessionId, command),
+  runInspectorCommand: async (projectId, owner, kind, input, history) => await ipcRenderer.invoke(desktopIpc.runInspectorCommand, projectId, owner, kind, input, history),
   expandSkillCommand: async (projectId, input) => await ipcRenderer.invoke(desktopIpc.skillExpand, projectId, input),
   resolvePermission: async (projectId, requestId, result) => await ipcRenderer.invoke(desktopIpc.resolvePermission, projectId, requestId, result),
   setPermissionMode: async (projectId, mode) => await ipcRenderer.invoke(desktopIpc.setPermissionMode, projectId, mode),
@@ -220,7 +221,8 @@ const api: DesktopApi = {
   traverseQuickChatApp: async (pid) => await ipcRenderer.invoke(desktopIpc.quickChatTraverseApp, pid),
   getQuickChatClickThrough: async () => await ipcRenderer.invoke(desktopIpc.quickChatGetClickThrough),
   setQuickChatClickThrough: async (enabled) => await ipcRenderer.invoke(desktopIpc.quickChatSetClickThrough, enabled),
-  createTerminal: async (projectId, cols, rows) => await ipcRenderer.invoke(desktopIpc.createTerminal, projectId, cols, rows),
+  createTerminal: async (projectId, cols, rows, slotId) => await ipcRenderer.invoke(desktopIpc.createTerminal, projectId, cols, rows, slotId),
+  listTerminals: async (projectId) => await ipcRenderer.invoke(desktopIpc.listTerminals, projectId),
   // 输入与尺寸是高频小消息，用 send 避免 invoke 的往返开销。
   writeTerminal: (terminalId, data) => { ipcRenderer.send(desktopIpc.writeTerminal, terminalId, data); },
   resizeTerminal: (terminalId, cols, rows) => { ipcRenderer.send(desktopIpc.resizeTerminal, terminalId, cols, rows); },

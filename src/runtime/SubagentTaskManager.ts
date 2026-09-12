@@ -62,7 +62,7 @@ interface ManagedSubagentTask extends SubagentTaskSnapshot {
 export class SubagentTaskManager {
   private static readonly historyLimit = 200;
   private static readonly defaultMaxPendingSubagents = 16;
-  private static readonly maxTaskCharacters = 20_000;
+  static readonly maxTaskCharacters = 20_000;
   private static readonly maxTimerMs = 2_147_483_647;
   private readonly tasks = new Map<string, ManagedSubagentTask>();
   private readonly queue: ManagedSubagentTask[] = [];

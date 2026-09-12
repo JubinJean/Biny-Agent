@@ -193,6 +193,8 @@ export const desktopIpc = {
   quickChatSettings: "desktop:quickchat:settings",
   setQuickChatSettings: "desktop:quickchat:set-settings",
   createTerminal: "desktop:terminal:create",
+  listTerminals: "desktop:terminal:list",
+  runInspectorCommand: "desktop:inspector:command",
   writeTerminal: "desktop:terminal:write",
   resizeTerminal: "desktop:terminal:resize",
   disposeTerminal: "desktop:terminal:dispose",
@@ -1458,11 +1460,17 @@ export type DesktopSessionMenuAction = "rename" | "pin" | "unpin" | "archive" | 
 export interface DesktopTerminalHandle {
   terminalId: string;
   replay: string;
+  sequence: number;
+}
+
+export interface DesktopTerminalTab {
+  terminalId: string;
+  slotId: string;
 }
 
 export type DesktopTerminalEvent =
-  | { terminalId: string; type: "data"; data: string }
-  | { terminalId: string; type: "exit"; exitCode: number };
+  | { terminalId: string; type: "data"; data: string; sequence: number }
+  | { terminalId: string; type: "exit"; exitCode: number; sequence: number };
 
 /**
  * 渲染进程可用的全部主进程能力，运行时挂在 `window.biny` 上。
@@ -1520,6 +1528,7 @@ export interface DesktopApi {
   switchMessageVersion(projectId: string, sessionId: string, messageId: string, direction: "prev" | "next"): Promise<DesktopSessionDocument>;
   cancelRun(projectId: string, runId: string): Promise<void>;
   runSlashCommand(projectId: string, sessionId: string | undefined, command: string): Promise<DesktopSlashResult>;
+  runInspectorCommand(projectId: string, owner: string, kind: "review" | "side-chat", input: string, history: import("./inspectorTask.js").InspectorMessage[]): Promise<DesktopSlashResult>;
   expandSkillCommand(projectId: string, input: string): Promise<string>;
   resolvePermission(projectId: string, requestId: string, result: PermissionResult): Promise<void>;
   setPermissionMode(projectId: string, mode: PermissionMode): Promise<DesktopWorkspaceSnapshot>;
@@ -1628,7 +1637,8 @@ export interface DesktopApi {
   onQuickChatContext(listener: (context: DesktopQuickChatScreenContext) => void): () => void;
   onQuickChatFocusInput(listener: () => void): () => void;
   onQuickChatClickThroughChanged(listener: (enabled: boolean) => void): () => void;
-  createTerminal(projectId: string, cols: number, rows: number): Promise<DesktopTerminalHandle>;
+  createTerminal(projectId: string, cols: number, rows: number, slotId?: string): Promise<DesktopTerminalHandle>;
+  listTerminals(projectId: string): Promise<DesktopTerminalTab[]>;
   writeTerminal(terminalId: string, data: string): void;
   resizeTerminal(terminalId: string, cols: number, rows: number): void;
   disposeTerminal(terminalId: string): Promise<void>;

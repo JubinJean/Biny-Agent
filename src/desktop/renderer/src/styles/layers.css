@@ -13,4 +13,5 @@
 @import "./desktop-v2.css" layer(desktop);
 @import "./biny.css" layer(desktop);
 @import "./chat.css" layer(desktop);
+@import "./inspector.css" layer(desktop);
 @import "./providers.css" layer(desktop);

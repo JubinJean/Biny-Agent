@@ -8,7 +8,7 @@
 import { Icon } from "./Icon.js";
 import { FileTypeMarker } from "./workspace/FileTypeMarker.js";
 
-export function FileLinkCard({ path, onPreviewFile }: { path: string; onPreviewFile(path: string): void }): React.JSX.Element {
+export function FileLinkCard({ path, description, projectFile, onPreviewFile }: { path: string; description?: string; projectFile?: boolean; onPreviewFile(path: string): void }): React.JSX.Element {
   const normalized = path.replaceAll("\\", "/");
   const separator = normalized.lastIndexOf("/");
   const name = separator < 0 ? normalized : normalized.slice(separator + 1);
@@ -17,8 +17,8 @@ export function FileLinkCard({ path, onPreviewFile }: { path: string; onPreviewF
     <button className="markdown-file-link" onClick={() => onPreviewFile(path)} title={`在右侧预览 ${path}`} type="button">
       <span className="markdown-file-link-icon"><FileTypeMarker name={name} /></span>
       <span className="markdown-file-link-main">
-        <span className="markdown-file-link-name">{name}</span>
-        {dir ? <span className="markdown-file-link-dir">{dir}</span> : null}
+        <span className="markdown-file-link-title"><span className="markdown-file-link-name">{name}</span>{projectFile ? <span className="biny-output-location">项目</span> : null}</span>
+        {description || dir ? <span className="markdown-file-link-dir">{description ?? dir}</span> : null}
       </span>
       <span className="markdown-file-link-open"><Icon name="arrow-up-right" size={13} /></span>
     </button>

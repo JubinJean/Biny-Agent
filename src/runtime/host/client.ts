@@ -1425,6 +1425,7 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
 
 function commandWritesSession(input: string): boolean {
   const [command, action] = input.trim().replace(/^\/+/, "/").split(/\s+/u);
+  if (command === "/inspect") return true;
   if (command === "/compact") return true;
   return command === "/soul"
     && (action === "set" || action === "append-trait" || action === "reset" || action === "delete");

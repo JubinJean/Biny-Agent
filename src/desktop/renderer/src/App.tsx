@@ -1009,12 +1009,6 @@ function DesktopApp(): React.JSX.Element {
     return await window.biny.expandSkillCommand(projectId, input);
   }, [draftProjectId]);
 
-  const runInspectorCommand = useCallback(async (command: string): Promise<DesktopSlashResult> => {
-    const projectId = projectRef.current;
-    if (!projectId) throw new Error("请先打开一个项目。");
-    return await window.biny.runSlashCommand(projectId, selectedRef.current, command);
-  }, []);
-
   const editPrompt = useCallback(async (
     input: string,
     attachments: DesktopAttachment[],
@@ -1297,6 +1291,7 @@ function DesktopApp(): React.JSX.Element {
   const sessionChanges = useMemo(() => collectSessionChanges(turns), [turns]);
   const inspector = useWorkspaceInspector({
     changes: sessionChanges,
+    tools: turns.flatMap((turn) => turn.tools),
     filePanelResizing,
     filePanelWidth,
     onFilePanelResizeEnd: (width) => {
@@ -1309,7 +1304,6 @@ function DesktopApp(): React.JSX.Element {
     onOpenFile: openWorkspaceFile,
     onOpenBrowser: openBrowser,
     onReadFile: readWorkspaceFile,
-    onRunCommand: runInspectorCommand,
     onWarning: setWarning,
     projectId: workspace?.project.id,
     source: `${workspace?.project.id ?? "none"}:${document?.session.id ?? "draft"}`
@@ -1723,13 +1717,12 @@ function DesktopApp(): React.JSX.Element {
         onOpenExternal={openExternalLink}
         onOpenProject={() => void openProject()}
         onPreviewFile={inspector.previewFile}
-        inspectorOpen={inspector.open}
+        inspectorRail={inspector.rail}
         onResolvePermission={resolvePermission}
         onRollbackFiles={rollbackFiles}
         onRetry={retryTimelinePrompt}
         onSwitchVersion={switchTimelineVersion}
         onRetryWriterConflict={retryWriterConflict}
-        onToggleInspector={inspector.toggleInspector}
         onRuntimePanelOpenChange={changeRuntimePanelOpen}
         project={workspace?.project}
         projectId={workspace?.project.id}
@@ -1755,7 +1748,6 @@ function DesktopApp(): React.JSX.Element {
         onRuntimeRefresh={refreshRuntimeProjection}
         onSubmitPrompt={submitComposerPrompt}
         workspaceContext={workspaceContext}
-        inspectorRail={inspector.rail}
         pendingPrompt={pendingPrompt}
         onOpenRuntime={openRuntimePanel}
         onOpenExtensions={openExtensions}

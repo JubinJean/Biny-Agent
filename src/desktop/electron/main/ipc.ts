@@ -380,10 +380,14 @@ export function registerDesktopIpc(context: IpcContext): void {
     child.unref();
   });
 
-  handle(desktopIpc.createTerminal, async (_event, projectId: unknown, cols: unknown, rows: unknown) => {
+  handle(desktopIpc.listTerminals, async (_event, projectId: unknown) => {
+    const project = context.projects.requireProject(idSchema.parse(projectId));
+    return context.terminals.list(project.id);
+  });
+  handle(desktopIpc.createTerminal, async (_event, projectId: unknown, cols: unknown, rows: unknown, slotId: unknown) => {
     const project = context.projects.requireProject(idSchema.parse(projectId));
     if (project.missing) throw new Error("项目目录不可用，无法打开终端。");
-    return await context.terminals.create(project.id, project.path, terminalSizeSchema.parse(cols), terminalSizeSchema.parse(rows));
+    return await context.terminals.create(project.id, project.path, terminalSizeSchema.parse(cols), terminalSizeSchema.parse(rows), z.string().min(1).max(100).optional().parse(slotId));
   });
 
   // 键盘输入和窗口尺寸走 fire-and-forget 的 send 通道，省掉 invoke 往返延迟。
@@ -562,6 +566,16 @@ export function registerDesktopIpc(context: IpcContext): void {
       idSchema.parse(projectId),
       sessionId === undefined ? undefined : idSchema.parse(sessionId),
       z.string().trim().min(1).max(200).parse(command)
+    );
+  });
+
+  handleRecoveryGated(desktopIpc.runInspectorCommand, async (_event, projectId: unknown, owner: unknown, kind: unknown, input: unknown, history: unknown) => {
+    return await context.agents.runInspectorCommand(
+      idSchema.parse(projectId),
+      z.string().min(1).max(300).parse(owner),
+      z.enum(["review", "side-chat"]).parse(kind),
+      z.string().max(8_000).parse(input),
+      z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(32_000) })).max(20).parse(history)
     );
   });
 

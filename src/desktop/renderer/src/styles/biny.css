@@ -629,7 +629,8 @@
 .biny-inspector-rail {
   position: fixed;
   z-index: 103;
-  top: 48px;
+  /* 顶栏高 48px，菜单与分隔线之间保留 12px。 */
+  top: 60px;
   right: min(
     calc(var(--biny-inspector-animated-flow-width, 0px) + 10px),
     calc(100vw - var(--biny-sidebar-animated-visual-width, 0px) - 52px)
@@ -770,7 +771,7 @@
   overflow: hidden;
 }
 
-/* 「变更」视图：会话内 Agent 改过的文件（统计头 + 每文件一行的可展开列表）。 */
+/* 会话文件列表：名称优先、路径次级，颜色只提示操作与差异。 */
 .biny-session-changes {
   display: flex;
   width: 100%;
@@ -782,29 +783,33 @@
 .biny-session-changes-summary {
   display: flex;
   flex: 0 0 auto;
-  flex-wrap: wrap;
   align-items: center;
-  gap: 4px 12px;
-  padding: 8px 12px;
+  gap: 12px;
+  padding: 14px 16px;
   border-bottom: 1px solid color-mix(in srgb, var(--biny-border) 55%, transparent);
 }
 
-.biny-session-changes-count {
-  color: var(--biny-text);
-  font-size: 12.5px;
-  font-weight: 600;
-}
-
-.biny-session-changes-stat {
-  display: inline-flex;
+.biny-session-changes-heading h2 {
+  display: flex;
   align-items: center;
-  gap: 4px;
-  color: var(--biny-text-secondary);
-  font-size: 11.5px;
+  gap: 8px;
+  margin: 0;
+  color: var(--biny-text);
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 500;
 }
 
-.biny-session-changes-stat.is-write { color: color-mix(in srgb, var(--biny-success) 80%, var(--biny-text-secondary)); }
-.biny-session-changes-stat.is-edit { color: var(--biny-focus); }
+.biny-session-changes-heading h2 > span {
+  color: var(--biny-text-tertiary);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.biny-session-changes-heading p {
+  margin: 4px 0 0;
+  color: var(--biny-text-tertiary);
+  font-size: calc(11px * var(--font-scale));
+}
 
 .biny-session-changes-diffstat {
   margin-left: auto;
@@ -826,8 +831,8 @@
   width: 100%;
   min-width: 0;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: 8px;
+  padding: 12px;
   border: 0;
   background: transparent;
   color: var(--biny-text);
@@ -837,7 +842,8 @@
   transition: background 140ms ease;
 }
 
-.biny-session-change-row:hover {
+.biny-session-change-row:hover,
+.biny-session-change-row:focus-visible {
   background: var(--biny-surface-hover);
 }
 
@@ -858,24 +864,39 @@
   transform: rotate(0);
 }
 
+.biny-session-change-icon {
+  display: flex;
+  flex: 0 0 16px;
+  color: color-mix(in srgb, var(--biny-focus) 65%, var(--biny-text-secondary));
+}
+
+.biny-session-change-icon.is-write {
+  color: color-mix(in srgb, var(--biny-success) 65%, var(--biny-text-secondary));
+}
+
+.biny-session-change-label {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 3px;
+}
+
 .biny-session-change-name {
-  flex: 0 1 auto;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: calc(12px * var(--font-scale));
+  font-weight: 500;
 }
 
 .biny-session-change-dir {
-  flex: 1 1 24px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--biny-text-tertiary);
-  font-size: 11px;
-  text-align: right;
+  font-size: calc(10px * var(--font-scale));
 }
 
 .biny-session-change-chip {
@@ -885,21 +906,12 @@
   background: var(--biny-surface-soft);
   color: var(--biny-text-secondary);
   font-size: 10px;
-  font-weight: 600;
+  font-weight: 400;
   white-space: nowrap;
 }
 
-.biny-session-change-chip.is-write {
-  background: var(--biny-success-bg);
-  color: var(--biny-success);
-}
-
-.biny-session-change-chip.is-edit {
-  color: var(--biny-focus);
-}
-
 .biny-session-change-chip.is-active {
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--biny-warning) 55%, transparent);
+  color: var(--biny-warning);
 }
 
 .biny-session-change-stats {
@@ -912,73 +924,97 @@
   background: var(--biny-surface);
 }
 
-.biny-session-change-path {
-  padding: 6px 12px;
-  overflow: hidden;
-  color: var(--biny-text-tertiary);
-  font: 11px var(--font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .biny-session-change-diff {
   border-top: 1px solid color-mix(in srgb, var(--biny-border) 35%, transparent);
+  color: var(--biny-text-secondary);
 }
 
-.biny-session-change-preview {
+.biny-session-change-diff .merged-diff-line[data-line="add"] {
+  background: color-mix(in srgb, var(--biny-success) 5%, transparent);
+}
+
+.biny-session-change-diff .merged-diff-line[data-line="del"] {
+  background: color-mix(in srgb, var(--biny-danger) 5%, transparent);
+}
+
+.biny-session-change-diff .merged-diff-line[data-line="add"] .merged-diff-text,
+.biny-session-change-diff .merged-diff-line[data-line="add"] .merged-diff-sign {
+  color: color-mix(in srgb, var(--biny-success) 75%, var(--biny-text-secondary));
+}
+
+.biny-session-change-diff .merged-diff-line[data-line="del"] .merged-diff-text,
+.biny-session-change-diff .merged-diff-line[data-line="del"] .merged-diff-sign {
+  color: color-mix(in srgb, var(--biny-danger) 75%, var(--biny-text-secondary));
+}
+
+.biny-session-change-detail-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 12px 10px;
-  color: var(--biny-text-secondary);
-  font-size: 11.5px;
+  padding: 6px 12px;
+  color: var(--biny-text-tertiary);
+  font-size: 11px;
 }
 
-.biny-session-change-preview button {
+.biny-session-change-detail-header button {
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 5px;
-  padding: 4px 10px;
-  border: 1px solid var(--biny-border);
+  padding: 5px 6px;
+  border: 0;
   border-radius: 6px;
-  background: var(--biny-surface-soft);
-  color: var(--biny-text);
+  background: transparent;
+  color: var(--biny-text-secondary);
   font-size: 11px;
+  cursor: pointer;
 }
 
-.biny-session-change-preview button:hover {
+.biny-session-change-detail-header button:hover,
+.biny-session-change-detail-header button:focus-visible {
   background: var(--biny-surface-hover);
+  color: var(--biny-text);
+}
+
+.biny-session-change-no-diff {
+  margin: 0;
+  padding: 8px 12px 16px;
+  color: var(--biny-text-tertiary);
+  font-size: 12px;
 }
 
 .biny-session-changes-empty {
   display: flex;
-  height: 100%;
+  flex: 1;
+  min-height: 0;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
   padding: 24px;
   color: var(--biny-text-secondary);
   text-align: center;
 }
 
 .biny-session-changes-empty > svg {
+  margin-bottom: 4px;
   opacity: 0.5;
 }
 
 .biny-session-changes-empty-title {
   margin: 0;
   color: var(--biny-text);
-  font-size: 12.5px;
-  font-weight: 600;
+  font-size: calc(13px * var(--font-scale));
+  font-weight: 500;
 }
 
 .biny-session-changes-empty-hint {
   margin: 0;
   color: var(--biny-text-tertiary);
-  font-size: 11.5px;
+  max-width: 240px;
+  font-size: calc(11px * var(--font-scale));
+  line-height: 1.6;
 }
 
 .biny-inspector-command {
@@ -1678,7 +1714,10 @@
 }
 
 .biny-sidebar.is-compact .biny-sidebar-footer {
+  flex-basis: 78px;
+  flex-direction: column;
   justify-content: center;
+  gap: 4px;
   padding: 0;
 }
 
@@ -3170,6 +3209,7 @@
 
 /* 列表行：复选框 + 名称/描述；勾选态只落在复选框上，行本身只保留 hover 反馈。 */
 .capability-row {
+  position: relative;
   display: grid;
   min-height: 44px;
   width: 100%;
@@ -4326,12 +4366,12 @@ div:has(> .astryx-trigger-menu) {
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  /* 通栏内容列：消息与输入框同宽铺满，两侧各留 24px 呼吸距离。 */
+  /* 消息内容列两侧各留 24px，底部输入框独立设置边距。 */
   --biny-chat-content-width: calc(100% - 48px);
 }
 
 /* 聊天区右缘有常驻工具 rail（浮层），内容列在两侧对称让出它的宽度，
-   右对齐的用户消息、上下文用量和输入框不再被盖住。 */
+   避免遮挡右对齐的用户消息；底部输入框无需为顶部工具栏让位。 */
 .biny-workspace-chat .biny-workspace-main {
   --biny-chat-content-width: calc(100% - 48px - 60px);
 }
@@ -4343,7 +4383,7 @@ div:has(> .astryx-trigger-menu) {
   position: fixed;
   z-index: 101;
   top: 0;
-  right: 0;
+  right: var(--biny-inspector-animated-flow-width, 0px);
   /* 标题栏和侧栏共用同一时钟，避免 raw visual width 在展开首帧瞬移。 */
   left: var(--biny-sidebar-animated-toolbar-left);
   box-sizing: border-box;
@@ -4490,6 +4530,11 @@ div:has(> .astryx-trigger-menu) {
   pointer-events: auto;
   -webkit-app-region: no-drag;
   app-region: no-drag;
+}
+
+.biny-artifacts-button.is-active {
+  background: var(--biny-surface-selected);
+  color: var(--biny-text);
 }
 
 .biny-usage-control {
@@ -5124,7 +5169,7 @@ div:has(> .astryx-trigger-menu) {
 
 .biny-chat-composer {
   position: relative;
-  width: var(--biny-chat-content-width);
+  width: calc(100% - 24px);
   max-width: 100%;
   margin: 0 auto;
   padding: 0 0 12px;

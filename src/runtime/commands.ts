@@ -181,6 +181,11 @@ export async function executeRuntimeCommand(
     return result(command, "Soul", content);
   }
   if (command === "/subagent") return await executeSubagentCommand(runtime, services, command, args, source);
+  if (command === "/inspect") {
+    const task = input.trim().slice("/inspect".length).trim();
+    if (!task) throw new Error("检查内容不能为空。");
+    return result(command, "检查结果", await runForegroundSubagent(runtime, services, task, true));
+  }
   if (command === "/review") {
     const task = args.join(" ").trim()
       || "Review the current git changes for correctness, regressions, missing tests, and concrete risks. Return concise findings with exact file paths and line numbers.";
@@ -319,12 +324,13 @@ export async function cancelRuntimeGraph(
 async function runForegroundSubagent(
   runtime: InteractiveRuntimeHandle,
   services: CommandRuntime,
-  task: string
+  task: string,
+  readOnly = false
 ): Promise<string> {
   try {
     return await runtime.runExclusiveOperation(
       "subagent",
-      async (signal) => await services.startSubagentTask(task, { taskId: randomUUID(), signal }).completion
+      async (signal) => await services.startSubagentTask(task, { taskId: randomUUID(), signal, accessMode: readOnly ? "read-only" : undefined }).completion
     );
   } catch (error) {
     if (!(error instanceof Error)) throw new Error(redactSecrets(String(error)));

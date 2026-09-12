@@ -30,6 +30,8 @@ export type IconName =
   | "close"
   | "code"
   | "compose"
+  | "commit"
+  | "globe"
   | "copy"
   | "cube"
   | "cpu"
@@ -42,6 +44,8 @@ export type IconName =
   | "eye"
   | "eye-off"
   | "file"
+  | "file-diff"
+  | "file-pen"
   | "file-text"
   | "flask"
   | "fold"
@@ -146,6 +150,8 @@ function pathFor(name: IconName): React.JSX.Element {
     case "close": return <path {...common} d="m6 6 12 12M18 6 6 18" />;
     case "code": return <path {...common} d="m8.5 8-4 4 4 4M15.5 8l4 4-4 4M14 5l-4 14" />;
     case "compose": return <><path {...common} d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" /><path {...common} d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z" /></>;
+    case "commit": return <><circle {...common} cx="12" cy="12" r="4" /><path {...common} d="M3 12h5m8 0h5" /></>;
+    case "globe": return <><circle {...common} cx="12" cy="12" r="9" /><ellipse {...common} cx="12" cy="12" rx="4" ry="9" /><path {...common} d="M3 12h18" /></>;
     case "copy": return <><rect {...common} height="12" rx="2" width="12" x="8" y="8" /><path {...common} d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" /></>;
     case "cube": return <><path {...common} d="m12 3 8 4.5v9L12 21l-8-4.5v-9z" /><path {...common} d="m4 7.5 8 4.5 8-4.5M12 12v9" /></>;
     case "cpu": return <><rect {...common} height="12" rx="2" width="12" x="6" y="6" /><path {...common} d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4M10 10h4v4h-4z" /></>;
@@ -158,6 +164,8 @@ function pathFor(name: IconName): React.JSX.Element {
     case "eye": return <><path {...common} d="M2.5 12s3.5-6.5 9.5-6.5S21.5 12 21.5 12s-3.5 6.5-9.5 6.5S2.5 12 2.5 12Z" /><circle {...common} cx="12" cy="12" r="3" /></>;
     case "eye-off": return <><path {...common} d="m4 4 16 16M9.9 9.9A3 3 0 0 0 12 15a3 3 0 0 0 2.1-.9M7 7.4C4.4 8.8 2.5 12 2.5 12s3.5 6.5 9.5 6.5c1.6 0 3-.3 4.3-.9M14.1 9A3 3 0 0 0 12 9c-.4 0-.7.1-1 .2M10.6 5.2C11.1 5.1 11.5 5 12 5c6 0 9.5 6.5 9.5 6.5a16 16 0 0 1-2.1 2.8" /></>;
     case "file": return <path {...common} d="M7 3.5h6l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Zm6 0v4h4" />;
+    case "file-diff": return <><path {...common} d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6ZM14 2v6h6M9 13h6M12 10v6M9 19h6" /></>;
+    case "file-pen": return <><path {...common} d="M12 22H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8l6 6v4M14 2v6h6M15 18l5-5 3 3-5 5-4 1 1-4ZM19 14l3 3" /></>;
     case "file-text": return <><path {...common} d="M7 3.5h6l4 4V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Zm6 0v4h4" /><path {...common} d="M9 12h6M9 15.5h6M9 8.5h1.5" /></>;
     case "flask": return <><path {...common} d="M9 3h6M10 3v6l-5.3 9.1A1.3 1.3 0 0 0 5.8 20h12.4a1.3 1.3 0 0 0 1.1-1.9L14 9V3" /><path {...common} d="M7.2 15h9.6" /></>;
     case "fold": return <><path {...common} d="M2 12h20" /><path {...common} d="M12 2v6.5" /><path {...common} d="m16 7-4-4-4 4" /><path {...common} d="M12 22v-6.5" /><path {...common} d="m8 17 4 4 4-4" /></>;

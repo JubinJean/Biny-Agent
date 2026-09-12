@@ -1,20 +1,19 @@
 /**
- * 右侧 dock 的「变更」视图：当前会话里 Agent 改过的文件。
+ * 右侧 dock 的「产物」视图：当前会话里 Agent 改过的文件。
  *
- * 复刻 ArtifactSidebar Files/Changes tab 的人体工学：顶部统计头（N 个文件 · 写入/编辑
- * 次数 · ±行数），下面每个文件一行，行上带类型角标、操作 chip 和 diffstat；点行展开
- * 完整路径与合并 diff（同聊天里的合并编辑行同款样式），没有 diff 的写入给「预览」
- * 入口。数据由 App 从时间线收集后注入，这里只做展示与本地展开状态。
+ * 按文件聚合，列表突出名称与路径，展开后展示编辑记录和文件预览入口。
+ * 数据由 App 从时间线注入，这里只负责展示与本地展开状态。
  */
 import { useMemo, useState } from "react";
 import { parseDiffHunks, sessionChangeTotals, type SessionFileChange } from "../../sessionChanges.js";
 import { Icon } from "../Icon.js";
-import { FileTypeMarker } from "./FileTypeMarker.js";
 
 export function SessionChangesPanel({ changes, onPreviewFile }: {
   changes: SessionFileChange[];
   onPreviewFile(path: string): void;
 }): React.JSX.Element {
+  const [query, setQuery] = useState("");
+  const visibleChanges = changes.filter((change) => change.path.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
   const totals = useMemo(() => sessionChangeTotals(changes), [changes]);
   const [expandedPaths, setExpandedPaths] = useState<ReadonlySet<string>>(() => new Set());
   const togglePath = (path: string): void => {
@@ -26,32 +25,13 @@ export function SessionChangesPanel({ changes, onPreviewFile }: {
     });
   };
 
-  if (changes.length === 0) {
-    return (
-      <div className="biny-session-changes-empty">
-        <Icon name="diff" size={22} />
-        <p className="biny-session-changes-empty-title">暂无文件变更</p>
-        <p className="biny-session-changes-empty-hint">Agent 修改过的文件会出现在这里</p>
-      </div>
-    );
-  }
-
   return (
     <div className="biny-session-changes">
       <header className="biny-session-changes-summary">
-        <span className="biny-session-changes-count">{totals.files} 个文件</span>
-        {totals.writes > 0 ? (
-          <span className="biny-session-changes-stat is-write">
-            <Icon name="file" size={12} />
-            {totals.writes} 次写入
-          </span>
-        ) : null}
-        {totals.edits > 0 ? (
-          <span className="biny-session-changes-stat is-edit">
-            <Icon name="edit" size={12} />
-            {totals.edits} 次编辑
-          </span>
-        ) : null}
+        <div className="biny-session-changes-heading">
+          <h2>更改的文件 <span>{totals.files}</span></h2>
+          <p>本次对话</p>
+        </div>
         {totals.add + totals.del > 0 ? (
           <span className="diff-stats biny-session-changes-diffstat">
             <span className="diff-add">+{totals.add}</span>
@@ -59,8 +39,16 @@ export function SessionChangesPanel({ changes, onPreviewFile }: {
           </span>
         ) : null}
       </header>
-      <div className="biny-session-changes-list">
-        {changes.map((change) => (
+      {changes.length > 0 ? <div className="inspector-subtoolbar"><input aria-label="筛选产物" placeholder="按文件路径筛选…" value={query} onChange={(event) => setQuery(event.target.value)} /><button type="button" onClick={() => setExpandedPaths(new Set(visibleChanges.map((change) => change.path)))}>展开</button><button type="button" onClick={() => setExpandedPaths(new Set())}>折叠</button></div> : null}
+      {changes.length === 0 ? (
+        <div className="biny-session-changes-empty">
+          <Icon name="file-diff" size={28} />
+          <p className="biny-session-changes-empty-title">还没有文件更改</p>
+          <p className="biny-session-changes-empty-hint">对话中写入或编辑的文件会显示在这里</p>
+        </div>
+      ) : <div className="biny-session-changes-list">
+        {visibleChanges.length === 0 ? <div className="inspector-empty">没有匹配的文件</div> : null}
+        {visibleChanges.map((change) => (
           <ChangeRow
             change={change}
             expanded={expandedPaths.has(change.path)}
@@ -69,7 +57,7 @@ export function SessionChangesPanel({ changes, onPreviewFile }: {
             onToggle={() => togglePath(change.path)}
           />
         ))}
-      </div>
+      </div>}
     </div>
   );
 }
@@ -95,11 +83,15 @@ function ChangeRow({ change, expanded, onToggle, onPreviewFile }: {
         <span aria-hidden="true" className={`biny-session-change-chevron${expanded ? " is-open" : ""}`}>
           <Icon name="chevron" size={12} />
         </span>
-        <FileTypeMarker name={name} />
-        <span className="biny-session-change-name">{name}</span>
-        {dir !== "" ? <span className="biny-session-change-dir">{dir}</span> : null}
+        <span className={`biny-session-change-icon is-${change.operation}`}>
+          <Icon name={change.operation === "write" ? "file-text" : "file-pen"} size={16} />
+        </span>
+        <span className="biny-session-change-label">
+          <span className="biny-session-change-name">{name}</span>
+          {dir !== "" ? <span className="biny-session-change-dir">{dir}</span> : null}
+        </span>
         <span className={`biny-session-change-chip${change.status === "writing" ? " is-active" : ""} is-${change.operation}`}>
-          {change.operation === "write" ? (change.changeCount > 1 ? `${change.changeCount} 次写入` : "写入") : (change.changeCount > 1 ? `${change.changeCount} 次编辑` : "编辑")}
+          {change.status === "writing" ? "处理中" : change.operation === "write" ? "写入" : "编辑"}
         </span>
         {change.add + change.del > 0 ? (
           <span className="diff-stats biny-session-change-stats">
@@ -110,7 +102,13 @@ function ChangeRow({ change, expanded, onToggle, onPreviewFile }: {
       </button>
       {expanded ? (
         <div className="biny-session-change-body">
-          <div className="biny-session-change-path" title={change.path}>{change.path}</div>
+          <div className="biny-session-change-detail-header">
+            <span>{change.changeCount > 1 ? `${change.changeCount} 次操作记录` : "操作记录"}</span>
+            <button onClick={() => onPreviewFile(change.path)} type="button">
+              <Icon name="eye" size={13} />
+              预览文件
+            </button>
+          </div>
           {hunks.length > 0 ? (
             <pre className="merged-edit-diff biny-session-change-diff"><code>
               {hunks.map((hunk, hunkIndex) => (
@@ -127,13 +125,7 @@ function ChangeRow({ change, expanded, onToggle, onPreviewFile }: {
               ))}
             </code></pre>
           ) : (
-            <div className="biny-session-change-preview">
-              <span>这个文件没有可展示的 diff</span>
-              <button onClick={() => onPreviewFile(change.path)} type="button">
-                <Icon name="eye" size={12} />
-                预览文件
-              </button>
-            </div>
+            <p className="biny-session-change-no-diff">没有差异记录，可预览文件当前内容。</p>
           )}
         </div>
       ) : null}

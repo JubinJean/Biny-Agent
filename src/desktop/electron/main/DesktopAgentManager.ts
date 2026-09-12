@@ -58,7 +58,8 @@ import {
   type InteractiveRuntimeHandle
 } from "../../../runtime/InteractiveAgentRuntime.js";
 import type { CommandRuntime } from "../../../runtime/CommandRuntime.js";
-import { SubagentTaskIncompleteError } from "../../../runtime/SubagentTaskManager.js";
+import { SubagentTaskIncompleteError, SubagentTaskManager } from "../../../runtime/SubagentTaskManager.js";
+import { buildInspectorTask, type InspectorMessage } from "../../inspectorTask.js";
 import {
   connectOrSpawnRuntimeHostWithOwnership,
   connectRuntimeHost,
@@ -214,6 +215,8 @@ export class DesktopAgentManager {
   private readonly runtimeErrors = new Map<string, string>();
   /** Renderer 用 undefined 表示空白草稿；主进程仍需记住它实际对应的 session runtime。 */
   private readonly draftSessionIds = new Map<string, string>();
+  /** 侧栏工作使用独立 session，不能占用或污染主对话。并发初始化共用一个 promise。 */
+  private readonly inspectorSessions = new Map<string, Promise<string>>();
   /** 同一发送/编辑操作键复用 Promise，避免 IPC 重入再次产生用户消息或分叉会话。 */
   private readonly idempotentPromptRequests = new Map<string, Promise<DesktopRunReceipt>>();
   /** fallback runtime 没有 RuntimeHostServer 的 task promise 表时，由 Desktop 自己保证幂等派发。 */
@@ -2176,6 +2179,26 @@ export class DesktopAgentManager {
       : undefined;
     if (!result) throw new Error(`未知命令：${input.trim().split(/\s+/, 1)[0] ?? input}`);
     return result;
+  }
+
+  async runInspectorCommand(projectId: string, owner: string, kind: "review" | "side-chat", input: string, history: InspectorMessage[]): Promise<DesktopSlashResult> {
+    await this.requireConfiguredModel(projectId);
+    const managed = await this.ensureRuntime(projectId);
+    const runtime = requireRemoteRuntime(managed.runtime);
+    const key = JSON.stringify([projectId, owner, kind]);
+    let session = this.inspectorSessions.get(key);
+    if (!session) {
+      session = runtime.ensureSession({ writeIntent: true, focus: false }).then((created) => created.sessionId);
+      this.inspectorSessions.set(key, session);
+      void session.catch(() => {
+        if (this.inspectorSessions.get(key) === session) this.inspectorSessions.delete(key);
+      });
+    }
+    const sessionId = await session;
+    const task = buildInspectorTask(kind, input, history, SubagentTaskManager.maxTaskCharacters);
+    const result = await runtime.executeCommand(`/inspect ${task}`, "desktop", sessionId);
+    if (!result) throw new Error("侧栏检查命令不可用。");
+    return { ...result, title: kind === "review" ? "审阅结果" : "Biny" };
   }
 
   async expandSkillCommand(projectId: string, input: string): Promise<string> {

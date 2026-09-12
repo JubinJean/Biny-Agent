@@ -13,6 +13,7 @@ import { currentTurnActivity, type TurnActivity } from "../chatModel.js";
 import type { TimelineTurn } from "../sessionTimeline.js";
 import { desktopWorktreeView } from "../worktreePresentation.js";
 import { Icon } from "./Icon.js";
+import { ThreadResourcesButton } from "./workspace/ThreadResourcesButton.js";
 import { MessageTimeline } from "./MessageTimeline.js";
 import { RuntimePanel } from "./RuntimePanel.js";
 import { RecipeReadyBanner } from "./RecipeReadyBanner.js";
@@ -39,8 +40,6 @@ interface WorkspaceProps {
   runtimeProjection?: DesktopRuntimeProjection;
   onOpenProject(): void;
   onPreviewFile(path: string): void;
-  inspectorOpen: boolean;
-  onToggleInspector(): void;
   runtimePanelOpen: boolean;
   onRuntimePanelOpenChange(open: boolean): void;
   thinking: boolean;
@@ -75,7 +74,7 @@ interface WorkspaceProps {
   onSubmitPrompt(prompt: string): void;
   /** 顶栏的项目/分支选择器胶囊（含菜单），由 App 装配；无项目时缺省。 */
   workspaceContext?: React.ReactNode;
-  /** 右缘常驻的工具 rail（文件/终端/审阅/侧聊/浏览器），由 App 装配；无项目时缺省。 */
+  /** 工具入口与按产出显示的右上角资源按钮相互独立。 */
   inspectorRail?: React.ReactNode;
   /** 项目行「新建任务」直达的空白草稿：跳过欢迎态，直接渲染空白聊天 + 底部 Composer。 */
   blankDraft?: boolean;
@@ -99,8 +98,6 @@ export function Workspace({
   runtimeProjection,
   onOpenProject,
   onPreviewFile,
-  inspectorOpen,
-  onToggleInspector,
   runtimePanelOpen,
   onRuntimePanelOpenChange,
   thinking,
@@ -181,7 +178,6 @@ export function Workspace({
   return (
     <div className="workspace biny-workspace biny-workspace-chat">
       <div className="biny-workspace-main">
-        {/* 后台运行面板从右上角盖下来时会覆盖 rail 区域，期间先收起 rail 避免互相遮挡。 */}
         {runtimePanelOpen ? null : inspectorRail}
         <header className="biny-chat-toolbar">
           <div className="biny-chat-drag-region">
@@ -209,17 +205,7 @@ export function Workspace({
             ) : null}
           </div>
           <div className="biny-chat-actions">
-            <button
-              aria-expanded={inspectorOpen}
-              aria-label={inspectorOpen ? "收起工作区工具" : "打开工作区工具"}
-              className={`biny-toolbar-button${inspectorOpen ? " is-active" : ""}`}
-              disabled={!projectId}
-              onClick={onToggleInspector}
-              title={inspectorOpen ? "收起工作区工具" : "打开工作区工具"}
-              type="button"
-            >
-              <Icon name="panel-right" size={15} />
-            </button>
+            <ThreadResourcesButton key={`${projectId}:${sessionId}`} turns={turns} onPreviewFile={onPreviewFile} onOpenExternal={onOpenExternal} />
           </div>
         </header>
         <RuntimePanel

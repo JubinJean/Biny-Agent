@@ -1,0 +1,143 @@
+/* 工作区工具采用紧凑的固定工具栏、独立滚动正文与底部输入区。 */
+.biny-inspector-tabs { position: relative; overflow: hidden; }
+.inspector-tab-measure { position: absolute; display: flex; gap: 2px; width: max-content; visibility: hidden; pointer-events: none; }
+.inspector-tab-measure > span { display: inline-flex; align-items: center; gap: 5px; padding: 0 8px; font-size: 12px; white-space: nowrap; }
+.biny-inspector-tab { height: 30px; border-radius: 6px; }
+.biny-inspector-tab.is-compact { width: 34px; }
+.biny-inspector-view-content[hidden], .inspector-terminal-screen[hidden] { display: none; }
+.biny-inspector-view-content { animation: none; overflow: hidden; }
+.desktop-inspector button:focus-visible, .desktop-inspector [role="separator"]:focus-visible { outline: 2px solid var(--biny-focus); outline-offset: -2px; }
+.inspector-subtoolbar { display: flex; min-height: 36px; flex: 0 0 auto; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--biny-border); color: var(--biny-text-secondary); font-size: 12px; }
+.inspector-subtoolbar > span { flex: 1; }
+.inspector-subtoolbar button, .inspector-file-filter button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 28px; min-height: 28px; padding: 3px 6px; border: 0; border-radius: 5px; color: inherit; background: transparent; cursor: pointer; white-space: nowrap; }
+.inspector-subtoolbar button:hover, .inspector-subtoolbar button[aria-pressed="true"] { color: var(--biny-text); background: var(--biny-surface-hover); }
+.inspector-subtoolbar button:disabled { opacity: .4; cursor: default; }
+.inspector-subtoolbar input { width: 0; flex: 1; min-width: 0; padding: 5px; border: 0; background: transparent; color: var(--biny-text); font: inherit; }
+.biny-root .file-browser-tree { padding-top: 0; background: var(--biny-surface); }
+.file-explorer-tools { position: sticky; top: 0; z-index: 2; background: var(--biny-surface); }
+.inspector-file-filter { display: flex; align-items: center; gap: 5px; margin: 6px 8px; padding: 0 5px; border: 1px solid var(--biny-border); border-radius: 6px; color: var(--biny-text-secondary); }
+.inspector-file-filter:focus-within { border-color: var(--biny-focus); }
+.inspector-file-filter input { min-width: 0; width: 100%; padding: 6px 0; border: 0; outline: none; background: transparent; color: var(--biny-text); font: inherit; font-size: 12px; }
+.biny-root .file-browser-current-path { display: flex; align-items: center; gap: 7px; font-size: 11px; }
+.file-browser-current-path > svg, .file-browser-current-path > button { flex-shrink: 0; }
+.file-browser-current-path button { display: grid; place-items: center; width: 28px; height: 28px; border: 0; border-radius: 5px; background: transparent; color: inherit; }
+.file-tree-row { min-height: 29px; }
+.file-tree-row.is-selected { background: var(--biny-surface-selected); color: var(--biny-text); }
+.inspector-review, .inspector-sidechat, .inspector-terminals { display: flex; flex-direction: column; width: 100%; height: 100%; min-height: 0; background: var(--biny-surface); }
+.inspector-result-scroll { flex: 1; min-height: 0; overflow: auto; padding: 14px; scrollbar-gutter: stable; }
+.inspector-result-scroll .markdown-body { font-size: 13px; line-height: 1.65; overflow-wrap: anywhere; }
+.inspector-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; min-height: 180px; flex: 1; padding: 24px; color: var(--biny-text-secondary); text-align: center; font-size: 13px; }
+.inspector-empty p { margin: 4px 0; color: var(--biny-text); }
+.inspector-empty small { line-height: 1.7; font-size: 12px; }
+.inspector-empty button, .inspector-review-scope button { padding: 6px 12px; border: 1px solid var(--biny-border); border-radius: 6px; background: var(--biny-surface-elevated); color: var(--biny-text); cursor: pointer; }
+.inspector-review-scope { padding: 12px; border-bottom: 1px solid var(--biny-border); }
+.inspector-review-scope label { display: block; margin-bottom: 8px; font-size: 12px; color: var(--biny-text-secondary); }
+.inspector-review-scope textarea, .inspector-chat-composer textarea { display: block; width: 100%; box-sizing: border-box; resize: vertical; min-height: 56px; max-height: 180px; padding: 8px; border: 1px solid var(--biny-border); border-radius: 6px; background: var(--biny-surface); color: var(--biny-text); font: inherit; font-size: 13px; line-height: 1.5; }
+.inspector-review-scope > div, .inspector-chat-composer > div { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
+.inspector-review-scope > div > span, .inspector-chat-composer small { font-size: 11px; color: var(--biny-text-secondary); }
+.inspector-progress { display: flex; align-items: center; gap: 8px; padding: 12px 0; color: var(--biny-text-secondary); font-size: 12px; }
+.inspector-error { padding: 10px 12px; color: var(--biny-danger); font-size: 12px; line-height: 1.6; overflow-wrap: anywhere; }
+.inspector-error button { display: block; margin-top: 8px; color: var(--biny-text); }
+.inspector-chat-message { margin-bottom: 18px; }
+.inspector-chat-message.is-user { padding: 10px 12px; border-radius: 8px; background: var(--biny-surface-elevated); }
+.inspector-chat-author { display: flex; align-items: center; justify-content: space-between; min-height: 24px; margin-bottom: 4px; font-size: 11px; color: var(--biny-text-secondary); }
+.inspector-chat-composer { flex-shrink: 0; padding: 12px; border-top: 1px solid var(--biny-border); }
+.inspector-chat-composer textarea { resize: none; border: 0; padding: 2px; }
+.inspector-chat-composer button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 50%; background: var(--biny-text); color: var(--biny-surface); }
+.inspector-chat-composer button:disabled { opacity: .3; }
+.inspector-terminal-tabs { display: flex; flex: 1; min-width: 0; overflow-x: auto; gap: 4px; }
+.inspector-terminal-tab { display: flex; flex-shrink: 0; align-items: center; border-radius: 5px; }
+.inspector-terminal-tab.is-active { background: var(--biny-surface-selected); color: var(--biny-text); }
+.inspector-terminal-screen { display: flex; flex: 1; min-height: 0; }
+.inspector-terminal-screen > .terminal-view { flex: 1; min-width: 0; }
+.inspector-document-preview { display: flex; flex-direction: column; min-height: 100%; height: 100%; }
+.inspector-document-preview > iframe { flex: 1; min-height: 200px; width: 100%; border: 0; background: white; }
+.inspector-document-preview > .file-preview-document { min-height: 0; overflow: auto; }
+.inspector-result-scroll .markdown-body p { margin: 0 0 12px; }
+.inspector-result-scroll .markdown-body h1, .inspector-result-scroll .markdown-body h2, .inspector-result-scroll .markdown-body h3 { margin: 20px 0 10px; line-height: 1.4; }
+.inspector-result-scroll .markdown-body h1 { font-size: 21px; }
+.inspector-result-scroll .markdown-body h2 { font-size: 18px; }
+.inspector-result-scroll .markdown-body h3 { font-size: 15px; }
+.inspector-result-scroll .markdown-body ul, .inspector-result-scroll .markdown-body ol { margin: 8px 0 14px; padding-left: 22px; }
+.inspector-result-scroll .markdown-body li { margin: 5px 0; }
+
+/* 右侧工具区采用独立 UI 字号，聊天字号只影响正文，不再放大标签和文件标题。 */
+.biny-root .desktop-inspector {
+  --font-scale: 1;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.biny-root .desktop-inspector-header { min-height: 48px; padding: 0 8px; gap: 6px; }
+.biny-root .biny-inspector-tab, .inspector-tab-measure > span { gap: 6px; padding: 6px 10px; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 12px; font-weight: 500; line-height: 18px; letter-spacing: 0; }
+.biny-root .biny-inspector-tab { height: 30px; border-radius: 6px; }
+.biny-root .biny-inspector-tab.is-compact { width: 34px; padding: 6px 8px; }
+.biny-inspector-tab svg { flex-shrink: 0; }
+.biny-inspector-tab svg * { stroke-width: 1.75; }
+.biny-root .desktop-inspector .file-tree-row { height: 28px; min-height: 28px; font-size: 12px; }
+.biny-root .desktop-inspector .biny-session-changes-heading h2 { font-size: 14px; font-weight: 600; }
+.biny-root .desktop-inspector .biny-session-changes-heading p { font-size: 12px; }
+.inspector-utility-panel { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.inspector-utility-heading { padding: 12px 14px; border-bottom: 1px solid var(--biny-border); }
+.inspector-utility-heading h2 { margin: 0; font-size: 14px; font-weight: 600; }
+.inspector-utility-heading p { margin: 4px 0 0; font-size: 12px; color: var(--biny-text-secondary); }
+.inspector-muted { margin: 0; color: var(--biny-text-secondary); font-size: 13px; }
+.inspector-tool-row { padding: 9px 0; border-bottom: 1px solid var(--biny-border); }
+.inspector-tool-row summary { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 12px; }
+.inspector-tool-row summary > span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.inspector-tool-row small { color: var(--biny-text-secondary); }
+.inspector-tool-row pre, .inspector-commit-command pre { overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11px/1.6 var(--font-mono); }
+.inspector-browser-form { display: flex; flex-direction: column; gap: 10px; padding: 14px; }
+.inspector-browser-form input, .inspector-commit-message textarea { padding: 8px 10px; border: 1px solid var(--biny-border); border-radius: 6px; background: var(--biny-surface); color: var(--biny-text); font: inherit; }
+.inspector-browser-form button, .inspector-open-terminal { display: inline-flex; justify-content: center; align-items: center; align-self: flex-start; gap: 6px; padding: 6px 12px; border: 1px solid var(--biny-border); border-radius: 6px; color: var(--biny-text); background: var(--biny-surface-elevated); font: inherit; cursor: pointer; }
+.inspector-commit-file { display: flex; align-items: center; gap: 8px; padding: 6px 0; font-size: 12px; overflow-wrap: anywhere; }
+.inspector-commit-message { display: flex; flex-direction: column; gap: 8px; margin: 16px 0; font-size: 12px; }
+.inspector-commit-message textarea { resize: vertical; min-height: 64px; }
+
+/* 三列共享真实布局轨道，详情栏不得通过定位或最小内容宽度盖住聊天。 */
+.biny-root .biny-app-shell { display: grid; grid-template-columns: var(--biny-sidebar-animated-flow-width, 0px) minmax(0, 1fr) var(--biny-inspector-animated-flow-width, 0px); }
+.biny-root .biny-sidebar-block { grid-column: 1; grid-row: 1; }
+.biny-root .biny-content-shell { grid-column: 2; grid-row: 1; min-width: 0; width: auto; }
+.biny-root .biny-app-shell > .desktop-inspector-wrap { grid-column: 3; grid-row: 1; position: relative; inset: auto; width: 100%; max-width: none; min-width: 0; transform: none; }
+.biny-root .biny-workspace-chat .biny-workspace-main { --biny-chat-content-width: calc(100% - 32px); width: 100%; min-width: 0; flex: 1 1 auto; }
+/* 收起态工具条占用独立的右侧留白，不覆盖右对齐消息；输入框仍使用完整宽度。 */
+.biny-root .biny-workspace-main:has(> .biny-inspector-rail) .biny-chat-scroll { padding-right: 48px; }
+.biny-root .biny-chat-scroll-content, .biny-root .message-timeline, .biny-root .assistant-message { min-width: 0; max-width: 100%; overflow-wrap: anywhere; }
+
+/* 产出菜单是临时顶层浮层，不参与详情栏的宽度与打开状态。 */
+.biny-resource-trigger { position: relative; width: 28px; height: 28px; opacity: .75; }
+.biny-resource-trigger:hover, .biny-resource-trigger.is-active { opacity: 1; background: var(--biny-surface-hover); }
+.biny-resource-count { position: absolute; right: -2px; top: -2px; min-width: 14px; padding: 0 3px; border-radius: 9px; background: var(--biny-focus); color: var(--biny-surface); font: 600 9px/14px -apple-system, BlinkMacSystemFont, sans-serif; }
+.biny-thread-resources { position: fixed; inset: 52px calc(var(--biny-inspector-animated-flow-width, 0px) + 12px) auto auto; margin: 0; padding: 6px; width: min(288px, calc(100vw - 24px)); box-sizing: border-box; overflow: visible; border: 1px solid var(--biny-border); border-radius: 12px; background: var(--biny-surface-elevated); color: var(--biny-text); box-shadow: 0 8px 28px var(--biny-shadow-heavy); font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; -webkit-app-region: no-drag; }
+.biny-thread-resources::backdrop { background: transparent; }
+.biny-resource-scroll { max-height: 70vh; overflow-y: auto; }
+.biny-thread-resources h2 { margin: 0; padding: 8px 8px 4px; color: var(--biny-text-secondary); font-size: 11px; font-weight: 500; letter-spacing: .04em; }
+.biny-resource-row { display: flex; align-items: center; gap: 10px; width: 100%; min-width: 0; padding: 6px 8px; border: 0; border-radius: 6px; background: transparent; color: inherit; text-align: left; font: inherit; cursor: pointer; }
+.biny-resource-row:hover, .biny-resource-row[aria-expanded="true"], .biny-resource-row:focus-visible { background: var(--biny-surface-selected); }
+.biny-resource-icon { display: grid; place-items: center; flex: 0 0 28px; height: 28px; border-radius: 6px; background: var(--biny-surface-hover); color: var(--biny-focus); }
+.biny-resource-label { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 2px; }
+.biny-resource-label strong, .biny-resource-label small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.biny-resource-label strong { font-size: 13px; font-weight: 500; }
+.biny-resource-label small { color: var(--biny-text-secondary); font-size: 12px; }
+.biny-resource-more { width: 100%; padding: 6px 8px 6px 46px; border: 0; border-radius: 6px; background: transparent; color: var(--biny-text-secondary); text-align: left; font: inherit; font-size: 12px; cursor: pointer; }
+.biny-resource-more:hover { background: var(--biny-surface-hover); }
+.biny-resource-actions { position: absolute; right: calc(100% + 6px); top: 30px; width: 190px; padding: 4px; border: 1px solid var(--biny-border); border-radius: 8px; background: var(--biny-surface-elevated); box-shadow: 0 4px 16px var(--biny-shadow-heavy); }
+.biny-resource-actions button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; border: 0; border-radius: 5px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.biny-resource-actions button:hover { background: var(--biny-surface-hover); }
+.biny-resource-actions small { display: block; padding: 8px; color: var(--biny-danger); }
+.biny-output-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(256px, 100%), 1fr)); gap: 8px; margin-top: 16px; min-width: 0; }
+.biny-root .biny-output-cards .markdown-file-link { display: flex; align-items: center; gap: 10px; width: 100%; max-width: none; min-width: 0; box-sizing: border-box; margin: 0; padding: 8px 10px; border: 1px solid var(--biny-border); border-radius: 10px; background: transparent; text-align: left; font: 13px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+.biny-root .biny-output-cards .markdown-file-link:hover { background: var(--biny-surface-hover); }
+.biny-output-cards .markdown-file-link-icon { display: grid; place-items: center; flex: 0 0 32px; height: 32px; border-radius: 6px; background: var(--biny-surface-hover); }
+.markdown-file-link-main { min-width: 0; flex: 1; }
+.markdown-file-link-title { display: flex; min-width: 0; align-items: center; gap: 6px; }
+.markdown-file-link-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.biny-output-location { flex-shrink: 0; padding: 0 5px; border: 1px solid var(--biny-border); border-radius: 8px; color: var(--biny-text-secondary); font-size: 9px; }
+.biny-output-location::before { content: ""; display: inline-block; width: 4px; height: 4px; margin-right: 4px; border-radius: 50%; background: var(--biny-focus); }
+.biny-output-cards .markdown-file-link-dir { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--biny-text-secondary); font-size: 12px; }
+@media (max-width: 720px) { .biny-resource-actions { position: static; width: auto; margin-top: 6px; box-shadow: none; } }
+
+/* 服务商总开关与连接测试同处标题区，反馈就地显示。 */
+.provider-master-toggle { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; margin-left: auto; font-size: 12px; color: var(--biny-text-secondary); }
+.provider-master-toggle small { flex-basis: 100%; max-width: 180px; color: var(--biny-danger); line-height: 1.5; }
