@@ -103,6 +103,7 @@ export interface TranscriptState {
 }
 
 export interface TuiPermissionRequest {
+  canRemember?: boolean;
   // permission 对应 agent loop 发出的单个待确认工具调用。
   tool: string;
   title: string;

@@ -107,6 +107,7 @@ export function isTerminalRunEvent(event: AgentHostEvent | undefined): event is 
 }
 
 export interface AgentPermissionEventRequest {
+  canRemember?: boolean;
   toolCallId: string;
   tool: string;
   title: string;

@@ -1480,14 +1480,14 @@ function testPermissionDialogRequiresFullYes(): void {
   const dialog = new PermissionDialog(request, (choice, denialReason) => answers.push({ choice, denialReason }), () => { detailsToggled += 1; });
 
   const rendered = plainLines(dialog.render(60)).join("\n");
-  assert.match(rendered, /Command execution request/u);
-  assert.match(rendered, /Critical or sensitive operation/u);
-  assert.match(rendered, /Type yes, then press enter/u);
+  assert.match(rendered, /允许运行此命令/u);
+  assert.match(rendered, /关键或敏感内容/u);
+  assert.match(rendered, /输入 yes，再按 Enter/u);
 
   // 强确认下直接回车不通过，要先输入完整 yes。
   dialog.handleInput("\r");
   assert.deepEqual(answers, []);
-  assert.match(plainLines(dialog.render(60)).join("\n"), /must be the full word yes/u);
+  assert.match(plainLines(dialog.render(60)).join("\n"), /请输入完整的 yes/u);
   for (const char of "yes") dialog.handleInput(char);
   dialog.handleInput("\r");
   assert.deepEqual(answers, [{ choice: "allow_once", denialReason: undefined }]);
@@ -1524,9 +1524,9 @@ function testPermissionDialogRequiresFullYes(): void {
     12
   );
   const compactText = plainLines(compactDialog.render(80)).join("\n");
-  assert.match(compactText, /Type yes, then press enter/u);
-  assert.match(compactText, /enter confirm/u);
-  assert.match(compactText, /details hidden/u);
+  assert.match(compactText, /输入 yes，再按 Enter/u);
+  assert.match(compactText, /Enter 确认/u);
+  assert.match(compactText, /部分详情已收起/u);
 
   const fileBody = "secret implementation detail";
   const fileDialog = new PermissionDialog(

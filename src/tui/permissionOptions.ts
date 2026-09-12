@@ -28,11 +28,12 @@ export const permissionOptions: PermissionOption[] = [
   { label: "拒绝", description: "不执行本次操作", choice: "deny", dangerous: true },
   { label: "拒绝并说明理由", description: "拒绝本次操作，并把原因交给 Agent", choice: "deny_with_reason", dangerous: true },
   { label: "允许一次", description: "只允许本次操作", choice: "allow_once" },
-  { label: "始终允许", description: "本会话后续同类操作直接执行", choice: "allow_always" }
+  { label: "本会话允许", description: "记住本会话相同命令、路径或工具的授权", choice: "allow_always" }
 ];
 
-export function movePermissionSelection(currentIndex: number, direction: -1 | 1): number {
-  return (currentIndex + direction + permissionOptions.length) % permissionOptions.length;
+export function movePermissionSelection(currentIndex: number, direction: -1 | 1, canRemember = true): number {
+  const count = canRemember ? permissionOptions.length : permissionOptions.length - 1;
+  return (currentIndex + direction + count) % count;
 }
 
 export function permissionChoiceAt(index: number): PermissionChoice {

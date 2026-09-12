@@ -59,8 +59,19 @@ function testEvaluationOrder(): void {
 
   manager.setMode("full-access");
   const critical = manager.evaluate({ ...baseRequest, riskLevel: "critical", targetPath: ".zshrc" });
-  assert.equal(critical.decision, "ask");
-  assert.match(critical.reason, /Critical operation/);
+  assert.equal(critical.decision, "allow");
+  const destructive = analyzePermissionRequest({ toolName: "Bash", args: { command: "rm -rf recipe-state && ls -la" }, sessionId: "test-session", projectRoot: "/workspace" });
+  assert.equal(destructive.riskLevel, "critical");
+  assert.equal(manager.evaluate(destructive).decision, "allow");
+  for (const mode of ["ask", "auto"] as const) {
+    manager.setMode(mode);
+    assert.equal(manager.evaluate(destructive).decision, "ask");
+    assert.equal(manager.evaluate({ ...baseRequest, riskLevel: "critical" }).decision, "ask", "关键操作仍优先于允许列表");
+  }
+  manager.setMode("read-only");
+  assert.equal(manager.evaluate(destructive).decision, "deny");
+  manager.setMode("full-access");
+  assert.equal(manager.evaluate(destructive).decision, "allow");
 
   const readOnly = new PermissionManager({ mode: "ask", allowTools: [], denyPaths: [] });
   assert.equal(readOnly.evaluate({ ...baseRequest, toolName: "Read", actionType: "read", riskLevel: "low" }).decision, "allow");

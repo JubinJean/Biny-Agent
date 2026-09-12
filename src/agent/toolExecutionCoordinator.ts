@@ -484,6 +484,7 @@ export class ToolExecutionCoordinator {
                 return result;
               }
               if (gatedEvaluation.decision === "allow") return { approved: true as const, scope: "once" as const };
+              permissionRequest.canRemember = gatedEvaluation.canRemember;
               const result = this.context.confirmPermission
                 ? await this.context.confirmPermission(permissionRequest)
                 : await confirmPermissionRequest(permissionRequest, signal);

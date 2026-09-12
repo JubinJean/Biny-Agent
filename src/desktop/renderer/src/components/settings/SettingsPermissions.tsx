@@ -11,7 +11,7 @@ const permissionOptions: Array<{ mode: PermissionMode; label: string; detail: st
   { mode: "ask", label: "每次询问", detail: "每次执行工具前询问。" },
   { mode: "read-only", label: "只读", detail: "允许读取，写入和执行会拦截。" },
   { mode: "auto", label: "自动批准", detail: "白名单内自动批准，其余询问。" },
-  { mode: "full-access", label: "完全访问", detail: "工具直接执行，不再询问。" }
+  { mode: "full-access", label: "完全访问", detail: "包括关键操作在内的工具直接执行；拒绝路径仍然生效。" }
 ];
 
 export function SettingsPermissions(): React.JSX.Element {
@@ -52,9 +52,10 @@ export function SettingsPermissions(): React.JSX.Element {
       <section id="agent-permission-safety" tabIndex={-1}>
         <h3>安全边界</h3>
         <SettingsSwitch
-          checked={permission.criticalAlwaysAsk}
-          detail="删除、覆盖等高影响操作始终询问。"
-          label="关键操作始终询问"
+          checked={permission.mode !== "full-access" && permission.criticalAlwaysAsk}
+          disabled={permission.mode === "full-access" || permission.mode === "read-only"}
+          detail={permission.mode === "full-access" ? "完全访问下不询问；切换回其他模式后恢复原设置。" : permission.mode === "read-only" ? "只读模式直接拦截写入和执行。" : "递归强制删除、提权、强制推送等关键操作必须确认，即使已在允许列表中。"}
+          label="关键操作额外确认"
           onChange={(criticalAlwaysAsk) => update({ criticalAlwaysAsk })}
         />
       </section>

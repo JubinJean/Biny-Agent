@@ -5,6 +5,7 @@
  * 顶部一条分隔线加标题，中间是内容，底部是键位提示。键盘输入由终端框架的
  * 焦点机制直接投递给组件的 `handleInput`。
  */
+import { permissionPresentation } from "../../permission/presentation.js";
 import {
   Container,
   matchesKey,
@@ -146,11 +147,11 @@ export class PermissionDialog extends Container {
   ) {
     super();
     this.body = new Text("", 1, 0);
-    this.addChild(new DialogFrame("Permission required", "", "top"));
+    this.addChild(new DialogFrame("需要你的确认", "", "top"));
     this.addChild(this.body);
     this.addChild(new DialogFrame(
       "",
-      "↑↓ choose · enter confirm · ctrl+o details · esc reject",
+      "↑↓ 选择 · Enter 确认 · Ctrl+O 详情 · Esc 拒绝",
       "bottom"
     ));
     this.refresh();
@@ -173,12 +174,12 @@ export class PermissionDialog extends Container {
 
   handleInput(data: string): void {
     if (matchesKey(data, "up")) {
-      this.selectedIndex = movePermissionSelection(this.selectedIndex, -1);
+      this.selectedIndex = movePermissionSelection(this.selectedIndex, -1, this.request.canRemember !== false);
       this.refresh();
       return;
     }
     if (matchesKey(data, "down")) {
-      this.selectedIndex = movePermissionSelection(this.selectedIndex, 1);
+      this.selectedIndex = movePermissionSelection(this.selectedIndex, 1, this.request.canRemember !== false);
       this.refresh();
       return;
     }
@@ -222,16 +223,21 @@ export class PermissionDialog extends Container {
 
   private refresh(): void {
     const details: string[] = [];
-    if (this.request.details) details.push(...this.request.details.split(/\r?\n/u));
+    const view = permissionPresentation(this.request);
+    if (this.request.command) details.push(this.request.command);
+    if (this.request.targetPath && this.request.tool !== "move_file") details.push(this.request.targetPath);
+    if (view.details) details.push(...view.details.split(/\r?\n/u));
+    if (view.reason) details.push(view.reason);
     if (this.detailsExpanded && this.request.preview) details.push(...this.request.preview.split(/\r?\n/u));
 
     const actionLines: string[] = [];
     const selectedChoice = permissionChoiceAt(this.selectedIndex);
     if (this.request.riskLevel === "critical") {
-      actionLines.push(theme.fg("error", "Critical or sensitive operation: review before accepting."));
+      actionLines.push(theme.fg("error", this.request.canRemember === false ? "此操作按设置需要逐次确认。" : "此操作涉及关键或敏感内容，请核对后确认。"));
     }
     actionLines.push("");
     permissionOptions.forEach((option, index) => {
+      if (option.choice === "allow_always" && this.request.canRemember === false) return;
       const selected = index === this.selectedIndex;
       const prefix = selected ? "→ " : "  ";
       const label = `${prefix}${String(index + 1)}. ${option.label}`;
@@ -242,24 +248,24 @@ export class PermissionDialog extends Container {
     });
     if (selectedChoice === "deny_with_reason") {
       actionLines.push("");
-      actionLines.push(theme.fg("warning", "Enter a reason, then press enter, to reject with context."));
+      actionLines.push(theme.fg("warning", "输入拒绝理由，再按 Enter 提交。"));
       actionLines.push(`${theme.fg("muted", "> ")}${this.denialReason}${theme.fg("warning", "█")}`);
       if (this.denialReasonAttempted && !this.denialReason.trim()) {
-        actionLines.push(theme.fg("error", "A denial reason is required."));
+        actionLines.push(theme.fg("error", "请填写拒绝理由。"));
       }
     } else if (this.request.requireFullYes && (selectedChoice === "allow_once" || selectedChoice === "allow_always")) {
       actionLines.push("");
-      actionLines.push(theme.fg("warning", "Type yes, then press enter, to approve the selected action."));
+      actionLines.push(theme.fg("warning", "输入 yes，再按 Enter 批准。"));
       actionLines.push(`${theme.fg("muted", "> ")}${this.confirmation}${theme.fg("warning", "█")}`);
       if (this.confirmationAttempted) {
-        actionLines.push(theme.fg("error", "Confirmation must be the full word yes."));
+        actionLines.push(theme.fg("error", "请输入完整的 yes。"));
       }
     }
 
     const detailBudget = Math.max(0, this.maxBodyLines - 1 - actionLines.length);
     const visibleDetails = truncatePermissionDetails(details, detailBudget);
     this.body.setText([
-      theme.fg("warning", theme.bold(this.request.title)),
+      theme.fg("warning", theme.bold(view.title)),
       ...visibleDetails.map((line) => theme.fg("muted", line)),
       ...actionLines
     ].join("\n"));
@@ -270,7 +276,7 @@ export class PermissionDialog extends Container {
 function truncatePermissionDetails(details: string[], maxLines: number): string[] {
   if (details.length <= maxLines) return details;
   if (maxLines <= 0) return [];
-  const marker = theme.fg("dim", "… details hidden; press ctrl+o to expand");
+  const marker = theme.fg("dim", "… 部分详情已收起，按 Ctrl+O 展开");
   if (maxLines === 1) return [marker];
   return [...details.slice(0, maxLines - 1), marker];
 }

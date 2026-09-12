@@ -41,6 +41,8 @@ export interface PermissionRequestContext {
 }
 
 export interface PermissionPrompt extends PermissionRequestContext {
+  /** 关键操作要求逐次批准时，界面不提供会话授权。 */
+  canRemember?: boolean;
   toolCallId: string;
   tool: string;
   title: string;
@@ -51,6 +53,7 @@ export interface PermissionPrompt extends PermissionRequestContext {
 }
 
 export interface PermissionEvaluation {
+  canRemember?: boolean;
   decision: PermissionDecision;
   reason: string;
 }
@@ -132,8 +135,13 @@ export class PermissionManager {
       return { decision: "deny", reason: "Permission mode is read only." };
     }
 
+    // 完全访问明确跳过交互批准；显式拒绝路径仍由上方规则拦截。
+    if (this.mode === "full-access") {
+      return { decision: "allow", reason: "Allowed by full access mode." };
+    }
+
     if (request.riskLevel === "critical" && this.policy.criticalAlwaysAsk) {
-      return { decision: "ask", reason: request.reason ? `Critical operation: ${request.reason}` : "Critical operation requires confirmation." };
+      return { decision: "ask", canRemember: false, reason: request.reason ? `Critical operation: ${request.reason}` : "Critical operation requires confirmation." };
     }
 
     if (isAllowedBySession(request, this.sessionAllowedTools, this.sessionAllowedPaths, this.sessionAllowedCommands, this.sessionAllowedActions)) {
@@ -146,10 +154,6 @@ export class PermissionManager {
 
     if (request.targetPath && matchingPathRule(request.targetPath, this.policy.allowPaths)) {
       return { decision: "allow", reason: `Allowed by project path policy: ${request.targetPath}` };
-    }
-
-    if (this.mode === "full-access") {
-      return { decision: "allow", reason: "Allowed by full access mode." };
     }
 
     if (request.actionType === "read" && request.riskLevel === "low") {

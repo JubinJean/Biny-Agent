@@ -6,6 +6,7 @@
  *
  * 单实例锁：第二个实例直接退出，因为多个进程同时读写同一份桌面状态和 session 会互相覆盖。
  */
+import { permissionPresentation } from "../../../permission/presentation.js";
 import path from "node:path";
 import { app, BrowserWindow, dialog, globalShortcut, nativeImage, net, Notification, shell } from "electron";
 import type { DesktopBootstrap, DesktopSessionHandoff } from "../../protocol.js";
@@ -129,7 +130,7 @@ async function startDesktopApplication(): Promise<void> {
     if (event?.type === "permission.requested" && (!mainWindow || !mainWindow.isFocused() || !mainWindow.isVisible()) && Notification.isSupported()) {
       new Notification({
         title: "Biny 等待权限",
-        body: event.request.changeSummary ?? event.request.title,
+        body: `${permissionPresentation(event.request).title} · ${event.request.tool}`,
         silent: true
       }).show();
     }

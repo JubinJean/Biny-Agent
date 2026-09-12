@@ -87,7 +87,7 @@ function formatPermissionLevels(status: PermissionStatus): string {
     ["read-only", "Read Only", "Only read/list/grep style tools can run."],
     ["ask", "Ask Before Write", "Ask before writes, shell commands, deletes, installs and other risky operations."],
     ["auto", "Auto Allow Safe Tools", "Auto-allow low-risk safe tools; ask for risky operations."],
-    ["full-access", "Full Access", "Allow normal write and shell operations; critical operations still ask."]
+    ["full-access", "Full Access", "Run tools without approval, including critical operations; denied paths still apply."]
   ];
   return [
     "Permission levels:",

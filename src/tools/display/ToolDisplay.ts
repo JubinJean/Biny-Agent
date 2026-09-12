@@ -215,9 +215,9 @@ function formatFileContentPreview(filePath: string, content: string, maxLines: n
   const lines = normalized ? normalized.split("\n") : [];
   const shown = lines.slice(0, maxLines);
   return [
-    `Write ${filePath}`,
+    `内容：${filePath}`,
     ...shown.map((line, index) => `${String(index + 1).padStart(4, " ")}   ${line}`),
-    ...(lines.length > shown.length ? [`     … ${String(lines.length - shown.length)} more line${lines.length - shown.length > 1 ? "s" : ""} hidden`] : [])
+    ...(lines.length > shown.length ? [`     … ${String(lines.length - shown.length)} 行未展示`] : [])
   ].join("\n");
 }
 
@@ -252,8 +252,8 @@ function formatUnifiedDiffPreview(filePath: string, diff: string, maxLines: numb
   }
 
   return [
-    `Edit ${filePath}`,
+    `变更：${filePath}`,
     ...body.slice(0, maxLines),
-    ...(body.length > maxLines ? [`     … ${String(body.length - maxLines)} more line${body.length - maxLines > 1 ? "s" : ""} hidden`] : [])
+    ...(body.length > maxLines ? [`     … ${String(body.length - maxLines)} 行未展示`] : [])
   ].join("\n");
 }
