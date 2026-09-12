@@ -8,6 +8,7 @@ import assert from "node:assert/strict";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
+  hasSubmittedUserMessage,
   buildUsageDetailRows,
   classifyTool,
   currentTurnActivity,
@@ -394,12 +395,12 @@ test("实时 run.completed 的 finishReason 进轮次", () => {
 });
 
 test("currentTurnActivity 无轮次或已落定时回到「思考中」", () => {
-  assert.deepEqual(currentTurnActivity(undefined), { label: "思考中", orbState: "solving" });
+  assert.deepEqual(currentTurnActivity(undefined), { label: "思考中" });
   const timeline = buildSessionTimeline([], [
     { sessionId: "s1", runId: "r1", type: "message.user", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", content: "你好" },
     { sessionId: "s1", runId: "r1", type: "run.completed", timestamp: "2026-05-15T10:00:02.000Z", durationMs: 2_000 },
   ]);
-  assert.deepEqual(currentTurnActivity(timeline[0]), { label: "思考中", orbState: "solving" });
+  assert.deepEqual(currentTurnActivity(timeline[0]), { label: "思考中" });
 });
 
 test("currentTurnActivity 无输出且无运行中工具时是「思考中」", () => {
@@ -407,33 +408,33 @@ test("currentTurnActivity 无输出且无运行中工具时是「思考中」", 
     { sessionId: "s1", runId: "r1", type: "message.user", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", content: "你好" },
     { sessionId: "s1", runId: "r1", type: "run.started", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", input: "你好", mode: "normal", model: { alias: "a", provider: "p", label: "p/m", reasoning: "" }, skills: [] },
   ]);
-  assert.deepEqual(currentTurnActivity(timeline[0]), { label: "思考中", orbState: "solving" });
+  assert.deepEqual(currentTurnActivity(timeline[0]), { label: "思考中" });
 });
 
-test("currentTurnActivity 从运行中的工具派生真实活动标签与 orb 动画", () => {
+test("currentTurnActivity 从运行中的工具派生真实活动标签", () => {
   const build = (tool: TimelineTool["tool"], args: unknown, display: TimelineTool["display"]): TimelineTurn | undefined => buildSessionTimeline([], [
     { sessionId: "s1", runId: "r1", type: "message.user", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", content: "你好" },
     { sessionId: "s1", runId: "r1", type: "tool.started", timestamp: "2026-05-15T10:00:01.000Z", toolCallId: "t1", tool, args, display },
   ])[0];
   assert.deepEqual(
     currentTurnActivity(build("Bash", { command: "ls" }, { kind: "command", command: "ls", cwd: "/w" })),
-    { label: "正在运行命令", orbState: "working" },
+    { label: "正在运行 Bash" },
   );
   assert.deepEqual(
     currentTurnActivity(build("Read", { path: "a.ts" }, { kind: "file_io", operation: "read", path: "a.ts" })),
-    { label: "正在读取文件", orbState: "searching" },
+    { label: "正在读取文件 · Read" },
   );
   assert.deepEqual(
     currentTurnActivity(build("edit_file", { path: "a.ts" }, { kind: "file_io", operation: "edit", path: "a.ts" })),
-    { label: "正在修改文件", orbState: "composing" },
+    { label: "正在修改文件 · edit_file" },
   );
   assert.deepEqual(
     currentTurnActivity(build("Grep", { query: "foo" }, { kind: "file_io", operation: "grep", path: "." })),
-    { label: "正在搜索项目", orbState: "searching" },
+    { label: "正在搜索项目 · Grep" },
   );
   assert.deepEqual(
     currentTurnActivity(build("WebSearch", { query: "biny" }, undefined)),
-    { label: "正在搜索网页", orbState: "searching" },
+    { label: "正在搜索网页" },
   );
 });
 
@@ -442,19 +443,19 @@ test("currentTurnActivity 技能调用展示技能名，未知工具回退描述
     { sessionId: "s1", runId: "r1", type: "message.user", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", content: "你好" },
     { sessionId: "s1", runId: "r1", type: "tool.started", timestamp: "2026-05-15T10:00:01.000Z", toolCallId: "t1", tool: "Skill", args: { skill: "write-tui" } },
   ])[0];
-  assert.deepEqual(currentTurnActivity(skillTurn), { label: "正在使用技能 write-tui", orbState: "shaping" });
+  assert.deepEqual(currentTurnActivity(skillTurn), { label: "正在使用技能 write-tui" });
 
   const described = buildSessionTimeline([], [
     { sessionId: "s1", runId: "r1", type: "message.user", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", content: "你好" },
     { sessionId: "s1", runId: "r1", type: "tool.started", timestamp: "2026-05-15T10:00:01.000Z", toolCallId: "t2", tool: "mcp__x__y", args: {}, description: "查询依赖版本" },
   ])[0];
-  assert.deepEqual(currentTurnActivity(described), { label: "查询依赖版本", orbState: "connecting" });
+  assert.deepEqual(currentTurnActivity(described), { label: "查询依赖版本" });
 
   const bare = buildSessionTimeline([], [
     { sessionId: "s1", runId: "r1", type: "message.user", timestamp: "2026-05-15T10:00:00.000Z", messageId: "m1", content: "你好" },
     { sessionId: "s1", runId: "r1", type: "tool.started", timestamp: "2026-05-15T10:00:01.000Z", toolCallId: "t3", tool: "mcp__x__y", args: {} },
   ])[0];
-  assert.deepEqual(currentTurnActivity(bare), { label: "正在执行 mcp__x__y", orbState: "connecting" });
+  assert.deepEqual(currentTurnActivity(bare), { label: "正在执行 mcp__x__y" });
 });
 
 test("currentTurnActivity 等待授权时展示待授权工具", () => {
@@ -472,7 +473,7 @@ test("currentTurnActivity 等待授权时展示待授权工具", () => {
     },
   ]);
   assert.equal(timeline[0]?.status, "waiting_permission");
-  assert.deepEqual(currentTurnActivity(timeline[0]), { label: "等待授权：Bash", orbState: "listening" });
+  assert.deepEqual(currentTurnActivity(timeline[0]), { label: "等待授权：Bash" });
 });
 
 /* ============ 活动相位模型（聚合组头部/轨道行） ============ */
@@ -594,7 +595,7 @@ import { SkillsIndicator } from "../src/desktop/renderer/src/components/chat/Ski
 
 const noopAsync = (): Promise<void> => Promise.resolve();
 
-test("ActivitySegment 渲染相位头像串与「用了 N 个工具」摘要", () => {
+test("ActivitySegment 工具次数不包含思考相位", () => {
   const markup = renderToStaticMarkup(createElement(ActivitySegment, {
     steps: [
       reasoningStep("r1", { durationMs: 3200 }),
@@ -610,8 +611,8 @@ test("ActivitySegment 渲染相位头像串与「用了 N 个工具」摘要", (
     onResolvePermission: noopAsync,
   }));
   assert.match(markup, /chat-activity/u);
-  // 活动单元 = 1 个思考相位 + 3 个工具。
-  assert.match(markup, /用了 4 个工具/u);
+  // 1 个思考相位不能算作工具调用。
+  assert.match(markup, /工具调用 3 次/u);
   assert.match(markup, /chat-phase-avatar/u);
   // 多相位段提供时间线视图切换；默认收起。
   assert.match(markup, /时间线视图/u);
@@ -637,11 +638,10 @@ test("ActivitySegment 多相位段提供时间线视图且思考相位独立展�
 });
 
 test("SkillsIndicator 渲染技能数与悬停清单", () => {
-  const markup = renderToStaticMarkup(createElement(SkillsIndicator, { skills: ["write-tui", "simplify-audit"] }));
+  const markup = renderToStaticMarkup(createElement(SkillsIndicator, { skills: ["write-tui", "simplify-audit", "write-tui"], tools: [toolStep("t1", "Read", "success").tool, toolStep("t2", "Read", "success").tool] }));
   assert.match(markup, /2 个技能/u);
-  assert.match(markup, /自动选择的技能：/u);
-  assert.match(markup, /write-tui/u);
-  assert.equal(renderToStaticMarkup(createElement(SkillsIndicator, { skills: [] })), "");
+  assert.match(markup, /1 个工具/u);
+  assert.equal(renderToStaticMarkup(createElement(SkillsIndicator, { skills: [], tools: [] })), "");
 });
 
 test("CompactionDivider 渲染压缩药丸并省略缺失段", () => {
@@ -654,7 +654,7 @@ test("CompactionDivider 渲染压缩药丸并省略缺失段", () => {
   assert.doesNotMatch(minimal, /节省约/u);
 });
 
-test("ActivitySegment 活体态渲染 shimmer 标签、呼吸头像与收尾 orb", () => {
+test("ActivitySegment 运行时可展开记录且不重复显示实时状态", () => {
   const running = renderToStaticMarkup(createElement(ActivitySegment, {
     steps: [
       reasoningStep("r1", { completed: false, durationMs: undefined }),
@@ -667,16 +667,12 @@ test("ActivitySegment 活体态渲染 shimmer 标签、呼吸头像与收尾 orb
     onOpenExternal: () => undefined,
     onResolvePermission: noopAsync,
   }));
-  // 活体标签「探索中 2 处」用 shimmer；最后一个未落定相位带呼吸光环。
-  assert.match(running, /chat-shimmer-text/u);
-  assert.match(running, /探索中/u);
-  assert.match(running, /chat-phase-avatar is-alive/u);
-  // 活体期间没有展开箭头与「用了 N 个工具」摘要（落定后才出现）。
-  assert.doesNotMatch(running, /chat-activity-chevron/u);
-  assert.doesNotMatch(running, /用了 \d+ 个工具/u);
+  assert.match(running, /工具调用 2 次/u);
+  assert.match(running, /chat-activity-chevron/u);
+  assert.doesNotMatch(running, /chat-shimmer-text|is-alive|disabled|Following the thread/u);
 });
 
-test("ActivitySegment 全部落定的活体间隙出现 orb 行", () => {
+test("ActivitySegment 工具落定后不另加跟进状态", () => {
   const idle = renderToStaticMarkup(createElement(ActivitySegment, {
     steps: [toolStep("t1", "Read", "success", { args: { path: "a.ts" } })],
     running: true,
@@ -685,8 +681,7 @@ test("ActivitySegment 全部落定的活体间隙出现 orb 行", () => {
     onOpenExternal: () => undefined,
     onResolvePermission: noopAsync,
   }));
-  assert.match(idle, /chat-activity-orb/u);
-  assert.match(idle, /Following the thread/u);
+  assert.doesNotMatch(idle, /chat-activity-orb|Following the thread|思考中/u);
   assert.match(idle, /已探索/u);
 });
 
@@ -727,4 +722,52 @@ test("RecipeReadyBanner 渲染提取横幅（标题、槽位、提取与忽略�
   assert.match(markup, /输入材料/u);
   assert.match(markup, /提取/u);
   assert.match(markup, /忽略此提示/u);
+});
+
+
+test("记忆注入状态只展示本轮真实计数，进入活动后由调用状态接管", () => {
+  const turn = buildSessionTimeline([], [{ sessionId: "s", runId: "r", type: "message.user", timestamp: "2026-09-12T00:00:00Z", messageId: "u", content: "继续" }])[0]!;
+  assert.equal(currentTurnActivity(turn).label, "思考中");
+  turn.memoryInjectedCount = 2;
+  assert.equal(currentTurnActivity(turn).label, "已注入 2 条记忆，思考中");
+  turn.steps.push(reasoningStep("r"));
+  assert.equal(currentTurnActivity(turn).label, "思考中");
+  const markup = renderToStaticMarkup(createElement(SkillsIndicator, { skills: [], tools: [], memoryInjectedCount: 2 }));
+  assert.match(markup, /已注入 2 条记忆/u);
+  assert.equal(renderToStaticMarkup(createElement(SkillsIndicator, { skills: [], tools: [], memoryInjectedCount: 0 })), "");
+});
+
+
+test("历史回复保留本轮实际注入数量，旧会话不推测命中", () => {
+  const history = [
+    { type: "user_message" as const, content: "继续", time: "2026-09-12T00:00:00Z" },
+    { type: "assistant_message" as const, content: "好的", metadata: { memoryInjectedCount: 2 } }
+  ];
+  assert.equal(buildSessionTimeline(history, [])[0]?.memoryInjectedCount, 2);
+  assert.equal(buildSessionTimeline([{ type: "user_message", content: "旧会话" }, { type: "assistant_message", content: "好的" }], [])[0]?.memoryInjectedCount, undefined);
+});
+
+
+test("发送占位与忙碌状态在对应用户消息落盘后一起退场，不能按同文误合并", () => {
+  const turns = buildSessionTimeline([
+    { type: "user_message", messageId: "submitted-user", content: "你是谁呀" },
+    { type: "assistant_message", content: "我是 Biny" }
+  ], []);
+  assert.equal(hasSubmittedUserMessage([], "submitted-user", "你是谁呀"), false);
+  assert.equal(hasSubmittedUserMessage(turns, "submitted-user", "你是谁呀"), true);
+  assert.equal(hasSubmittedUserMessage(turns, "next-user", "你是谁呀"), false);
+  assert.equal(hasSubmittedUserMessage(turns, undefined, "你是谁呀"), true);
+});
+
+
+test("顶部清单展示消息预选的 Skill，而不要求先发生 Skill 工具调用", () => {
+  const turns = buildSessionTimeline([
+    { type: "user_message", content: "检查网页", messageId: "u" },
+    { type: "message_metadata", messageId: "u", metadata: { capabilitySelection: { tools: ["Read", "WebSearch"], skills: ["browser", "web-fetch"] } } },
+    { type: "assistant_message", content: "开始检查" }
+  ], []);
+  assert.deepEqual(turns[0]?.capabilitySelection, { tools: ["Read", "WebSearch"], skills: ["browser", "web-fetch"] });
+  const markup = renderToStaticMarkup(createElement(SkillsIndicator, { selection: turns[0]?.capabilitySelection, skills: [], tools: [] }));
+  assert.match(markup, /2 个工具/u);
+  assert.match(markup, /2 个技能/u);
 });

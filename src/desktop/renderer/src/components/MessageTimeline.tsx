@@ -6,14 +6,13 @@
  */
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { createPortal } from "react-dom";
-import { ThinkingOrb } from "thinking-orbs";
 import type { PermissionResult } from "../../../../permission/PermissionManager.js";
 import type { SessionUsage } from "../../../../session/metadata.js";
 import { splitAttachmentReferences, type AttachmentReference } from "../../../attachmentReferences.js";
 import { copyToClipboard } from "../copyToClipboard.js";
 import { useInlineImage } from "../inlineImage.js";
 import { listChangedFiles, type TimelineStep, type TimelineTurn } from "../sessionTimeline.js";
-import { buildUsageDetailRows, finishReasonTone, formatDuration, formatMessageClock, isRunErrorStatus, parseCompactionNotice, turnMetrics, type TurnMetrics } from "../chatModel.js";
+import { hasSubmittedUserMessage, buildUsageDetailRows, finishReasonTone, formatDuration, formatMessageClock, parseCompactionNotice, turnMetrics, type TurnMetrics } from "../chatModel.js";
 import { speak, speechSupported } from "../speech.js";
 import { CopyButton } from "./CopyButton.js";
 import { Icon } from "./Icon.js";
@@ -25,17 +24,10 @@ import { MessageClock } from "./chat/MessageClock.js";
 import { SkillsIndicator } from "./chat/SkillsIndicator.js";
 import { ChangesSummary } from "./chat/ChangesSummary.js";
 
-const RUN_STATUS_LABELS: Partial<Record<TimelineTurn["status"], string>> = {
-  failed: "回复生成失败",
-  incomplete: "回复未完成",
-  blocked: "生成受阻",
-  cancelled: "已停止生成",
-  aborted: "生成已中断"
-};
-
 interface MessageTimelineProps {
   projectId: string;
   turns: TimelineTurn[];
+  skillNames?: ReadonlyMap<string, string>;
   pendingUserMessage?: PendingUserMessage;
   onPreviewFile(path: string): void;
   onOpenExternal(url: string): void;
@@ -67,7 +59,7 @@ interface OptimisticRewrite {
   settled: boolean;
 }
 
-export const MessageTimeline = memo(function MessageTimeline({ projectId, turns, pendingUserMessage, onPreviewFile, onOpenExternal, onResolvePermission, thinking, onRetry, onSwitchVersion, onEditRequest, editInFlight, onCreateBranch, onRollbackFiles, onDeleteUserMessage }: MessageTimelineProps): React.JSX.Element {
+export const MessageTimeline = memo(function MessageTimeline({ projectId, turns, skillNames, pendingUserMessage, onPreviewFile, onOpenExternal, onResolvePermission, thinking, onRetry, onSwitchVersion, onEditRequest, editInFlight, onCreateBranch, onRollbackFiles, onDeleteUserMessage }: MessageTimelineProps): React.JSX.Element {
   // 重试会先把目标之后的消息从视图中撤掉，再等待新回合流入；这里保留同样的乐观投影。
   // 编辑的重写投影来自 App（editInFlight），提交入口在底部输入框，不经过本组件状态。
   const [optimisticRewrite, setOptimisticRewrite] = useState<OptimisticRewrite>();
@@ -110,11 +102,8 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, turns,
     }
   }, [optimisticRewrite, turns]);
 
-  const hasRealPendingMessage = pendingUserMessage !== undefined && turns.some((turn) => (
-    pendingUserMessage.messageId !== undefined
-      ? turn.userMessageId === pendingUserMessage.messageId
-      : turn.user === pendingUserMessage.content
-  ));
+  const hasRealPendingMessage = pendingUserMessage !== undefined
+    && hasSubmittedUserMessage(turns, pendingUserMessage.messageId, pendingUserMessage.content);
   const displayedTurns = useMemo(() => {
     const pending = rewrite;
     if (!pending) return turns;
@@ -179,6 +168,7 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, turns,
       {displayedTurns.map((turn) => (
         <Turn
           busy={busy}
+          skillNames={skillNames}
           key={turn.id}
           onCreateBranch={onCreateBranch}
           onDeleteUserMessage={onDeleteUserMessage}
@@ -195,12 +185,6 @@ export const MessageTimeline = memo(function MessageTimeline({ projectId, turns,
           turn={turn}
         />
       ))}
-      {rewrite && !thinking ? (
-        <div className="biny-thinking-status" role="status">
-          <ThinkingOrb aria-label="思考中" className="biny-thinking-status-orb" size={20} state="solving" theme="auto" />
-          <span className="biny-thinking-status-label chat-shimmer-text">思考中…</span>
-        </div>
-      ) : null}
     </div>
   );
 });
@@ -233,6 +217,9 @@ function optimisticRewriteTurn(turn: TimelineTurn, user: string): TimelineTurn {
     reasoningDurationMs: undefined,
     reasoningStartedAt: undefined,
     skills: [],
+    memoryInjectedCount: undefined,
+    preparationStage: undefined,
+    capabilitySelection: undefined,
     status: "running",
     model: undefined,
     tools: [],
@@ -251,6 +238,7 @@ function optimisticRewriteTurn(turn: TimelineTurn, user: string): TimelineTurn {
 
 const Turn = memo(function Turn({
   busy,
+  skillNames,
   projectId,
   turn,
   onPreviewFile,
@@ -266,6 +254,7 @@ const Turn = memo(function Turn({
   onDeleteUserMessage
 }: {
   busy: boolean;
+  skillNames?: ReadonlyMap<string, string>;
   projectId: string;
   turn: TimelineTurn;
   onPreviewFile(path: string): void;
@@ -281,7 +270,6 @@ const Turn = memo(function Turn({
   onDeleteUserMessage(turnId: string): void;
 }): React.JSX.Element {
   const running = turn.status === "running" || turn.status === "waiting_permission";
-  const runFailed = !running && isRunErrorStatus(turn.status);
   const retryPromiseRef = useRef<Promise<void> | undefined>(undefined);
   const retry = useCallback((): Promise<void> => {
     if (running || busy) return Promise.resolve();
@@ -337,9 +325,17 @@ const Turn = memo(function Turn({
           time={turn.timestamp}
         />
       ) : null}
+      {/* 运行失败不是助手消息；只有真实输出或工具活动才占用助手区域。 */}
+      {executionSteps.length > 0 || turn.assistant.trim() || turn.capabilitySelection || (running && turn.preparationStage) || completedChangedFiles.length > 0 ? (
       <article className="chat-message desktop-assistant-message" data-sender="assistant">
         <div className="agent-response">
-        {turn.skills.length ? <SkillsIndicator skills={turn.skills} /> : null}
+        {running && turn.preparationStage && turn.preparationStage !== "ready" ? (
+          <div className="chat-preparation-status" role="status" aria-live="polite">
+            <span className="chat-preparation-spinner" aria-hidden="true" />
+            <span>{{ capabilities: "正在分析相关工具和技能…", workspace: "正在读取工作区上下文…", memory: "正在检索相关记忆…", compacting: "正在压缩对话上下文…" }[turn.preparationStage]}</span>
+          </div>
+        ) : null}
+        <SkillsIndicator skillNames={skillNames} memoryInjectedCount={turn.memoryInjectedCount} selection={turn.capabilitySelection} skills={turn.skills} tools={turn.tools} />
         {executionSteps.length ? (
           <ExecutionTimeline
             onPreviewFile={onPreviewFile}
@@ -353,28 +349,13 @@ const Turn = memo(function Turn({
         ) : null}
         {!executionSteps.some((step) => step.kind === "assistant") && turn.assistant ? <TypewriterMarkdown active={running} content={turn.assistant} onOpenExternal={onOpenExternal} onPreviewFile={onPreviewFile} projectId={projectId} /> : null}
 
-        {runFailed ? (
-          <div className={`chat-run-notice is-${turn.status}`}>
-            <div className="chat-run-notice-summary">
-              <span className="chat-run-notice-label" role="status"><Icon name={turn.status === "cancelled" ? "stop" : "warning"} size={15} />{RUN_STATUS_LABELS[turn.status]}</span>
-              {turn.user && (turn.assistantMessageId ?? turn.userMessageId) ? (
-                <button className="chat-run-retry" disabled={!canRetry} onClick={() => { void retry().catch(() => undefined); }} type="button"><Icon name="refresh" size={14} />重试</button>
-              ) : null}
-              {!turn.assistant.trim() && turn.versionCount && turn.versionCount > 1 && turn.versionIndex !== undefined ? (
-                <VersionSwitcher onSwitchVersion={switchVersion} versionCount={turn.versionCount} versionIndex={turn.versionIndex} />
-              ) : null}
-            </div>
-            {turn.error ? <details className="chat-run-details"><summary>查看详情</summary><pre>{turn.error}</pre></details> : null}
-          </div>
-        ) : null}
-
         {!running && turn.assistant.trim() ? (
           <AssistantActions
             content={turn.assistant}
             finishReason={turn.finishReason}
             metrics={turnMetrics(turn)}
             onCreateBranch={onCreateBranch}
-            onRegenerate={canRetry && !runFailed ? retry : undefined}
+            onRegenerate={canRetry ? retry : undefined}
             onSwitchVersion={turn.versionCount && turn.versionCount > 1 ? switchVersion : undefined}
             runMs={turn.durationMs}
             timestamp={turn.timestamp}
@@ -390,6 +371,10 @@ const Turn = memo(function Turn({
 
         </div>
       </article>
+      ) : null}
+      {!running && !turn.assistant.trim() && turn.versionCount && turn.versionCount > 1 && turn.versionIndex !== undefined ? (
+        <VersionSwitcher onSwitchVersion={switchVersion} versionCount={turn.versionCount} versionIndex={turn.versionIndex} />
+      ) : null}
     </section>
   );
 });

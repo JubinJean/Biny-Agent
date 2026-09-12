@@ -13,7 +13,8 @@ import type { ToolInputDisplay, ToolUpdate } from "../../../tools/types.js";
 import type { AgentPermissionEventRequest, AgentRunModel, AgentHostEvent } from "../../../runtime/agentEvents.js";
 import type { PermissionAction } from "../../../permission/PermissionManager.js";
 import { activitySummaryText } from "../../../runtime/activitySummary.js";
-import { activeSessionEventsForPath } from "../../../session/messageTree.js";
+import { agentCapabilitySelectionSchema, type AgentCapabilitySelection } from "../../../agent/capabilitySelection.js";
+import { activeSessionEventsForPath, sessionMessageMetadata } from "../../../session/messageTree.js";
 import type { SessionEvent } from "../../../session/recorder.js";
 import type { SessionUsage } from "../../../session/metadata.js";
 import { publicUserMessage } from "../../../session/publicMessage.js";
@@ -140,6 +141,7 @@ export function executionToolLabel(tool: string): string {
 }
 
 export interface TimelineTurn {
+  preparationStage?: import("../../../agent/context/types.js").PreparationStage;
   id: string;
   user: string;
   userMessageIndex?: number;
@@ -156,6 +158,8 @@ export interface TimelineTurn {
   reasoningDurationMs?: number;
   reasoningStartedAt?: string;
   skills: string[];
+  capabilitySelection?: AgentCapabilitySelection;
+  memoryInjectedCount?: number;
   status: TimelineRunStatus;
   model?: AgentRunModel;
   tools: TimelineTool[];
@@ -296,6 +300,7 @@ function buildHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
       current.user = publicUserMessage(event.content);
       current.userMessageIndex = userMessageIndex;
       current.userMessageId = event.messageId;
+      current.capabilitySelection = selectedCapabilities(events, event.messageId);
       userMessageIndex += 1;
       turns.push(current);
       continue;
@@ -304,6 +309,8 @@ function buildHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
       if (event.auditOnly) continue;
       const turn = ensureTurn(event.time);
       turn.assistant = event.content || turn.assistant;
+      const memoryCount = event.metadata?.memoryInjectedCount;
+      if (typeof memoryCount === "number" && Number.isInteger(memoryCount) && memoryCount >= 0) turn.memoryInjectedCount = memoryCount;
       appendHistoricalReasoning(turn, event.reasoningContent);
       appendHistoricalAssistant(turn, event.content);
       turn.durationMs = elapsedMs(turn.timestamp, event.time) ?? turn.durationMs;
@@ -469,6 +476,7 @@ function buildVersionedHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
       current.user = publicUserMessage(event.content);
       current.userMessageIndex = event.messageId === undefined ? activeUserIndex : userIndexes.get(event.messageId) ?? activeUserIndex;
       current.userMessageId = event.messageId;
+      current.capabilitySelection = selectedCapabilities(events, event.messageId);
       activeUserIndex += 1;
       turns.push(current);
       if (event.messageId) turnsByUserId.set(event.messageId, current);
@@ -480,6 +488,8 @@ function buildVersionedHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
       if (!event.content && !event.reasoningContent) continue;
       const turn = turnForEvent(event, event.time);
       turn.assistant = event.content || turn.assistant;
+      const memoryCount = event.metadata?.memoryInjectedCount;
+      if (typeof memoryCount === "number" && Number.isInteger(memoryCount) && memoryCount >= 0) turn.memoryInjectedCount = memoryCount;
       appendHistoricalReasoning(turn, event.reasoningContent);
       appendHistoricalAssistant(turn, event.content);
       turn.durationMs = elapsedMs(turn.timestamp, event.time) ?? turn.durationMs;
@@ -725,6 +735,9 @@ function createLiveTimelineFold(initialUserMessageIndex: number): LiveTimelineFo
   const apply = (event: AgentHostEvent): void => {
     const turn = turnFor(event);
     dirtyTurns.add(turn.id);
+    if (event.type === "run.started" || event.type === "run.completed" || event.type === "run.failed"
+      || event.type === "run.cancelled" || event.type === "run.aborted" || event.type === "assistant.delta"
+      || event.type === "reasoning.started" || event.type === "tool.started") turn.preparationStage = undefined;
     if (event.type === "message.user") {
       const content = publicUserMessage(event.content);
       if (event.delivery && turn.user) {
@@ -749,6 +762,11 @@ function createLiveTimelineFold(initialUserMessageIndex: number): LiveTimelineFo
       turn.startedAt = event.timestamp;
       turn.retryOfMessageId = event.retryOfMessageId;
       if (event.retryOfMessageId !== undefined) turn.assistantMessageId = event.messageId;
+    } else if (event.type === "preparation.updated") {
+      turn.preparationStage = event.stage === "ready" ? undefined : event.stage;
+    } else if (event.type === "context.updated") {
+      turn.memoryInjectedCount = event.context.memoryInjectedCount;
+      if (event.context.capabilitySelection) turn.capabilitySelection = event.context.capabilitySelection;
     } else if (event.type === "context.retrying") {
       turn.steps.push({
         kind: "reasoning",
@@ -1125,7 +1143,7 @@ function appendReasoning(existing: string, next: string | undefined): string {
 
 /** “已使用技能”只认真实 Skill 调用，不能把启动时全部可用路径投影成已使用。 */
 function appendInvokedSkill(turn: TimelineTurn, tool: string, args: unknown): void {
-  if (tool !== "Skill" || typeof args !== "object" || args === null || !("skill" in args)) return;
+  if ((tool !== "Skill" && tool !== "skill_call") || typeof args !== "object" || args === null || !("skill" in args)) return;
   const skill = (args as { skill?: unknown }).skill;
   if (typeof skill === "string" && skill.trim() && !turn.skills.includes(skill.trim())) turn.skills.push(skill.trim());
 }
@@ -1280,4 +1298,11 @@ function changedFileOperation(tool: TimelineTool): TimelineChangedFile["operatio
   if (tool.tool === "Write") return "write";
   if (tool.tool === "edit_file") return "edit";
   return undefined;
+}
+
+/** 预选结果是消息元数据，不能用启动时全部可用技能冒充本轮选择。 */
+function selectedCapabilities(events: SessionEvent[], messageId?: string): AgentCapabilitySelection | undefined {
+  if (!messageId) return undefined;
+  const selected = agentCapabilitySelectionSchema.safeParse(sessionMessageMetadata(events, messageId).capabilitySelection);
+  return selected.success ? selected.data : undefined;
 }

@@ -591,8 +591,21 @@ async function testRecallCountsBeforeBudget(): Promise<void> {
       assert.equal(calls, 1);
       assert.equal((await local.listMemoryEntries({ origins: ["current_workspace"] })).entries.find((entry) => entry.id === written.entry!.id)?.accessCount, 1);
       assert.notEqual((await context.status()).budget.components?.find((item) => item.id === "stable memory")?.disposition, "included");
+      assert.equal((await context.status()).memoryInjectedCount, 0, "被预算排除的命中不能报成已注入");
+      const roomy = new ContextMemory(
+        () => new ContextTestModel().model, new WorkspaceContext(workspaceRoot, [], 32 * 1024),
+        local, 100_000, 32 * 1024, undefined, undefined, {}, undefined, undefined, retriever
+      );
+      const progress = roomy.prepareTurnProgress("Release verification", "system");
+      assert.deepEqual(await progress.next(), { value: "workspace", done: false });
+      assert.deepEqual(await progress.next(), { value: "memory", done: false });
+      assert.equal(calls, 1, "记忆检索开始前即发布进度，不等检索结束再补发");
+      assert.equal((await progress.next()).done, true);
+      assert.equal((await roomy.status()).memoryInjectedCount, 1);
+      await roomy.prepareTurn("no memory", "system", undefined, [], false);
+      assert.equal((await roomy.status()).memoryInjectedCount, 0);
       await context.prepareTurn("no memory", "system", undefined, [], false);
-      assert.equal(calls, 1);
+      assert.equal(calls, 2);
     } finally {
       local.close();
       if (previousRoot === undefined) delete process.env[BINY_AGENT_DIR_ENV];

@@ -9,11 +9,12 @@ import { useEffect, useRef, useState } from "react";
 import { ThinkingOrb } from "thinking-orbs";
 import type { DesktopProject, DesktopRuntimeMutation, DesktopRuntimeProjection, DesktopSessionLimits, DesktopSessionWriterConflict } from "../../../protocol.js";
 import type { RecipeNotice } from "../app/useDesktopEventBridge.js";
-import { currentTurnActivity, type TurnActivity } from "../chatModel.js";
+import { hasSubmittedUserMessage } from "../chatModel.js";
 import type { TimelineTurn } from "../sessionTimeline.js";
 import { desktopWorktreeView } from "../worktreePresentation.js";
 import { Icon } from "./Icon.js";
 import { ThreadResourcesButton } from "./workspace/ThreadResourcesButton.js";
+import { GenerationErrorBanner } from "./chat/GenerationErrorBanner.js";
 import { MessageTimeline } from "./MessageTimeline.js";
 import { RuntimePanel } from "./RuntimePanel.js";
 import { RecipeReadyBanner } from "./RecipeReadyBanner.js";
@@ -44,7 +45,6 @@ interface WorkspaceProps {
   onRuntimePanelOpenChange(open: boolean): void;
   thinking: boolean;
   running: boolean;
-  thinkingStartedAt?: string;
   /** 当前会话的 Recipe 提示卡；固定在输入框上方，不随消息流滚走。 */
   recipeNotices?: RecipeNotice[];
   onDismissRecipe?(notice: RecipeNotice): void;
@@ -61,7 +61,7 @@ interface WorkspaceProps {
   onEditRequest(turn: TimelineTurn): void;
   /** 进行中的编辑重写投影；提交与清除都由 App 负责。 */
   editInFlight?: { turnId: string; user: string; userMessageIndex?: number };
-  /** 当前要展示的生成错误文本（Alma 式瞬态：live 失败事件驱动）；空值 = 不展示。 */
+  /** 当前要展示的生成错误文本（由实时失败事件驱动）；空值 = 不展示。 */
   generationError?: string;
   onDismissGenerationError(): void;
   onCreateBranch(): void;
@@ -80,6 +80,7 @@ interface WorkspaceProps {
   blankDraft?: boolean;
   /** 新会话首条消息的临时投影；真实事件到达后由 App 清掉。 */
   pendingPrompt?: PendingPrompt;
+  skillNames?: ReadonlyMap<string, string>;
   /** 顶部工具条：自动化/技能入口（搜索与新建任务在侧栏 chrome）。 */
   onOpenRuntime(): void;
   onOpenExtensions(): void;
@@ -102,7 +103,6 @@ export function Workspace({
   onRuntimePanelOpenChange,
   thinking,
   running,
-  thinkingStartedAt,
   recipeNotices,
   onDismissRecipe,
   onExtractRecipe,
@@ -126,6 +126,7 @@ export function Workspace({
   onSubmitPrompt,
   blankDraft = false,
   pendingPrompt,
+  skillNames,
   workspaceContext,
   inspectorRail,
   onOpenRuntime: _onOpenRuntime,
@@ -134,11 +135,10 @@ export function Workspace({
 }: WorkspaceProps): React.JSX.Element {
   const visiblePendingPrompt = pendingPrompt && pendingPrompt.projectId === projectId
     && (pendingPrompt.sessionId === undefined || pendingPrompt.sessionId === sessionId)
+    && !hasSubmittedUserMessage(turns, pendingPrompt.messageId, pendingPrompt.text)
     ? pendingPrompt
     : undefined;
   const streaming = running || visiblePendingPrompt !== undefined || turns.some((turn) => turn.status === "running" || turn.status === "waiting_permission");
-  // 状态行在整个运行期间常驻消息流末尾（Alma 式活动状态）：文案从最后一条轮次的
-  // 实时状态派生——思考中 / 正在使用技能 X / 正在读取文件 / 等待授权……，回合结束即退场。
   const lastTurn = turns.at(-1);
   const isHome = !loading && !runtimeError && !projectId;
   const showWelcome = !loading && !runtimeError && !sessionId && !streaming && turns.length === 0;
@@ -168,7 +168,8 @@ export function Workspace({
         />
         <div className="biny-chat-body is-welcome">
           <WelcomeState hasProject={false} onOpenProject={onOpenProject} onPickSuggestion={onSubmitPrompt}>
-            <div className="biny-welcome-composer-slot biny-hero-fade">{children}</div>
+            <div className="biny-welcome-composer-slot biny-hero-fade">
+                {generationError ? <GenerationErrorBanner error={generationError} onDismiss={onDismissGenerationError} /> : null}{children}</div>
           </WelcomeState>
         </div>
       </div>
@@ -232,6 +233,7 @@ export function Workspace({
           {loading ? <LoadingState /> : runtimeError ? <RuntimeError error={runtimeError} onOpenProject={onOpenProject} /> : renderWelcome ? (
             <WelcomeState hasProject={Boolean(projectId)} onOpenProject={onOpenProject} onPickSuggestion={onSubmitPrompt}>
               <div className="biny-welcome-composer-slot biny-hero-fade">
+                {generationError ? <GenerationErrorBanner error={generationError} onDismiss={onDismissGenerationError} /> : null}
                 {writerConflict ? <SessionWriterConflictBanner onRetry={onRetryWriterConflict} /> : children}
               </div>
             </WelcomeState>
@@ -251,19 +253,11 @@ export function Workspace({
                 pendingUserMessage={visiblePendingPrompt
                   ? { id: visiblePendingPrompt.id, messageId: visiblePendingPrompt.messageId, content: visiblePendingPrompt.text }
                   : undefined}
+                skillNames={skillNames}
                 thinking={thinking}
                 projectId={projectId}
                 turns={turns}
               />
-              {/* 活动状态行：消息流末尾、最后一条消息下方，运行期间常驻；
-                文案是当前真实活动（思考/工具/技能/等待授权），回合结束即退场。 */}
-              {running || visiblePendingPrompt !== undefined ? (
-                <ThinkingStatus
-                  activity={currentTurnActivity(lastTurn)}
-                  key={thinkingStartedAt ?? "thinking"}
-                  startedAt={thinkingStartedAt}
-                />
-              ) : null}
             </ChatScroll>
           ) : (
             <div className="biny-chat-empty"><Icon name="message" size={20} /><span>开始一段新的对话</span></div>
@@ -280,8 +274,8 @@ export function Workspace({
                 />
               </div>
             ) : null}
-            {generationError && generationError !== lastTurn?.error ? (
-              <GenerationErrorBanner error={generationError} onDismiss={onDismissGenerationError} />
+            {generationError ? (
+              <GenerationErrorBanner error={generationError} model={generationError === lastTurn?.error ? lastTurn?.model?.label : undefined} onDismiss={onDismissGenerationError} />
             ) : null}
             {writerConflict ? <SessionWriterConflictBanner onRetry={onRetryWriterConflict} /> : children}
           </div>
@@ -290,50 +284,6 @@ export function Workspace({
       {streaming ? <span className="biny-streaming-state" aria-hidden="true" /> : null}
     </div>
   );
-}
-
-/** 尚未进入消息时间线的发送错误仍靠近输入框展示；轮次错误由对应消息承载。 */
-function GenerationErrorBanner({ error, onDismiss }: { error: string; onDismiss(): void }): React.JSX.Element {
-  return (
-    <div className="biny-generation-error" role="alert">
-      <Icon name="warning" size={14} />
-      <div className="biny-generation-error-body">
-        <p className="biny-generation-error-title">生成错误</p>
-        <p className="biny-generation-error-text">{error}</p>
-      </div>
-      <button aria-label="关闭错误提示" onClick={onDismiss} title="关闭" type="button">
-        <Icon name="close" size={13} />
-      </button>
-    </div>
-  );
-}
-
-function ThinkingStatus({ activity, startedAt }: { activity: TurnActivity; startedAt?: string }): React.JSX.Element {
-  const [elapsedSeconds, setElapsedSeconds] = useState(() => elapsedSecondsSince(startedAt));
-
-  useEffect(() => {
-    const update = (): void => setElapsedSeconds(elapsedSecondsSince(startedAt));
-    update();
-    if (!startedAt) return;
-    const timer = window.setInterval(update, 1000);
-    return () => window.clearInterval(timer);
-  }, [startedAt]);
-
-  return (
-    <div className="biny-thinking-status" role="status">
-      {/* thinking-orbs 只有 20/64 两档画布；16px 展示由 CSS 盒子缩小（同 Alma 的 cssSize 做法）。 */}
-      <ThinkingOrb aria-label={activity.label} className="biny-thinking-status-orb" size={20} state={activity.orbState} theme="auto" />
-      <span className="biny-thinking-status-label chat-shimmer-text">{activity.label}…</span>
-      <span className="biny-thinking-status-duration">{elapsedSeconds}s</span>
-    </div>
-  );
-}
-
-function elapsedSecondsSince(startedAt?: string): number {
-  if (!startedAt) return 0;
-  const timestamp = Date.parse(startedAt);
-  if (!Number.isFinite(timestamp)) return 0;
-  return Math.max(0, Math.floor((Date.now() - timestamp) / 1_000));
 }
 
 /** 距底小于该值视为「钉在底部」：新内容进来继续贴底，回底按钮也在这时收起。 */

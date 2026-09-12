@@ -4,7 +4,6 @@
  * 把工具名分类成视觉变体、派生行标题与状态语义；以及消息时钟的时间/指标格式化
  * （日期感知时钟、用时、首 token 延迟、解码吞吐）。全部为纯函数，不依赖 React，便于单测。
  */
-import type { OrbState } from "thinking-orbs";
 import type { TimelineReasoningStep, TimelineRunStatus, TimelineTool, TimelineToolStep, TimelineTurn } from "./sessionTimeline.js";
 import { executionToolLabel } from "./sessionTimeline.js";
 import type { SessionUsage } from "../../../session/metadata.js";
@@ -91,13 +90,17 @@ export function toolRowState(tool: TimelineTool): ToolRowState {
   return "ok";
 }
 
-/** 状态行的一次活动语义：真实标签 + 配套 orb 动画（thinking-orbs 的 state）。 */
-export interface TurnActivity {
-  label: string;
-  orbState: OrbState;
+/** 实时与历史消息共用同一身份判断，已接收的消息不再保留发送占位或驱动忙碌状态。 */
+export function hasSubmittedUserMessage(turns: TimelineTurn[], messageId: string | undefined, content: string): boolean {
+  return turns.some((turn) => messageId !== undefined ? turn.userMessageId === messageId : turn.user === content);
 }
 
-const THINKING_ACTIVITY: TurnActivity = { label: "思考中", orbState: "solving" };
+/** 从运行事实派生的状态行文案。 */
+export interface TurnActivity {
+  label: string;
+}
+
+const THINKING_ACTIVITY: TurnActivity = { label: "思考中" };
 
 /**
  * 从运行中的轮次派生当前真实活动，驱动聊天底部的状态行（Alma 式）。
@@ -108,32 +111,34 @@ export function currentTurnActivity(turn: TimelineTurn | undefined): TurnActivit
   if (turn.status === "waiting_permission") {
     const pending = [...turn.tools].reverse().find((tool) => tool.permission && !tool.permission.resolved);
     return {
-      label: pending ? `等待授权：${executionToolLabel(pending.tool)}` : "等待授权",
-      orbState: "listening"
+      label: pending ? `等待授权：${executionToolLabel(pending.tool)}` : "等待授权"
     };
   }
   const active = [...turn.tools].reverse().find((tool) => tool.status === "running" || tool.status === "waiting");
-  return active ? toolCallActivity(active) : THINKING_ACTIVITY;
+  if (active) return toolCallActivity(active);
+  return turn.memoryInjectedCount && turn.steps.length === 0
+    ? { label: `已注入 ${String(turn.memoryInjectedCount)} 条记忆，思考中` }
+    : THINKING_ACTIVITY;
 }
 
-/** 运行中工具的状态行文案；措辞与 sessionTimeline 的 toolStatus 保持一致，orb 动画随活动语义区分。 */
+/** 运行中工具的状态行文案，显示正在执行的工具或技能名称。 */
 function toolCallActivity(tool: TimelineTool): TurnActivity {
   if (tool.tool === "Skill" || tool.tool === "skill_call") {
     const args = typeof tool.args === "object" && tool.args !== null ? tool.args as Record<string, unknown> : undefined;
     const skill = typeof args?.skill === "string" ? args.skill.trim() : "";
-    return { label: skill ? `正在使用技能 ${skill}` : "正在使用技能", orbState: "shaping" };
+    return { label: skill ? `正在使用技能 ${skill}` : "正在使用技能" };
   }
-  if (tool.tool === "WebSearch") return { label: "正在搜索网页", orbState: "searching" };
+  if (tool.tool === "WebSearch") return { label: "正在搜索网页" };
   const display = tool.display;
-  if (display?.kind === "command") return { label: "正在运行命令", orbState: "working" };
+  if (display?.kind === "command") return { label: `正在运行 ${executionToolLabel(tool.tool)}` };
   if (display?.kind === "file_io") {
-    if (display.operation === "read") return { label: "正在读取文件", orbState: "searching" };
-    if (display.operation === "write" || display.operation === "edit") return { label: "正在修改文件", orbState: "composing" };
-    if (display.operation === "search" || display.operation === "grep") return { label: "正在搜索项目", orbState: "searching" };
-    if (display.operation === "git") return { label: "正在检查 Git 状态", orbState: "working" };
+    if (display.operation === "read") return { label: `正在读取文件 · ${executionToolLabel(tool.tool)}` };
+    if (display.operation === "write" || display.operation === "edit") return { label: `正在修改文件 · ${executionToolLabel(tool.tool)}` };
+    if (display.operation === "search" || display.operation === "grep") return { label: `正在搜索项目 · ${executionToolLabel(tool.tool)}` };
+    if (display.operation === "git") return { label: "正在检查 Git 状态" };
   }
-  if (tool.description) return { label: tool.description, orbState: "connecting" };
-  return { label: `正在执行 ${executionToolLabel(tool.tool)}`, orbState: "connecting" };
+  if (tool.description) return { label: tool.description };
+  return { label: `正在执行 ${executionToolLabel(tool.tool)}` };
 }
 
 /** 错误行的折叠摘要 = 失败文本首行（DSH：错误摘要替换摘要槽）。 */

@@ -120,17 +120,12 @@ export function useDesktopEventBridge({
           const contextEvents = currentEvents.filter(hasContextStatus);
           const latestContext = contextEvents.at(-1);
           if (latestContext) setContextBudget(latestContext.context.budget);
-          // 生成错误横幅由 live 事件直接驱动（Alma 语义）：新一轮开始即清除，
-          // 失败即置位。与 document 的重放/刷新解耦，横幅不会因终态刷新闪退。
-          let generationStarted = false;
-          let generationFailure: string | undefined;
+          // 按事件顺序更新瞬态提示，确保同一批中后开始的运行清掉前一轮失败。
           for (const event of currentEvents) {
-            if (event.type === "run.started") generationStarted = true;
-            if (event.type === "run.failed") generationFailure = event.error;
-            if (event.type === "run.incomplete" || event.type === "run.blocked") generationFailure = event.reason;
+            if (event.type === "run.started") onGenerationStarted();
+            if (event.type === "run.failed") onGenerationError(event.error.trim() || "生成失败，请重试。");
+            if (event.type === "run.incomplete" || event.type === "run.blocked") onGenerationError(event.reason.trim() || "生成失败，请重试。");
           }
-          if (generationStarted) onGenerationStarted();
-          if (generationFailure !== undefined) onGenerationError(generationFailure);
         }
       }
 

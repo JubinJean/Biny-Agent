@@ -1,9 +1,9 @@
 /**
- * 活动段：连续「思考 + 工具」步骤的聚合展示（对齐 alma 的 ActivitySegment）。
+ * 活动段：连续「思考 + 工具」步骤的可展开记录。
  *
  * 头部是相位头像串（思考/探索/修改/运行/通用五类，24px 圆形图标，重叠堆叠）+ 摘要文案 +
- * 展开控件；落定后默认收起，摘要报「用了 N 个工具」或纯思考的「已思考 N 秒」；
- * 运行中最后一个未落定相位呼吸 + 微光展示实时动宾（「探索中 3 个文件」）。
+ * 展开控件；落定后默认收起，摘要报「工具调用 N 次」或纯思考的「已思考 N 秒」；
+ * 活动段集中展示思考和工具记录，避免在消息底部重复报「思考中」。
  *
  * 展开体是左导轨分相列表：默认「时间线模式」平铺所有相位；点单个头像只看该相位。
  * 工具行是动宾紧凑行（读取 xx / 编辑 xx +3 -2），点击行内展开完整工具详情；
@@ -12,14 +12,11 @@
  * 展开策略：待授权自动进入该相位；手动开合覆盖到运行态翻转为止；全部落定后收起。
  */
 import React, { memo, useEffect, useMemo, useState } from "react";
-import { ThinkingOrb } from "thinking-orbs";
 import type { PermissionResult } from "../../../../../permission/PermissionManager.js";
 import {
   activityToolRow,
   buildActivityPhases,
-  countActivityUnits,
   phaseLabel,
-  phaseSettled,
   phaseThinkingSeconds,
   type ActivityPhase,
   type ActivityPhaseItem,
@@ -49,7 +46,7 @@ const MAX_VISIBLE_PHASES = 8;
 interface ActivitySegmentProps {
   /** 连续的思考 + 工具步骤（单个也走活动段，呈现为一枚头像 + 一行摘要）。 */
   steps: ActivitySegmentStep[];
-  /** 轮次是否在运行（驱动活体态：呼吸头像 + shimmer 标签 + 收尾 orb）。 */
+  /** 轮次是否在运行（控制展开策略及思考记录文案）。 */
   running: boolean;
   /** 轮次级思考耗时（秒）；段内思考相位缺失时长时的兜底。 */
   thinkingSeconds?: number;
@@ -111,18 +108,12 @@ export const ActivitySegment = memo(function ActivitySegment({
 
   if (phases.length === 0) return null;
 
-  const lastIndex = phases.length - 1;
-  const livePhaseActive = running && !phaseSettled(phases[lastIndex]!);
   const openPhaseOrNull = selectedPhase !== null && selectedPhase >= 0 ? phases[selectedPhase] : null;
-  const units = countActivityUnits(phases);
   const hiddenCount = Math.max(0, phases.length - MAX_VISIBLE_PHASES);
 
-  // 摘要文案：活体展示最后相位的实时动宾（探索中 3 个文件）；纯思考段报「已思考 N 秒」；
-  // 落定后默认报活动单元数；点了单个相位时头部跟随该相位的摘要。
-  const livePhase = phases[lastIndex]!;
-  const liveLabel = phaseLabel(livePhase, true, secondsForThinkingPhase(livePhase));
+  // 运行期间也允许展开记录，查看具体工具调用和思考内容。
   const pureThinkingSeconds = allThinking ? secondsForThinkingPhase(phases[0]!) : undefined;
-  const headerLabel = !running && openPhaseOrNull && !allThinking && !timelineMode
+  const headerLabel = openPhaseOrNull && !allThinking && !timelineMode
     ? phaseLabel(openPhaseOrNull, false, secondsForThinkingPhase(openPhaseOrNull))
     : null;
 
@@ -142,12 +133,10 @@ export const ActivitySegment = memo(function ActivitySegment({
           {phases.slice(hiddenCount).map((phase, visibleIndex) => {
             const index = hiddenCount + visibleIndex;
             const isOpen = selectedPhase === index;
-            const isAlive = running && index === lastIndex && livePhaseActive;
             return (
               <button
                 aria-label={phaseLabel(phase, false).verb}
-                className={`chat-phase-avatar${isOpen ? " is-active" : ""}${isAlive ? " is-alive" : ""}`}
-                disabled={running}
+                className={`chat-phase-avatar${isOpen ? " is-active" : ""}`}
                 key={`${segmentKey}-avatar-${String(index)}`}
                 onClick={() => openPhase(index)}
                 style={phases.length > 1 ? { marginLeft: visibleIndex === 0 && hiddenCount === 0 ? 0 : -7, zIndex: isOpen ? 50 : visibleIndex + 1 } : undefined}
@@ -158,15 +147,10 @@ export const ActivitySegment = memo(function ActivitySegment({
             );
           })}
         </div>
-        {running ? (
-          <span className="chat-activity-label">
-            <span className={`chat-activity-verb${livePhaseActive ? " chat-shimmer-text" : ""}`}>{liveLabel.verb}</span>
-            {liveLabel.rest ? <span className="chat-activity-rest"> {liveLabel.rest}</span> : null}
-          </span>
-        ) : allThinking ? (
+        {allThinking ? (
           <button className="chat-activity-summary" onClick={() => railOpen ? close() : openTimeline()} type="button">
-            <span className="chat-activity-verb">已思考</span>
-            {pureThinkingSeconds !== undefined ? <span className="chat-activity-rest"> {String(pureThinkingSeconds)} 秒</span> : null}
+            <span className="chat-activity-verb">{running ? "思考过程" : "已思考"}</span>
+            {!running && pureThinkingSeconds !== undefined ? <span className="chat-activity-rest"> {String(pureThinkingSeconds)} 秒</span> : null}
           </button>
         ) : (
           <>
@@ -182,12 +166,14 @@ export const ActivitySegment = memo(function ActivitySegment({
                   {headerLabel.rest ? <span className="chat-activity-rest"> {headerLabel.rest}</span> : null}
                 </>
               ) : (
-                <span className="chat-activity-verb">用了 {String(units)} 个工具</span>
+                <span className="chat-activity-verb">工具调用 {String(toolSteps.length)} 次</span>
               )}
             </button>
             {phases.length > 1 ? (
               <button
                 aria-label="时间线视图"
+                aria-expanded={railOpen && timelineMode}
+                aria-pressed={railOpen && timelineMode}
                 className={`chat-activity-mode${timelineMode && railOpen ? " is-active" : ""}`}
                 onClick={() => (railOpen && timelineMode ? close() : setManual({ key: autoKey, open: true, timeline: true, phase: null }))}
                 title="时间线视图"
@@ -247,12 +233,6 @@ export const ActivitySegment = memo(function ActivitySegment({
             )}
         </div>
       </Collapse>
-      {running && !livePhaseActive ? (
-        <div className="chat-activity-orb">
-          <ThinkingOrb aria-label="跟进中" className="chat-activity-orb-icon" size={20} state="working" theme="auto" />
-          <span className="chat-shimmer-text chat-activity-orb-label">Following the thread</span>
-        </div>
-      ) : null}
     </section>
   );
 });

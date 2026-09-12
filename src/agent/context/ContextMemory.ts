@@ -125,15 +125,32 @@ export class ContextMemory {
     attachments: AgentAttachment[] = [],
     useMemories = true
   ): Promise<PreparedAgentContext> {
+    const progress = this.prepareTurnProgress(input, prompt, signal, attachments, useMemories);
+    let next = await progress.next();
+    while (!next.done) next = await progress.next();
+    return next.value;
+  }
+
+  /** 逐阶段交还控制权，让宿主在耗时检索和压缩期间即可显示真实进度。 */
+  async *prepareTurnProgress(
+    input: string,
+    prompt: PromptBundle | string,
+    signal?: AbortSignal,
+    attachments: AgentAttachment[] = [],
+    useMemories = true
+  ): AsyncGenerator<import("./types.js").PreparationStage, PreparedAgentContext> {
     const systemPrompt = typeof prompt === "string" ? prompt : prompt.systemPrompt;
     const turnContext = typeof prompt === "string" ? "" : prompt.turnContext;
     this.memoryUseEnabled = useMemories;
+    this.memoryRecall = emptyMemoryRecallReport();
     signal?.throwIfAborted();
+    yield "workspace";
     const workspacePerfStartedAt = perfNow();
     await this.workspace.initialize(signal);
     signal?.throwIfAborted();
     const workspace = await this.workspace.prepareTurn(input, signal);
     recordPerfPhase("context.workspace", workspacePerfStartedAt);
+    if (useMemories) yield "memory";
     const recallPerfStartedAt = perfNow();
     const recalled = useMemories ? await this.findRelevantMemory(input, [...workspace.explicitPaths, ...workspace.recentActivity.paths], signal) : { matches: [], report: emptyMemoryRecallReport(), entries: [] };
     recordPerfPhase("context.memoryRecall", recallPerfStartedAt, { matches: recalled.matches.length });
@@ -156,6 +173,7 @@ export class ContextMemory {
     );
     let compaction = noCompaction(this.summary, estimateMessageTokens(this.history));
     if (this.shouldCompact(assembly.budget.requestedTokens ?? assembly.budget.usedTokens, limits)) {
+      yield "compacting";
       const compactPerfStartedAt = perfNow();
       compaction = await this.compactMessages(
         this.history,
@@ -366,6 +384,7 @@ export class ContextMemory {
   }
 
   restore(messages: AgentMessage[], state?: ContextBudgetStatus | SessionContextState): void {
+    this.memoryRecall = emptyMemoryRecallReport();
     this.replaceHistory(messages);
     const contextState = isContextState(state) ? state : undefined;
     const budget: ContextBudgetStatus | undefined = contextState?.budget ?? (isContextState(state) ? undefined : state);
@@ -414,7 +433,8 @@ export class ContextMemory {
       recentActivity: workspace.recentActivity,
       compaction: this.compactionStatus(),
       budget: cloneBudget(this.lastBudget),
-      memoryEnabled: this.memoryUseEnabled
+      memoryEnabled: this.memoryUseEnabled,
+      memoryInjectedCount: Object.values(this.memoryRecall.origins.included).reduce((sum, count) => sum + count, 0)
     };
   }
 

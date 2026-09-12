@@ -58,6 +58,7 @@ export interface AgentTurnOutcome {
 }
 
 export type AgentSessionUpdate =
+  | { type: "preparation.updated"; stage: import("./context/types.js").PreparationStage }
   | { type: "context.updated"; context: ContextStatus }
   | { type: "message.user"; messageId: string; content: string; delivery: "steer" | "followUp" }
   | { type: "context.retrying"; reason: "context_overflow"; attempt: number; compactedMessages: number }

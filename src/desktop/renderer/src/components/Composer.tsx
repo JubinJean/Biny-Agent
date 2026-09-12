@@ -76,6 +76,7 @@ interface ComposerProps {
   /** 重新拉取工具目录与技能目录（能力菜单的刷新入口）。 */
   onRefreshCatalog?(): void;
   onWarning(message: string): void;
+  onSubmitError(message: string): void;
 }
 
 type ComposerMenu = "model" | "capabilities" | null;
@@ -124,7 +125,8 @@ export const Composer = memo(function Composer({
   onSaveAttachment,
   onOpenMcpSettings,
   onRefreshCatalog,
-  onWarning
+  onWarning,
+  onSubmitError
 }: ComposerProps): React.JSX.Element {
   const [input, setInput] = useState("");
   const [attachments, setAttachments] = useState<DesktopAttachment[]>([]);
@@ -236,7 +238,7 @@ export const Composer = memo(function Composer({
         await onSubmitEdit(value);
       } catch (submitError) {
         setInput(value);
-        onWarning(errorMessage(submitError));
+        onSubmitError(errorMessage(submitError));
       } finally {
         setBusy(false);
         submitFlightRef.current = false;
@@ -278,7 +280,7 @@ export const Composer = memo(function Composer({
       } catch (submitError) {
         setInput(value);
         setAttachments(sentAttachments);
-        onWarning(errorMessage(submitError));
+        onSubmitError(errorMessage(submitError));
       } finally {
         setBusy(false);
       }

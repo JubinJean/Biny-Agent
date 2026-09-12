@@ -5,6 +5,7 @@
  * 与 Composer 本地交互分别下沉到 `app/` 和对应组件。子组件通过回调表达意图，不直接持有
  * Agent、Session 或 Provider。
  */
+import { hasSubmittedUserMessage } from "./chatModel.js";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { AgentCapabilitySelection } from "../../../agent/capabilitySelection.js";
 import type { ContextBudgetStatus } from "../../../agent/context/types.js";
@@ -102,6 +103,7 @@ function DesktopApp(): React.JSX.Element {
   const [sidebarSessions, setSidebarSessions] = useState<DesktopSessionSummary[]>([]);
   const [workspace, setWorkspace] = useState<DesktopWorkspaceSnapshot>();
   const [composerSkills, setComposerSkills] = useState<DesktopSkillCatalogEntry[]>([]);
+  const skillNames = useMemo(() => new Map(composerSkills.flatMap((skill) => [[skill.id, skill.name], [skill.ref, skill.name]])), [composerSkills]);
   const [composerTools, setComposerTools] = useState<DesktopToolCatalogEntry[]>([]);
   const [composerCatalogNonce, setComposerCatalogNonce] = useState(0);
   const [document, setDocument] = useState<DesktopSessionDocument>();
@@ -644,7 +646,7 @@ function DesktopApp(): React.JSX.Element {
     return () => { active = false; };
   }, [commitNavigation, mergeWorkspaceProject, openSession, setSidebarExpandedWidth]);
 
-  // 生成错误横幅（Alma 式瞬态）：由事件桥在 live 失败事件到达时置位、新一轮开始（run.started）
+  // 生成错误横幅（会话瞬态）：由事件桥在 live 失败事件到达时置位、新一轮开始（run.started）
   // 时清除，与 document 的重放/终态刷新完全解耦——历史重放永不弹，横幅也不会被刷新闪退掉。
   const [generationError, setGenerationError] = useState<string>();
   const clearGenerationError = useCallback((): void => setGenerationError(undefined), []);
@@ -1081,6 +1083,7 @@ function DesktopApp(): React.JSX.Element {
   const submitEditedMessage = useCallback(async (value: string): Promise<void> => {
     const current = editingMessage;
     if (!current) return;
+    setGenerationError(undefined);
     setEditInFlight({ turnId: current.turnId, user: value, userMessageIndex: current.userMessageIndex });
     try {
       await editUserMessage(value, current.userMessageIndex, globalThis.crypto.randomUUID());
@@ -1317,7 +1320,7 @@ function DesktopApp(): React.JSX.Element {
         ? selectedSessionId === undefined
         : pending.sessionId === selectedSessionId);
     const hasRealMessage = pending.messageId !== undefined
-      && turns.some((turn) => turn.userMessageId === pending.messageId);
+      && hasSubmittedUserMessage(turns, pending.messageId, pending.text);
     if (!stillSelected || hasRealMessage) {
       setPendingPrompt((current) => current?.id === pending.id ? undefined : current);
     }
@@ -1331,13 +1334,14 @@ function DesktopApp(): React.JSX.Element {
       setWarning("当前消息还没有可重试的会话。");
       return;
     }
+    setGenerationError(undefined);
     const retry = window.biny.retryPrompt;
     if (typeof retry !== "function") throw new Error(desktopApiVersionMismatchMessage);
     try {
       const receipt = await retry(projectId, sessionId, targetMessageId, input, [], idempotencyKey);
       setSelectedSessionId(receipt.sessionId);
     } catch (error) {
-      setWarning(errorMessage(error));
+      if (projectRef.current === projectId && selectedRef.current === sessionId) setGenerationError(errorMessage(error));
       throw error;
     }
   }, []);
@@ -1555,6 +1559,7 @@ function DesktopApp(): React.JSX.Element {
       models={workspace?.pickerModels ?? workspace?.models ?? []}
       onSaveAttachment={saveAttachment}
       onSend={sendPromptWithTransition}
+      onSubmitError={setGenerationError}
       editingMessage={composerEditingMessage}
       onSubmitEdit={submitEditedMessage}
       onCancelEdit={cancelEditMessage}
@@ -1566,7 +1571,10 @@ function DesktopApp(): React.JSX.Element {
         await window.biny.cancelRun(projectId, selectedRunId);
       }}
       onToggleMemory={toggleChatMemory}
-      onSwitchModel={switchModel}
+      onSwitchModel={async (alias, thinking) => {
+        clearGenerationError();
+        await switchModel(alias, thinking);
+      }}
       onWarning={setWarning}
       project={workspace?.project}
       running={selectedRunning}
@@ -1740,7 +1748,6 @@ function DesktopApp(): React.JSX.Element {
         onExtractRecipe={extractRecipe}
         thinking={selectedThinking}
         running={selectedRunning}
-        thinkingStartedAt={selectedActiveRun?.startedAt}
         turns={visibleTurns}
         writerConflict={writerConflict}
         onRuntimeError={reportRuntimeError}
@@ -1749,6 +1756,7 @@ function DesktopApp(): React.JSX.Element {
         onSubmitPrompt={submitComposerPrompt}
         workspaceContext={workspaceContext}
         pendingPrompt={pendingPrompt}
+        skillNames={skillNames}
         onOpenRuntime={openRuntimePanel}
         onOpenExtensions={openExtensions}
       >

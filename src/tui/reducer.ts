@@ -245,6 +245,7 @@ export function tuiReducer(state: TuiState, event: TuiAction): TuiState {
         ...state,
         transcript: startReasoning(state.transcript)
       };
+    case "preparation.updated":
     case "context.updated":
     case "compact.started":
     case "compact.completed":

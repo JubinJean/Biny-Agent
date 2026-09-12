@@ -42,8 +42,7 @@
 }
 
 /* 微光文字：流式进行中的标题（「思考中」「探索中」等）。高亮带扫过整段文字（alma 签名动效）。 */
-.biny-chat-scroll .chat-shimmer-text,
-.biny-thinking-status .chat-shimmer-text {
+.biny-chat-scroll .chat-shimmer-text {
   --shimmer-base: color-mix(in oklch, var(--biny-text) 45%, transparent);
   --shimmer-highlight: color-mix(in oklch, var(--biny-text) 90%, transparent);
   background-color: var(--shimmer-base);
@@ -214,20 +213,6 @@
   color: var(--biny-text);
 }
 
-.chat-phase-avatar:disabled {
-  cursor: default;
-}
-
-/* 运行中的最后一个未落定相位：呼吸光环（alma activity-avatar-breathe）。 */
-.chat-phase-avatar.is-alive {
-  animation: chat-avatar-breathe 1.6s ease-in-out infinite;
-}
-
-@keyframes chat-avatar-breathe {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--biny-text-tertiary) 35%, transparent), 0 0 0 2px var(--bg, var(--biny-surface)); }
-  50% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--biny-text-tertiary) 12%, transparent), 0 0 0 2px var(--bg, var(--biny-surface)); }
-}
-
 /* 超过 8 个相位时的「+N」溢出徽标（椭圆胶囊）。 */
 .chat-phase-avatar.is-overflow {
   width: auto;
@@ -262,6 +247,14 @@
   white-space: nowrap;
   font-weight: 500;
   color: var(--biny-text);
+}
+
+.biny-chat-scroll .chat-activity:not([data-running]) .chat-activity-summary {
+  font-size: calc(12px * var(--font-scale, 1));
+}
+
+.biny-chat-scroll .chat-activity:not([data-running]) .chat-activity-verb {
+  color: var(--biny-text-secondary);
 }
 
 /* 运行中的实时摘要（非按钮）：与 .chat-activity-summary 同一套排版规格。 */
@@ -470,31 +463,7 @@
   padding-top: 4px;
 }
 
-/* ---- 活动段收尾 orb：运行中但相位全部落定的间隙状态 ---- */
 
-.chat-activity-orb {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  height: 32px;
-  color: var(--biny-text-tertiary);
-  animation: chat-orb-appear 0.3s ease-out 0.8s both;
-}
-
-.chat-activity-orb-icon {
-  flex: none;
-  opacity: 0.8;
-}
-
-.chat-activity-orb-label {
-  font-size: calc(13px * var(--font-scale, 1));
-  font-weight: 500;
-}
-
-@keyframes chat-orb-appear {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
 
 /* ============ 结果落定入场（指标/技能指示器出现时的一次轻沉降） ============ */
 
@@ -586,7 +555,7 @@
   text-align: left;
 }
 
-/* ============ 技能指示器（弱化小字 + 悬停技能清单气泡） ============ */
+/* ============ 实际调用的工具和技能清单 ============ */
 
 .biny-chat-scroll .chat-meta-indicator {
   display: flex;
@@ -602,7 +571,12 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  cursor: help;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
   transition: color 150ms ease;
 }
 
@@ -612,47 +586,43 @@
   outline: none;
 }
 
-/* 悬停气泡：向上浮出；列表用 disc 对齐 alma TooltipContent。 */
+/* 浮层挂在 body，沿用锚点定位并优先向上展开，避免被消息容器和输入框裁切。 */
 .chat-meta-tooltip {
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: -10px;
-  z-index: 60;
-  display: none;
-  min-width: 160px;
-  max-width: 320px;
+  width: max-content;
+  min-width: 180px;
   padding: 10px 12px;
   border: 1px solid var(--biny-border);
   border-radius: 10px;
   background: var(--biny-surface-elevated);
-  box-shadow: 0 1px 2px var(--biny-shadow-soft), 0 6px 16px var(--biny-shadow-soft);
+  box-shadow: 0 6px 16px var(--biny-shadow-soft);
   color: var(--biny-text-secondary);
   font-size: calc(12px * var(--font-scale, 1));
+  line-height: 1.5;
   text-align: left;
-  cursor: default;
+  overflow-wrap: anywhere;
 }
 
-.chat-meta-trigger:hover .chat-meta-tooltip,
-.chat-meta-trigger:focus-visible .chat-meta-tooltip {
-  display: block;
+.chat-meta-tooltip > div {
+  max-width: min(320px, 75vw);
 }
 
 .chat-meta-tooltip-title {
-  display: block;
   margin-bottom: 4px;
-  font-weight: 500;
+  font-weight: 600;
   color: var(--biny-text);
 }
 
-.chat-meta-tooltip-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.chat-meta-tooltip .chat-meta-tooltip-list {
+  display: block;
+  max-height: min(300px, 50vh);
+  overflow-y: auto;
   margin: 0;
-  padding: 0;
-  list-style: disc inside;
-  color: var(--biny-text-tertiary);
+  padding: 0 0 0 16px;
+  list-style: disc outside;
+  font: inherit;
 }
+
+.chat-meta-tooltip-list > li { margin: 2px 0; }
 
 .tool-details {
   display: flex;
@@ -2028,86 +1998,6 @@
   gap: 8px;
 }
 
-/* 失败属于这一轮消息：保持轻量、重试常显，原始错误按需展开。 */
-.biny-chat-scroll .chat-run-notice {
-  padding-block: 4px;
-  color: var(--biny-text-secondary);
-  font-size: calc(13px * var(--font-scale, 1));
-  line-height: 1.6;
-}
-
-.biny-chat-scroll .chat-run-notice-summary,
-.biny-chat-scroll .chat-run-notice-label,
-.biny-chat-scroll .chat-run-retry {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.biny-chat-scroll .chat-run-notice-summary {
-  flex-wrap: wrap;
-  column-gap: 14px;
-}
-
-.biny-chat-scroll .chat-run-notice-label > svg {
-  flex-shrink: 0;
-  color: var(--biny-text-tertiary);
-}
-
-.biny-chat-scroll .chat-run-notice.is-failed .chat-run-notice-label > svg {
-  color: var(--biny-danger);
-}
-
-.biny-chat-scroll .chat-run-retry {
-  padding: 3px 9px;
-  border: 1px solid var(--biny-border);
-  border-radius: var(--biny-radius-control);
-  background: transparent;
-  color: var(--biny-text);
-  font: inherit;
-  cursor: pointer;
-}
-
-.biny-chat-scroll .chat-run-retry:hover:not(:disabled) {
-  background: var(--biny-surface-hover);
-  border-color: var(--biny-border-strong);
-}
-
-.biny-chat-scroll .chat-run-retry:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.biny-chat-scroll .chat-run-details {
-  margin-top: 4px;
-  font-size: calc(12px * var(--font-scale, 1));
-  color: var(--biny-text-tertiary);
-}
-
-.biny-chat-scroll .chat-run-details > summary {
-  width: fit-content;
-  cursor: pointer;
-}
-
-.biny-chat-scroll .chat-run-retry:focus-visible,
-.biny-chat-scroll .chat-run-details > summary:focus-visible {
-  outline: 2px solid var(--biny-focus);
-  outline-offset: 3px;
-}
-
-.biny-chat-scroll .chat-run-details > pre {
-  max-height: 160px;
-  overflow: auto;
-  margin: 6px 0 0;
-  padding: 8px 10px;
-  border-radius: var(--biny-radius-control);
-  background: var(--biny-surface-soft);
-  color: var(--biny-text-secondary);
-  font: inherit;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
 /* 左侧常显：运行时长的波形图标 + 文本，始终可见。 */
 .biny-chat-scroll .assistant-actions-duration {
   display: inline-flex;
@@ -2617,16 +2507,13 @@
 /* ============ 动效降级 ============ */
 
 @media (prefers-reduced-motion: reduce) {
-  .chat-phase-avatar.is-alive,
   .permission-strip-dot,
   .biny-chat-scroll .chat-shimmer-text,
-  .biny-thinking-status .chat-shimmer-text,
   .biny-chat-scroll .execution-step {
     animation: none !important;
   }
 
-  .biny-chat-scroll .chat-shimmer-text,
-  .biny-thinking-status .chat-shimmer-text {
+  .biny-chat-scroll .chat-shimmer-text {
     background: none;
     color: var(--biny-text-secondary);
   }
@@ -2817,4 +2704,26 @@
   .usage-detail-popover {
     animation: none;
   }
+}
+
+/* 准备阶段只显示一条实时提示，不叠加思考计时或粒子动画。 */
+.chat-preparation-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--biny-text-secondary);
+  font-size: calc(13px * var(--font-scale, 1));
+  padding: 4px 0 12px;
+}
+.chat-preparation-spinner {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border: 2px dotted currentColor;
+  border-radius: 50%;
+  animation: chat-preparation-spin 1.5s linear infinite;
+}
+@keyframes chat-preparation-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .chat-preparation-spinner { animation: none; }
 }

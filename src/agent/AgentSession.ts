@@ -691,6 +691,21 @@ export class AgentSession {
     });
   }
 
+  /** 将上下文准备阶段透传给宿主；完成后清除临时状态，包括未命中记忆的轮次。 */
+  private async *prepareContext(...args: Parameters<ContextMemory["prepareTurn"]>): AsyncGenerator<AgentSessionEvent, Awaited<ReturnType<ContextMemory["prepareTurn"]>>> {
+    const progress = this.contextMemory.prepareTurnProgress(...args);
+    try {
+      let next = await progress.next();
+      while (!next.done) {
+        yield { type: "preparation.updated", stage: next.value };
+        next = await progress.next();
+      }
+      return next.value;
+    } finally {
+      yield { type: "preparation.updated", stage: "ready" };
+    }
+  }
+
   private selectedToolNames(capabilitySelection?: AgentCapabilitySelection): ReadonlySet<string> | undefined {
     return resolveCapabilityNames(
       capabilitySelection?.tools,
@@ -699,10 +714,10 @@ export class AgentSession {
     );
   }
 
-  private async prepareCapabilities(options: {
+  private async *prepareCapabilities(options: {
     input: string; selection?: AgentCapabilitySelection; signal?: AbortSignal;
     messageId?: string; reuse?: boolean; history?: readonly AgentMessage[];
-  }): Promise<AgentCapabilitySelection | undefined> {
+  }): AsyncGenerator<AgentSessionEvent, AgentCapabilitySelection | undefined> {
     if (!this.options.selectCapabilities) return options.selection;
     await this.recorder.flush();
     const events = await readSessionEvents(this.recorder.filePath);
@@ -718,6 +733,10 @@ export class AgentSession {
       const saved = agentCapabilitySelectionSchema.safeParse(event.metadata.capabilitySelection);
       return saved.success && Array.isArray(saved.data.tools) ? saved.data.tools : [];
     });
+    if ((options.selection?.tools ?? this.activeConfig.chat.defaultToolSelection) === "auto"
+      || (options.selection?.skills ?? this.activeConfig.chat.defaultSkillSelection) === "auto") {
+      yield { type: "preparation.updated", stage: "capabilities" };
+    }
     const selected = await this.options.selectCapabilities({
       input: options.input, config: this.activeConfig, selection: options.selection, signal: options.signal,
       history: options.history ?? nodes.map((node) => node.message), previousTools: [...new Set(previousTools)]
@@ -728,6 +747,7 @@ export class AgentSession {
         automaticToolSelection: (options.selection?.tools ?? this.activeConfig.chat.defaultToolSelection) === "auto"
       } });
     }
+    yield { type: "preparation.updated", stage: "ready" };
     return selected;
   }
 
@@ -1335,7 +1355,7 @@ export class AgentSession {
     const originalActiveIds = activeSessionMessageIds(recordedEvents);
     const referenceHistory = nodes.filter((node) => originalActiveIds.has(node.id)
       && node.eventIndex < (replacingUser ? userNode.eventIndex : target.eventIndex)).map((node) => node.message);
-    options.capabilitySelection = await this.prepareCapabilities({
+    options.capabilitySelection = yield* this.prepareCapabilities({
       input: sourceInput, selection: options.capabilitySelection, signal: options.abortSignal,
       messageId: replacingUser ? undefined : userNode.id, reuse: !replacingUser, history: referenceHistory
     });
@@ -1343,7 +1363,7 @@ export class AgentSession {
       await this.baseSystemPrompt(sourceInput, permissionMode, personalization, options.capabilitySelection, options.abortSignal, referenceHistory),
       options.promptContext
     );
-    const prepared = await this.contextMemory.prepareTurn(
+    const prepared = yield* this.prepareContext(
       sourceInput,
       basePrompt,
       options.abortSignal,
@@ -1532,7 +1552,8 @@ export class AgentSession {
         contextUsage: this.contextMemory.getBudget(),
         contextState: this.contextMemory.persistedState(),
         preparationUsage: this.usageRecords.slice(usageBeforePreparation),
-        messageId: runOptions.replacementUserMessage?.messageId,
+        // 普通发送沿用回执/实时事件的 ID，避免落盘后变成另一条用户消息。
+        messageId: runOptions.replacementUserMessage?.messageId ?? (retrying ? undefined : runOptions.messageId),
         parentMessageId: runOptions.replacementUserMessage?.parentMessageId,
         slotId: runOptions.replacementUserMessage?.slotId
       });
@@ -1616,10 +1637,11 @@ export class AgentSession {
       }
       let userIndex = messages.length - 1;
       while (userIndex >= 0 && messages[userIndex]?.role !== "user") userIndex -= 1;
-      runOptions.capabilitySelection = await this.prepareCapabilities({
+      runOptions.capabilitySelection = yield* this.prepareCapabilities({
         input, selection: runOptions.capabilitySelection, signal: abortSignal,
         messageId: messageReferences[userIndex]?.id, reuse: true, history: messages
       });
+      yield { type: "preparation.updated", stage: "ready" };
     } else {
     // 先把用户原始输入（以及附件引用）写进 JSONL，再组装上下文或检查模型能力。
     // 这样即使模型不支持图片、上下文构建失败或进程随后中断，恢复会话时仍能看到这次输入。
@@ -1635,7 +1657,7 @@ export class AgentSession {
         turnPersonalization.useMemories
       );
       recordUserMessage();
-      runOptions.capabilitySelection = await this.prepareCapabilities({
+      runOptions.capabilitySelection = yield* this.prepareCapabilities({
         input, selection: runOptions.capabilitySelection, signal: abortSignal, messageId: userMessageReference?.id
       });
       const systemPromptPerfStartedAt = perfNow();
@@ -1645,7 +1667,7 @@ export class AgentSession {
       );
       recordPerfPhase("turn.baseSystemPrompt", systemPromptPerfStartedAt, { runId: runtimeRunId });
       const prepareTurnPerfStartedAt = perfNow();
-      const prepared = await this.contextMemory.prepareTurn(
+      const prepared = yield* this.prepareContext(
         input,
         basePrompt,
         abortSignal,
@@ -1653,6 +1675,8 @@ export class AgentSession {
         turnPersonalization.useMemories
       );
       recordPerfPhase("turn.prepareTurn", prepareTurnPerfStartedAt, { runId: runtimeRunId, compacted: prepared.compaction !== undefined });
+      // 在模型开始输出前发布实际注入结果，界面不把记忆开关误报为记忆命中。
+      yield { type: "context.updated", context: { ...await this.contextStatus(), capabilitySelection: runOptions.capabilitySelection } };
       if (prepared.compaction) {
         this.persistContextCheckpoint(
           prepared.compaction,
@@ -1968,7 +1992,10 @@ export class AgentSession {
         recoverFromModelError: async (error, context, signal) => {
           if (!isModelContextOverflowError(error) || contextRecoveryAttempts >= 2) return undefined;
           const sourceReferences = context.messages.map((message) => referenceByMessage.get(message));
-          const compacted = await this.contextMemory.compactRunContext(context.messages, signal);
+          emitUpdate({ type: "preparation.updated", stage: "compacting" });
+          const compacted = await this.contextMemory.compactRunContext(context.messages, signal).finally(() => {
+            emitUpdate({ type: "preparation.updated", stage: "ready" });
+          });
           if (!compacted) return undefined;
           contextRecoveryAttempts += 1;
           this.persistContextCheckpoint(compacted, "overflow", sourceReferences);
@@ -2230,6 +2257,7 @@ export class AgentSession {
       this.recorder.record({
         type: "assistant_message",
         content,
+        metadata: { memoryInjectedCount: (await this.contextStatus()).memoryInjectedCount },
         reasoningContent: lastStepReasoningOutput || undefined,
         reasoningProviderOptions: stepReasoningBlocks?.length === 1 ? stepReasoningBlocks[0]?.providerOptions : undefined,
         reasoningBlocks: stepReasoningBlocks,

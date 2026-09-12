@@ -178,19 +178,30 @@ async function testSessionPersistence(): Promise<void> {
   try {
     await agent.initialize();
     let updates = 0;
+    const preparation: string[] = [];
     for (const prompt of ["hi", "continue"]) {
-      for await (const event of agent.prompt(prompt, { emotionAnalysis: false })) {
-        if (event.type === "context.updated") updates++;
+      for await (const event of agent.prompt(prompt, { emotionAnalysis: false, messageId: `submitted-${prompt}` })) {
+        if (event.type === "preparation.updated") preparation.push(event.stage);
+        if (event.type === "context.updated") {
+          updates++;
+          assert.equal(event.context.memoryInjectedCount, 0, "关闭记忆时仍发布明确的零注入结果");
+        }
       }
     }
+    assert.deepEqual(preparation, ["workspace", "ready", "workspace", "ready"], "关闭记忆时不发送检索进度，准备完成必须清除状态");
     assert.equal(calls, 2);
-    assert.equal(updates, 4, "each request emits its estimate and provider correction");
+    assert.equal(updates, 6, "each request emits prepared context, request estimate and provider correction");
     const budget = (await agent.contextStatus()).budget;
     assert.equal(budget.usedTokens, 900);
     assert.equal(budget.cacheHitRate, 0.9);
     assert.ok((budget.breakdown?.skills ?? 0) > 0);
     await recorder.flush();
-    const replay = replaySessionEvents(await readSessionEvents(recorder.filePath));
+    const storedEvents = await readSessionEvents(recorder.filePath);
+    assert.deepEqual(storedEvents.filter((event) => event.type === "user_message" && !event.auditOnly).map((event) => event.messageId), ["submitted-hi", "submitted-continue"], "落盘用户消息沿用提交回执 ID");
+    const replies = storedEvents.filter((event) => event.type === "assistant_message" && !event.auditOnly);
+    assert.ok(replies.length > 0);
+    assert.ok(replies.every((event) => event.metadata?.memoryInjectedCount === 0), "回复持久化真实的零注入结果");
+    const replay = replaySessionEvents(storedEvents);
     assert.deepEqual(replay.contextState?.budget.breakdown, budget.breakdown);
     assert.equal(replay.contextState?.budget.cacheHitRate, 0.9);
     assert.equal(replay.contextState?.budget.usedTokens, 900);

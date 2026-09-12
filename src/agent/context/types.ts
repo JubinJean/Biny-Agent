@@ -63,7 +63,12 @@ export interface CompactionResult {
   summary?: string;
 }
 
+/** 仅用于实时准备进度，不作为持久化上下文事实。 */
+export type PreparationStage = "capabilities" | "workspace" | "memory" | "compacting" | "ready";
+
 export interface ContextStatus {
+  /** 当前轮次已完成的能力预选结果。 */
+  capabilitySelection?: import("../capabilitySelection.js").AgentCapabilitySelection;
   loadedInstructions: string[];
   instructionBytes: number;
   instructionCapBytes: number;
@@ -77,6 +82,8 @@ export interface ContextStatus {
   compaction: CompactionStatus;
   budget: ContextBudgetStatus;
   memoryEnabled: boolean;
+  /** 本轮经过上下文预算筛选后实际注入的记忆条数。 */
+  memoryInjectedCount?: number;
   memoryOverviewChars?: number;
 }
 

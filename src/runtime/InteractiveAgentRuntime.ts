@@ -1284,7 +1284,7 @@ export class InteractiveAgentRuntime {
       return undefined;
     }
 
-    if (event.type === "context.retrying" || event.type === "context.updated") {
+    if (event.type === "preparation.updated" || event.type === "context.retrying" || event.type === "context.updated") {
       this.emit({ ...this.eventBase(run), ...event });
       return undefined;
     }

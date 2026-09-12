@@ -61,6 +61,7 @@ export type AgentHostEvent =
   | (AgentEventBase & AgentSessionUpdate)
   | (AgentEventBase & { type: "permission.requested"; requestId: string; toolCallId: string; request: AgentPermissionEventRequest })
   | (AgentEventBase & { type: "permission.resolved"; requestId: string; toolCallId: string; tool: string; approved: boolean; action?: PermissionAction; scope?: PermissionGrantScope; message?: string })
+  | (AgentEventBase & { type: "preparation.updated"; stage: import("../agent/context/types.js").PreparationStage })
   | (AgentEventBase & { type: "context.updated"; context: ContextStatus })
   | (AgentEventBase & { type: "compact.started"; hint?: string })
   | (AgentEventBase & { type: "compact.completed"; summary: string; context: ContextStatus })

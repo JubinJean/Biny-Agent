@@ -5252,39 +5252,6 @@ div:has(> .astryx-trigger-menu) {
 
 /* 思考等待行（Alma 式）：消息流末尾、最后一条消息下方，作为助手回复的首行占位；
    只在回合还没有任何输出时出现，回合内容开始流式渲染后由回合内思考块接管。 */
-.biny-thinking-status {
-  display: flex;
-  /* 与时间线同一内容列（--biny-chat-content-width），对齐助手正文起始位置。 */
-  width: var(--biny-chat-content-width);
-  min-width: 0;
-  height: 28px;
-  flex: none;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 8px;
-  margin: 0 auto;
-  color: var(--biny-text-secondary);
-}
-
-.biny-thinking-status-orb {
-  display: block;
-  width: 16px;
-  height: 16px;
-  flex: 0 0 16px;
-}
-
-.biny-thinking-status-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.biny-thinking-status-duration {
-  flex: 0 0 auto;
-  color: var(--biny-text-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-
 .biny-composer-status-actions {
   display: inline-flex;
   align-items: center;
