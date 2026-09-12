@@ -117,7 +117,6 @@ const settingsCredentialScopeSchema = z.object({
   purpose: z.enum(["model", "web-search"]),
   providerAlias: idSchema
 }).strict();
-const runModeSchema = z.enum(["chat", "plan"]);
 const permissionResultSchema = z.object({
   approved: z.boolean(),
   scope: z.enum(["once", "command", "session", "tool", "path"]).optional(),
@@ -503,12 +502,11 @@ export function registerDesktopIpc(context: IpcContext): void {
     return await context.agents.importSession(parsedProjectId, sourcePath);
   });
 
-  handleRecoveryGated(desktopIpc.sendPrompt, async (_event, projectId: unknown, sessionId: unknown, input: unknown, mode: unknown, attachments: unknown, delivery: unknown, personalization: unknown, idempotencyKey: unknown, promptContext: unknown, capabilitySelection: unknown) => {
+  handleRecoveryGated(desktopIpc.sendPrompt, async (_event, projectId: unknown, sessionId: unknown, input: unknown, attachments: unknown, delivery: unknown, personalization: unknown, idempotencyKey: unknown, promptContext: unknown, capabilitySelection: unknown) => {
     return await context.agents.sendPrompt(
       idSchema.parse(projectId),
       sessionId === undefined ? undefined : idSchema.parse(sessionId),
       promptSchema.parse(input),
-      runModeSchema.parse(mode),
       z.array(attachmentSchema).max(20).parse(attachments),
       z.enum(["steer", "followUp"]).optional().parse(delivery),
       chatPersonalizationSchema.optional().parse(personalization),
@@ -524,25 +522,23 @@ export function registerDesktopIpc(context: IpcContext): void {
     return await context.agents.resumeInterruptedTurn(idSchema.parse(projectId), idSchema.parse(sessionId));
   });
 
-  handleRecoveryGated(desktopIpc.editPrompt, async (_event, projectId: unknown, sessionId: unknown, userMessageIndex: unknown, input: unknown, mode: unknown, attachments: unknown, idempotencyKey: unknown) => {
+  handleRecoveryGated(desktopIpc.editPrompt, async (_event, projectId: unknown, sessionId: unknown, userMessageIndex: unknown, input: unknown, attachments: unknown, idempotencyKey: unknown) => {
     return await context.agents.editPrompt(
       idSchema.parse(projectId),
       idSchema.parse(sessionId),
       userMessageIndexSchema.parse(userMessageIndex),
       promptSchema.parse(input),
-      runModeSchema.parse(mode),
       z.array(attachmentSchema).max(20).parse(attachments),
       idempotencyKeySchema.parse(idempotencyKey)
     );
   });
 
-  handleRecoveryGated(desktopIpc.retryPrompt, async (_event, projectId: unknown, sessionId: unknown, targetMessageId: unknown, input: unknown, mode: unknown, attachments: unknown, idempotencyKey: unknown) => {
+  handleRecoveryGated(desktopIpc.retryPrompt, async (_event, projectId: unknown, sessionId: unknown, targetMessageId: unknown, input: unknown, attachments: unknown, idempotencyKey: unknown) => {
     return await context.agents.retryPrompt(
       idSchema.parse(projectId),
       idSchema.parse(sessionId),
       idSchema.parse(targetMessageId),
       promptSchema.parse(input),
-      runModeSchema.parse(mode),
       z.array(attachmentSchema).max(20).parse(attachments),
       idempotencyKeySchema.parse(idempotencyKey)
     );

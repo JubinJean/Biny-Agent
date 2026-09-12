@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { AgentAttachment, AgentRunMode, AgentSessionInfo, ResumedAgentSession } from "../agent/AgentSession.js";
+import type { AgentAttachment, AgentSessionInfo, ResumedAgentSession } from "../agent/AgentSession.js";
 import type { AgentCapabilitySelection } from "../agent/capabilitySelection.js";
 import type { AgentPermissionResult, AgentSessionEvent, AgentTurnOutcome, AgentTurnStatus, AgentTurnStopReason, BlockedReason } from "../agent/types.js";
 import { isFullYesConfirmation } from "../permission/confirmation.js";
@@ -75,7 +75,7 @@ export interface InteractiveAgentHost {
 
 /** Desktop、TUI 和 Unix socket 客户端共享的最小交互运行时形状。 */
 export interface InteractiveRuntimeHandle {
-  submitPrompt(input: string, mode?: AgentRunMode, attachments?: AgentAttachment[], requestIds?: RuntimeRequestIds, promptContext?: string, capabilitySelection?: AgentCapabilitySelection): SubmittedAgentRun;
+  submitPrompt(input: string, attachments?: AgentAttachment[], requestIds?: RuntimeRequestIds, promptContext?: string, capabilitySelection?: AgentCapabilitySelection): SubmittedAgentRun;
   steer(input: string, attachments?: AgentAttachment[], requestIds?: RuntimeRequestIds): Promise<QueuedAgentMessage>;
   followUp(input: string, attachments?: AgentAttachment[], requestIds?: RuntimeRequestIds): Promise<QueuedAgentMessage>;
   continueInterruptedTurn(): Promise<AgentRunOutcome | undefined>;
@@ -203,13 +203,12 @@ export class InteractiveAgentRuntime {
 
   submitPrompt(
     input: string,
-    mode: AgentRunMode = "chat",
     attachments: AgentAttachment[] = [],
     requestIds?: RuntimeRequestIds,
     promptContext?: string,
     capabilitySelection?: AgentCapabilitySelection
   ): SubmittedAgentRun {
-    return this.startRun(input, mode, attachments, false, requestIds, undefined, promptContext, capabilitySelection);
+    return this.startRun(input, attachments, false, requestIds, undefined, promptContext, capabilitySelection);
   }
 
   async steer(input: string, attachments: AgentAttachment[] = [], requestIds?: RuntimeRequestIds): Promise<QueuedAgentMessage> {
@@ -248,12 +247,11 @@ export class InteractiveAgentRuntime {
     }
     const interrupted = await this.commandRuntime.agent.interruptedTurn();
     if (!interrupted) return undefined;
-    return this.startRun(interrupted.prompt, "chat", [], true, requestIds, interrupted.turnId);
+    return this.startRun(interrupted.prompt, [], true, requestIds, interrupted.turnId);
   }
 
   private startRun(
     input: string,
-    mode: AgentRunMode,
     attachments: AgentAttachment[],
     continuation: boolean,
     requestIds?: RuntimeRequestIds,
@@ -288,7 +286,6 @@ export class InteractiveAgentRuntime {
       turnId,
       messageId,
       input,
-      mode,
       attachments: attachments.map((attachment) => ({ ...attachment })),
       status: "thinking",
       startedAt: new Date(startedAtMs).toISOString(),
@@ -314,7 +311,6 @@ export class InteractiveAgentRuntime {
         continuationSource: requestIds?.continuationSource,
         payload: {
           input,
-          mode,
           continuation,
           messageId,
           retryOfMessageId: requestIds?.retryOfMessageId,
@@ -334,7 +330,7 @@ export class InteractiveAgentRuntime {
     this.activeRunController = controller;
     // admission 同步占用运行状态；不能等异步账本写入后才让 Host 的配额看到这个 run。
     this.state = { kind: "runs", activeRun: {
-      sessionId, runId, messageId, input, mode, status: run.status,
+      sessionId, runId, messageId, input, status: run.status,
       startedAt: run.startedAt, retryOfMessageId: run.retryOfMessageId
     } };
     const execution = this.executeRun(run, controller.signal);
@@ -953,7 +949,6 @@ export class InteractiveAgentRuntime {
       messageId: run.messageId,
       retryOfMessageId: run.retryOfMessageId,
       input: run.input,
-      mode: run.mode,
       model: {
         alias: info.modelAlias,
         provider: info.provider,
@@ -972,13 +967,12 @@ export class InteractiveAgentRuntime {
       recordPerfPhase("runtime.refreshSkills", refreshSkillsPerfStartedAt, { runId: run.runId, sessionId: run.sessionId });
       recordPerfPhase("runtime.executeRun.pre", executePerfStartedAt, { runId: run.runId, sessionId: run.sessionId });
       let turn: AgentTurnOutcome | undefined;
-      // Chat/Plan 只驱动一个 AgentSession 回合；Plan 的权限感知工具面与提示词由 Session 负责。
+      // 所有交互共用 AgentSession 的同一条回合执行链路。
       let terminalEvents = 0;
       let streamFailure: string | undefined;
       const runOptions = {
         abortSignal: signal,
         confirmPermission: async (request: AgentPermissionEventRequest) => await this.waitForPermission(run, request),
-        mode: run.mode,
         attachments: run.attachments,
         promptContext: run.promptContext,
         capabilitySelection: run.capabilitySelection,
@@ -1449,7 +1443,6 @@ export class InteractiveAgentRuntime {
       runId,
       messageId: randomUUID(),
       input,
-      mode: "chat",
       status: "running",
       startedAt: new Date().toISOString()
     };

@@ -1,7 +1,7 @@
 /**
  * 权限模式选择项。
  *
- * 只描述可在界面上切换的三种模式；`read-only` 由外部（如 plan 模式）设置，不出现在
+ * 只描述可在界面上切换的三种模式；`read-only` 由外部配置设置，不出现在
  * 选择列表里，所以 `permissionModeLabel` 需要单独处理它。
  */
 import type { PermissionMode } from "../permission/PermissionManager.js";

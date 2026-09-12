@@ -14,7 +14,7 @@
  *
  * 模型配置的保存与连通性测试也在这里：写入前先用候选配置实际发一次请求，避免存下一份用不了的配置。
  */
-import type { AgentAttachment, InteractiveAgentRunMode } from "../../../agent/AgentSession.js";
+import type { AgentAttachment } from "../../../agent/AgentSession.js";
 import type { AgentCapabilitySelection } from "../../../agent/capabilitySelection.js";
 import type {
   MemoryEntriesResult,
@@ -586,7 +586,6 @@ export class DesktopAgentManager {
     projectId: string,
     sessionId: string | undefined,
     input: string,
-    mode: InteractiveAgentRunMode,
     attachments: DesktopAttachment[],
     delivery?: "steer" | "followUp",
     personalization?: DesktopChatPersonalizationOverride,
@@ -598,7 +597,6 @@ export class DesktopAgentManager {
       projectId,
       sessionId,
       input,
-      mode,
       attachments,
       delivery,
       personalization,
@@ -611,7 +609,6 @@ export class DesktopAgentManager {
     projectId: string,
     sessionId: string | undefined,
     input: string,
-    mode: InteractiveAgentRunMode,
     attachments: DesktopAttachment[],
     delivery?: "steer" | "followUp",
     personalization?: DesktopChatPersonalizationOverride,
@@ -622,7 +619,7 @@ export class DesktopAgentManager {
     const selectedBeforeSend = this.state.selectedSessionId(projectId);
     const requestedSessionId = sessionId ?? this.draftSessionIds.get(projectId);
     const runtimeForPromptPerfStartedAt = perfNow();
-    const { managed, snapshot } = await this.runtimeForPrompt(projectId, requestedSessionId, mode !== "plan", personalization);
+    const { managed, snapshot } = await this.runtimeForPrompt(projectId, requestedSessionId, personalization);
     const runtime = managed.runtime;
     const targetSessionId = snapshot.info.sessionId;
     const project = this.projects.requireProject(projectId);
@@ -656,7 +653,6 @@ export class DesktopAgentManager {
       const accepted = await runtime.submitRunForSession(
         targetSessionId,
         prompt,
-        mode,
         nativeAttachments,
         undefined,
         promptContext,
@@ -672,7 +668,7 @@ export class DesktopAgentManager {
         messageId: accepted.result.messageId
       };
     }
-    const submitted = runtime.submitPrompt(prompt, mode, nativeAttachments, undefined, promptContext, capabilitySelection);
+    const submitted = runtime.submitPrompt(prompt, nativeAttachments, undefined, promptContext, capabilitySelection);
     if (this.draftSessionIds.get(projectId) === targetSessionId) this.draftSessionIds.delete(projectId);
     if (this.state.selectedSessionId(projectId) === selectedBeforeSend) await this.state.setSelectedSession(projectId, info.sessionId);
     this.observeRunCompletion(projectId, submitted.completion);
@@ -691,12 +687,11 @@ export class DesktopAgentManager {
   private async runtimeForPrompt(
     projectId: string,
     sessionId: string | undefined,
-    writeIntent: boolean,
     personalization?: DesktopChatPersonalizationOverride
   ): Promise<{ managed: ManagedRuntime; snapshot: InteractiveRuntimeSnapshot }> {
     const primary = await this.ensureRuntime(projectId);
     if (primary.runtime instanceof RuntimeHostClient) {
-      const target = await primary.runtime.ensureSession({ sessionId, writeIntent, focus: false });
+      const target = await primary.runtime.ensureSession({ sessionId, writeIntent: true, focus: false });
       if (personalization !== undefined) {
         const state = await primary.runtime.getPersonalizationState(target.sessionId);
         await primary.runtime.updateChatPersonalization(personalization, state.catalogRevision, target.sessionId);
@@ -752,7 +747,6 @@ export class DesktopAgentManager {
     sessionId: string,
     userMessageIndex: number,
     input: string,
-    mode: InteractiveAgentRunMode,
     attachments: DesktopAttachment[],
     idempotencyKey?: string
   ): Promise<DesktopRunReceipt> {
@@ -761,7 +755,6 @@ export class DesktopAgentManager {
       sessionId,
       userMessageIndex,
       input,
-      mode,
       attachments
     ));
   }
@@ -772,7 +765,6 @@ export class DesktopAgentManager {
     sessionId: string,
     targetMessageId: string,
     input: string,
-    mode: InteractiveAgentRunMode,
     attachments: DesktopAttachment[],
     idempotencyKey?: string
   ): Promise<DesktopRunReceipt> {
@@ -799,12 +791,12 @@ export class DesktopAgentManager {
       const nativeAttachments = await loadNativeAttachments(this.projects.attachmentsRoot(project), retryAttachments);
       const requestIds = { retryOfMessageId: targetMessageId };
       if (runtime instanceof RuntimeHostClient) {
-        const accepted = await runtime.submitRunForSession(sessionId, prompt, mode, nativeAttachments, requestIds);
+        const accepted = await runtime.submitRunForSession(sessionId, prompt, nativeAttachments, requestIds);
         if (!accepted.accepted || accepted.result === undefined) throw rejectedHostOperation(accepted.reason, accepted.errorCode);
         await this.state.setSelectedSession(projectId, sessionId);
         return { sessionId, runId: accepted.result.runId, messageId: accepted.result.messageId };
       }
-      const submitted = runtime.submitPrompt(prompt, mode, nativeAttachments, requestIds);
+      const submitted = runtime.submitPrompt(prompt, nativeAttachments, requestIds);
       await this.state.setSelectedSession(projectId, sessionId);
       this.observeRunCompletion(projectId, submitted.completion);
       return { sessionId, runId: submitted.runId, messageId: submitted.messageId };
@@ -828,7 +820,6 @@ export class DesktopAgentManager {
     sessionId: string,
     userMessageIndex: number,
     input: string,
-    mode: InteractiveAgentRunMode,
     attachments: DesktopAttachment[]
   ): Promise<DesktopRunReceipt> {
     const managed = await this.resolveSessionRuntime(projectId, sessionId);
@@ -852,7 +843,7 @@ export class DesktopAgentManager {
       replaceUserMessageId: targetMessageId
     };
     if (runtime instanceof RuntimeHostClient) {
-      const accepted = await runtime.submitRunForSession(sessionId, prompt, mode, nativeAttachments, requestIds);
+      const accepted = await runtime.submitRunForSession(sessionId, prompt, nativeAttachments, requestIds);
       if (!accepted.accepted || accepted.result === undefined) throw rejectedHostOperation(accepted.reason, accepted.errorCode);
       await this.state.setSelectedSession(projectId, sessionId);
       return {
@@ -861,7 +852,7 @@ export class DesktopAgentManager {
         messageId: accepted.result.messageId
       };
     }
-    const submitted = runtime.submitPrompt(prompt, mode, nativeAttachments, requestIds);
+    const submitted = runtime.submitPrompt(prompt, nativeAttachments, requestIds);
     await this.state.setSelectedSession(projectId, sessionId);
     this.observeRunCompletion(projectId, submitted.completion);
     return {

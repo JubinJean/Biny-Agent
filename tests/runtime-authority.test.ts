@@ -165,6 +165,13 @@ try {
     /unsupported field/
   );
 
+  assert.throws(() => automations.create({
+    name: "removed-mode",
+    triggerType: "once",
+    schedule: {},
+    executionTemplate: { prompt: "must not execute", mode: "plan" } as unknown as AutomationExecutionTemplate
+  }), /unsupported field: mode/u);
+
   // 闰日 cron 触发后 366 天内找不到下一次：推进失败只能暂停自己，不能阻塞同一轮其他 automation。
   const leapCron = automations.create({
     automationId: "automation-leap-day",

@@ -7,7 +7,6 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import type { AgentRunMode } from "../agent/AgentSession.js";
 import type { RuntimeEventAuthority } from "./RuntimeAuthority.js";
 import type { InteractiveRuntimeHandle } from "./InteractiveAgentRuntime.js";
 
@@ -24,7 +23,6 @@ export interface AutomationSchedule {
 export interface AutomationExecutionTemplate {
   prompt: string;
   sessionId?: string;
-  mode?: AgentRunMode;
 }
 
 export interface AutomationRecord {
@@ -509,7 +507,6 @@ export class AutomationScheduler {
       }
       const submitted = target.submitPrompt(
         automation.executionTemplate.prompt,
-        automation.executionTemplate.mode ?? "chat",
         [],
         { runId: randomUUID(), continuationSource: "automation:" + automation.automationId }
       );
@@ -542,7 +539,7 @@ export class AutomationScheduler {
 
 function normalizeAutomationInput(input: AutomationCreateInput): AutomationCreateInput {
   if (!input.name.trim()) throw new Error("Automation name cannot be empty.");
-  const executionTemplate = normalizeExecutionTemplate(input.executionTemplate, true);
+  const executionTemplate = normalizeExecutionTemplate(input.executionTemplate);
   if (input.maxFires !== undefined && (!Number.isSafeInteger(input.maxFires) || input.maxFires < 1)) throw new Error("Automation maxFires must be a positive integer.");
   if (input.triggerType === "cron" && !input.schedule.cron?.trim()) throw new Error("Cron automation requires a cron expression.");
   if ((input.triggerType === "interval" || input.triggerType === "heartbeat") && (!Number.isSafeInteger(input.schedule.intervalMs) || (input.schedule.intervalMs ?? 0) < 100)) throw new Error("Interval automation requires intervalMs >= 100.");
@@ -551,24 +548,20 @@ function normalizeAutomationInput(input: AutomationCreateInput): AutomationCreat
   return { ...input, name: input.name.trim(), executionTemplate };
 }
 
-function normalizeExecutionTemplate(value: unknown, rejectUnknownFields: boolean): AutomationExecutionTemplate {
+function normalizeExecutionTemplate(value: unknown): AutomationExecutionTemplate {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error("Automation execution template must be an object.");
   }
   const template = value as Record<string, unknown>;
-  const unexpected = Object.keys(template).find((key) => key !== "prompt" && key !== "sessionId" && key !== "mode");
-  if (rejectUnknownFields && unexpected !== undefined) {
+  const unexpected = Object.keys(template).find((key) => key !== "prompt" && key !== "sessionId");
+  if (unexpected !== undefined) {
     throw new Error(`Automation execution template contains unsupported field: ${unexpected}.`);
   }
   if (typeof template.prompt !== "string" || !template.prompt.trim()) {
     throw new Error("Automation prompt cannot be empty.");
   }
   const sessionId = optionalString(template.sessionId);
-  const mode = template.mode;
-  if (mode !== undefined && mode !== "chat" && mode !== "plan") {
-    throw new Error("Automation mode must be chat or plan.");
-  }
-  return { prompt: template.prompt, sessionId, mode };
+  return { prompt: template.prompt, sessionId };
 }
 
 function initialFireAt(type: AutomationTriggerType, schedule: AutomationSchedule, now: string): string | undefined {
@@ -641,7 +634,7 @@ function toAutomation(row: AutomationRow): AutomationRecord {
     name: stringValue(row.name),
     triggerType: triggerType(row.trigger_type),
     schedule: parseJson(row.schedule_json) as AutomationSchedule,
-    executionTemplate: normalizeExecutionTemplate(parseJson(row.execution_template_json), false),
+    executionTemplate: normalizeExecutionTemplate(parseJson(row.execution_template_json)),
     status: automationStatus(row.status),
     nextFireAt: optionalString(row.next_fire_at),
     lastFireAt: optionalString(row.last_fire_at),

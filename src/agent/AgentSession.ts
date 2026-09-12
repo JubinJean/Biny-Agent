@@ -62,7 +62,6 @@ import {
   withActiveRunCompactionSummary
 } from "./prompts.js";
 import { perfNow, recordPerfPhase, setPerfTimingRoot } from "../observability/perfTiming.js";
-import { selectPlanTools } from "./planMode.js";
 import type {
   AgentPermissionRequest,
   AgentPermissionResult,
@@ -111,7 +110,7 @@ import type { CompactionResult, ContextStatus } from "./context/types.js";
 import { recordNativeTelemetry } from "../observability/telemetry.js";
 import { summarizeModelRequests, type ModelRequestSummary } from "../observability/modelRequests.js";
 import { createSessionUsage, formatUsageSummary, sumSessionUsage, summarizeUsage, type UsageModelInfo } from "../observability/usage.js";
-import type { SessionContextCheckpoint, SessionUsage, UsageSummary } from "../session/metadata.js";
+import type { SessionContextCheckpoint, SessionUsage, UsageOperation, UsageSummary } from "../session/metadata.js";
 import { defaultModelContextWindow } from "../ai/capabilities.js";
 import { modelCapabilities } from "../ai/capabilities.js";
 import { createNativeModelForConfig } from "../llm/nativeFactory.js";
@@ -196,7 +195,6 @@ export interface AgentSessionOptions {
 export interface AgentRunOptions {
   abortSignal?: AbortSignal;
   confirmPermission?: (request: AgentPermissionRequest) => Promise<AgentPermissionResult>;
-  mode?: AgentRunMode;
   /** 本次调用可消费的硬 step 上限；普通根回合默认使用配置的 hardStepLimit。 */
   maxSteps?: number;
   /**
@@ -245,7 +243,7 @@ export interface AgentRunOptions {
 
 export type AgentPromptOptions = Pick<
   AgentRunOptions,
-  "abortSignal" | "confirmPermission" | "mode" | "attachments" | "runId" | "messageId" | "turnId" | "promptContext" | "capabilitySelection" | "emotionAnalysis"
+  "abortSignal" | "confirmPermission" | "attachments" | "runId" | "messageId" | "turnId" | "promptContext" | "capabilitySelection" | "emotionAnalysis"
 >;
 
 export type { AgentAttachment } from "../attachments/store.js";
@@ -272,10 +270,6 @@ export interface AgentSessionInfo {
   skills?: string[];
 }
 
-/** 普通交互统一走 chat；plan 只改变工具策略。 */
-export type AgentRunMode = "chat" | "plan";
-export type InteractiveAgentRunMode = AgentRunMode;
-
 export interface ResumedAgentSession extends SessionReplay {
   filePath: string;
   sessionId: string;
@@ -291,7 +285,6 @@ interface NativeTurnArgs {
     previousTerminals?: InterruptedTurnTerminal[];
   };
   abortSignal: AbortSignal;
-  mode: AgentRunMode;
   runBudget: RunBudget;
   completedStepsBeforeRun: number;
   messageQueues: ActiveRunMessageQueues;
@@ -374,7 +367,7 @@ export class AgentSession {
       return model;
     };
     const currentModel = (): AgentModel | undefined => options.modelManager?.getModel() ?? options.model;
-    const onUsage = async (usage: AgentUsage, operation: "agent" | "plan" | "compaction" | "memory" | "subagent"): Promise<void> => {
+    const onUsage = async (usage: AgentUsage, operation: UsageOperation): Promise<void> => {
       this.recordModelUsage(usage, operation);
     };
     const onModelRequest = async (metrics: ModelRequestMetrics): Promise<void> => {
@@ -630,7 +623,6 @@ export class AgentSession {
   /** 重新生成也要使用和普通回合相同的稳定系统提示词，只替换消息上下文。 */
   private async baseSystemPrompt(
     input: string,
-    mode: AgentRunMode,
     permissionMode: PermissionMode,
     personalization: ResolvedChatPersonalization,
     capabilitySelection?: AgentCapabilitySelection,
@@ -639,9 +631,7 @@ export class AgentSession {
   ): Promise<PromptBundle> {
     const promptNow = new Date();
     const selectedToolNames = this.selectedToolNames(capabilitySelection);
-    const initialTools = mode === "plan"
-      ? selectPlanTools(this.promptTools(selectedToolNames ? [...selectedToolNames] : undefined), permissionMode)
-      : this.promptTools(selectedToolNames ? [...selectedToolNames] : undefined);
+    const initialTools = this.promptTools(selectedToolNames ? [...selectedToolNames] : undefined);
     const identityPrompt = this.activeConfig.context.identity.enabled
       ? await this.identityStorage.promptText(this.activeConfig.context.identity.userEnabled)
       : undefined;
@@ -683,7 +673,6 @@ export class AgentSession {
       }
     }
     return buildPromptBundle({
-      mode: mode === "plan" ? "plan" : "qa",
       permissionMode,
       extensionPrompt: this.extensionPrompt(capabilitySelection),
       tools: initialTools,
@@ -1274,7 +1263,7 @@ export class AgentSession {
     return await executeSoulCommand(this.soulStorage, args);
   }
 
-  /** Desktop/TUI 的公开交互入口，只接受 chat / plan 策略。 */
+  /** Desktop/TUI 的公开交互入口。 */
   async *prompt(input: string, options: AgentPromptOptions = {}): AsyncGenerator<AgentSessionEvent> {
     yield* this.runTurn(input, options);
   }
@@ -1340,7 +1329,6 @@ export class AgentSession {
     this.activeConfig = snapshot.config;
     this.activePersonalization = snapshot.state.resolved;
     const personalization = snapshot.state.resolved;
-    const mode = options.mode ?? "chat";
     const permissionMode = this.options.permissionManager.getStatus().mode;
     this.contextMemory.restore(prefixMessages, replay.contextState ?? replay.contextUsage);
     this.contextMessageReferences = prefixReferences;
@@ -1352,7 +1340,7 @@ export class AgentSession {
       messageId: replacingUser ? undefined : userNode.id, reuse: !replacingUser, history: referenceHistory
     });
     const basePrompt = appendExternalTurnContext(
-      await this.baseSystemPrompt(sourceInput, mode, permissionMode, personalization, options.capabilitySelection, options.abortSignal, referenceHistory),
+      await this.baseSystemPrompt(sourceInput, permissionMode, personalization, options.capabilitySelection, options.abortSignal, referenceHistory),
       options.promptContext
     );
     const prepared = await this.contextMemory.prepareTurn(
@@ -1384,7 +1372,6 @@ export class AgentSession {
     yield* this.runTurn(sourceInput, {
       ...options,
       attachments: sourceAttachments,
-      mode,
       continueFrom: continuationMessages,
       continueMessageReferences: continuationReferences,
       continueSystemPrompt: prepared.systemPrompt,
@@ -1604,7 +1591,6 @@ export class AgentSession {
       yield doneEvent(outcome);
       return;
     }
-    const mode = runOptions.mode ?? "chat";
     const permissionMode = this.options.permissionManager.getStatus().mode;
     let systemPrompt: string | undefined;
     let messages: AgentMessage[];
@@ -1652,11 +1638,9 @@ export class AgentSession {
       runOptions.capabilitySelection = await this.prepareCapabilities({
         input, selection: runOptions.capabilitySelection, signal: abortSignal, messageId: userMessageReference?.id
       });
-      // Plan 的协作状态独立于权限模式：普通权限收窄为只读工具，full-access 才恢复
-      // 写入/执行工具；这与 Plan 提示词的分支必须使用同一份权限快照。
       const systemPromptPerfStartedAt = perfNow();
       const basePrompt = appendExternalTurnContext(
-        await this.baseSystemPrompt(input, mode, permissionMode, turnPersonalization, runOptions.capabilitySelection, abortSignal),
+        await this.baseSystemPrompt(input, permissionMode, turnPersonalization, runOptions.capabilitySelection, abortSignal),
         runOptions.promptContext
       );
       recordPerfPhase("turn.baseSystemPrompt", systemPromptPerfStartedAt, { runId: runtimeRunId });
@@ -1755,7 +1739,6 @@ export class AgentSession {
       messageReferences,
       runOptions,
       abortSignal,
-      mode,
       runBudget,
       completedStepsBeforeRun,
       messageQueues,
@@ -1798,7 +1781,6 @@ export class AgentSession {
       messageReferences,
       runOptions,
       abortSignal,
-      mode,
       runBudget,
       completedStepsBeforeRun,
       messageQueues
@@ -1821,7 +1803,6 @@ export class AgentSession {
       return;
     }
     let activeModelSettings = nativeSettings;
-    const permissionMode = this.options.permissionManager.getStatus().mode;
     this.contextMemory.observePromptModel(activeModelSettings.model.provider, activeModelSettings.model.modelId);
     let relatedToolCallIds: string[] = [];
     const modelRequestContext = (step: number): ModelRequestContext => ({
@@ -1829,7 +1810,7 @@ export class AgentSession {
       runId: args.runOptions.runId,
       turnId: args.runOptions.turnId,
       step,
-      operation: mode === "plan" ? "plan" : "agent",
+      operation: "agent",
       promptEpoch: this.contextMemory.getPromptEpoch(),
       promptEpochReason: this.contextMemory.getPromptEpochReason(),
       promptEpochCreatedAt: this.contextMemory.getPromptEpochCreatedAt(),
@@ -1839,10 +1820,7 @@ export class AgentSession {
     const permissionManager = this.options.permissionManager;
     const confirmPermission = runOptions.confirmPermission;
     const runtime = this.runtimeContext({ ...runOptions, abortSignal, confirmPermission });
-    const selectedToolNames = this.selectedToolNames(runOptions.capabilitySelection);
-    const allowedToolNames = mode === "plan"
-      ? new Set(selectPlanTools(this.promptTools(selectedToolNames ? [...selectedToolNames] : undefined), permissionMode).map((tool) => tool.name))
-      : selectedToolNames;
+    const allowedToolNames = this.selectedToolNames(runOptions.capabilitySelection);
     let stepAssistantContent = "";
     let stepReasoningOutput = "";
     let stepReasoningBlocks: ReasoningBlock[] | undefined;
@@ -1905,7 +1883,7 @@ export class AgentSession {
     const initialTools = activeModelSettings.model.supportsTools === false ? [] : coordinator.createAgentTools();
     systemPrompt = refreshRuntimeSystemPrompt(
       systemPrompt,
-      this.promptTools(selectedToolNames ? [...selectedToolNames] : initialTools.map((tool) => tool.name))
+      this.promptTools(allowedToolNames ? [...allowedToolNames] : initialTools.map((tool) => tool.name))
     );
     refreshRuntimeTurnContext(messages, await this.currentEmotionPrompt());
     const nativeContext: AgentContext = { systemPrompt, messages: [...messages], tools: initialTools };
@@ -1965,7 +1943,7 @@ export class AgentSession {
           const tools = settings.model.supportsTools === false ? [] : coordinator.createAgentTools();
           context.systemPrompt = refreshRuntimeSystemPrompt(
             context.systemPrompt,
-            this.promptTools(selectedToolNames ? [...selectedToolNames] : tools.map((tool) => tool.name))
+            this.promptTools(allowedToolNames ? [...allowedToolNames] : tools.map((tool) => tool.name))
           );
           refreshRuntimeTurnContext(context.messages, await this.currentEmotionPrompt());
           this.contextMemory.recordToolSchema(tools);
@@ -2149,7 +2127,7 @@ export class AgentSession {
             lastAssistant = event.message;
             const usage = event.message.usage;
             // 未回报 usage 的步骤也要保留“未知”，否则恢复后会把部分缓存数据当作完整平均值。
-            stepUsageRecords.push(this.recordModelUsage(usage ?? {}, mode === "plan" ? "plan" : "agent"));
+            stepUsageRecords.push(this.recordModelUsage(usage ?? {}, "agent"));
             this.contextMemory.recordProviderUsage(
               usage ?? {},
               summarizeUsage(this.usageRecords.filter((record) => record.operation === "agent" || record.operation === "plan")).sessionCacheHitRate
@@ -2643,7 +2621,7 @@ export class AgentSession {
 
   observeModelUsage(
     usage: AgentUsage,
-    operation: "agent" | "plan" | "compaction" | "memory" | "subagent",
+    operation: UsageOperation,
     modelAlias?: string
   ): void {
     this.recordModelUsage(usage, operation, modelAlias);
@@ -3079,7 +3057,7 @@ export class AgentSession {
 
   private recordModelUsage(
     usage: AgentUsage,
-    operation: "agent" | "plan" | "compaction" | "memory" | "subagent",
+    operation: UsageOperation,
     modelAlias?: string
   ): SessionUsage {
     const model = this.options.modelManager?.getModel() ?? this.options.model;

@@ -17,7 +17,6 @@ import { CrystalStorage } from "../src/agent/context/crystalStorage.js";
 import { memoryDatabaseFileName } from "../src/agent/context/memoryStorage.js";
 import { WorkspaceContext } from "../src/agent/context/WorkspaceContext.js";
 import { cloneAgentMessages, messageReasoning, messageText } from "../src/agent/modelMessages.js";
-import { selectPlanTools } from "../src/agent/planMode.js";
 import { buildSystemPrompt, refreshRuntimeSystemPrompt, stableSystemPromptForCache, stripTransientTurnContext, withActiveRunCompactionSummary } from "../src/agent/prompts.js";
 import { BINY_AGENT_DIR_ENV, globalAgentDir, legacyProjectStateDirName, projectSessionsDir, projectStateDirName } from "../src/config/paths.js";
 import type { AgentConfig } from "../src/config/schema.js";
@@ -39,7 +38,6 @@ import {
 } from "../src/session/store.js";
 import { listSessionSummaries, parseSessionEvents, readSessionEvents, readStoredSessionEvents, repairSessionTailForAppend } from "../src/session/events.js";
 import { ToolRegistry } from "../src/tools/registry.js";
-import type { Tool } from "../src/tools/types.js";
 import { createToolPermissionRequest } from "../src/tools/display/ToolDisplay.js";
 import { appendInputHistory, loadInputHistory } from "../src/tui/inputHistory.js";
 import { resolveWorkspacePath } from "../src/workspace/resolvePath.js";
@@ -119,7 +117,6 @@ async function main(): Promise<void> {
   process.env[BINY_AGENT_DIR_ENV] = globalRoot;
   try {
     testConversationBoundaryPrompt();
-    testPlanModePolicy();
     await testPromptEpochAndCanonicalPrefix();
     await testInstructionHierarchyAndCap();
     await testInstructionLoadingUsesExplicitPaths();
@@ -168,7 +165,7 @@ async function main(): Promise<void> {
 }
 
 function testConversationBoundaryPrompt(): void {
-  const prompt = buildSystemPrompt({ mode: "qa", cwd: "/workspace" });
+  const prompt = buildSystemPrompt({ cwd: "/workspace" });
   assert.match(prompt, /You are Biny\./u);
   assert.doesNotMatch(prompt, /Biny is not human|不代表 Biny 是人类/u);
   assert.match(prompt, /Keep simple answers simple; do not add headings or lists to simple answers/u);
@@ -181,7 +178,6 @@ function testConversationBoundaryPrompt(): void {
   assert.match(prompt, /Current permission mode: runtime-managed/u);
   assert.match(prompt, /Current working directory: \/workspace/u);
   const parentPrompt = buildSystemPrompt({
-    mode: "qa",
     cwd: "/workspace",
     parentThreadPrompt: "PARENT THREAD — source session\nParent first request: inspect the release flow"
   });
@@ -193,21 +189,21 @@ function testConversationBoundaryPrompt(): void {
     promptSnippet: "Search the public web",
     promptGuidelines: ["Use WebSearch for current public information"]
   };
-  assert.match(buildSystemPrompt({ mode: "qa", cwd: "/workspace", tools: [webTool] }), /Use WebSearch for current public information/u);
+  assert.match(buildSystemPrompt({ cwd: "/workspace", tools: [webTool] }), /Use WebSearch for current public information/u);
   const zvecTool = {
     name: "mcp_zvec_grep_zvec_grep_search",
     promptSnippet: "Search indexed workspace content by meaning",
     promptGuidelines: ["Use zvec_grep_search for semantic workspace discovery"]
   };
-  const zvecPrompt = buildSystemPrompt({ mode: "qa", cwd: "/workspace", tools: [zvecTool] });
+  const zvecPrompt = buildSystemPrompt({ cwd: "/workspace", tools: [zvecTool] });
   assert.match(zvecPrompt, /Search indexed workspace content by meaning/u);
   assert.match(zvecPrompt, /Use zvec_grep_search for semantic workspace discovery/u);
   assert.doesNotMatch(
-    buildSystemPrompt({ mode: "qa", cwd: "/workspace", tools: [{ name: "custom_tool" }] }),
+    buildSystemPrompt({ cwd: "/workspace", tools: [{ name: "custom_tool" }] }),
     /- custom_tool:/u
   );
   const compacted = withActiveRunCompactionSummary(
-    buildSystemPrompt({ mode: "qa", cwd: "/workspace", extensionPrompt: "static capability", tools: [webTool] }),
+    buildSystemPrompt({ cwd: "/workspace", extensionPrompt: "static capability", tools: [webTool] }),
     "first overflow summary"
   );
   const refreshed = refreshRuntimeSystemPrompt(compacted, [{
@@ -222,41 +218,11 @@ function testConversationBoundaryPrompt(): void {
   assert.doesNotMatch(recoveredAgain, /first overflow summary/u);
 }
 
-function testPlanModePolicy(): void {
-  const tool = (name: string, risk?: Tool["risk"], source?: Tool["source"]): Tool => ({ name, risk, source } as Tool);
-  const tools = [
-    tool("Read", "read"),
-    tool("Write", "write"),
-    tool("Bash", "execute"),
-    tool("Task", "execute", "subagent"),
-    tool("custom_tool")
-  ];
-
-  assert.deepEqual(
-    selectPlanTools(tools, "ask").map((candidate) => candidate.name),
-    ["Read"]
-  );
-  assert.deepEqual(
-    selectPlanTools(tools, "full-access").map((candidate) => candidate.name),
-    ["Read", "Write", "Bash", "custom_tool"]
-  );
-
-  const readPrompt = buildSystemPrompt({ mode: "plan", permissionMode: "ask", cwd: "/workspace" });
-  assert.match(readPrompt, /Plan is a collaboration workflow, not a permission mode/u);
-  assert.match(readPrompt, /exposes only read and inspection tools/u);
-  assert.doesNotMatch(readPrompt, /Full access is active/u);
-
-  const fullAccessPrompt = buildSystemPrompt({ mode: "plan", permissionMode: "full-access", cwd: "/workspace" });
-  assert.match(fullAccessPrompt, /Full access is active/u);
-  assert.match(fullAccessPrompt, /only when the current user request explicitly asks/u);
-  assert.doesNotMatch(fullAccessPrompt, /Never write or edit files/u);
-}
-
 async function testPromptEpochAndCanonicalPrefix(): Promise<void> {
   const toolA = { name: "alpha", description: "Alpha", parameters: { type: "object" as const }, execute: async () => ({ content: [] }) };
   const toolB = { name: "beta", description: "Beta", parameters: { type: "object" as const }, execute: async () => ({ content: [] }) };
-  const first = buildSystemPrompt({ mode: "qa", cwd: "/workspace", extensionPrompt: "project-a", tools: [toolB, toolA] });
-  const second = buildSystemPrompt({ mode: "qa", cwd: "/workspace", extensionPrompt: "project-b", tools: [toolA, toolB] });
+  const first = buildSystemPrompt({ cwd: "/workspace", extensionPrompt: "project-a", tools: [toolB, toolA] });
+  const second = buildSystemPrompt({ cwd: "/workspace", extensionPrompt: "project-b", tools: [toolA, toolB] });
   assert.notEqual(stableSystemPromptForCache(first), stableSystemPromptForCache(second));
 
   await withTempWorkspace(async (workspaceRoot) => {
@@ -870,9 +836,9 @@ async function testSessionReplayAndAgentResume(): Promise<void> {
     await agent.runTask("continue the review");
     assert.equal(provider.requests.at(-1)?.some((message) => hasToolCall(message, "call-7")), true);
     assert.equal(provider.requests.at(-1)?.some((message) => messageReasoning(message) === "The worker is the second target."), true);
-    const pendingPlan = agent.runTask("plan the next review", { mode: "plan" });
+    const pendingTurn = agent.runTask("review the next change");
     await assert.rejects(agent.compactConversation(), /while agent turn is running/);
-    await pendingPlan;
+    await pendingTurn;
     const savedBeforeSwitch = await fs.readFile(filePath, "utf8");
     const secondFile = sessionFilePath(workspaceRoot, "second-session");
     await fs.writeFile(secondFile, `${JSON.stringify({ type: "user_message", content: "second session" })}\n`, "utf8");

@@ -194,7 +194,6 @@ function testEmotionPromptAndSystemPrompt(): void {
   assert.match(emotionPrompt, /凌晨三点还在干活，有点累/u);
 
   const promptBundle = buildPromptBundle({
-    mode: "qa",
     cwd: "/tmp/workspace",
     identityPrompt: "private identity text",
     emotionPrompt

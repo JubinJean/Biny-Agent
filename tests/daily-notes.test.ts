@@ -51,7 +51,6 @@ try {
   assert.match(mergedNote, /## 活动记录/u);
   assert.match(mergedNote, /活动日报/u);
   const prompt = buildPromptBundle({
-    mode: "qa",
     cwd: "/tmp/biny",
     dailyNotesPrompt: "# 2026-09-02 每日摘要\n\n## 聊天摘要\n\n完成记忆系统对齐。"
   });

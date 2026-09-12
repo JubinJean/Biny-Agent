@@ -79,7 +79,6 @@ import {
   readPermissionResult,
   readPromptContext,
   readRequestIds,
-  readRunMode,
   readRuntimeIsolation,
   readSurface,
   readStringArray,
@@ -630,7 +629,6 @@ export class RuntimeHostServer {
         const ids = readRequestIds(payload);
         const submitted = runtime.submitPrompt(
           requiredString(payload.input, "input"),
-          readRunMode(payload.mode),
           readAttachments(payload.attachments),
           ids,
           readPromptContext(payload.promptContext),
@@ -650,7 +648,6 @@ export class RuntimeHostServer {
           const ids = readRequestIds(payload);
           const submitted = runtime.submitPrompt(
             requiredString(payload.input, "input"),
-            readRunMode(payload.mode),
             readAttachments(payload.attachments),
             ids,
             readPromptContext(payload.promptContext),

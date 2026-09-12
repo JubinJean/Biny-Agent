@@ -2950,8 +2950,7 @@
 
 .biny-model-pill,
 .biny-thinking-pill,
-.biny-capabilities-pill,
-.biny-plan-pill {
+.biny-capabilities-pill {
   display: inline-flex;
   height: 32px;
   align-items: center;
@@ -2999,8 +2998,7 @@
 
 .biny-model-pill:hover:not(:disabled):not([data-active="true"]),
 .biny-thinking-pill:hover:not(:disabled):not([data-active="true"]),
-.biny-capabilities-pill:hover:not(:disabled):not([data-active="true"]),
-.biny-plan-pill:hover:not(:disabled):not([data-active="true"]) {
+.biny-capabilities-pill:hover:not(:disabled):not([data-active="true"]) {
   background: var(--biny-surface-hover);
   color: var(--biny-text);
 }
@@ -3032,36 +3030,6 @@
   position: relative;
 }
 
-/* 规划模式开关行：勾选态沿菜单语言（勾 + 描述两行式）。 */
-.capabilities-plan-toggle {
-  display: flex;
-  flex: none;
-  min-height: 44px;
-  align-items: center;
-  gap: 8px;
-  margin: 4px 8px 8px;
-  padding: 8px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--biny-text);
-  cursor: pointer;
-  font: inherit;
-  text-align: left;
-}
-
-.capabilities-plan-toggle:hover {
-  background: var(--biny-surface-hover);
-}
-
-.capabilities-plan-toggle[aria-checked="true"] {
-  background: var(--biny-surface-selected);
-}
-
-.capabilities-plan-toggle small {
-  color: var(--biny-text-secondary);
-}
-
 .biny-capabilities-count {
   color: var(--biny-text-tertiary);
   font-size: calc(11px * var(--font-scale));
@@ -3070,7 +3038,7 @@
 
 /*
  * 能力菜单采用分区结构——
- * 类型与搜索 → 选择方式 → 分组列表 → MCP 服务器 → 规划模式。
+ * 类型与搜索 → 选择方式 → 分组列表 → MCP 服务器。
  */
 .biny-composer-popover.capabilities-menu {
   width: min(356px, calc(100vw - 16px));

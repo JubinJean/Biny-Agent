@@ -31,7 +31,6 @@ async function main(): Promise<void> {
     assert.equal((await storage.appendTrait("Prefer a short concrete next step.")).content, evolved.content);
 
     const prompt = buildSystemPrompt({
-      mode: "qa",
       cwd: "/workspace",
       soulPrompt: await storage.promptText()
     });

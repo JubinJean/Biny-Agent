@@ -66,7 +66,7 @@ import { createInitialTuiState, tuiReducer } from "./reducer.js";
 import { editorTheme, theme } from "./theme/index.js";
 import { formatSessionAge } from "./transcriptText.js";
 import type { PermissionChoice, TuiLaunchMode, TuiState, TuiStatus } from "./types.js";
-import type { AgentAttachment, AgentRunMode } from "../agent/AgentSession.js";
+import type { AgentAttachment } from "../agent/AgentSession.js";
 import type { SkillDefinition } from "../extensions/skills.js";
 import type { WorktreeStatusView } from "../runtime/host/worktree.js";
 import type {
@@ -145,7 +145,6 @@ export class BinyTui {
   private readonly shortcuts = new ShortcutsBarComponent();
   private readonly editor: Editor;
 
-  private mode: Extract<AgentRunMode, "chat" | "plan"> = "chat";
   /** 最近一张命令卡片的 transcript id，供 ctrl+o 展开/折叠细节。 */
   private lastCardId: string | undefined;
   /** 当前输入尚未发送的图片；实际读写剪贴板和存储都在 TUI runtime。 */
@@ -432,7 +431,6 @@ export class BinyTui {
       this.clearSessionWriterConflict();
       this.chatContainer.reset();
       this.dispatch({ type: "transcript.replaced", items: [], viewingSessionId: this.runtimeSnapshot?.info.sessionId });
-      this.mode = "chat";
       this.announceCurrentSession();
       this.setEditorText("");
       await this.refreshContextUsage();
@@ -486,7 +484,7 @@ export class BinyTui {
   private refreshChrome(): void {
     const status = runtimeStatus(this.runtimeSnapshot);
     this.status.setState(status, this.state.turnStartedAt, this.state.lastWorkedMs);
-    this.shortcuts.setState(status, this.mode);
+    this.shortcuts.setState(status);
     this.footer.setData(this.footerData());
     this.ui.requestRender();
   }
@@ -500,7 +498,6 @@ export class BinyTui {
       modelLabel: this.state.modelLabel,
       thinkingLabel: this.state.reasoningLabel,
       permissionMode: this.permissionMode,
-      mode: this.mode,
       contextUsedTokens: this.contextUsage.usedTokens,
       contextMaxTokens: this.contextUsage.maxTokens,
       contextSource: this.contextUsage.source,
@@ -609,8 +606,8 @@ export class BinyTui {
           return;
         }
         await (runtime instanceof RuntimeHostClient
-          ? runtime.submitPromptForSession(sessionId, input, this.mode, attachments)
-          : runtime.submitPrompt(input, this.mode, attachments)).completion;
+          ? runtime.submitPromptForSession(sessionId, input, attachments)
+          : runtime.submitPrompt(input, attachments)).completion;
       } catch (error) {
         if (isSessionWriterConflictError(error)) {
           await this.showSessionWriterConflict(error.sessionId, error.ownerSurface);
@@ -647,8 +644,8 @@ export class BinyTui {
         return;
       }
       await (runtime instanceof RuntimeHostClient
-        ? runtime.submitPromptForSession(sessionId, withAttachmentReferences(prompt, attachments), this.mode, attachments)
-        : runtime.submitPrompt(withAttachmentReferences(prompt, attachments), this.mode, attachments)).completion;
+        ? runtime.submitPromptForSession(sessionId, withAttachmentReferences(prompt, attachments), attachments)
+        : runtime.submitPrompt(withAttachmentReferences(prompt, attachments), attachments)).completion;
     } catch (error) {
       if (isSessionWriterConflictError(error)) {
         await this.showSessionWriterConflict(error.sessionId, error.ownerSurface);
@@ -724,11 +721,6 @@ export class BinyTui {
     if (isClipboardPaste) {
       this.dismissAutocomplete();
       void this.pasteClipboard();
-      return { consume: true };
-    }
-    if (matchesKey(data, "shift+tab") && !this.editor.isShowingAutocomplete()) {
-      this.mode = this.mode === "plan" ? "chat" : "plan";
-      this.refreshChrome();
       return { consume: true };
     }
     return undefined;
@@ -1559,7 +1551,6 @@ export class BinyTui {
         return;
       }
     }
-    this.mode = "chat";
     void readGitBranch(info.workspaceRoot).then((branch) => {
       this.gitBranch = branch;
       this.refreshChrome();
@@ -1588,7 +1579,6 @@ export class BinyTui {
         viewingSessionId: resumed.sessionId,
         items: sessionEventsToTranscript(resumed.events)
       });
-      this.mode = "chat";
       await this.refreshContextUsage();
       await this.refreshUsage();
     } catch (error) {

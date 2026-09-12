@@ -127,7 +127,7 @@ async function runAttachedCommand(
       isolation: options.isolated ? "worktree" : "shared",
       writeIntent: true
     });
-    const submitted = runtime.submitPromptForSession(sessionId, input, "chat");
+    const submitted = runtime.submitPromptForSession(sessionId, input);
     const turn = await withCliAbortSignal(async (signal) => {
       const onAbort = (): void => {
         void runtime.cancelRunRequest(submitted.runId, sessionId);

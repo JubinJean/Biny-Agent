@@ -76,7 +76,7 @@ export class ExecutionService {
     });
 
     try {
-      const submitted = this.interactive.submitPrompt(options.input, "chat", options.attachments ?? []);
+      const submitted = this.interactive.submitPrompt(options.input, options.attachments ?? []);
       const abort = (): void => {
         this.interactive.cancelRun(submitted.runId);
       };

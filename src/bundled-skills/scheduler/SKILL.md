@@ -27,7 +27,6 @@ biny automation create "Morning review" \
   --trigger cron \
   --cron "0 9 * * *" \
   --prompt "Review today's local activity and report anything requiring attention" \
-  --mode plan \
   --json
 
 # Add an interval job
@@ -38,7 +37,7 @@ biny automation create "Periodic check" \
   --json
 ```
 
-Supported creation options include `--cron`, `--interval-ms`, `--at`, `--jitter-ms`, `--session`, `--mode chat|plan`, `--max-fires`, and `--expires-at`. Use only options that are supported by the requested trigger. After creating a job, run `biny automation list --json` again and verify the stored trigger, prompt, target session, and expiry. Use `biny automation pending [automationId] --json` to inspect pending, running, deferred, completed, failed, or approval-gated fires.
+Supported creation options include `--cron`, `--interval-ms`, `--at`, `--jitter-ms`, `--session`, `--max-fires`, and `--expires-at`. Use only options that are supported by the requested trigger. After creating a job, run `biny automation list --json` again and verify the stored trigger, prompt, target session, and expiry. Use `biny automation pending [automationId] --json` to inspect pending, running, deferred, completed, failed, or approval-gated fires.
 
 ## Control and inspect
 

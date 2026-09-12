@@ -9,7 +9,7 @@ import { ChatComposer, ChatComposerDrawer, ChatComposerInput } from "@astryxdesi
 import type { ChatComposerInputHandle } from "@astryxdesign/core/Chat";
 import { useTooltip } from "@astryxdesign/core/Tooltip";
 import { memo, useEffect, useMemo, useRef, useState } from "react";
-import type { AgentSessionInfo, InteractiveAgentRunMode } from "../../../../agent/AgentSession.js";
+import type { AgentSessionInfo } from "../../../../agent/AgentSession.js";
 import type { AgentCapabilitySelection } from "../../../../agent/capabilitySelection.js";
 import type { ModelChoice } from "../../../../llm/ModelManager.js";
 import { modelThinkingSelections, thinkingSelectionForModel, type ThinkingSelection } from "../../../../llm/modelThinking.js";
@@ -58,7 +58,7 @@ interface ComposerProps {
   capabilityDefaults: DesktopCapabilityDefaults;
   skills: DesktopSkillCatalogEntry[];
   toolCatalog: DesktopToolCatalogEntry[];
-  onSend(input: string, mode: InteractiveAgentRunMode, attachments: DesktopAttachment[], delivery?: "steer" | "followUp", idempotencyKey?: string, capabilitySelection?: AgentCapabilitySelection): Promise<void>;
+  onSend(input: string, attachments: DesktopAttachment[], delivery?: "steer" | "followUp", idempotencyKey?: string, capabilitySelection?: AgentCapabilitySelection): Promise<void>;
   /** 正在编辑的历史消息；nonce 变化时把 value 回填进输入框并聚焦（Alma 式编辑）。 */
   editingMessage?: { nonce: number; value: string };
   /** 提交编辑：原位替换该消息并重新生成回复。 */
@@ -127,7 +127,6 @@ export const Composer = memo(function Composer({
   onWarning
 }: ComposerProps): React.JSX.Element {
   const [input, setInput] = useState("");
-  const [mode, setMode] = useState<InteractiveAgentRunMode>("chat");
   const [attachments, setAttachments] = useState<DesktopAttachment[]>([]);
   const [pendingAttachments, setPendingAttachments] = useState<PendingAttachment[]>([]);
   const [capabilitySelection, setCapabilitySelection] = useState<AgentCapabilitySelection>(() => selectionFromDefaults(capabilityDefaults));
@@ -157,7 +156,6 @@ export const Composer = memo(function Composer({
     setInput("");
     setAttachments([]);
     setPendingAttachments([]);
-    setMode("chat");
     setCapabilitySelection(selectionFromDefaults({ tools: defaultToolSelection, skills: defaultSkillSelection }));
     setMenu(null);
   }, [defaultSkillSelection, defaultToolSelection, project?.id]);
@@ -276,7 +274,7 @@ export const Composer = memo(function Composer({
         // 否则用户紧接着按 Enter 时可能把消息发给旧模型。
         setInput("");
         setAttachments([]);
-        await onSend(sendValue, mode, sentAttachments, delivery, globalThis.crypto.randomUUID(), capabilitySelection);
+        await onSend(sendValue, sentAttachments, delivery, globalThis.crypto.randomUUID(), capabilitySelection);
       } catch (submitError) {
         setInput(value);
         setAttachments(sentAttachments);
@@ -535,19 +533,6 @@ export const Composer = memo(function Composer({
                 <Icon name="add" size={15} />
               </ComposerActionButton>
             </div>
-            {/* 规划模式激活后显示为可退出的模式 pill。 */}
-            {mode === "plan" ? (
-              <ComposerActionButton
-                active
-                className="biny-plan-pill"
-                label="退出规划模式"
-                onClick={() => setMode("chat")}
-                tooltip="退出规划模式"
-              >
-                <Icon name="chart" size={13} />
-                <span>规划</span>
-              </ComposerActionButton>
-            ) : null}
             <div className="composer-menu-anchor" ref={capabilityAnchorRef}>
               <ComposerActionButton
                 active={menu === "capabilities"}
@@ -572,8 +557,6 @@ export const Composer = memo(function Composer({
                 onRefreshCatalog={onRefreshCatalog}
                 onWarning={onWarning}
                 open={menu === "capabilities"}
-                onPlanModeChange={(active) => setMode(active ? "plan" : "chat")}
-                planActive={mode === "plan"}
                 projectId={project?.id}
                 selection={capabilitySelection}
                 skills={skills}

@@ -85,9 +85,8 @@ pnpm desktop:dev
 pnpm dev -- tui
 pnpm dev -- chat
 
-# 一次性执行或只生成计划
+# 一次性执行
 pnpm dev -- run "梳理这个仓库，并说明最需要先处理的风险"
-pnpm dev -- plan "为这项改动列出实施计划，不执行写入或命令工具"
 ```
 
 运行 `pnpm dev -- --help` 查看完整命令和参数。

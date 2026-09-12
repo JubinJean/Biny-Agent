@@ -26,7 +26,6 @@ try {
   assert.match(firstSecurity, /cannot remove the built-in safety baseline/u);
 
   const first = buildSystemPrompt({
-    mode: "qa",
     cwd: "/workspace",
     securityPrompt: firstSecurity,
     soulPrompt: renderSoulPrompt("Soul should remain stable.", "user"),
@@ -45,18 +44,18 @@ try {
   assert.match(first, /Current permission mode: runtime-managed/u);
   assert.doesNotMatch(first, /Alma/u);
 
-  const baselineStable = stableSystemPromptForCache(buildSystemPrompt({ mode: "qa", cwd: "/workspace" }));
+  const baselineStable = stableSystemPromptForCache(buildSystemPrompt({ cwd: "/workspace" }));
   assert.notEqual(
     baselineStable,
-    stableSystemPromptForCache(buildSystemPrompt({ mode: "qa", cwd: "/workspace", securityPrompt: firstSecurity }))
+    stableSystemPromptForCache(buildSystemPrompt({ cwd: "/workspace", securityPrompt: firstSecurity }))
   );
   assert.notEqual(
     baselineStable,
-    stableSystemPromptForCache(buildSystemPrompt({ mode: "qa", cwd: "/workspace", soulPrompt: renderSoulPrompt("A different stable Soul.", "user") }))
+    stableSystemPromptForCache(buildSystemPrompt({ cwd: "/workspace", soulPrompt: renderSoulPrompt("A different stable Soul.", "user") }))
   );
   assert.notEqual(
     baselineStable,
-    stableSystemPromptForCache(buildSystemPrompt({ mode: "qa", cwd: "/workspace", identityPrompt: "USER PROFILE\nA different user." }))
+    stableSystemPromptForCache(buildSystemPrompt({ cwd: "/workspace", identityPrompt: "USER PROFILE\nA different user." }))
   );
 
   const telemetry = systemPromptForTelemetry(first) ?? "";
@@ -66,13 +65,11 @@ try {
   assert.doesNotMatch(telemetry, /private parent context/u);
 
   const dynamic = buildSystemPrompt({
-    mode: "qa",
     cwd: "/workspace",
     securityPrompt: firstSecurity,
     extensionPrompt: "dynamic-one"
   });
   const dynamicChanged = buildSystemPrompt({
-    mode: "qa",
     cwd: "/workspace",
     securityPrompt: firstSecurity,
     extensionPrompt: "dynamic-two"
@@ -84,8 +81,8 @@ try {
   assert.ok(secondSecurity);
   assert.match(secondSecurity, /下一轮立即生效的安全规则/u);
   assert.notEqual(
-    stableSystemPromptForCache(buildSystemPrompt({ mode: "qa", cwd: "/workspace", securityPrompt: firstSecurity })),
-    stableSystemPromptForCache(buildSystemPrompt({ mode: "qa", cwd: "/workspace", securityPrompt: secondSecurity }))
+    stableSystemPromptForCache(buildSystemPrompt({ cwd: "/workspace", securityPrompt: firstSecurity })),
+    stableSystemPromptForCache(buildSystemPrompt({ cwd: "/workspace", securityPrompt: secondSecurity }))
   );
 
   const previousAgentDir = process.env[BINY_AGENT_DIR_ENV];

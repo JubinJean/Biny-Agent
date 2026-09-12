@@ -72,7 +72,7 @@ export interface AgentUsage {
   cacheMissTokens?: number;
 }
 
-export type ModelRequestOperation = "agent" | "plan" | "compaction" | "memory" | "subagent";
+export type ModelRequestOperation = "agent" | "compaction" | "memory" | "subagent";
 
 export type ModelRequestErrorCode =
   | "aborted"

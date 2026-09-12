@@ -7,7 +7,6 @@
  *
  * 通道名统一用 `desktop:<领域>:<动作>` 的形式，便于排查。
  */
-import type { InteractiveAgentRunMode } from "../agent/AgentSession.js";
 import type { DesktopCrystalRequest, DesktopCrystalSnapshot } from "./crystalProtocol.js";
 import type { AgentCapabilitySelection, CapabilitySelectionMode } from "../agent/capabilitySelection.js";
 import type { ActivitySettings, ActivitySettingsInput, ActivitySettingsPatch } from "../activity/settings.js";
@@ -1503,7 +1502,6 @@ export interface DesktopApi {
     projectId: string,
     sessionId: string | undefined,
     input: string,
-    mode: InteractiveAgentRunMode,
     attachments: DesktopAttachment[],
     delivery?: "steer" | "followUp",
     personalization?: DesktopChatPersonalizationOverride,
@@ -1513,8 +1511,8 @@ export interface DesktopApi {
   ): Promise<DesktopRunReceipt>;
   toolCatalog(projectId: string): Promise<DesktopToolCatalogEntry[]>;
   resumeInterruptedTurn(projectId: string, sessionId: string): Promise<DesktopRunReceipt | undefined>;
-  editPrompt(projectId: string, sessionId: string, userMessageIndex: number, input: string, mode: InteractiveAgentRunMode, attachments: DesktopAttachment[], idempotencyKey?: string): Promise<DesktopRunReceipt>;
-  retryPrompt(projectId: string, sessionId: string, targetMessageId: string, input: string, mode: InteractiveAgentRunMode, attachments: DesktopAttachment[], idempotencyKey?: string): Promise<DesktopRunReceipt>;
+  editPrompt(projectId: string, sessionId: string, userMessageIndex: number, input: string, attachments: DesktopAttachment[], idempotencyKey?: string): Promise<DesktopRunReceipt>;
+  retryPrompt(projectId: string, sessionId: string, targetMessageId: string, input: string, attachments: DesktopAttachment[], idempotencyKey?: string): Promise<DesktopRunReceipt>;
   switchMessageVersion(projectId: string, sessionId: string, messageId: string, direction: "prev" | "next"): Promise<DesktopSessionDocument>;
   cancelRun(projectId: string, runId: string): Promise<void>;
   runSlashCommand(projectId: string, sessionId: string | undefined, command: string): Promise<DesktopSlashResult>;

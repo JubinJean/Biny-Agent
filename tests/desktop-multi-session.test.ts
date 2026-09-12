@@ -85,8 +85,8 @@ try {
   assert.equal(factoryCalled, false, "竞争 owner 失败不能先创建 Runtime");
 
   const [a, b] = await Promise.all([
-    manager.sendPrompt(project.id, undefined, "parallel-probe-A", "chat", []),
-    manager.sendPrompt(project.id, undefined, "parallel-probe-B", "chat", [])
+    manager.sendPrompt(project.id, undefined, "parallel-probe-A", []),
+    manager.sendPrompt(project.id, undefined, "parallel-probe-B", [])
   ]);
   assert.notEqual(a.sessionId, b.sessionId);
   await waitFor(() => responses.has("parallel-probe-A") && responses.has("parallel-probe-B"), () => ({ received: [...responses.keys()], states: [a, b].map((session) => ({ sessionId: session.sessionId, state: client.getSnapshot(session.sessionId).state })) }));

@@ -113,7 +113,7 @@ async function main(): Promise<void> {
       currentSnapshot = update.snapshot;
       for (const listener of listeners) listener(update);
     },
-    submitPrompt: (input, mode, _attachments, ids) => {
+    submitPrompt: (input, _attachments, ids) => {
       const runId = ids?.runId ?? "run-host-test";
       const messageId = ids?.messageId ?? "message-host-test";
       const completedSnapshot = { ...currentSnapshot, revision: currentSnapshot.revision + 1 };
@@ -135,7 +135,7 @@ async function main(): Promise<void> {
           status: "completed",
           stopReason: "model_stop",
           steps: 1,
-          output: `done: ${input} (${mode})`,
+          output: `done: ${input}`,
           durationMs: 1
         })
       };
@@ -407,7 +407,6 @@ async function main(): Promise<void> {
         runId: "run-host-test",
         messageId: "message-host-test",
         input: "hello",
-        mode: "chat",
         status: "thinking",
         startedAt: new Date().toISOString()
       }
@@ -421,7 +420,6 @@ async function main(): Promise<void> {
       timestamp: new Date().toISOString(),
       messageId: "message-host-test",
       input: "hello",
-      mode: "chat",
       model: {
         alias: "test-model",
         provider: "test",
@@ -435,7 +433,7 @@ async function main(): Promise<void> {
   runtime.publish(update);
   assert.equal((await updatePromise).event?.type, "run.started");
 
-  const submitted = client.submitPrompt("hello", "chat");
+  const submitted = client.submitPrompt("hello");
   assert.equal(submitted.runId.length > 0, true);
   assert.equal((await submitted.completion).status, "completed");
 
@@ -608,7 +606,7 @@ async function main(): Promise<void> {
   await fs.chmod(hostPaths.registrationPath, 0o600);
   await assert.rejects(
     connectRuntimeHost(workspace, { clientId: "incompatible-client", surface: "tui" }),
-    /protocol 2 is incompatible with 6/u
+    /protocol 2 is incompatible with 7/u
   );
   assert.deepEqual(JSON.parse(await readFile(hostPaths.registrationPath, "utf8")), incompatibleRegistration);
   await fs.rm(hostPaths.registrationPath);

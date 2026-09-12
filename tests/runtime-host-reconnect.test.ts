@@ -134,7 +134,7 @@ const backoff = { minMs: runtimeHostReconnectMinMs, maxMs: runtimeHostReconnectM
 }
 
 // ─── 3. 协议 v5 骨架 + 握手兼容矩阵（{v3,v5} × {v3,v5}）────────────────────────
-assert.equal(protocolVersion, 6, "协议版本必须 bump 到 6");
+assert.equal(protocolVersion, 7, "移除运行模式参数后协议版本必须为 7");
 
 // capabilities 协商：取声明 ∩ 支持，去重，host 不认识的声明不报错只是不生效。
 {
@@ -184,16 +184,16 @@ function registrationFor(version: number): HostRegistration {
 }
 
 // host 侧握手判定（authenticateRuntimeHostHello）：版本严格相等才放行。
-// v6 host × v5 client → 接受；v6 host × v3 client → 拒绝（无静默降级）。
+// v7 host × v5 client → 接受；v7 host × v3 client → 拒绝（无静默降级）。
 assert.equal(authenticateRuntimeHostHello(helloFor(5), registrationFor(5), 5), true, "v5↔v5 必须握手成功");
-assert.equal(authenticateRuntimeHostHello(helloFor(3), registrationFor(5), 5), false, "v3 client 连 v6 host 必须被拒绝");
+assert.equal(authenticateRuntimeHostHello(helloFor(3), registrationFor(5), 5), false, "v3 client 连 v7 host 必须被拒绝");
 // v3 host 侧（其期望版本为 3）：v3 client 接受，v5 client 拒绝。
 assert.equal(authenticateRuntimeHostHello(helloFor(3), registrationFor(3), 3), true, "v3↔v3 必须握手成功");
 assert.equal(authenticateRuntimeHostHello(helloFor(5), registrationFor(3), 3), false, "v5 client 连 v3 host 必须被拒绝");
 
-// ─── 4. 端到端握手：v6 host 上跑的 server 必须把「拒绝原因」作为响应帧透给 client ────
+// ─── 4. 端到端握手：v7 host 上跑的 server 必须把「拒绝原因」作为响应帧透给 client ────
 // §4.2 硬要求：被拒绝的组合要给 actionable 错误，不允许静默降级为 connection closed。
-// 老 client（protocolVersion=3）撞上 v6 host 时，必须读到带 daemon 重装指引的拒绝帧。
+// 老 client（protocolVersion=3）撞上 v7 host 时，必须读到带 daemon 重装指引的拒绝帧。
 {
   const persistenceRoot = await mkdtemp(path.join(os.tmpdir(), "biny-handshake-reject-test-"));
   const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "biny-handshake-reject-ws-"));
@@ -201,7 +201,7 @@ assert.equal(authenticateRuntimeHostHello(helloFor(5), registrationFor(3), 3), f
   const { runtimeHostPaths } = await import("../src/runtime/host/lifecycle.js");
   const paths = runtimeHostPaths(persistenceRoot);
   const registration: HostRegistration = {
-    protocolVersion, // v6 host
+    protocolVersion, // v7 host
     endpoint: paths.endpoint,
     registrationPath: paths.registrationPath,
     lockPath: paths.lockPath,
@@ -235,7 +235,7 @@ assert.equal(authenticateRuntimeHostHello(helloFor(5), registrationFor(3), 3), f
     const hello: HostHelloFrame = {
       kind: "hello",
       requestId: "hello-reject",
-      protocolVersion: 3, // v3 client 撞上 v6 host
+      protocolVersion: 3, // v3 client 撞上 v7 host
       rootHash: paths.rootHash,
       token, // 凭据正确，纯粹是版本不匹配
       configRoot: "/config",
@@ -266,7 +266,7 @@ assert.equal(authenticateRuntimeHostHello(helloFor(5), registrationFor(3), 3), f
     await rm(workspaceRoot, { recursive: true, force: true });
   }
   assert.equal(rejection?.errorCode, "protocol_version_mismatch", "拒绝帧必须带 protocol_version_mismatch 错误码");
-  assert.match(rejection?.error ?? "", /protocol 3 is incompatible with 6/u, "拒绝消息要点明版本不匹配");
+  assert.match(rejection?.error ?? "", /protocol 3 is incompatible with 7/u, "拒绝消息要点明版本不匹配");
   assert.match(rejection?.error ?? "", /biny daemon uninstall && biny daemon install/u, "拒绝消息必须给 actionable 指引，不允许静默降级");
 }
 

@@ -1389,22 +1389,19 @@ function testStatusAndShortcutHints(): void {
   assert.equal(visibleWidth(divider), 50);
   assert.equal(visibleWidth(statusDivider("Working", 2)), 2);
 
-  const busy = shortcutHints("running", "chat").map((hint) => hint.key);
+  const busy = shortcutHints("running").map((hint) => hint.key);
   assert.equal(busy.includes("esc"), true);
   assert.equal(busy.includes("ctrl+o"), false);
-  const planHint = shortcutHints("idle", "plan").find((hint) => hint.key === "shift+tab");
-  assert.equal(planHint?.description, "chat mode");
-  const chatHint = shortcutHints("idle", "chat").find((hint) => hint.key === "shift+tab");
-  assert.equal(chatHint?.description, "plan mode");
-  assert.equal(shortcutHints("idle", "chat").some((hint) => hint.key === "ctrl+e"), false);
+  assert.equal(shortcutHints("idle").some((hint) => hint.key === "shift+tab"), false);
+  assert.equal(shortcutHints("idle").some((hint) => hint.key === "ctrl+e"), false);
 
   // 窄终端整条丢弃，不把单条提示截半句。
-  const visible = visibleShortcutHints(shortcutHints("idle", "chat"), 14);
+  const visible = visibleShortcutHints(shortcutHints("idle"), 14);
   const rendered = visible.map((hint) => `${hint.key} ${hint.description}`).join(" · ");
   assert.equal(visibleWidth(rendered) <= 14, true);
 
   const bar = new ShortcutsBarComponent();
-  bar.setState("idle", "chat");
+  bar.setState("idle");
   for (const line of plainLines(bar.render(50))) assert.equal(visibleWidth(line) <= 50, true, line);
 }
 

@@ -6,7 +6,6 @@
  * Agent、Session 或 Provider。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { InteractiveAgentRunMode } from "../../../agent/AgentSession.js";
 import type { AgentCapabilitySelection } from "../../../agent/capabilitySelection.js";
 import type { ContextBudgetStatus } from "../../../agent/context/types.js";
 import type { PermissionResult } from "../../../permission/PermissionManager.js";
@@ -890,7 +889,7 @@ function DesktopApp(): React.JSX.Element {
     };
   }, [newTask, openProject, openSearch, openSettings, toggleSidebar]);
 
-  const sendPrompt = useCallback(async (input: string, mode: InteractiveAgentRunMode, attachments: DesktopAttachment[], delivery?: "steer" | "followUp", idempotencyKey?: string, capabilitySelection?: AgentCapabilitySelection): Promise<DesktopRunReceipt> => {
+  const sendPrompt = useCallback(async (input: string, attachments: DesktopAttachment[], delivery?: "steer" | "followUp", idempotencyKey?: string, capabilitySelection?: AgentCapabilitySelection): Promise<DesktopRunReceipt> => {
     const activeProjectId = projectRef.current;
     const projectId = selectedRef.current === undefined
       ? draftProjectId ?? activeProjectId
@@ -909,7 +908,6 @@ function DesktopApp(): React.JSX.Element {
       projectId,
       switchingDraftProject ? undefined : selectedRef.current,
       input,
-      mode,
       attachments,
       delivery,
       previousSessionId === undefined && draftMemoryOverride !== undefined ? draftPersonalization : undefined,
@@ -961,7 +959,8 @@ function DesktopApp(): React.JSX.Element {
   }, [openSession]);
 
   // 发送直接进入聊天布局；临时用户消息覆盖 IPC/事件桥的空窗，真实事件到达后自动替换。
-  const sendPromptWithTransition = useCallback(async (input: string, mode: InteractiveAgentRunMode, attachments: DesktopAttachment[], delivery?: "steer" | "followUp", idempotencyKey?: string, capabilitySelection?: AgentCapabilitySelection): Promise<void> => {
+  const sendPromptWithTransition = useCallback(async (input: string, attachments: DesktopAttachment[], delivery?: "steer" | "followUp", idempotencyKey?: string, capabilitySelection?: AgentCapabilitySelection): Promise<void> => {
+    setGenerationError(undefined);
     const pendingProjectId = selectedRef.current === undefined ? draftProjectId ?? projectRef.current : undefined;
     const pendingId = idempotencyKey ?? globalThis.crypto.randomUUID();
     if (pendingProjectId) {
@@ -973,7 +972,7 @@ function DesktopApp(): React.JSX.Element {
       });
     }
     try {
-      const receipt = await sendPrompt(input, mode, attachments, delivery, idempotencyKey, capabilitySelection);
+      const receipt = await sendPrompt(input, attachments, delivery, idempotencyKey, capabilitySelection);
       if (pendingProjectId) {
         setPendingPrompt((current) => current?.id === pendingId
           ? { ...current, sessionId: receipt.sessionId, messageId: receipt.messageId }
@@ -1018,7 +1017,6 @@ function DesktopApp(): React.JSX.Element {
 
   const editPrompt = useCallback(async (
     input: string,
-    mode: InteractiveAgentRunMode,
     attachments: DesktopAttachment[],
     sessionId: string,
     userMessageIndex: number,
@@ -1039,7 +1037,7 @@ function DesktopApp(): React.JSX.Element {
     }
     let receipt: Awaited<ReturnType<typeof edit>>;
     try {
-      receipt = await edit(projectId, sessionId, userMessageIndex, input, mode, attachments, idempotencyKey);
+      receipt = await edit(projectId, sessionId, userMessageIndex, input, attachments, idempotencyKey);
     } catch (error) {
       if (projectRef.current === projectId && selectedRef.current === sessionId && previousDocument) setDocument(previousDocument);
       throw error;
@@ -1067,7 +1065,7 @@ function DesktopApp(): React.JSX.Element {
     if (!sessionId) {
       throw new Error("当前消息还没有可编辑的会话。");
     }
-    await editPrompt(input, "chat", [], sessionId, userMessageIndex, idempotencyKey);
+    await editPrompt(input, [], sessionId, userMessageIndex, idempotencyKey);
   }, [editPrompt]);
 
   // 编辑历史消息（Alma 式）：点「编辑」把文本回填到底部输入框，提交后原位替换并重新生成。
@@ -1342,7 +1340,7 @@ function DesktopApp(): React.JSX.Element {
     const retry = window.biny.retryPrompt;
     if (typeof retry !== "function") throw new Error(desktopApiVersionMismatchMessage);
     try {
-      const receipt = await retry(projectId, sessionId, targetMessageId, input, "chat", [], idempotencyKey);
+      const receipt = await retry(projectId, sessionId, targetMessageId, input, [], idempotencyKey);
       setSelectedSessionId(receipt.sessionId);
     } catch (error) {
       setWarning(errorMessage(error));

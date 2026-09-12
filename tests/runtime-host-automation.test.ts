@@ -23,7 +23,7 @@ function runtime(sessionId: string, busy = false): InteractiveRuntimeHandle {
       : { kind: "idle" }
   } as unknown as InteractiveRuntimeSnapshot;
   return {
-    submitPrompt: (_input, _mode, _attachments, requestIds) => {
+    submitPrompt: (_input, _attachments, requestIds) => {
       const submitted: SubmittedAgentRun = {
         runId: requestIds?.runId ?? `run-${sessionId}`,
         messageId: requestIds?.messageId ?? `message-${sessionId}`,

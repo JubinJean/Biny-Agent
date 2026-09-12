@@ -8,7 +8,6 @@ import os from "node:os";
 import path from "node:path";
 import { type Component, type TUI, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import type { PermissionMode } from "../../permission/PermissionManager.js";
-import type { AgentRunMode } from "../../agent/AgentSession.js";
 import type { TuiStatus } from "../types.js";
 import { theme } from "../theme/index.js";
 import { formatToolDuration } from "../transcriptText.js";
@@ -21,7 +20,6 @@ export interface FooterData {
   modelLabel: string;
   thinkingLabel?: string;
   permissionMode: PermissionMode;
-  mode: AgentRunMode;
   contextUsedTokens?: number;
   contextMaxTokens?: number;
   contextSource?: "estimated" | "provider";
@@ -76,7 +74,6 @@ export function footerLayout(data: FooterData, width: number): {
   const context = formatContextUsage(data.contextUsedTokens, data.contextMaxTokens, data.contextSource);
 
   const metaParts: string[] = [data.permissionMode];
-  if (data.mode === "plan") metaParts.push("plan");
   if (data.cacheHitRate !== undefined) metaParts.push(`CH ${String(Math.round(data.cacheHitRate * 100))}%`);
   if (data.sessionCacheHitRate !== undefined) metaParts.push(`S-CH ${String(Math.round(data.sessionCacheHitRate * 100))}%`);
   const meta = ` · ${metaParts.join(" · ")}`;
@@ -270,11 +267,9 @@ export interface ShortcutHint {
 /** 快捷键提示行：键位 dim，说明 muted，放不下的整条丢弃。 */
 export class ShortcutsBarComponent implements Component {
   private status: TuiStatus = "idle";
-  private mode: AgentRunMode = "chat";
 
-  setState(status: TuiStatus, mode: AgentRunMode): void {
+  setState(status: TuiStatus): void {
     this.status = status;
-    this.mode = mode;
   }
 
   invalidate(): void {
@@ -282,14 +277,14 @@ export class ShortcutsBarComponent implements Component {
   }
 
   render(width: number): string[] {
-    const hints = visibleShortcutHints(shortcutHints(this.status, this.mode), width);
+    const hints = visibleShortcutHints(shortcutHints(this.status), width);
     return [hints
       .map((hint) => `${theme.fg("dim", hint.key)}${theme.fg("muted", ` ${hint.description}`)}`)
       .join(theme.fg("muted", " · "))];
   }
 }
 
-export function shortcutHints(status: TuiStatus, mode: AgentRunMode): ShortcutHint[] {
+export function shortcutHints(status: TuiStatus): ShortcutHint[] {
   const busy = status === "thinking" || status === "running";
   const hints: ShortcutHint[] = [];
   if (status === "waiting_permission") {
@@ -300,10 +295,6 @@ export function shortcutHints(status: TuiStatus, mode: AgentRunMode): ShortcutHi
     hints.push({ key: "enter", description: "send" }, { key: "/", description: "commands" });
   }
   // 越靠前越重要：窄终端从末尾开始丢弃提示。
-  hints.push({
-    key: "shift+tab",
-    description: mode === "plan" ? "chat mode" : "plan mode"
-  });
   hints.push(
     { key: "↑/↓", description: "history" },
     { key: "ctrl+c twice", description: "exit" }
@@ -353,7 +344,6 @@ export class WelcomeComponent implements Component {
 
 export const welcomeHints: readonly ShortcutHint[] = [
   { key: "/", description: "commands" },
-  { key: "shift+tab", description: "plan mode" },
   { key: "esc", description: "interrupt" },
   { key: "ctrl+c twice", description: "exit" }
 ];

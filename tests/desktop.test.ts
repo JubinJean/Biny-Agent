@@ -271,7 +271,6 @@ function testDesktopRendererStateProjection(): void {
         runId: "run-a",
         messageId: "message-a",
         input: "Refactor the desktop renderer",
-        mode: "chat",
         status: "thinking",
         startedAt: timestamp
       }
@@ -829,13 +828,13 @@ async function testDesktopPromptIdempotency(): Promise<void> {
     internals.sendPromptOnce = executeOnce;
     internals.editPromptOnce = executeOnce;
 
-    const firstSend = agents.sendPrompt("project-1", undefined, "相同消息", "chat", [], undefined, undefined, "send-key");
-    const secondSend = agents.sendPrompt("project-1", undefined, "相同消息", "chat", [], undefined, undefined, "send-key");
+    const firstSend = agents.sendPrompt("project-1", undefined, "相同消息", [], undefined, undefined, "send-key");
+    const secondSend = agents.sendPrompt("project-1", undefined, "相同消息", [], undefined, undefined, "send-key");
     assert.deepEqual(await Promise.all([firstSend, secondSend]), [receipt, receipt]);
     assert.equal(executions, 1, "同一发送操作键只能执行一次");
 
-    const firstEdit = agents.editPrompt("project-1", "session-1", 0, "相同消息", "chat", [], "edit-key");
-    const secondEdit = agents.editPrompt("project-1", "session-1", 0, "相同消息", "chat", [], "edit-key");
+    const firstEdit = agents.editPrompt("project-1", "session-1", 0, "相同消息", [], "edit-key");
+    const secondEdit = agents.editPrompt("project-1", "session-1", 0, "相同消息", [], "edit-key");
     assert.deepEqual(await Promise.all([firstEdit, secondEdit]), [receipt, receipt]);
     assert.equal(executions, 2, "同一编辑操作键只能执行一次");
 
@@ -844,10 +843,10 @@ async function testDesktopPromptIdempotency(): Promise<void> {
       failedExecutions += 1;
       throw new Error("模拟发送失败");
     };
-    const failedSend = agents.sendPrompt("project-1", undefined, "失败消息", "chat", [], undefined, undefined, "failed-key");
+    const failedSend = agents.sendPrompt("project-1", undefined, "失败消息", [], undefined, undefined, "failed-key");
     await assert.rejects(failedSend, /模拟发送失败/u);
     await assert.rejects(
-      agents.sendPrompt("project-1", undefined, "失败消息", "chat", [], undefined, undefined, "failed-key"),
+      agents.sendPrompt("project-1", undefined, "失败消息", [], undefined, undefined, "failed-key"),
       /模拟发送失败/u
     );
     assert.equal(failedExecutions, 1, "失败操作的重复 IPC 也不能再次执行");
@@ -976,7 +975,7 @@ async function testDesktopOpenSessionReturnsHistoryWhenRuntimeFails(): Promise<v
     assert.equal(workspace.runtime, undefined);
     assert.match(workspace.runtimeError ?? "", /credentials|credential|key|密钥/iu);
     await assert.rejects(
-      agents.sendPrompt(project.id, second.sessionId, "继续", "chat", []),
+      agents.sendPrompt(project.id, second.sessionId, "继续", []),
       /credentials|credential|key|密钥/iu
     );
   } finally {
@@ -3839,7 +3838,7 @@ function testLiveExecutionTimelineKeepsReasoningAndToolsInOrder(): void {
   const base = { sessionId: "session", runId: "ordered-run", timestamp: "2026-01-01T00:00:00.000Z" };
   const timeline = buildSessionTimeline([], [
     { ...base, type: "message.user", messageId: "message", content: "inspect and test" },
-    { ...base, type: "run.started", messageId: "message", input: "inspect and test", mode: "chat", model: { alias: "test", provider: "test", label: "test/model", reasoning: "High" }, skills: [] },
+    { ...base, type: "run.started", messageId: "message", input: "inspect and test", model: { alias: "test", provider: "test", label: "test/model", reasoning: "High" }, skills: [] },
     { ...base, type: "reasoning.started", phase: "initial" },
     { ...base, timestamp: "2026-01-01T00:00:01.000Z", type: "reasoning.delta", content: "先检查入口。" },
     { ...base, timestamp: "2026-01-01T00:00:02.000Z", type: "reasoning.completed" },
@@ -4052,7 +4051,6 @@ function testTerminalRunEventClassification(): void {
     type: "run.started",
     messageId: "message",
     input: "run",
-    mode: "chat",
     model: { alias: "test", provider: "test", label: "test/model", reasoning: "Off" },
     skills: []
   }), false);
@@ -4068,7 +4066,6 @@ function testLiveReasoningAndSkillProjection(): void {
       type: "run.started",
       messageId: "message",
       input: "explain",
-      mode: "chat",
       model: { alias: "test", provider: "test", label: "test/model", reasoning: "High" },
       skills: [".agent/skills/programmatic-tools/SKILL.md"]
     },

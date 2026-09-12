@@ -20,7 +20,6 @@ import { resumeCommand } from "./commands/resume.js";
 import { sessionsCommand, type SessionsCommandOptions } from "./commands/sessions.js";
 import { sessionExportCommand, sessionImportCommand } from "./commands/sessionTransfer.js";
 import type { SessionTransferFormat } from "../session/transfer.js";
-import { planCommand } from "./commands/plan.js";
 import { tuiCommand } from "./commands/tui.js";
 import { registerSkillCommands } from "./commands/skills.js";
 import { runtimeHostCommand } from "./commands/runtimeHost.js";
@@ -134,15 +133,14 @@ automation
   .option("--at <timestamp>", "ISO timestamp for once")
   .option("--jitter-ms <milliseconds>", "maximum schedule jitter", parseNonNegativeInteger)
   .option("--session <id>", "heartbeat target session")
-  .option("--mode <mode>", "chat or plan", "chat")
   .option("--max-fires <count>", "maximum fire count", parsePositiveInteger)
   .option("--expires-at <timestamp>", "ISO expiry timestamp")
   .option("--json", "print JSON")
-  .action((name: string, options: { prompt: string; trigger: string; cron?: string; intervalMs?: number; at?: string; jitterMs?: number; session?: string; mode: "chat" | "plan"; maxFires?: number; expiresAt?: string; json?: boolean }) => wrap(() => automationCreateCommand(workspaceRoot, {
+  .action((name: string, options: { prompt: string; trigger: string; cron?: string; intervalMs?: number; at?: string; jitterMs?: number; session?: string; maxFires?: number; expiresAt?: string; json?: boolean }) => wrap(() => automationCreateCommand(workspaceRoot, {
     name,
     triggerType: options.trigger as "heartbeat" | "cron" | "interval" | "once",
     schedule: { cron: options.cron, intervalMs: options.intervalMs, at: options.at, jitterMs: options.jitterMs },
-    executionTemplate: { prompt: options.prompt, sessionId: options.session, mode: options.mode },
+    executionTemplate: { prompt: options.prompt, sessionId: options.session },
     maxFires: options.maxFires,
     expiresAt: options.expiresAt
   }, options))());
@@ -308,12 +306,6 @@ emotion
   .command("get")
   .argument("[sessionId]", "session or chat id")
   .action((sessionId?: string) => wrap(() => emotionGetCommand(sessionId))());
-program
-  .command("plan")
-  .description("Create a plan without executing write, edit, or command tools")
-  .argument("<task...>", "task text")
-  // Commander 对可变参数返回数组，这里统一拼回自然语言任务文本。
-  .action((task: string[]) => wrap(() => planCommand(workspaceRoot, task.join(" ")))());
 program
   .command("run")
   .description("Run a one-shot agent task")

@@ -5,7 +5,7 @@
  */
 import { randomUUID } from "node:crypto";
 import net from "node:net";
-import type { AgentAttachment, AgentRunMode, AgentSessionInfo, ResumedAgentSession } from "../../agent/AgentSession.js";
+import type { AgentAttachment, AgentSessionInfo, ResumedAgentSession } from "../../agent/AgentSession.js";
 import type { AgentCapabilitySelection } from "../../agent/capabilitySelection.js";
 import type { AgentRunOutcome, InteractiveRuntimeHandle, QueuedAgentMessage, RuntimeRequestIds, SubmittedAgentRun } from "../InteractiveAgentRuntime.js";
 import type { ContextStatus } from "../../agent/context/types.js";
@@ -150,15 +150,14 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     };
   }
 
-  submitPrompt(input: string, mode: AgentRunMode = "chat", attachments: AgentAttachment[] = [], requestIds?: RuntimeRequestIds, promptContext?: string, capabilitySelection?: AgentCapabilitySelection): SubmittedAgentRun {
-    return this.submitPromptForSession(this.focusedSessionId, input, mode, attachments, requestIds, promptContext, capabilitySelection);
+  submitPrompt(input: string, attachments: AgentAttachment[] = [], requestIds?: RuntimeRequestIds, promptContext?: string, capabilitySelection?: AgentCapabilitySelection): SubmittedAgentRun {
+    return this.submitPromptForSession(this.focusedSessionId, input, attachments, requestIds, promptContext, capabilitySelection);
   }
 
   /** 向指定 session 提交回合；旧 submitPrompt 始终指向 focused session。 */
   submitPromptForSession(
     sessionId: string | undefined,
     input: string,
-    mode: AgentRunMode = "chat",
     attachments: AgentAttachment[] = [],
     requestIds?: RuntimeRequestIds,
     promptContext?: string,
@@ -170,7 +169,6 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     const completion = this.createCompletion(ids.runId);
     void this.request<{ runId: string; messageId: string }>("submit", {
       input,
-      mode,
       attachments,
       runId: ids.runId,
       messageId: ids.messageId,
@@ -199,19 +197,17 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
   /** 明确返回 admission 结果的跨进程 API；旧 submitPrompt 保持乐观同步句柄兼容。 */
   async submitRun(
     input: string,
-    mode: AgentRunMode = "chat",
     attachments: AgentAttachment[] = [],
     requestIds?: RuntimeRequestIds,
     promptContext?: string,
     capabilitySelection?: AgentCapabilitySelection
   ): Promise<HostOperationResult<{ runId: string; messageId: string }>> {
-    return await this.submitRunForSession(this.focusedSessionId, input, mode, attachments, requestIds, promptContext, capabilitySelection);
+    return await this.submitRunForSession(this.focusedSessionId, input, attachments, requestIds, promptContext, capabilitySelection);
   }
 
   async submitRunForSession(
     sessionId: string | undefined,
     input: string,
-    mode: AgentRunMode = "chat",
     attachments: AgentAttachment[] = [],
     requestIds?: RuntimeRequestIds,
     promptContext?: string,
@@ -222,7 +218,6 @@ export class RuntimeHostClient implements InteractiveRuntimeHandle {
     const ids = normalizeRequestIds(requestIds);
     return await this.request("run.submit", {
       input,
-      mode,
       attachments,
       runId: ids.runId,
       messageId: ids.messageId,

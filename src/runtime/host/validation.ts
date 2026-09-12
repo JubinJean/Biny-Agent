@@ -4,7 +4,7 @@
  * 业务 Server 只接收这里返回的已验证值，不直接把 unknown 传给领域服务。
  */
 import { randomUUID } from "node:crypto";
-import type { AgentAttachment, AgentRunMode } from "../../agent/AgentSession.js";
+import type { AgentAttachment } from "../../agent/AgentSession.js";
 import { agentCapabilitySelectionSchema, type AgentCapabilitySelection } from "../../agent/capabilitySelection.js";
 import type { AgentRunOutcome, RuntimeRequestIds } from "../InteractiveAgentRuntime.js";
 import type { MemoryDurability, MemoryEntryInput, MemoryEntryPatch, MemoryKind, MemoryLineage, MemoryLineageSource, MemoryOriginSelector } from "../../agent/context/memoryTypes.js";
@@ -221,9 +221,7 @@ export function readAutomationCreateInput(payload: Record<string, unknown>): Aut
   if (triggerType !== "heartbeat" && triggerType !== "cron" && triggerType !== "interval" && triggerType !== "once") {
     throw new Error("Automation trigger type is invalid.");
   }
-  const mode = template.mode;
-  if (mode !== undefined && mode !== "chat" && mode !== "plan") throw new Error("Automation mode is invalid.");
-  assertAllowedKeys(template, ["prompt", "sessionId", "mode"], "Automation execution template");
+  assertAllowedKeys(template, ["prompt", "sessionId"], "Automation execution template");
   const intervalMs = schedule.intervalMs;
   if (intervalMs !== undefined && !Number.isSafeInteger(intervalMs)) throw new Error("Automation intervalMs is invalid.");
   const jitterMs = schedule.jitterMs;
@@ -242,8 +240,7 @@ export function readAutomationCreateInput(payload: Record<string, unknown>): Aut
     },
     executionTemplate: {
       prompt: requiredString(template.prompt, "executionTemplate.prompt"),
-      sessionId: optionalString(template.sessionId),
-      mode
+      sessionId: optionalString(template.sessionId)
     },
     maxFires: maxFires as number | undefined,
     expiresAt: optionalString(payload.expiresAt)
@@ -292,11 +289,6 @@ export function normalizeRequestIds(ids: RuntimeRequestIds | undefined): Normali
     retryOfMessageId: ids?.retryOfMessageId,
     replaceUserMessageId: ids?.replaceUserMessageId
   };
-}
-
-export function readRunMode(value: unknown): AgentRunMode {
-  if (value === "chat" || value === "plan") return value;
-  throw new Error("Runtime Host run mode must be chat or plan.");
 }
 
 export function readPermissionMode(value: unknown): PermissionMode {

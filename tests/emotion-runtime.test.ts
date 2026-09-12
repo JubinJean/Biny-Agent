@@ -45,7 +45,7 @@ async function testRuntimeHostUpdatesEmotion(): Promise<void> {
       });
     });
     const outcome = await withTimeout(
-      spawned.client.submitPrompt("记录一次情绪变化，然后正常回复。", "chat").completion,
+      spawned.client.submitPrompt("记录一次情绪变化，然后正常回复。").completion,
       15_000,
       "Runtime Host emotion completion"
     );
@@ -78,10 +78,10 @@ async function testRuntimeHostUpdatesEmotion(): Promise<void> {
     const target = events.filter((event) => event.type === "agent_message" && event.message.role === "assistant").at(-1);
     assert.ok(target?.type === "agent_message" && target.messageId);
     const selectionsBeforeRetry = provider.selectionCount;
-    const retry = await withTimeout(spawned.client.submitPrompt("重新生成", "chat", [], { retryOfMessageId: target.messageId }).completion, 15_000, "Retry with selected capabilities");
+    const retry = await withTimeout(spawned.client.submitPrompt("重新生成", [], { retryOfMessageId: target.messageId }).completion, 15_000, "Retry with selected capabilities");
     assert.equal(retry.status, "completed");
     assert.equal(provider.selectionCount, selectionsBeforeRetry, "重试沿用持久化能力名单，不重新筛选或启用全部");
-    const next = await withTimeout(spawned.client.submitPrompt("继续记录。", "chat").completion, 15_000, "Accumulated tool selection");
+    const next = await withTimeout(spawned.client.submitPrompt("继续记录。").completion, 15_000, "Accumulated tool selection");
     assert.equal(next.output, "情绪状态已更新。");
     assert.equal(provider.selectionCount, selectionsBeforeRetry + 1);
     assert.equal(provider.requestCount, 4, "新轮筛选为空时仍从消息元数据恢复之前的工具");

@@ -245,7 +245,7 @@ async function testTerminalCommitOrdering(): Promise<void> {
       if (update.event) hostEvents.push(update.event.type);
       if (update.event?.type === "run.completed") log.push("host-terminal");
     });
-    const submitted = runtime.submitPrompt("finish", "chat", [], { runId: "run-terminal", messageId: "message-terminal" });
+    const submitted = runtime.submitPrompt("finish", [], { runId: "run-terminal", messageId: "message-terminal" });
     const outcome = await submitted.completion;
     assert.equal(outcome.status, "completed");
     assert.equal(log.indexOf("canonical-terminal") >= 0, true);
@@ -303,7 +303,7 @@ async function testCancellationAfterCanonicalTerminalDoesNotLeaveBusySnapshot():
     runtime.subscribe((update) => {
       if (update.event) hostEvents.push(update.event.type);
     });
-    const submitted = runtime.submitPrompt("stop after canonical status", "chat", [], {
+    const submitted = runtime.submitPrompt("stop after canonical status", [], {
       runId: "canonical-cancel-run",
       messageId: "canonical-cancel-message",
       turnId: "canonical-cancel-turn"
@@ -333,11 +333,11 @@ async function testDuplicateRunRetryDoesNotExecute(): Promise<void> {
       yield done({ status: "completed", stopReason: "model_stop", steps: 1, output: "once" });
     }, []);
     const firstRuntime = new InteractiveAgentRuntime(commandRuntime, { runtimeAuthority: authority });
-    const first = await firstRuntime.submitPrompt("once", "chat", [], { runId: "duplicate-run", messageId: "first-message" }).completion;
+    const first = await firstRuntime.submitPrompt("once", [], { runId: "duplicate-run", messageId: "first-message" }).completion;
     assert.equal(first.output, "once");
 
     const retryRuntime = new InteractiveAgentRuntime(commandRuntime, { runtimeAuthority: authority });
-    const retry = await retryRuntime.submitPrompt("once", "chat", [], { runId: "duplicate-run", messageId: "retry-message" }).completion;
+    const retry = await retryRuntime.submitPrompt("once", [], { runId: "duplicate-run", messageId: "retry-message" }).completion;
     assert.equal(retry.output, "once");
     assert.equal(executions, 1, "retrying the same runId must reuse the terminal completion");
     await retryRuntime.close();

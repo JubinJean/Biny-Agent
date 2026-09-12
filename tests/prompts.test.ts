@@ -11,7 +11,6 @@ import {
 const emotion = "<biny_emotion mood=\"focused\">Current emotion.</biny_emotion>";
 const fixedNow = new Date("2026-09-11T04:05:06.000Z");
 const bundle = buildPromptBundle({
-  mode: "qa",
   cwd: "/workspace",
   now: fixedNow,
   securityPrompt: "<biny_security_policy>private security</biny_security_policy>",
@@ -72,7 +71,6 @@ assert.deepEqual(stripTransientTurnContext([{ role: "user", content: "private", 
 
 function buildOptions() {
   return {
-    mode: "qa" as const,
     cwd: "/workspace",
     securityPrompt: "<biny_security_policy>private security</biny_security_policy>",
     soulPrompt: "<biny_soul>private soul</biny_soul>",

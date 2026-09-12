@@ -288,7 +288,6 @@ export function QuickChatApp(): React.JSX.Element {
         currentProjectId,
         sessionIdRef.current,
         text,
-        "chat",
         [],
         undefined,
         undefined,

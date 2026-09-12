@@ -83,8 +83,12 @@ try {
   await enter(second.pty, "/exit");
   await waitFor(() => second.exited);
 
+  const removedCommand = await command(["plan", "must not execute"]);
+  assert.notEqual(removedCommand.code, 0);
+  assert.match(removedCommand.output, /unknown command.*plan/u);
+
   // 主 Session 此刻空闲；两个独立命令仍必须各自新建会话，不竞抢 primary。
-  const plan = command(["plan", "terminal-probe-D"]);
+  const firstRun = command(["run", "--json", "terminal-probe-D"]);
   const run = command(["run", "--json", "terminal-probe-E"]);
   await waitFor(() => responses.has("terminal-probe-D") && responses.has("terminal-probe-E"));
   const d = await activeSession("terminal-probe-D");
@@ -92,7 +96,7 @@ try {
   assert.notEqual(d, e);
   sendText(responses.get("terminal-probe-D")!, "terminal-probe-D-done");
   sendText(responses.get("terminal-probe-E")!, "terminal-probe-E-done");
-  assert.equal((await plan).code, 0);
+  assert.equal((await firstRun).code, 0);
   const result = await run;
   assert.equal(result.code, 0, result.output);
   assert.equal((JSON.parse(result.stdout) as { sessionId: string }).sessionId, e);
@@ -100,7 +104,7 @@ try {
   const eEvents = await readSessionEvents(sessionFilePath(root, e));
   assert.ok(!JSON.stringify(dEvents).includes("terminal-probe-E"));
   assert.ok(!JSON.stringify(eEvents).includes("terminal-probe-D"));
-  console.log("CLI/TUI multi-session tests passed (two PTYs, new/resume, cancellation, exit, run/plan)");
+  console.log("CLI/TUI multi-session tests passed (two PTYs, new/resume, cancellation, exit, concurrent runs)");
 } catch (error) {
   for (const terminal of terminals) console.error(terminal.output.replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, "").slice(-3500));
   throw error;

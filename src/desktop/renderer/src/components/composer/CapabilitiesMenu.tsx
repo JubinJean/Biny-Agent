@@ -101,17 +101,14 @@ interface ToolGroup {
   }>;
 }
 
-export function CapabilitiesMenu({ anchorRef, onOpenMcpSettings, onRefreshCatalog, onWarning, onPlanModeChange, open, planActive, projectId, onChange, selection, skills, toolsSupported, tools }: {
+export function CapabilitiesMenu({ anchorRef, onOpenMcpSettings, onRefreshCatalog, onWarning, open, projectId, onChange, selection, skills, toolsSupported, tools }: {
   anchorRef: React.RefObject<HTMLElement | null>;
   /** 打开 MCP 设置页；未提供时隐藏设置入口。 */
   onOpenMcpSettings?(): void;
   /** 让上层重新拉取工具目录（MCP 刷新按钮用到）。 */
   onRefreshCatalog?(): void;
   onWarning?(message: string): void;
-  /** 规划模式开关（原加号菜单项迁入）：开启后先产出计划再执行。 */
-  onPlanModeChange(active: boolean): void;
   open: boolean;
-  planActive: boolean;
   projectId?: string;
   onChange(selection: AgentCapabilitySelection): void;
   selection: AgentCapabilitySelection;
@@ -274,10 +271,6 @@ export function CapabilitiesMenu({ anchorRef, onOpenMcpSettings, onRefreshCatalo
             ) : null}
           </div>
         ) : null}
-        <button aria-checked={planActive} className="capabilities-plan-toggle" onClick={() => onPlanModeChange(!planActive)} role="switch" type="button">
-          <span className="capability-check"><Icon name="check" size={12} /></span>
-          <span className="menu-option-copy"><strong>规划模式</strong><small>先制定计划，确认后执行</small></span>
-        </button>
       </div>
     </ComposerPopover>
   );

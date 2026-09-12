@@ -584,7 +584,7 @@ export class GraphSupervisor {
       const runId = randomUUID();
       const turnId = randomUUID();
       attempt = task ? taskRuns?.createAttempt(task.taskRunId, { runId, turnId, parentRunId, retrySafety: "unknown" }) : undefined;
-      const submitted = runtime.submitPrompt(String((node.intent as { prompt?: unknown })?.prompt ?? node.nodeKey), "chat", [], { runId, turnId, parentRunId, continuationSource: "graph:" + graphId + ":intent:" + claim.claimId });
+      const submitted = runtime.submitPrompt(String((node.intent as { prompt?: unknown })?.prompt ?? node.nodeKey), [], { runId, turnId, parentRunId, continuationSource: "graph:" + graphId + ":intent:" + claim.claimId });
       if (task && attempt) taskRuns?.transition(task.taskRunId, "running", { attemptId: attempt.attemptId });
       const outcome = await submitted.completion;
       if (outcome.status === "completed") {

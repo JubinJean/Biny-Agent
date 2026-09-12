@@ -26,9 +26,9 @@ await testExecutionUsesPromptBoundary();
 async function testChatUsesOrdinaryAgentLoop(): Promise<void> {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "biny-execution-chat-"));
   try {
-    const modes: Array<AgentRunOptions["mode"]> = [];
-    const runtime = new InteractiveAgentRuntime(fakeRuntime(root, async function* (_input, options) {
-      modes.push(options.mode);
+    const prompts: string[] = [];
+    const runtime = new InteractiveAgentRuntime(fakeRuntime(root, async function* (input) {
+      prompts.push(input);
       yield done({
         status: "completed",
         stopReason: "model_stop",
@@ -40,7 +40,7 @@ async function testChatUsesOrdinaryAgentLoop(): Promise<void> {
 
     const outcome = await runtime.submitPrompt("回答一个问题").completion;
     assert.equal(outcome.status, "completed");
-    assert.deepEqual(modes, ["chat"]);
+    assert.deepEqual(prompts, ["回答一个问题"]);
     await assert.rejects(fs.stat(path.join(root, ".biny", "tasks")), { code: "ENOENT" });
     await runtime.close();
   } finally {
@@ -52,10 +52,8 @@ async function testNaturalLanguageNeverSelectsAnotherExecutionFramework(): Promi
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "biny-execution-unified-"));
   try {
     const prompts: string[] = [];
-    const modes: Array<AgentRunOptions["mode"]> = [];
-    const runtime = fakeRuntime(root, async function* (input, options) {
+    const runtime = fakeRuntime(root, async function* (input) {
       prompts.push(input);
-      modes.push(options.mode);
       const suffix = String(prompts.length);
       yield {
         type: "tool.started",
@@ -93,7 +91,6 @@ async function testNaturalLanguageNeverSelectsAnotherExecutionFramework(): Promi
     }
 
     assert.deepEqual(prompts, inputs);
-    assert.deepEqual(modes, ["chat", "chat", "chat"]);
     await assert.rejects(fs.stat(path.join(root, ".biny", "tasks")), { code: "ENOENT" });
   } finally {
     await fs.rm(root, { recursive: true, force: true });

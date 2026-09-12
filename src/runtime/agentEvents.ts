@@ -1,4 +1,4 @@
-import type { AgentRunMode, AgentSessionInfo } from "../agent/AgentSession.js";
+import type { AgentSessionInfo } from "../agent/AgentSession.js";
 import type { AgentSessionUpdate, AgentTurnStopReason, BlockedReason } from "../agent/types.js";
 import type { ContextStatus } from "../agent/context/types.js";
 import type { PermissionAction, PermissionGrantScope, PermissionMode } from "../permission/PermissionManager.js";
@@ -43,7 +43,6 @@ export interface RunStartedEvent extends AgentEventBase {
   messageId: string;
   retryOfMessageId?: string;
   input: string;
-  mode: AgentRunMode;
   model: AgentRunModel;
   skills: string[];
 }
@@ -136,7 +135,6 @@ export interface ActiveRunSnapshot {
   messageId: string;
   retryOfMessageId?: string;
   input: string;
-  mode: AgentRunMode;
   status: AgentRunStatus;
   startedAt: string;
 }
@@ -192,7 +190,6 @@ export function reduceInteractiveRunState(
         messageId: event.messageId,
         retryOfMessageId: event.retryOfMessageId,
         input: event.input,
-        mode: event.mode,
         status: "thinking",
         startedAt: event.timestamp
       }
