@@ -44,7 +44,7 @@ export function DesktopShell({ children, overlays, rightPanel, rightSidebar, sid
     "--biny-sidebar-visual-width": `${sidebarLayout.visualWidth}px`,
     "--biny-sidebar-flow-width": `${sidebarLayout.flowWidth}px`,
     "--biny-sidebar-content-width": `${sidebarLayout.contentWidth}px`,
-    // 和左栏一样，右侧只改变目标流宽度；动画插值由外壳统一驱动，主区因此会被连续推向左侧。
+    // 右栏使用已按聊天可用空间收敛的宽度，两栏始终并排，禁止覆盖正文和输入框。
     "--biny-inspector-flow-width": `${rightSidebar?.open ? rightSidebar.width : 0}px`
   } as React.CSSProperties;
   return (

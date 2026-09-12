@@ -1623,6 +1623,10 @@
   flex: 1 1 auto;
 }
 
+.biny-sidebar-crystal-button {
+  flex: 0 0 28px;
+}
+
 .biny-sidebar-settings-item {
   display: flex;
   min-width: 0;

@@ -67,7 +67,7 @@ import type { RecipeNotice } from "./app/useDesktopEventBridge.js";
 import { useSessionTimeline } from "./app/useSessionTimeline.js";
 import { useDesktopSettingsActions } from "./app/useDesktopSettingsActions.js";
 import { useSidebarLayout } from "./app/useSidebarLayout.js";
-import { Composer, type ComposerMemoryState } from "./components/Composer.js";
+import { Composer, type ComposerHandle, type ComposerMemoryState } from "./components/Composer.js";
 import { WorkspaceContextBar } from "./components/project/WorkspaceContextBar.js";
 import { resolveContextCapacity, type ContextUsage } from "./usagePresentation.js";
 import { DesktopShell } from "./components/DesktopShell.js";
@@ -122,6 +122,7 @@ function DesktopApp(): React.JSX.Element {
   const [fontPreference, setFontPreference] = useState<DesktopFontPreference>(DEFAULT_FONT_PREFERENCE);
   const [focusToken, setFocusToken] = useState(0);
   const [composerDraft, setComposerDraft] = useState<string>();
+  const composerRef = useRef<ComposerHandle>(null);
   /** 建议 pill 直达提交（nonce 变化触发 Composer 统一提交路径）。 */
   const [composerSubmitDraft, setComposerSubmitDraft] = useState<{ text: string; nonce: number }>();
   const composerSubmitNonceRef = useRef(0);
@@ -1504,6 +1505,14 @@ function DesktopApp(): React.JSX.Element {
     setComposerDraft(input);
     setFocusToken((value) => value + 1);
   }, []);
+  const insertCrystalReference = useCallback((reference: string): void => {
+    if (composerRef.current) {
+      composerRef.current.appendText(reference);
+    } else {
+      setPage("chat");
+      prefillComposer(`${reference} `);
+    }
+  }, [prefillComposer]);
   const dismissRecipe = useCallback((notice: RecipeNotice): void => {
     setRecipeNotices((current) => current.filter((candidate) => candidate.id !== notice.id));
     const projectId = projectRef.current;
@@ -1540,6 +1549,7 @@ function DesktopApp(): React.JSX.Element {
   ) : undefined;
   const composer = (
     <Composer
+      ref={composerRef}
       sessionWriterConflict={writerConflict !== undefined}
       memoryState={memoryState}
       memoryToggleBusy={memoryToggleBusy}
@@ -1697,6 +1707,7 @@ function DesktopApp(): React.JSX.Element {
           onLoadSessionChildren={loadSessionChildren}
           onSessionAction={runSidebarSessionAction}
           onSettings={openSettings}
+          onInsertCrystal={insertCrystalReference}
           onToggleSidebar={toggleSidebar}
           layout={sidebarLayout}
           projects={projects}

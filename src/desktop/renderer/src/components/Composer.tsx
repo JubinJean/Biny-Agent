@@ -8,7 +8,7 @@
 import { ChatComposer, ChatComposerDrawer, ChatComposerInput } from "@astryxdesign/core/Chat";
 import type { ChatComposerInputHandle } from "@astryxdesign/core/Chat";
 import { useTooltip } from "@astryxdesign/core/Tooltip";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import type { AgentSessionInfo } from "../../../../agent/AgentSession.js";
 import type { AgentCapabilitySelection } from "../../../../agent/capabilitySelection.js";
 import type { ModelChoice } from "../../../../llm/ModelManager.js";
@@ -25,7 +25,6 @@ import { explicitCapabilityCount } from "./composer/capabilitySelectionView.js";
 import { ModelPickerMenu } from "./composer/ModelPickerMenu.js";
 import { thinkingLabel } from "./composer/composerLabels.js";
 import { Icon } from "./Icon.js";
-import { CrystalDock } from "./CrystalDock.js";
 import { ProviderBrandGlyph } from "./ProviderBrandGlyph.js";
 import { SendOrStopButton } from "./composer/SendOrStopButton.js";
 import { useBreathingCaret } from "./composer/useBreathingCaret.js";
@@ -34,7 +33,12 @@ import { createDesktopSlashTrigger } from "./composer/desktopSlashTrigger.js";
 
 export type ComposerMemoryState = "unknown" | "enabled" | "disabled";
 
+export interface ComposerHandle {
+  appendText(text: string): void;
+}
+
 interface ComposerProps {
+  ref?: React.Ref<ComposerHandle>;
   project?: DesktopProject;
   runtimeInfo?: AgentSessionInfo;
   models: ModelChoice[];
@@ -93,6 +97,7 @@ function selectionFromDefaults(defaults: DesktopCapabilityDefaults): AgentCapabi
 }
 
 export const Composer = memo(function Composer({
+  ref,
   project,
   runtimeInfo,
   models,
@@ -137,6 +142,13 @@ export const Composer = memo(function Composer({
   const [stopPending, setStopPending] = useState(false);
   const [optimisticModel, setOptimisticModel] = useState<PendingModelSelection>();
   const inputRef = useRef<ChatComposerInputHandle>(null);
+  // 侧栏引用只追加到当前草稿，不经过回填或提交路径。
+  useImperativeHandle(ref, () => ({
+    appendText(text) {
+      setInput((current) => `${current}${current && !/\s$/u.test(current) ? " " : ""}${text} `);
+      window.requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  }), []);
   const editorWrapRef = useRef<HTMLDivElement>(null);
   const breathingCaretRef = useRef<HTMLDivElement>(null);
   useBreathingCaret(editorWrapRef, breathingCaretRef);
@@ -640,10 +652,6 @@ export const Composer = memo(function Composer({
         statusPosition="bottom"
         sendActions={(
           <div className="biny-composer-footer-end">
-            <CrystalDock sessionId={runtimeInfo?.sessionId} onInsert={(reference) => {
-              setInput((current) => `${current}${current && !/\s$/u.test(current) ? " " : ""}${reference} `);
-              window.requestAnimationFrame(() => inputRef.current?.focus());
-            }} />
             <div className="composer-menu-anchor">
               <ComposerActionButton
                 aria-pressed={memoryState === "unknown" ? undefined : memoryState === "enabled"}

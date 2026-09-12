@@ -4,7 +4,6 @@ import { Dialog, DialogHeader } from "@astryxdesign/core/Dialog";
 import type { Crystal, CrystalType } from "../../../../agent/context/crystalTypes.js";
 import type { DesktopCrystalRequest, DesktopCrystalSnapshot } from "../../../crystalProtocol.js";
 import { Icon } from "./Icon.js";
-import { ComposerActionButton } from "./composer/ComposerActionButton.js";
 import "../styles/crystal.css";
 
 const typeLabels: Record<CrystalType, string> = { entity: "实体", concept: "概念", claim: "论点", process: "流程", rule: "规则", project: "项目" };
@@ -64,7 +63,9 @@ export function CrystalDock({ sessionId, onInsert }: { sessionId?: string; onIns
     </button>
   );
   return <>
-    <ComposerActionButton label="结晶" onClick={() => setOpen(true)}><Icon name="cube" size={18} /></ComposerActionButton>
+    <button aria-label="结晶" aria-haspopup="dialog" className="biny-chrome-button biny-sidebar-crystal-button" onClick={() => setOpen(true)} title="结晶" type="button">
+      <Icon name="cube" size={16} />
+    </button>
     <Dialog isOpen={open} onOpenChange={setOpen} padding={0} width={880} purpose="form">
       <div className="crystal-window">
         <div className="crystal-window-title"><DialogHeader onOpenChange={setOpen} title="结晶" /></div>

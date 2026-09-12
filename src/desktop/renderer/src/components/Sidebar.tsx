@@ -14,6 +14,7 @@ import type { SidebarPeekHandlers, SidebarResizeHandlers } from "../app/useSideb
 import { useClosingPresence } from "../useClosingPresence.js";
 import { useFluidHover, useRegisterFluidHoverItem, type UseFluidHoverReturn } from "../useFluidHover.js";
 import { Collapse } from "./Collapse.js";
+import { CrystalDock } from "./CrystalDock.js";
 import { FluidHoverHighlight } from "./FluidHoverHighlight.js";
 import { Icon, type IconName } from "./Icon.js";
 import { WorkingIndicator } from "./WorkingIndicator.js";
@@ -59,6 +60,7 @@ interface SidebarProps {
   onRemoveProject(projectId: string): void;
   onSearch(): void;
   onSettings(): void;
+  onInsertCrystal(reference: string): void;
   onToggleSidebar(): void;
 }
 
@@ -88,6 +90,7 @@ export const Sidebar = memo(function Sidebar({
   onRemoveProject,
   onSearch,
   onSettings,
+  onInsertCrystal,
   onToggleSidebar
 }: SidebarProps): React.JSX.Element {
   const [expandedSections, setExpandedSections] = useState<Record<SidebarSectionName, boolean>>({
@@ -486,6 +489,7 @@ export const Sidebar = memo(function Sidebar({
           <Icon name="settings" size={16} />
           <span>设置</span>
         </button>
+        <CrystalDock sessionId={selectedSessionId} onInsert={onInsertCrystal} />
       </div>
       </div>
       {resizable ? <SidebarResizer width={layout.contentWidth} {...resizeHandlers} /> : null}
