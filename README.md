@@ -1,63 +1,36 @@
 <h1 align="center">Biny</h1>
 
-<p align="center">本地优先的 AI Agent，支持 macOS Desktop、TUI 与 CLI。</p>
+<p align="center">本地优先的开发协作 Agent，面向 macOS 的 Desktop、TUI 与 CLI。</p>
 
 <p align="center">
   <a href="https://github.com/JubinJean/Biny-Agent">GitHub</a> ·
-  <a href="#快速开始">快速开始</a> ·
-  <a href="#可以做什么">功能</a> ·
-  <a href="#运行方式">运行方式</a>
+  <a href="#about">About</a> ·
+  <a href="#features">Features</a> ·
+  <a href="#quick-start">Quick Start</a> ·
+  <a href="#usage">Usage</a> ·
+  <a href="#development">Development</a>
 </p>
 
-## Biny 是什么
+> 🚧 This project is under active development. APIs, commands, and behavior may change as the implementation evolves.
 
-Biny 使用你自己配置的模型，在工作区中协助编码、研究和文件处理。配置、会话与记忆默认保存在本机；模型调用和启用的网络工具会按你的配置发送请求。
+## About
 
-## 可以做什么
+Biny 是一个用于本地工作的 AI Agent 底座。它支持在同一套会话中完成对话、任务执行、文件与项目上下文处理，目标是让工作在本地环境内连续、可追踪、可恢复。
 
-- 在 Desktop、TUI 或 CLI 中与 Agent 对话、执行任务或先生成计划。
-- 在工作区读写文件、搜索代码、使用 Git、运行 Shell 命令和管理进程。
-- 使用 Todo 管理任务，并保留会话、工具结果与任务状态，便于继续处理。
-- 接入 MCP、Plugin 和 Skill 扩展能力。
-- 管理模型、权限、记忆和活动记录等本地设置。
-- 进行“情绪/活动/记忆”协同：Agent 会保留会话级情绪上下文，通过 `update_emotion` 在对话中更新情绪状态；并将窗口内活动归档为可检索的活动记录（含报告与摘要）；同时提供本地持久记忆用于跨会话复用背景信息。
+项目面向两类用户：
 
-## 情绪机制
+- 用户：直接用桌面端或终端启动助手，处理日常工作。
+- 开发者：扩展工具链、接入 MCP/Plugin/Skill，并参与本地运行时能力建设。
 
-Biny 按会话和全局保存情绪状态，支持模型在回复前读取并注入情绪上下文（`update_emotion` 工具驱动更新）。  
-情绪影响主要是对话风格与主动性（如回复节奏、长度、语气），不改变任务目标、权限边界或执行能力。  
-如果你更偏好固定表达风格，可在设置里关闭情绪注入或限制模型更新。
+## Features
 
-## 活动机制
+- Desktop、TUI、CLI 多入口统一会话与配置。
+- 会话和上下文优先落在本地，默认减少对云端状态的依赖。
+- 任务能力支持轻量清单、可恢复流程和长期目标。
+- 本地记忆与活动记录用于跨会话延续。
+- 可通过 MCP、Plugin、Skill 扩展外部能力。
 
-Biny 会记录会话期间的本地活动摘要（例如主题、时间线、PR/问题/讨论线索等），并支持按需查询。  
-可通过活动工具获取日常汇总、近时段摘要、活动检索与会话详情，让“今天做了什么 / 刚才在干嘛 / 找回某项历史记录”更容易被回答。  
-活动分析与注入均受隐私策略约束；敏感内容与原始采集数据不会被无差别发送到云侧。
-
-## 记忆机制
-
-记忆是本地优先的持久上下文：  
-- 工具化调用 `save_memory` / `recall_memory` 写入与检索记忆。  
-- 记忆会通过可控策略参与上下文注入，默认以稳健优先级处理，不会覆盖用户当前指令、会话事实和权限规则。  
-- 提供“记忆维护/归档/重建”等后台能力，帮助长期使用时维持检索质量。  
-- 你可以在会话中仅开启当前聊天记忆，或按项目/全局范围控制记忆范围。
-
-## 渐进式扩展：Skill / MCP / CLI
-
-建议按三层理解和对外说明：
-
-- Skill（内置能力）：Biny 的能力包，分“先说明、后加载”两步。  
-  你通常先在对话里看到某些技能名（例如记忆、反思、任务、计划相关技能），要使用时再显式加载；这样可以减少初始上下文噪音并降低误触发风险。
-- MCP（外部能力）：通过 MCP 连接器接入第三方工具和服务（如 GitHub、数据库、搜索网关等），属于“联网执行能力边界”层，默认受权限与策略控制，不等于本地记忆数据。  
-- CLI（底座入口）：`biny` 命令是统一入口，既能发起对话、也能执行一次性任务、也能拉起 TUI。`pnpm` 下发的本地命令只用于开发调试与本地运行方式，产品入口与功能调度统一走 `biny`。
-
-## 安全提示
-
-Biny 使用当前操作系统账户的权限运行，不是隔离容器。处理陌生或重要工作区时，请在设置或 `/permissions` 中选用 `ask` 或 `read-only`。不要把 API key、token 或业务密钥提交到仓库。
-
-## 快速开始
-
-需要 Node.js 22 和 `pnpm@10.6.5`。Desktop 目前面向 macOS。
+## Quick Start
 
 ```bash
 git clone https://github.com/JubinJean/Biny-Agent.git
@@ -68,30 +41,44 @@ pnpm install --frozen-lockfile
 pnpm dev -- init
 ```
 
-`init` 可以重复运行，不会覆盖已有配置。随后在 Desktop 的 **设置 → 模型** 中添加模型连接并选择默认模型；也可通过 `providers.<alias>.apiKeyEnv` 使用环境变量提供密钥。
+初始化可以重复执行，不会覆盖已有配置。完成后配置模型连接：
+
+- Desktop：在设置页配置模型；
+- CLI：也可用 `providers.<alias>.apiKeyEnv` 指定密钥来源。
 
 ```bash
 export DEEPSEEK_API_KEY="YOUR_API_KEY"
 pnpm dev -- doctor
 ```
 
-## 运行方式
+## Usage
+
+### Desktop
 
 ```bash
-# Desktop
 pnpm desktop:dev
-
-# TUI / 对话
-pnpm dev -- tui
-pnpm dev -- chat
-
-# 一次性执行
-pnpm dev -- run "梳理这个仓库，并说明最需要先处理的风险"
 ```
 
-运行 `pnpm dev -- --help` 查看完整命令和参数。
+### TUI / Chat
 
-## 开发
+```bash
+pnpm dev -- tui
+pnpm dev -- chat
+```
+
+### One-shot Command
+
+```bash
+pnpm dev -- run "梳理这个仓库，并说明最优先的风险点"
+```
+
+查看完整命令参数：
+
+```bash
+pnpm dev -- --help
+```
+
+## Development
 
 ```bash
 pnpm install --frozen-lockfile
@@ -101,4 +88,4 @@ pnpm test
 pnpm build
 ```
 
-修改 TUI 后，先运行 `pnpm build:cli`，再到任意目标项目目录使用全局 `biny tui` 或 `biny chat` 验证真实入口。
+如需在本地验证 TUI 改动，请在目标项目目录中执行 `biny tui` 或 `biny chat`，并先运行 `pnpm build:cli`。
