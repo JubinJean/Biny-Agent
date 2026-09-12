@@ -22,6 +22,32 @@ export async function generateNativeText(
   messages: AgentMessage[],
   options: NativeTextGenerationOptions = {}
 ): Promise<NativeTextGenerationResult> {
+  options.signal?.throwIfAborted();
+  const timeout = options.timeoutMs === undefined ? undefined : new AbortController();
+  const timer = timeout && setTimeout(() => timeout.abort(new DOMException("Auxiliary model request timed out.", "TimeoutError")), options.timeoutMs);
+  const signal = timeout
+    ? (options.signal ? AbortSignal.any([options.signal, timeout.signal]) : timeout.signal)
+    : options.signal;
+  let onAbort: (() => void) | undefined;
+  try {
+    const aborted = new Promise<never>((_resolve, reject) => {
+      onAbort = () => reject(signal?.reason);
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
+    // 辅助任务没有工具副作用；不等待忽略取消的 Provider，迟到流也不得产出有效结果。
+    return await Promise.race([consumeNativeText(model, messages, { ...options, signal }), aborted]);
+  } finally {
+    if (timer) clearTimeout(timer);
+    if (onAbort) signal?.removeEventListener("abort", onAbort);
+  }
+}
+
+async function consumeNativeText(
+  model: AgentModel,
+  messages: AgentMessage[],
+  options: NativeTextGenerationOptions
+): Promise<NativeTextGenerationResult> {
+  options.signal?.throwIfAborted();
   let text = "";
   let usage: AgentUsage | undefined;
   const streamModel = model.streamSimple?.bind(model) ?? model.stream.bind(model);
@@ -32,6 +58,7 @@ export async function generateNativeText(
     else if (event.type === "finish") usage = event.usage;
     else if (event.type === "error") throw event.error instanceof Error ? event.error : new Error(String(event.error));
   }
+  options.signal?.throwIfAborted();
   return { text, usage };
 }
 
