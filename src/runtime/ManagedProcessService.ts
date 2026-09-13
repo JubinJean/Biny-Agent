@@ -3,8 +3,8 @@
  *
  * Unlike `Bash`, managed processes have no command deadline. They write
  * directly to a durable log file and stay addressable by an opaque process ID
- * until they exit or the owning runtime closes. Runtime close cleans processes
- * by default; callers must explicitly opt into retaining a process.
+ * until they exit or the owning runtime closes. Runtime owns every process and
+ * always cleans up live process groups when it closes.
  */
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcess } from "node:child_process";
@@ -23,7 +23,6 @@ const maxReadOutputBytes = 256 * 1024;
 const maxReadinessLogBytes = 1024 * 1024;
 
 export type ManagedProcessState = "starting" | "running" | "exited" | "failed" | "stopped";
-export type ManagedProcessLifecycle = "cleanup" | "retain";
 
 export interface HttpReadinessProbe {
   type: "http";
@@ -64,8 +63,7 @@ export interface ManagedProcessReadinessResult {
 }
 
 export interface ManagedProcessCleanupResult {
-  policy: ManagedProcessLifecycle;
-  status: "pending" | "stopped" | "retained" | "not_needed" | "failed";
+  status: "pending" | "stopped" | "not_needed" | "failed";
   at?: string;
   reason?: string;
   message?: string;
@@ -79,7 +77,6 @@ export interface ManagedProcessSnapshot {
   cwd: string;
   state: ManagedProcessState;
   logPath: string;
-  lifecycle: ManagedProcessLifecycle;
   startedAt: string;
   exitedAt?: string;
   exitCode?: number;
@@ -91,8 +88,9 @@ export interface ManagedProcessSnapshot {
 
 export interface StartManagedProcessOptions {
   command: string;
+  /** 实际命令经过沙箱包装时，快照仍展示用户批准的原始命令。 */
+  displayCommand?: string;
   cwd?: string;
-  lifecycle?: ManagedProcessLifecycle;
   url?: string;
   readiness?: ManagedProcessReadinessProbe;
   signal?: AbortSignal;
@@ -111,7 +109,8 @@ export interface ManagedProcessOutput {
   startOffset: number;
   nextOffset: number;
   totalBytes: number;
-  truncated: boolean;
+  omittedBefore: boolean;
+  hasMore: boolean;
 }
 
 export interface ManagedProcessServiceOptions {
@@ -205,16 +204,14 @@ export class ManagedProcessService {
       child.kill();
       throw new Error("Managed process did not receive an operating-system PID.");
     }
-    const lifecycle = options.lifecycle ?? "cleanup";
     const snapshot: ManagedProcessSnapshot = {
       processId,
       pid,
       processGroupId: process.platform === "win32" ? undefined : pid,
-      command: options.command,
+      command: options.displayCommand ?? options.command,
       cwd,
       state: "starting",
       logPath,
-      lifecycle,
       startedAt,
       url: options.url ?? (options.readiness?.type === "http" ? options.readiness.url : undefined),
       readiness: options.readiness
@@ -227,7 +224,7 @@ export class ManagedProcessService {
             durationMs: 0
           }
         : undefined,
-      cleanup: { policy: lifecycle, status: "pending" }
+      cleanup: { status: "pending" }
     };
     const record: ManagedProcessRecord = { snapshot, child, stopRequested: false };
     this.records.set(processId, record);
@@ -246,19 +243,13 @@ export class ManagedProcessService {
       return cloneSnapshot(snapshot);
     } catch (error) {
       if (options.signal?.aborted) {
-        // 与下方非 abort 失败路径对齐：只有默认 cleanup 生命周期的进程在 abort 时被回收，
-        // 显式 retain 的进程保留给调用方排查现场。
-        if (snapshot.lifecycle === "cleanup") {
-          await this.stop(processId, "start_process aborted").catch(() => undefined);
-        }
+        await this.stop(processId, "background Bash start aborted").catch(() => undefined);
       } else {
         this.refreshRecord(record);
         if (snapshot.state === "starting") snapshot.state = "failed";
         await this.recordLifecycle("start_failed", snapshot, errorMessage(error));
-        // A failed readiness check must not leave a default-cleanup server
-        // running after the tool has reported failure. Explicit retain is the
-        // opt-in escape hatch for callers that want to inspect a failed start.
-        if (snapshot.lifecycle === "cleanup" && isRunningState(snapshot.state)) {
+        // 启动检查失败后仍由 Runtime 回收进程，避免返回错误时留下失去所有权的服务。
+        if (isRunningState(snapshot.state)) {
           await this.stop(processId, "readiness probe failed").catch(() => undefined);
         }
       }
@@ -316,20 +307,20 @@ export class ManagedProcessService {
         startOffset,
         nextOffset,
         totalBytes,
-        truncated: nextOffset < totalBytes
+        omittedBefore: startOffset > 0,
+        hasMore: nextOffset < totalBytes
       };
     } finally {
       await file.close();
     }
   }
 
-  async stop(processId: string, reason = "stop_process requested"): Promise<ManagedProcessSnapshot> {
+  async stop(processId: string, reason = "KillShell requested"): Promise<ManagedProcessSnapshot> {
     const record = this.requireRecord(processId);
     this.refreshRecord(record);
     if (!isRunningState(record.snapshot.state)) {
       if (record.snapshot.cleanup.status === "pending") {
         record.snapshot.cleanup = {
-          policy: record.snapshot.lifecycle,
           status: "not_needed",
           at: new Date().toISOString(),
           reason
@@ -371,7 +362,6 @@ export class ManagedProcessService {
       record.snapshot.state = "stopped";
       record.snapshot.exitedAt ??= now;
       record.snapshot.cleanup = {
-        policy: record.snapshot.lifecycle,
         status: "stopped",
         at: now,
         reason
@@ -380,7 +370,6 @@ export class ManagedProcessService {
     } else {
       this.refreshRecord(record);
       record.snapshot.cleanup = {
-        policy: record.snapshot.lifecycle,
         status: "failed",
         at: now,
         reason,
@@ -406,23 +395,12 @@ export class ManagedProcessService {
         if (!isRunningState(record.snapshot.state)) {
           if (record.snapshot.cleanup.status === "pending") {
             record.snapshot.cleanup = {
-              policy: record.snapshot.lifecycle,
               status: "not_needed",
               at: new Date().toISOString(),
               reason: "runtime close"
             };
             await this.recordLifecycle("cleanup_not_needed", record.snapshot);
           }
-          return { ...record.snapshot.cleanup };
-        }
-        if (record.snapshot.lifecycle === "retain") {
-          record.snapshot.cleanup = {
-            policy: "retain",
-            status: "retained",
-            at: new Date().toISOString(),
-            reason: "runtime close"
-          };
-          await this.recordLifecycle("retained", record.snapshot);
           return { ...record.snapshot.cleanup };
         }
         const stopped = await this.stop(record.snapshot.processId, "runtime close");
@@ -443,7 +421,6 @@ export class ManagedProcessService {
       record.snapshot.state = "failed";
       record.snapshot.exitedAt = new Date().toISOString();
       record.snapshot.cleanup = {
-        policy: record.snapshot.lifecycle,
         status: "not_needed",
         at: record.snapshot.exitedAt,
         message: error.message
@@ -462,7 +439,6 @@ export class ManagedProcessService {
       record.snapshot.state = record.stopRequested ? "stopped" : code === 0 ? "exited" : "failed";
       if (record.snapshot.cleanup.status === "pending" && !record.stopRequested) {
         record.snapshot.cleanup = {
-          policy: record.snapshot.lifecycle,
           status: "not_needed",
           at: record.snapshot.exitedAt,
           reason: "process exited"
@@ -484,7 +460,6 @@ export class ManagedProcessService {
           : "failed";
       if (record.snapshot.cleanup.status === "pending" && !record.stopRequested) {
         record.snapshot.cleanup = {
-          policy: record.snapshot.lifecycle,
           status: "not_needed",
           at: record.snapshot.exitedAt,
           reason: "process exited"

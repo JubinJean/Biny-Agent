@@ -183,12 +183,13 @@ async function testAgentSessionCrashRecovery(
     const resumedResult = await childResult(resumed);
     assert.equal(resumedResult.code, 0, resumedResult.stderr);
     const outcome = JSON.parse(resumedResult.stdout.trim()) as AgentTurnOutcome;
-    assert.equal(outcome.status, crash === "during-tool-b" ? "blocked" : "completed");
+    // 普通扩展的局部副作用标记不再等于整个工具成功，必须有完整 outcome 才能继续。
+    assert.equal(outcome.status, crash === "after-tool-b" ? "completed" : "blocked");
     assert.equal(
       outcome.steps,
-      crash === "during-tool-b" ? 1 : crash === "after-side-effect-b" ? 2 : 3
+      crash === "after-tool-b" ? 3 : 1
     );
-    if (crash === "during-tool-b") assert.match(outcome.error ?? "", /未确认的副作用/u);
+    if (crash !== "after-tool-b") assert.match(outcome.error ?? "", /未确认的副作用/u);
     assert.equal(await new TurnStore(workspaceRoot, sessionId).load(), undefined);
 
     const sessionEvents = await readSessionEvents(sessionFile);
@@ -228,7 +229,7 @@ async function testAgentSessionCrashRecovery(
     );
 
     const resumedRequest = provider.resumedRequests[0];
-    if (crash === "during-tool-b") {
+    if (crash !== "after-tool-b") {
       assert.equal(provider.resumedRequests.length, 0, "unknown side effects must block before another model request");
     } else {
       assert.ok(resumedRequest?.includes("call-a"), "resumed context must include tool A");

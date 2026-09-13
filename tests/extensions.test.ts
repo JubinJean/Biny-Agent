@@ -116,16 +116,6 @@ function testShellPermissionBoundary(): void {
   assert.equal(request.riskLevel, "medium");
   assert.equal(new PermissionManager({ mode: "ask" }).evaluate(request).decision, "ask");
 
-  const builtinInspection = analyzePermissionRequest({
-    toolName: "git_status",
-    args: {},
-    sessionId: "test",
-    projectRoot: "/workspace"
-  });
-  assert.equal(builtinInspection.actionType, "git");
-  assert.equal(builtinInspection.riskLevel, "low");
-  assert.equal(new PermissionManager().evaluate(builtinInspection).decision, "allow");
-
   const criticalWrite = analyzePermissionRequest({
     toolName: "Write",
     args: { path: "temporary/../.zshrc", content: "not-used" },

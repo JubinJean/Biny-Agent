@@ -84,12 +84,14 @@ export function completeToolItem(
     startedAtMs: undefined,
     progress: undefined,
     output: projection.output,
-    details: projection.details,
+    details: item.fileChange
+      ? `${item.fileChange.server ? `Remote (${item.fileChange.server})` : "Committed"} ${item.fileChange.operation}: ${item.fileChange.path}${item.fileChange.destinationPath ? ` → ${item.fileChange.destinationPath}` : ""}\n${projection.details ?? ""}`
+      : projection.details,
     durationMs: projection.durationMs ?? elapsedDuration(item.startedAtMs, completedAtMs),
     outputLines: projection.outputLines,
     exitCode: projection.exitCode,
     truncated: projection.truncated,
-    operationId: resultField(result, "operationId"),
+    operationId: resultField(result, "operationId") ?? item.operationId,
     recovered: resultFieldBoolean(result, "recovered"),
     evidence: resultField(result, "evidence")
   };
@@ -116,13 +118,12 @@ export function summarizeToolArgs(tool: string, args: unknown): string {
   const query = typeof record.query === "string" ? record.query : undefined;
   const command = typeof record.command === "string" ? record.command : undefined;
 
-  if ((tool === "Read" || tool === "Write" || tool === "edit_file") && path) return path;
+  if ((tool === "Read" || tool === "Write" || tool === "Edit") && path) return path;
   if (tool === "Grep" && query) return query;
   if (tool === "WebSearch" && query) return query;
   if (tool === "Glob") return "workspace files";
-  if (tool === "git_status") return "git status";
-  if (tool === "git_diff") return "git diff";
   if (tool === "Bash" && command) return command;
+  if ((tool === "BashOutput" || tool === "KillShell") && typeof record.processId === "string") return record.processId;
   return summarizeValue(args, 800);
 }
 
@@ -139,7 +140,7 @@ export function semanticToolTitle(
   }
   if (tool === "Read") return `${running ? "Reading" : "Read"}${argsSummary ? ` ${argsSummary}` : " file"}`;
   if (tool === "Write") return `${running ? "Writing" : "Wrote"}${argsSummary ? ` ${argsSummary}` : " file"}`;
-  if (tool === "edit_file") return `${running ? "Editing" : "Edited"}${argsSummary ? ` ${argsSummary}` : " file"}`;
+  if (tool === "Edit") return `${running ? "Editing" : "Edited"}${argsSummary ? ` ${argsSummary}` : " file"}`;
   if (tool === "Glob") return running ? "Listing workspace files" : "Listed workspace files";
   if (tool === "Grep") {
     return `${running ? "Searching" : "Searched"}${argsSummary ? ` for “${argsSummary}”` : " workspace"}`;
@@ -147,8 +148,8 @@ export function semanticToolTitle(
   if (tool === "WebSearch") {
     return `${running ? "Searching the web" : "Searched the web"}${argsSummary ? ` for “${argsSummary}”` : ""}`;
   }
-  if (tool === "git_status") return running ? "Checking git status" : "Checked git status";
-  if (tool === "git_diff") return running ? "Reading git diff" : "Viewed git diff";
+  if (tool === "BashOutput") return `${running ? "Reading" : "Read"} background process${argsSummary ? ` ${argsSummary}` : "es"}`;
+  if (tool === "KillShell") return `${running ? "Stopping" : "Stopped"} background process${argsSummary ? ` ${argsSummary}` : ""}`;
   const safeDescription = description?.trim();
   if (safeDescription && safeDescription.length <= 120) return safeDescription;
   return `${running ? "Running" : "Ran"} ${humanizeToolName(tool)}`;
@@ -171,6 +172,44 @@ function projectToolResult(item: ToolTranscriptItem, result: unknown, status: To
   const truncated = typeof record?.truncated === "boolean" ? record.truncated : undefined;
 
   if (item.tool === "WebSearch") return projectWebSearchResult(result, status, durationMs, outputLines, truncated);
+
+  if (item.tool === "Bash" && record?.background === true) {
+    const process = typeof record.process === "object" && record.process !== null ? record.process as Record<string, unknown> : {};
+    const processId = typeof process.processId === "string" ? process.processId : "unknown";
+    const state = typeof process.state === "string" ? process.state : "started";
+    return {
+      output: `Background process ${processId} ${state}`,
+      details: summarizeValue(result, 8_000),
+      durationMs,
+      outputLines: 1
+    };
+  }
+
+  if (item.tool === "BashOutput") {
+    const process = typeof record?.process === "object" && record.process !== null ? record.process as Record<string, unknown> : undefined;
+    const outputRecord = typeof record?.output === "object" && record.output !== null ? record.output as Record<string, unknown> : undefined;
+    const content = typeof outputRecord?.content === "string" ? outputRecord.content.trimEnd() : "";
+    const state = typeof process?.state === "string" ? process.state : undefined;
+    const listed = Array.isArray(record?.processes) ? record.processes.length : undefined;
+    const output = content || (listed !== undefined ? `${String(listed)} background processes` : state ? `Process ${state}` : "No process output");
+    return {
+      output,
+      details: summarizeValue(result, 8_000),
+      durationMs,
+      outputLines: logicalLineCount(output),
+      truncated: outputRecord?.hasMore === true || outputRecord?.omittedBefore === true
+    };
+  }
+
+  if (item.tool === "KillShell") {
+    const state = typeof record?.state === "string" ? record.state : "stopped";
+    return {
+      output: `Background process ${state}`,
+      details: summarizeValue(result, 8_000),
+      durationMs,
+      outputLines: 1
+    };
+  }
 
   if (item.tool === "Bash" || item.display?.kind === "command") {
     const command = item.display?.kind === "command" ? item.display.command : item.argsSummary;

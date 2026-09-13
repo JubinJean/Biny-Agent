@@ -8,6 +8,7 @@ import type { TimelineReasoningStep, TimelineRunStatus, TimelineTool, TimelineTo
 import { executionToolLabel } from "./sessionTimeline.js";
 import type { SessionUsage } from "../../../session/metadata.js";
 import type { IconName } from "./components/Icon.js";
+import { countDiffStats } from "./sessionChanges.js";
 
 /** 工具行视觉变体（标题字面量来自 DSH figma 设计）。 */
 export type ToolRowVariant = "search" | "read" | "bash" | "write" | "edit" | "git" | "process" | "skill" | "others";
@@ -49,17 +50,9 @@ const TOOL_VARIANTS: Record<string, ToolRowVariant> = {
   WebSearch: "search",
   Grep: "search",
   Write: "write",
-  edit_file: "edit",
-  delete_file: "edit",
-  move_file: "edit",
-  git_diff: "git",
-  git_status: "git",
-  git_commit: "git",
-  start_process: "process",
-  stop_process: "process",
-  process_status: "process",
-  read_process_output: "process",
-  list_processes: "process",
+  Edit: "edit",
+  BashOutput: "process",
+  KillShell: "process",
   Glob: "read",
   read_tool_result: "read",
   TodoWrite: "edit",
@@ -133,7 +126,7 @@ function toolCallActivity(tool: TimelineTool): TurnActivity {
   if (display?.kind === "command") return { label: `正在运行 ${executionToolLabel(tool.tool)}` };
   if (display?.kind === "file_io") {
     if (display.operation === "read") return { label: `正在读取文件 · ${executionToolLabel(tool.tool)}` };
-    if (display.operation === "write" || display.operation === "edit") return { label: `正在修改文件 · ${executionToolLabel(tool.tool)}` };
+    if (["write", "update", "delete", "move"].includes(display.operation)) return { label: `正在修改文件 · ${executionToolLabel(tool.tool)}` };
     if (display.operation === "search" || display.operation === "grep") return { label: `正在搜索项目 · ${executionToolLabel(tool.tool)}` };
     if (display.operation === "git") return { label: "正在检查 Git 状态" };
   }
@@ -328,17 +321,16 @@ const EXPLORING_TOOLS = new Set([
   "Read", "Glob", "Grep", "WebSearch", "WebFetch",
   "read_tool_result", "read_skill_resource",
   "mcp_list_resources", "mcp_read_resource",
-  "git_diff", "git_status",
   "activity_search", "activity_search_semantic", "activity_sessions", "activity_session_show",
   "activity_report", "activity_digest",
   "recall_memory", "skill_search", "BrowserReadDom",
 ]);
 
 /** 写入类工具：归入「修改」相位。 */
-const MAKING_TOOLS = new Set(["Write", "edit_file", "delete_file", "move_file", "TodoWrite", "git_commit", "save_memory", "skill_install"]);
+const MAKING_TOOLS = new Set(["Write", "Edit", "TodoWrite", "save_memory", "skill_install"]);
 
 /** 命令类工具：归入「运行」相位。 */
-const RUNNING_TOOLS = new Set(["Bash", "start_process", "stop_process", "process_status", "read_process_output", "list_processes"]);
+const RUNNING_TOOLS = new Set(["Bash", "BashOutput", "KillShell"]);
 
 /** 步骤的相位语义：思考步骤 → thinking；工具按工具名分箱；其余 → generic。 */
 export function activityPhaseKindOf(step: TimelineToolStep | TimelineReasoningStep): ActivityPhaseKind {
@@ -500,11 +492,14 @@ export function activityToolRow(tool: TimelineTool): ActivityToolRowModel {
       row.verb = "抓取";
       row.object = stringArg(tool, "url") ?? tool.description ?? "…";
       return row;
-    case "edit_file": {
-      row.verb = "编辑";
-      row.object = filePath || "…";
-      row.minus = countLines(display?.before ?? stringArg(tool, "oldText"));
-      row.plus = countLines(display?.after ?? stringArg(tool, "newText"));
+    case "Edit": {
+      row.verb = display?.operation === "delete" ? "删除" : display?.operation === "move" ? "移动" : "编辑";
+      row.object = display?.operation === "move"
+        ? `${filePath || "…"} → ${display.destinationPath ?? stringArg(tool, "to") ?? "…"}`
+        : filePath || "…";
+      const stats = tool.diff ? countDiffStats(tool.diff) : undefined;
+      row.minus = stats?.del;
+      row.plus = stats?.add;
       return row;
     }
     case "Write": {
@@ -513,57 +508,27 @@ export function activityToolRow(tool: TimelineTool): ActivityToolRowModel {
       row.plus = countLines(display?.content ?? stringArg(tool, "content"));
       return row;
     }
-    case "delete_file":
-      row.verb = "删除";
-      row.object = filePath || "…";
-      return row;
-    case "move_file":
-      row.verb = "移动";
-      row.object = filePath || "…";
-      return row;
     case "TodoWrite":
       row.verb = "更新";
       row.object = "待办事项";
       return row;
     case "Bash": {
-      row.verb = "执行";
+      row.verb = args?.background === true ? "启动" : "执行";
       row.object = tool.description ?? (stringArg(tool, "command") ?? "").slice(0, 80) ?? "…";
       return row;
     }
-    case "start_process": {
-      row.verb = "执行";
-      row.object = tool.description ?? (stringArg(tool, "command") ?? "").slice(0, 80) ?? "…";
-      return row;
-    }
-    case "stop_process":
+    case "KillShell":
       row.verb = "终止";
       row.object = stringArg(tool, "processId") ?? stringArg(tool, "id") ?? "进程";
       return row;
-    case "process_status":
-    case "read_process_output":
+    case "BashOutput":
       row.verb = "查看";
       row.object = stringArg(tool, "processId") ?? stringArg(tool, "id") ?? "进程输出";
-      return row;
-    case "list_processes":
-      row.verb = "查看";
-      row.object = "进程列表";
       return row;
     case "Skill":
     case "skill_call":
       row.verb = "使用技能";
       row.object = stringArg(tool, "skill") ?? stringArg(tool, "name") ?? "…";
-      return row;
-    case "git_diff":
-      row.verb = "查看";
-      row.object = "git 变更";
-      return row;
-    case "git_status":
-      row.verb = "查看";
-      row.object = "git 状态";
-      return row;
-    case "git_commit":
-      row.verb = "提交";
-      row.object = stringArg(tool, "message") ?? "…";
       return row;
     case "mcp_list_resources":
       row.verb = "列出";
@@ -604,10 +569,6 @@ export function activityToolRow(tool: TimelineTool): ActivityToolRowModel {
     case "BrowserReadDom":
       row.verb = "读取页面";
       row.object = tool.description ?? "";
-      return row;
-    case "update_emotion":
-      row.verb = "更新情绪";
-      row.object = "";
       return row;
     case "Task":
       row.verb = "派发任务";

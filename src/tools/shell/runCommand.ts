@@ -11,8 +11,14 @@ import { z } from "zod";
 import { ToolAccesses } from "../access.js";
 import { describeSandbox, sandboxCommand, type SandboxOptions } from "./sandbox.js";
 import type { SandboxConfig } from "../../config/schema.js";
+import type {
+  ManagedProcessReadinessProbe,
+  ManagedProcessService,
+  ManagedProcessSnapshot
+} from "../../runtime/ManagedProcessService.js";
 import type { Tool, ToolContext, ToolUpdate } from "../types.js";
 import { resolveWorkspaceDirectory } from "../../workspace/resolvePath.js";
+import { managedProcessReadinessParameters, managedProcessReadinessSchema } from "../process/managedProcesses.js";
 
 const maxOutputBytes = 1024 * 1024;
 /** 普通调用仍只保留 1MiB；Bash 工具会在这个更大的边界内尽量保留全文，交给上层归档。 */
@@ -24,7 +30,15 @@ const defaultKillSettleMs = 1_000;
 export interface RunCommandArgs {
   command: string;
   cwd?: string;
+  timeoutMs?: number;
+  background?: boolean;
+  url?: string;
+  readiness?: ManagedProcessReadinessProbe;
 }
+
+export type RunCommandToolResult =
+  | (RunCommandResult & { background: false })
+  | { background: true; sandbox: string; process: ManagedProcessSnapshot };
 
 export interface RunCommandResult {
   status: "completed" | "failed" | "timed_out";
@@ -68,34 +82,70 @@ export interface RunCommandToolOptions {
 export function createRunCommandTool(
   context: ToolContext,
   sandbox?: SandboxConfig,
-  options: RunCommandToolOptions = {}
-): Tool<RunCommandArgs, RunCommandResult> {
+  options: RunCommandToolOptions = {},
+  managedProcesses?: ManagedProcessService
+): Tool<RunCommandArgs, RunCommandToolResult> {
   const sandboxOptions: SandboxOptions = { mode: sandbox?.mode ?? "off", allowNetwork: sandbox?.allowNetwork ?? true };
+  const schema = z.object({
+    command: z.string().min(1),
+    cwd: z.string().min(1).optional(),
+    timeoutMs: z.number().int().min(1).max(600_000).optional(),
+    background: z.boolean().optional(),
+    url: z.string().url().optional(),
+    readiness: managedProcessReadinessSchema.optional()
+  }).superRefine((args, refinement) => {
+    if (args.background === true) {
+      if (args.timeoutMs !== undefined) refinement.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["timeoutMs"],
+        message: "timeoutMs is only available for foreground commands; use readiness.timeoutMs to bound startup checks."
+      });
+      return;
+    }
+    for (const key of ["url", "readiness"] as const) {
+      if (args[key] !== undefined) refinement.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: [key],
+        message: `${key} requires background: true.`
+      });
+    }
+  }) satisfies z.ZodType<RunCommandArgs>;
   return {
     name: "Bash",
-    description: "Run a finite local shell command in the workspace. Commands have a bounded timeout; use start_process for long-running servers instead of &, nohup, or disown.",
-    promptSnippet: "Run a finite local shell command inside the workspace",
-    promptGuidelines: ["Use Bash only for finite commands and pass a workspace-relative cwd when the command belongs in a subdirectory"],
+    description: "Run a shell command in the workspace. Foreground commands have a bounded timeout; set background for servers and other long-running commands, then use BashOutput or KillShell with the returned process ID.",
+    promptSnippet: "Run a finite command or start a managed background process",
+    promptGuidelines: ["Use background instead of &, nohup, or disown for long-running commands; pass a workspace-relative cwd for commands in a subdirectory"],
     parameters: {
       type: "object",
       properties: {
         command: { type: "string", minLength: 1, description: "Shell command to run in the workspace." },
-        cwd: { type: "string", minLength: 1, description: "Optional workspace-relative working directory. Use it so independent commands in different projects can run concurrently." }
+        cwd: { type: "string", minLength: 1, description: "Optional workspace-relative working directory." },
+        timeoutMs: { type: "integer", minimum: 1, maximum: 600_000, description: "Foreground timeout in milliseconds; defaults to 120000." },
+        background: { type: "boolean", description: "Start a runtime-managed background process instead of waiting for completion." },
+        url: { type: "string", description: "Optional user-facing URL for a background service." },
+        readiness: managedProcessReadinessParameters
       },
       required: ["command"],
       additionalProperties: false
     },
-    schema: z.object({ command: z.string().min(1), cwd: z.string().min(1).optional() }),
+    schema,
     capability: "shell.execute",
     risk: "execute",
     resolveExecution(args) {
+      if (args.background === true && !managedProcesses) throw new Error("Background Bash is unavailable in this runtime.");
+      if (args.background === true && args.timeoutMs !== undefined) {
+        throw new Error("Background Bash does not accept timeoutMs; use readiness.timeoutMs to bound startup checks.");
+      }
+      if (args.background !== true && (args.url !== undefined || args.readiness !== undefined)) {
+        throw new Error("Bash url and readiness require background: true.");
+      }
       const preview = args.command.length > 80 ? `${args.command.slice(0, 80)}...` : args.command;
       const inferredCwd = inferredCommandCwd(args.command);
       const commandCwd = resolveWorkspaceDirectory(context.workspaceRoot, args.cwd ?? inferredCwd ?? ".", context.ignore);
       return {
         accesses: ToolAccesses.readWriteTree(commandCwd),
         display: { kind: "command", command: args.command, cwd: commandCwd, language: "bash" },
-        description: `Run ${preview}`,
+        description: `${args.background === true ? "Start background" : "Run"} ${preview}`,
         approvalRule: `Bash(${args.command})`,
         async execute({ signal, onUpdate }) {
           const currentCwd = resolveWorkspaceDirectory(context.workspaceRoot, args.cwd ?? inferredCwd ?? ".", context.ignore);
@@ -106,14 +156,28 @@ export function createRunCommandTool(
             home: homedir(),
             temporaryDirectory: tmpdir()
           });
+          const sandboxDescription = sandboxed.applied
+            ? describeSandbox(sandboxOptions, process.platform)
+            : `not applied (${sandboxed.reason ?? "unknown"})`;
+          if (args.background === true) {
+            const process = await managedProcesses!.start({
+              command: sandboxed.command,
+              displayCommand: args.command,
+              cwd,
+              url: args.url,
+              readiness: args.readiness,
+              signal
+            });
+            return { background: true, sandbox: sandboxDescription, process };
+          }
           const result = await runShellCommand(cwd, sandboxed.command, {
             signal,
             onUpdate,
-            timeoutMs: options.timeoutMs,
+            timeoutMs: args.timeoutMs ?? options.timeoutMs,
             captureFullOutput: true
           });
           // 如实回报这次到底有没有边界，避免"沙箱模式"这个名字暗示一个不存在的保护。
-          return { ...result, sandbox: sandboxed.applied ? describeSandbox(sandboxOptions, process.platform) : `not applied (${sandboxed.reason ?? "unknown"})` };
+          return { ...result, background: false, sandbox: sandboxDescription };
         }
       };
     }

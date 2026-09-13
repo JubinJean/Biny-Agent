@@ -1,10 +1,10 @@
 /**
  * 工具 diff 摘要投影模块。
  *
- * 把 write/edit 的 diffPreview 或 git_diff 的 output 转成适合 TUI 展示的文件级摘要，避免直接展示
- * 原始 JSON result。
+ * 把已提交 change 转成适合 TUI 展示的文件级摘要。
  */
-import { formatDiffPreviewLines, renderDiffLineSetClustered, renderFileContentPreview, type DiffLine } from "./diffPreview.js";
+import { formatDiffPreviewLines, renderDiffLineSetClustered, type DiffLine } from "./diffPreview.js";
+import { parseFileChange } from "../tools/file/fileChange.js";
 
 export type ToolDiffOperation = "Created" | "Edited" | "Deleted";
 
@@ -18,14 +18,15 @@ export interface ToolDiffFileSummary {
 
 const maxRenderedDiffLines = 160;
 
-export function formatToolDiffSummary(tool: string, result: unknown): string | undefined {
-  const contentPreview = extractContentPreview(tool, result);
-  if (contentPreview) return contentPreview;
-
-  const diff = extractDiffText(tool, result);
-  if (!diff) return undefined;
-
-  const fallbackPath = extractStringField(result, "path");
+export function formatToolDiffSummary(_tool: string, result: unknown): string | undefined {
+  if (typeof result !== "object" || result === null) return undefined;
+  const change = parseFileChange((result as { change?: unknown }).change);
+  if (!change) return undefined;
+  const diff = change.diff;
+  const source = change.server ? `Remote (${change.server}) ` : "";
+  if (change.operation === "move") return `${source}Moved ${change.path} → ${change.destinationPath}`;
+  if (!diff) return `${source}${change.operation} ${change.path}`;
+  const fallbackPath = change.path;
   const files = parseDiffFiles(diff, fallbackPath);
   if (!files.length) return undefined;
 
@@ -45,36 +46,11 @@ export function formatToolDiffSummary(tool: string, result: unknown): string | u
     }
   }
 
-  return rendered.join("\n");
+  return `${source}${rendered.join("\n")}`;
 }
 
 export function formatToolResultSummary(tool: string, result: unknown): string | undefined {
   return formatToolDiffSummary(tool, result) ?? formatReadFileSummary(tool, result);
-}
-
-function extractDiffText(tool: string, result: unknown): string | undefined {
-  if (typeof result !== "object" || result === null) return undefined;
-  const record = result as Record<string, unknown>;
-  const diffPreview = typeof record.diffPreview === "string" ? record.diffPreview : undefined;
-  if (diffPreview && hasVisibleDiff(diffPreview)) return diffPreview;
-
-  const output = typeof record.output === "string" ? record.output : undefined;
-  if (tool === "git_diff" && output && hasVisibleDiff(output)) return output;
-  return undefined;
-}
-
-function extractContentPreview(tool: string, result: unknown): string | undefined {
-  if (tool !== "Write" || typeof result !== "object" || result === null) return undefined;
-  const record = result as Record<string, unknown>;
-  const content = typeof record.contentPreview === "string" ? record.contentPreview : undefined;
-  const path = typeof record.path === "string" ? record.path : "file";
-  if (content === undefined) return undefined;
-  return formatDiffPreviewLines(renderFileContentPreview(path, content, { maxLines: 12 }));
-}
-
-function hasVisibleDiff(value: string): boolean {
-  const trimmed = value.trim();
-  return Boolean(trimmed) && !trimmed.startsWith("(no changes");
 }
 
 function parseDiffFiles(diff: string, fallbackPath: string | undefined): ToolDiffFileSummary[] {
@@ -201,10 +177,4 @@ function normalizeDiffPath(value: string): string | undefined {
   if (!token || token === "/dev/null") return undefined;
   if (token.startsWith("a/") || token.startsWith("b/")) return token.slice(2);
   return token;
-}
-
-function extractStringField(value: unknown, key: string): string | undefined {
-  if (typeof value !== "object" || value === null) return undefined;
-  const field = (value as Record<string, unknown>)[key];
-  return typeof field === "string" ? field : undefined;
 }

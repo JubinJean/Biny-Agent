@@ -27,7 +27,7 @@ const baseRequest: PermissionRequestContext = {
 async function main(): Promise<void> {
   testEvaluationOrder();
   testScopedGrants();
-  testMoveFileEvaluatesBothPaths();
+  testMoveChangeEvaluatesBothPaths();
   testPathRulesMatchAnyDepth();
   testSubagentAccessInheritsMode();
   testDefaultPermissionMode();
@@ -75,7 +75,6 @@ function testEvaluationOrder(): void {
 
   const readOnly = new PermissionManager({ mode: "ask", allowTools: [], denyPaths: [] });
   assert.equal(readOnly.evaluate({ ...baseRequest, toolName: "Read", actionType: "read", riskLevel: "low" }).decision, "allow");
-  assert.equal(readOnly.evaluate({ ...baseRequest, toolName: "git_diff", actionType: "git", riskLevel: "low" }).decision, "allow");
   assert.equal(readOnly.evaluate(baseRequest).decision, "ask");
 }
 
@@ -108,32 +107,32 @@ function testScopedGrants(): void {
   assert.equal(actionManager.evaluate({ ...baseRequest, targetPath: "src/other.ts" }).decision, "ask");
 }
 
-function testMoveFileEvaluatesBothPaths(): void {
+function testMoveChangeEvaluatesBothPaths(): void {
   const manager = new PermissionManager({ mode: "full-access", allowTools: [], denyPaths: ["release/"] });
-  const input = { toolName: "move_file", sessionId: "test-session", projectRoot: "/workspace" };
+  const input = { toolName: "Edit", args: {}, sessionId: "test-session", projectRoot: "/workspace" };
 
   // denyPaths 必须同时看 from 和 to:只看 from 会让「移动到受保护路径」绕过项目策略。
-  const bypass = analyzePermissionRequest({ ...input, args: { from: "ok.txt", to: "release/config.yaml" } });
+  const bypass = analyzePermissionRequest({ ...input, fileChange: { operation: "move", path: "ok.txt", destinationPath: "release/config.yaml" } });
   assert.deepEqual(manager.evaluate(bypass), {
     decision: "deny",
     reason: "Target path is denied by project policy: release/"
   });
 
   // 风险取 from/to 两者较高者。
-  const toSensitive = analyzePermissionRequest({ ...input, args: { from: "ok.txt", to: ".env" } });
+  const toSensitive = analyzePermissionRequest({ ...input, fileChange: { operation: "move", path: "ok.txt", destinationPath: ".env" } });
   assert.equal(toSensitive.riskLevel, "high");
   assert.equal(toSensitive.reason, "modifies a sensitive file");
   assert.equal(toSensitive.targetPath, "ok.txt");
   assert.equal(toSensitive.secondaryTargetPath, ".env");
 
-  const fromSensitive = analyzePermissionRequest({ ...input, args: { from: ".env", to: "ok.txt" } });
+  const fromSensitive = analyzePermissionRequest({ ...input, fileChange: { operation: "move", path: ".env", destinationPath: "ok.txt" } });
   assert.equal(fromSensitive.riskLevel, "high");
   assert.equal(fromSensitive.reason, "modifies a sensitive file");
 
-  const toShellProfile = analyzePermissionRequest({ ...input, args: { from: "ok.txt", to: ".zshrc" } });
+  const toShellProfile = analyzePermissionRequest({ ...input, fileChange: { operation: "move", path: "ok.txt", destinationPath: ".zshrc" } });
   assert.equal(toShellProfile.riskLevel, "critical");
 
-  const benign = analyzePermissionRequest({ ...input, args: { from: "a.txt", to: "b.txt" } });
+  const benign = analyzePermissionRequest({ ...input, fileChange: { operation: "move", path: "a.txt", destinationPath: "b.txt" } });
   assert.equal(benign.riskLevel, "medium");
   assert.equal(benign.targetPath, "a.txt");
   assert.equal(benign.secondaryTargetPath, "b.txt");

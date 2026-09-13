@@ -118,6 +118,7 @@ export interface AgentPermissionEventRequest {
   actionType: string;
   riskLevel: string;
   targetPath?: string;
+  secondaryTargetPath?: string;
   command?: string;
   reason?: string;
   changeSummary?: string;
@@ -208,6 +209,7 @@ export function reduceInteractiveRunState(
   if (
     event.type === "tool.started"
     || event.type === "tool.progress"
+    || event.type === "tool.change_committed"
     || event.type === "tool.completed"
     || event.type === "tool.failed"
   ) {

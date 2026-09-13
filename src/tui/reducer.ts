@@ -221,6 +221,14 @@ export function tuiReducer(state: TuiState, event: TuiAction): TuiState {
         ...state,
         transcript: updateTool(state.transcript, event.toolCallId, event.tool, (item) => updateRunningToolItem(item, event.update))
       };
+    case "tool.change_committed":
+      return {
+        ...state,
+        transcript: updateTool(state.transcript, event.toolCallId, event.tool, (item) => ({
+          ...item, fileChange: event.change, operationId: event.operationId,
+          progress: `Committed ${event.change.operation}: ${event.change.path}${event.change.destinationPath ? ` → ${event.change.destinationPath}` : ""}`
+        }))
+      };
     case "tool.completed":
       return {
         ...state,

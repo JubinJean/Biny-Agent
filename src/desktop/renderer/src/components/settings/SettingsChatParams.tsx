@@ -2,6 +2,7 @@
 import type { DesktopChatParamsSettings } from "../../../../protocol.js";
 import { OptionalNumberField } from "./SettingsCompaction.js";
 import { useSettingsDraft } from "./SettingsDraftContext.js";
+import { SettingsSwitch } from "./SettingsSwitch.js";
 
 /** 温度滑块的展示默认值；未配置时不下发 temperature，由模型/provider 自行决定。 */
 const temperatureDisplayDefault = 0.7;
@@ -48,6 +49,15 @@ export function SettingsChatParams(): React.JSX.Element {
           onCommit={(maxOutputTokens) => update({ maxOutputTokens })}
           unit="tokens"
           value={chatParams.maxOutputTokens}
+        />
+      </section>
+      <section>
+        <h3>编辑工具</h3>
+        <SettingsSwitch
+          checked={chatParams.hashlineEdit === true}
+          detail="开启后，Read 输出行哈希，Edit 引用行标签。关闭时默认搜索替换；协议明确支持时自动使用 patch。保存后从下一回合生效。"
+          label="Hashline 编辑（实验）"
+          onChange={(hashlineEdit) => update({ hashlineEdit })}
         />
       </section>
     </div>

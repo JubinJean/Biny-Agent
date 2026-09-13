@@ -2106,6 +2106,7 @@ export class DesktopAgentManager {
       apiBackend: input.providerApiBackend
         ?? (sameProvider ? existingProvider.apiBackend : input.apiBackend),
       compatibility: sameProvider ? existingProvider.compatibility : undefined,
+      applyPatchProtocol: sameProvider ? existingProvider.applyPatchProtocol : undefined,
       embeddingModels: sameProvider ? existingProvider.embeddingModels : undefined,
       modelProfiles
     };
@@ -3012,6 +3013,7 @@ export class DesktopAgentManager {
             accountId: authenticated.accountId
           },
           timeoutMs: existingProvider?.timeoutMs,
+          applyPatchProtocol: existingProvider?.applyPatchProtocol,
           modelProfiles: existingProvider?.modelProfiles
         }
       },

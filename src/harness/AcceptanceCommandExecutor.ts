@@ -225,11 +225,13 @@ export function createControlledAcceptanceCommandExecutor(
           signal: request.signal,
           start: async () => {
             request.signal?.throwIfAborted();
-            return await execution.execute({
+            const result = await execution.execute({
               toolCallId,
               operationId: createToolOperationId(options.sessionId, toolCallId),
               signal: request.signal
             });
+            if (result.background) throw new Error("Acceptance verification commands cannot run in the background.");
+            return result;
           }
         });
         const result: AcceptanceCommandResult = {

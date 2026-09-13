@@ -133,7 +133,7 @@ async function main(): Promise<void> {
   testActivitySummaryIsBoundedAndRedacted();
   testActivitySummaryUsesNormalTextColor();
   testSessionReplayUsesToolItems();
-  testSessionReplayCanonicalizesLegacyToolNames();
+  testSessionReplayKeepsRemovedToolNames();
   testSessionReplayFinalizesPendingTools();
   testSessionReplayRestoresTurnStatuses();
   testSlashCommandParity();
@@ -1131,13 +1131,13 @@ function testSessionReplayUsesToolItems(): void {
   assert.equal(tool.durationMs, 2_500);
 }
 
-function testSessionReplayCanonicalizesLegacyToolNames(): void {
+function testSessionReplayKeepsRemovedToolNames(): void {
   const items = sessionEventsToTranscript([
     { type: "tool_call", toolCallId: "legacy", tool: "apply_patch", args: { path: "README.md", patch: "@@ -1 +1 @@" } },
     { type: "tool_result", toolCallId: "legacy", tool: "apply_patch", result: { path: "README.md", status: "completed" } }
   ] as SessionEvent[]);
   const tool = items[0] as ToolTranscriptItem;
-  assert.equal(tool.title, "Edited README.md");
+  assert.equal(tool.title, "Ran apply patch");
 }
 
 function testSessionReplayFinalizesPendingTools(): void {

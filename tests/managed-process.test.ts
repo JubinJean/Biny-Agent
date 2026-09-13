@@ -6,12 +6,10 @@ import path from "node:path";
 import { ManagedProcessService } from "../src/runtime/ManagedProcessService.js";
 import { agentDir } from "../src/session/store.js";
 import {
-  createProcessStatusTool,
-  createReadProcessOutputTool,
-  createStartProcessTool,
-  createStopProcessTool
+  createBashOutputTool,
+  createKillShellTool
 } from "../src/tools/process/managedProcesses.js";
-import { runShellCommand } from "../src/tools/shell/runCommand.js";
+import { createRunCommandTool, runShellCommand } from "../src/tools/shell/runCommand.js";
 import type { RunnableToolExecution, ToolExecution } from "../src/tools/types.js";
 
 async function main(): Promise<void> {
@@ -32,7 +30,7 @@ async function main(): Promise<void> {
     await testManagedHttpProcessOutlivesFiniteCommandTimeout(workspaceRoot, serverScript);
     await testTcpAndLogReadiness(workspaceRoot, serverScript);
     await testRuntimeCloseCleansProcessGroup(workspaceRoot, serverScript);
-    await testAbortedStartHonorsRetainLifecycle(workspaceRoot, serverScript);
+    await testAbortedStartCleansProcess(workspaceRoot, serverScript);
     await testManagedCwdRejectsSymlinkEscape(workspaceRoot);
     await testCanonicalAbsoluteCwdUnderSymlinkWorkspaceRoot();
     await testProcessStorageRejectsSymlink();
@@ -71,10 +69,14 @@ async function testCanonicalAbsoluteCwdUnderSymlinkWorkspaceRoot(): Promise<void
   });
   try {
     const resolvedRoot = await realpath(linkedRoot);
-    const start = runnable(createStartProcessTool({ workspaceRoot: linkedRoot, ignore: [] }, service).resolveExecution({
-      command: `${JSON.stringify(process.execPath)} -e "setInterval(() => {}, 1000)"`
+    const start = runnable(createRunCommandTool({ workspaceRoot: linkedRoot, ignore: [] }, undefined, {}, service).resolveExecution({
+      command: `${JSON.stringify(process.execPath)} -e "setInterval(() => {}, 1000)"`,
+      background: true
     }));
-    const started = await start.execute({ toolCallId: "start-canonical-cwd" });
+    const result = await start.execute({ toolCallId: "start-canonical-cwd" });
+    assert.equal(result.background, true);
+    if (!result.background) throw new Error("Expected a background Bash result.");
+    const started = result.process;
     assert.equal(started.cwd, resolvedRoot);
     assert.equal(started.state, "running");
     assert.equal((await service.stop(started.processId, "canonical cwd regression test")).state, "stopped");
@@ -111,20 +113,23 @@ async function testManagedHttpProcessOutlivesFiniteCommandTimeout(workspaceRoot:
   });
   const port = await unusedPort();
   const url = `http://127.0.0.1:${String(port)}/health`;
-  const start = runnable(createStartProcessTool({ workspaceRoot, ignore: [] }, service).resolveExecution({
+  const start = runnable(createRunCommandTool({ workspaceRoot, ignore: [] }, undefined, {}, service).resolveExecution({
     command: nodeCommand(serverScript, port),
+    background: true,
     url,
     readiness: { type: "http", url, expectedStatus: 200, timeoutMs: 5_000, intervalMs: 25 }
   }));
 
   try {
-    const started = await start.execute({ toolCallId: "start-http" });
+    const startResult = await start.execute({ toolCallId: "start-http" });
+    assert.equal(startResult.background, true);
+    if (!startResult.background) throw new Error("Expected a background Bash result.");
+    const started = startResult.process;
     assert.equal(started.state, "running");
     assert.equal(started.url, url);
     assert.equal(started.readiness?.status, "ready");
     assert.equal(started.readiness?.passed, true);
     assert.equal(started.readiness?.httpStatus, 200);
-    assert.equal(started.cleanup.policy, "cleanup");
     assert.equal(started.cleanup.status, "pending");
     assert.equal(isManagedProcessAlive(started.pid), true);
 
@@ -136,25 +141,39 @@ async function testManagedHttpProcessOutlivesFiniteCommandTimeout(workspaceRoot:
     assert.equal(finiteCommand.exitCode, 124);
     await delay(120);
 
-    const status = await runnable(createProcessStatusTool(service).resolveExecution({ processId: started.processId }))
+    const status = await runnable(createBashOutputTool(service).resolveExecution({ processId: started.processId, maxBytes: 8_192 }))
       .execute({ toolCallId: "status-http" });
-    assert.equal(status.processes.length, 1, "带 processId 时恰好返回一个进程");
-    assert.equal(status.processes[0]!.state, "running", "managed servers must not inherit Bash's deadline");
+    assert.equal(status.process?.state, "running", "managed servers must not inherit Bash's deadline");
     assert.equal((await fetch(url)).status, 200);
 
-    const output = await runnable(createReadProcessOutputTool(service).resolveExecution({
+    const firstPage = await runnable(createBashOutputTool(service).resolveExecution({ processId: started.processId, maxBytes: 16 }))
+      .execute({ toolCallId: "page-http-1" });
+    assert.equal(firstPage.output?.startOffset, 0);
+    assert.equal(firstPage.output?.nextOffset, 16);
+    assert.equal(firstPage.output?.hasMore, true);
+    const nextPage = await runnable(createBashOutputTool(service).resolveExecution({
+      processId: started.processId,
+      offset: firstPage.output?.nextOffset,
+      maxBytes: 16
+    })).execute({ toolCallId: "page-http-2" });
+    assert.equal(nextPage.output?.startOffset, 16);
+
+    const outputResult = await runnable(createBashOutputTool(service).resolveExecution({
       processId: started.processId,
       fromEnd: true,
       maxBytes: 8_192
     })).execute({ toolCallId: "read-http" });
+    const output = outputResult.output;
+    assert.ok(output);
     assert.match(output.content, /READY \d+/);
     assert.equal(output.nextOffset, output.totalBytes);
+    assert.equal(output.hasMore, false);
 
-    const listed = await runnable(createProcessStatusTool(service).resolveExecution({ includeExited: false }))
+    const listed = await runnable(createBashOutputTool(service).resolveExecution({ includeExited: false }))
       .execute({ toolCallId: "list-http" });
-    assert.equal(listed.processes.some((process) => process.processId === started.processId), true);
+    assert.equal(listed.processes?.some((process) => process.processId === started.processId), true);
 
-    const stopped = await runnable(createStopProcessTool(service).resolveExecution({
+    const stopped = await runnable(createKillShellTool(service).resolveExecution({
       processId: started.processId,
       reason: "managed process regression test"
     })).execute({ toolCallId: "stop-http" });
@@ -240,7 +259,7 @@ async function testRuntimeCloseCleansProcessGroup(workspaceRoot: string, serverS
   assert.equal((await service.status(started.processId)).state, "stopped");
 }
 
-async function testAbortedStartHonorsRetainLifecycle(workspaceRoot: string, serverScript: string): Promise<void> {
+async function testAbortedStartCleansProcess(workspaceRoot: string, serverScript: string): Promise<void> {
   const service = new ManagedProcessService({
     workspaceRoot,
     persistenceRoot: workspaceRoot,
@@ -252,18 +271,16 @@ async function testAbortedStartHonorsRetainLifecycle(workspaceRoot: string, serv
     const controller = new AbortController();
     const pending = service.start({
       command: nodeCommand(serverScript, port),
-      lifecycle: "retain",
       signal: controller.signal,
       readiness: { type: "http", url: `http://127.0.0.1:${String(port)}/health`, timeoutMs: 5_000, intervalMs: 25 }
     });
     setImmediate(() => controller.abort());
     await assert.rejects(pending);
-    // retain 语义：start 被 abort 后进程仍保留，由调用方显式处理。
+    // start 被取消后 Runtime 仍持有记录，但必须主动回收进程，不能留下孤儿服务。
     const [record] = await service.list();
     assert.ok(record);
-    assert.equal(record.lifecycle, "retain");
-    assert.equal(isManagedProcessAlive(record.pid), true, "retain process must survive an aborted start");
-    assert.equal((await service.stop(record.processId, "retain abort regression test")).state, "stopped");
+    assert.equal(await waitFor(() => !isManagedProcessAlive(record.pid), 1_000), true);
+    assert.equal((await service.status(record.processId)).state, "stopped");
   } finally {
     await service.close();
   }

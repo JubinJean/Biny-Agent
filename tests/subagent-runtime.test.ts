@@ -133,12 +133,8 @@ async function testSubagentConfigDefaultsAndValidation(): Promise<void> {
     "Read",
     "Glob",
     "Grep",
-    "git_status",
-    "git_diff",
     "Write",
-    "edit_file",
-    "delete_file",
-    "move_file",
+    "Edit",
     "Bash"
   ]);
   assert.throws(() => configSchema.parse({
@@ -200,7 +196,7 @@ async function testReadOnlyToolBoundary(): Promise<void> {
       "WebSearch",
       "Bash"
     ]);
-    assert.deepEqual(tools.map((tool) => tool.name), ["Read", "Glob", "Grep", "git_status", "git_diff"]);
+    assert.deepEqual(tools.map((tool) => tool.name), ["Read", "Glob", "Grep"]);
     assert.equal(isSensitiveSubagentPath("config.json"), true);
     assert.equal(isSensitiveSubagentPath("nested/.env.production"), true);
     assert.equal(isSensitiveSubagentPath("src/index.ts"), false);
@@ -212,10 +208,14 @@ async function testReadOnlyToolBoundary(): Promise<void> {
     );
     assert.deepEqual(await readFileTool.execute({ path: "public.txt" }, toolOptions()), {
       path: "public.txt",
-      content: "public content\n"
+      content: "public content",
+      startLine: 1,
+      endLine: 1,
+      hasMore: false,
+      nextStartLine: undefined
     });
     const searchTool = executableTool(tools, "Grep");
-    assert.deepEqual(await searchTool.execute({ query: "not-a-real-secret" }, toolOptions()), { matches: [] });
+    assert.deepEqual((await searchTool.execute({ query: "not-a-real-secret" }, toolOptions())).matches, []);
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });
   }
@@ -230,20 +230,14 @@ async function testWorkspaceSubagentToolBoundary(): Promise<void> {
       "Read",
       "Glob",
       "Grep",
-      "git_status",
-      "git_diff",
       "Write",
-      "edit_file",
-      "delete_file",
-      "move_file",
+      "Edit",
       "Bash"
     ]);
 
     const writer = executableTool(tools, "Write");
-    assert.deepEqual(await writer.execute({ path: "src/generated/value.ts", content: "export const value = 1;\n" }, toolOptions()), {
-      path: "src/generated/value.ts",
-      bytes: Buffer.byteLength("export const value = 1;\n")
-    });
+    const written = await writer.execute({ path: "src/generated/value.ts", content: "export const value = 1;\n" }, toolOptions());
+    assert.equal((written as { change: { path: string } }).change.path, "src/generated/value.ts");
     await assert.rejects(
       async () => await writer.execute({ path: ".env.local", content: "BLOCKED=true\n" }, toolOptions()),
       /protected path/i

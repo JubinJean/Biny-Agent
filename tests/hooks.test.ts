@@ -35,10 +35,10 @@ async function testFiltersByToolAndExtension(workspaceRoot: string): Promise<voi
   const both = await runner.run("afterTool", { tool: "Write", path: "src/a.ts" });
   assert.deepEqual(both.map((outcome) => outcome.output), ["ts-only", "write-only"]);
 
-  const extensionOnly = await runner.run("afterTool", { tool: "edit_file", path: "src/a.ts" });
+  const extensionOnly = await runner.run("afterTool", { tool: "Edit", path: "src/a.ts" });
   assert.deepEqual(extensionOnly.map((outcome) => outcome.output), ["ts-only"]);
 
-  const neither = await runner.run("afterTool", { tool: "edit_file", path: "src/a.py" });
+  const neither = await runner.run("afterTool", { tool: "Edit", path: "src/a.py" });
   assert.deepEqual(neither, []);
 }
 
@@ -57,8 +57,8 @@ async function testHookSeesTriggerContext(workspaceRoot: string): Promise<void> 
   const runner = new HookRunner(workspaceRoot, hooks({
     afterTool: [{ command: 'printf "%s|%s" "$BINY_HOOK_TOOL" "$BINY_HOOK_PATH"', tools: [], extensions: [], timeoutMs: 30_000 }]
   }));
-  const [outcome] = await runner.run("afterTool", { tool: "edit_file", path: "src/deep/file.ts" });
-  assert.equal(outcome?.output, "edit_file|src/deep/file.ts");
+  const [outcome] = await runner.run("afterTool", { tool: "Edit", path: "src/deep/file.ts" });
+  assert.equal(outcome?.output, "Edit|src/deep/file.ts");
 }
 
 /** 配置了却因为命令不存在而静默通过，比明确报错危险得多。 */

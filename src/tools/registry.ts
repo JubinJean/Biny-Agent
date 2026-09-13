@@ -10,16 +10,11 @@ import type { Tool, ToolContext, ToolSource } from "./types.js";
 import { createReadFileTool } from "./file/readFile.js";
 import { createWriteFileTool } from "./file/writeFile.js";
 import { createEditFileTool } from "./file/editFile.js";
-import { createDeleteFileTool } from "./file/deleteFile.js";
-import { createMoveFileTool } from "./file/moveFile.js";
 import { createReadToolResultTool } from "./file/readToolResult.js";
 import { createListFilesTool } from "./file/listFiles.js";
 import { createSearchFilesTool } from "./search/searchFiles.js";
 import { createRunCommandTool } from "./shell/runCommand.js";
 import { createManagedProcessTools } from "./process/managedProcesses.js";
-import { createGitStatusTool } from "./git/status.js";
-import { createGitCommitTool } from "./git/commit.js";
-import { createGitDiffTool } from "./git/diff.js";
 import { createWebFetchTool } from "./web/fetch.js";
 import { createWebSearchTool } from "./web/search.js";
 import type { ManagedProcessService } from "../runtime/ManagedProcessService.js";
@@ -104,16 +99,11 @@ export function createToolRegistry(
   registry.register(createReadToolResultTool(context));
   registry.register(createListFilesTool(context));
   registry.register(createSearchFilesTool(context));
-  registry.register(createGitStatusTool(context));
-  registry.register(createGitDiffTool(context));
-  registry.register(createGitCommitTool(context));
   registry.register(createWriteFileTool(context));
   registry.register(createEditFileTool(context));
-  registry.register(createDeleteFileTool(context));
-  registry.register(createMoveFileTool(context));
-  registry.register(createRunCommandTool(context, sandboxConfig));
+  registry.register(createRunCommandTool(context, sandboxConfig, {}, managedProcessService));
   if (managedProcessService) {
-    for (const tool of createManagedProcessTools(context, managedProcessService)) registry.register(tool);
+    for (const tool of createManagedProcessTools(managedProcessService)) registry.register(tool);
   }
   if (webSearchConfig?.enabled !== false) registry.register(createWebSearchTool(webSearchConfig, webCookiesConfig));
   if (webFetchConfig?.enabled !== false) registry.register(createWebFetchTool(webFetchConfig, webCookiesConfig));

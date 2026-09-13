@@ -144,6 +144,9 @@ export interface AgentToolResult<TDetails = unknown> {
 export type AgentToolUpdate = (update: AgentToolResult) => void;
 
 export interface AgentTool {
+  providerTool?: "openai-apply-patch";
+  promptSnippet?: string;
+  promptGuidelines?: string[];
   name: string;
   label?: string;
   description: string;

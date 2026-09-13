@@ -6,14 +6,12 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { createEditFileTool } from "../src/tools/file/editFile.js";
-import { createDeleteFileTool } from "../src/tools/file/deleteFile.js";
+import { formatHashlineContent } from "../src/tools/file/hashline.js";
 import { createReadFileTool } from "../src/tools/file/readFile.js";
-import { atomicWriteUtf8File, maxEditFileBytes, maxReadFileBytes, maxSearchFileBytes, readUtf8FileForEdit } from "../src/tools/file/safeFileIo.js";
+import { atomicWriteUtf8File, maxEditFileBytes, readUtf8FileForEdit } from "../src/tools/file/safeFileIo.js";
 import { createWriteFileTool } from "../src/tools/file/writeFile.js";
 import { createToolPermissionRequest } from "../src/tools/display/ToolDisplay.js";
 import { collectProjectContext } from "../src/project/ProjectContext.js";
-import { createGitDiffTool } from "../src/tools/git/diff.js";
-import { createGitStatusTool } from "../src/tools/git/status.js";
 import { createSearchFilesTool } from "../src/tools/search/searchFiles.js";
 import { runShellCommand } from "../src/tools/shell/runCommand.js";
 import type { RunnableToolExecution, ToolExecution } from "../src/tools/types.js";
@@ -24,10 +22,10 @@ const execFileAsync = promisify(execFile);
 async function main(): Promise<void> {
   const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), "biny-tool-cancel-"));
   try {
-    await testReadFileRejectsOversizeInput(workspaceRoot);
+    await testReadFilePaginatesOversizeInput(workspaceRoot);
     await testEditFileRejectsOversizeInput(workspaceRoot);
     await testPermissionPreviewRejectsOversizeExistingFile(workspaceRoot);
-    await testSearchReportsTruncatedFiles(workspaceRoot);
+    await testSearchReadsPastFormerByteLimit(workspaceRoot);
     await testPreAbortedWriteHasNoSideEffect(workspaceRoot);
     await testWriteCreatesMissingParents(workspaceRoot);
     await testWriteRejectsSymlinkedMissingParent(workspaceRoot);
@@ -45,7 +43,7 @@ async function main(): Promise<void> {
     await testAbortKillsDetachedDescendant(workspaceRoot);
     await testCommandExitStatus(workspaceRoot);
     await testCommandTimeoutHardSettles(workspaceRoot);
-    await testGitInspectionDisablesConfiguredHelpers(workspaceRoot);
+    await testProjectContextDisablesConfiguredGitHelpers(workspaceRoot);
   } finally {
     await rm(workspaceRoot, { recursive: true, force: true });
   }
@@ -55,10 +53,10 @@ async function testEditFileRejectsOversizeInput(workspaceRoot: string): Promise<
   const target = path.join(workspaceRoot, "oversize-edit.txt");
   const content = `old-text${"x".repeat(maxEditFileBytes)}`;
   await writeFile(target, content, "utf8");
-  const execution = runnable(createEditFileTool({ workspaceRoot, ignore: [] }).resolveExecution({
+  const execution = runnable(await createEditFileTool({ workspaceRoot, ignore: [] }).resolveExecution({
+    operation: "update",
     path: "oversize-edit.txt",
-    oldText: "old-text",
-    newText: "new-text"
+    edits: [{ op: "replace", pos: anchor("old-text"), lines: ["new-text"] }]
   }));
 
   await assert.rejects(
@@ -68,15 +66,15 @@ async function testEditFileRejectsOversizeInput(workspaceRoot: string): Promise<
   assert.equal(await readFile(target, "utf8"), content);
 }
 
-async function testReadFileRejectsOversizeInput(workspaceRoot: string): Promise<void> {
+async function testReadFilePaginatesOversizeInput(workspaceRoot: string): Promise<void> {
   const target = path.join(workspaceRoot, "oversize-read.txt");
-  await writeFile(target, "x".repeat(maxReadFileBytes + 1), "utf8");
-  const execution = runnable(createReadFileTool({ workspaceRoot, ignore: [] }).resolveExecution({ path: "oversize-read.txt" }));
+  await writeFile(target, "short line\n".repeat(120_000), "utf8");
+  const execution = runnable(createReadFileTool({ workspaceRoot, ignore: [] }).resolveExecution({ path: "oversize-read.txt", lineCount: 2 }));
 
-  await assert.rejects(
-    execution.execute({ toolCallId: "read-oversize" }),
-    new RegExp(`exceeding the ${String(maxReadFileBytes)}-byte read limit`, "i")
-  );
+  const result = await execution.execute({ toolCallId: "read-oversize" });
+  assert.equal(result.content.split("\n").length, 2);
+  assert.equal(result.hasMore, true);
+  assert.equal(result.nextStartLine, 3);
 }
 
 async function testPermissionPreviewRejectsOversizeExistingFile(workspaceRoot: string): Promise<void> {
@@ -94,25 +92,23 @@ async function testPermissionPreviewRejectsOversizeExistingFile(workspaceRoot: s
   );
 }
 
-async function testSearchReportsTruncatedFiles(workspaceRoot: string): Promise<void> {
+async function testSearchReadsPastFormerByteLimit(workspaceRoot: string): Promise<void> {
   const relativePath = "oversize-search.txt";
   const prefixQuery = "bounded-prefix-hit";
   const suffixQuery = "must-not-be-read-past-limit";
   await writeFile(
     path.join(workspaceRoot, relativePath),
-    `${prefixQuery}\n${"x".repeat(maxSearchFileBytes)}\n${suffixQuery}\n`,
+    `${prefixQuery}\n${(`${"x".repeat(64)}\n`).repeat(17_000)}${suffixQuery}\n`,
     "utf8"
   );
 
   const search = runnable(createSearchFilesTool({ workspaceRoot, ignore: [] }).resolveExecution({ query: prefixQuery }));
   const searchResult = await search.execute({ toolCallId: "search-bounded" });
   assert.equal(searchResult.matches.some((match) => match.path === relativePath && match.text === prefixQuery), true);
-  assert.equal(searchResult.truncatedFiles?.includes(relativePath), true);
 
   const grep = runnable(createSearchFilesTool({ workspaceRoot, ignore: [] }).resolveExecution({ query: suffixQuery }));
   const grepResult = await grep.execute({ toolCallId: "grep-bounded" });
-  assert.equal(grepResult.matches.some((match) => match.path === relativePath), false);
-  assert.equal(grepResult.truncatedFiles?.includes(relativePath), true);
+  assert.equal(grepResult.matches.some((match) => match.path === relativePath), true);
 }
 
 async function testPreAbortedWriteHasNoSideEffect(workspaceRoot: string): Promise<void> {
@@ -133,10 +129,9 @@ async function testWriteCreatesMissingParents(workspaceRoot: string): Promise<vo
     content: "content"
   }));
 
-  assert.deepEqual(await execution.execute({ toolCallId: "missing-parent" }), {
-    path: "missing-parent/nested/file.txt",
-    bytes: Buffer.byteLength("content")
-  });
+  const result = await execution.execute({ toolCallId: "missing-parent" });
+  assert.equal(result.change.path, "missing-parent/nested/file.txt");
+  assert.equal(result.change.bytes, Buffer.byteLength("content"));
   assert.equal(await readFile(path.join(workspaceRoot, "missing-parent", "nested", "file.txt"), "utf8"), "content");
 }
 
@@ -160,10 +155,10 @@ async function testWriteRejectsSymlinkedMissingParent(workspaceRoot: string): Pr
 async function testPreAbortedEditHasNoSideEffect(workspaceRoot: string): Promise<void> {
   const target = path.join(workspaceRoot, "edit.txt");
   await writeFile(target, "before", "utf8");
-  const execution = runnable(createEditFileTool({ workspaceRoot, ignore: [] }).resolveExecution({
+  const execution = runnable(await createEditFileTool({ workspaceRoot, ignore: [] }).resolveExecution({
+    operation: "update",
     path: "edit.txt",
-    oldText: "before",
-    newText: "after"
+    edits: [{ op: "replace", pos: anchor("before"), lines: ["after"] }]
   }));
   const controller = new AbortController();
   controller.abort();
@@ -187,10 +182,10 @@ async function testCancellationBeforeAtomicCommitPreservesTargets(workspaceRoot:
 
   const editTarget = path.join(workspaceRoot, "cancel-during-edit.txt");
   await writeFile(editTarget, "before-edit", "utf8");
-  const editExecution = runnable(createEditFileTool({ workspaceRoot, ignore: [] }).resolveExecution({
+  const editExecution = runnable(await createEditFileTool({ workspaceRoot, ignore: [] }).resolveExecution({
+    operation: "update",
     path: "cancel-during-edit.txt",
-    oldText: "before",
-    newText: "after"
+    edits: [{ op: "replace", pos: anchor("before-edit"), lines: ["after"] }]
   }));
   const editController = new AbortController();
   const editOperation = editExecution.execute({ toolCallId: "edit-during-cancel", signal: editController.signal });
@@ -208,24 +203,22 @@ async function testAtomicWriteAndEditCommitCleanly(workspaceRoot: string): Promi
     path: "atomic-success.txt",
     content: "middle"
   }));
-  assert.deepEqual(await writeExecution.execute({ toolCallId: "atomic-write" }), {
-    path: "atomic-success.txt",
-    bytes: Buffer.byteLength("middle")
-  });
+  const writeResult = await writeExecution.execute({ toolCallId: "atomic-write" });
+  assert.equal(writeResult.change.path, "atomic-success.txt");
+  assert.equal(writeResult.change.bytes, Buffer.byteLength("middle"));
   const afterWrite = await lstat(target);
   assert.equal(await readFile(target, "utf8"), "middle");
   assert.notEqual(afterWrite.ino, before.ino);
   if (process.platform !== "win32") assert.equal(afterWrite.mode & 0o777, before.mode & 0o777);
 
-  const editExecution = runnable(createEditFileTool({ workspaceRoot, ignore: [] }).resolveExecution({
+  const editExecution = runnable(await createEditFileTool({ workspaceRoot, ignore: [] }).resolveExecution({
+    operation: "update",
     path: "atomic-success.txt",
-    oldText: "middle",
-    newText: "after"
+    edits: [{ op: "replace", pos: anchor("middle"), lines: ["after"] }]
   }));
-  assert.deepEqual(await editExecution.execute({ toolCallId: "atomic-edit" }), {
-    path: "atomic-success.txt",
-    replacements: 1
-  });
+  const editResult = await editExecution.execute({ toolCallId: "atomic-edit" });
+  assert.equal(editResult.change.path, "atomic-success.txt");
+  assert.equal(editResult.change.edits, 1);
   assert.equal(await readFile(target, "utf8"), "after");
   assert.deepEqual((await readdir(workspaceRoot)).filter((entry) => entry.startsWith(".biny-write-")), []);
 }
@@ -233,14 +226,16 @@ async function testAtomicWriteAndEditCommitCleanly(workspaceRoot: string): Promi
 async function testDeleteFileBindsPreparedTarget(workspaceRoot: string): Promise<void> {
   const target = path.join(workspaceRoot, "delete-bound.txt");
   await writeFile(target, "approved", "utf8");
-  const tool = createDeleteFileTool({ workspaceRoot, ignore: [] });
-  const staleExecution = runnable(await tool.resolveExecution({ path: "delete-bound.txt" }));
+  const tool = createEditFileTool({ workspaceRoot, ignore: [] });
+  const staleExecution = runnable(await tool.resolveExecution({ operation: "delete", path: "delete-bound.txt" }));
   await writeFile(target, "replacement", "utf8");
   await assert.rejects(staleExecution.execute({ toolCallId: "delete-stale" }), /changed after the tool call was prepared/i);
   assert.equal(await readFile(target, "utf8"), "replacement");
 
-  const execution = runnable(await tool.resolveExecution({ path: "delete-bound.txt" }));
-  assert.deepEqual(await execution.execute({ toolCallId: "delete-current" }), { path: "delete-bound.txt", deleted: true });
+  const execution = runnable(await tool.resolveExecution({ operation: "delete", path: "delete-bound.txt" }));
+  const deleted = await execution.execute({ toolCallId: "delete-current" });
+  assert.equal(deleted.change.operation, "delete");
+  assert.equal(deleted.change.path, "delete-bound.txt");
   await assert.rejects(access(target));
   assert.deepEqual((await readdir(workspaceRoot)).filter((entry) => entry.startsWith(".biny-delete-")), []);
 }
@@ -281,10 +276,10 @@ async function testApprovedFileSnapshotCannotBeOverwritten(workspaceRoot: string
   const editTarget = resolveWorkspacePath(workspaceRoot, "approved-edit-target.txt", []);
   await writeFile(editTarget, "approved-before", "utf8");
   const { snapshot: approvedEditSnapshot } = await readUtf8FileForEdit(editTarget);
-  const editExecution = runnable(createEditFileTool({ workspaceRoot, ignore: [] }).resolveExecution({
+  const editExecution = runnable(await createEditFileTool({ workspaceRoot, ignore: [] }).resolveExecution({
+    operation: "update",
     path: "approved-edit-target.txt",
-    oldText: "approved-before",
-    newText: "agent-after"
+    edits: [{ op: "replace", pos: anchor("approved-before"), lines: ["agent-after"] }]
   }));
   await writeFile(editTarget, "approved-before plus external change", "utf8");
 
@@ -296,6 +291,10 @@ async function testApprovedFileSnapshotCannotBeOverwritten(workspaceRoot: string
     /edit target changed after permission approval/i
   );
   assert.equal(await readFile(editTarget, "utf8"), "approved-before plus external change");
+}
+
+function anchor(line: string): string {
+  return formatHashlineContent(line).split(":", 1)[0]!;
 }
 
 async function testAtomicCommitWindowPreservesExternalChanges(workspaceRoot: string): Promise<void> {
@@ -519,14 +518,12 @@ async function testCommandExitStatus(workspaceRoot: string): Promise<void> {
   assert.equal(explicit124.exitCode, 124);
 }
 
-async function testGitInspectionDisablesConfiguredHelpers(workspaceRoot: string): Promise<void> {
+async function testProjectContextDisablesConfiguredGitHelpers(workspaceRoot: string): Promise<void> {
   if (process.platform === "win32") return;
   const repository = path.join(workspaceRoot, "git-helper");
   const sentinel = path.join(workspaceRoot, "helper-ran.txt");
   const helper = path.join(workspaceRoot, "git-helper.mjs");
   await mkdir(repository);
-  await mkdir(path.join(repository, ".ssh"));
-  await mkdir(path.join(repository, "nested"));
   await writeFile(helper, [
     "#!/usr/bin/env node",
     "import { writeFileSync } from 'node:fs';",
@@ -535,22 +532,10 @@ async function testGitInspectionDisablesConfiguredHelpers(workspaceRoot: string)
   await chmod(helper, 0o755);
   await execFileAsync("git", ["init", "--quiet"], { cwd: repository });
   await writeFile(path.join(repository, "tracked.txt"), "before\n", "utf8");
-  await writeFile(path.join(repository, ".ssh", "id_rsa"), "private-before\n", "utf8");
-  await writeFile(path.join(repository, "nested", ".npmrc"), "//registry.example/:_authToken=before\n", "utf8");
-  await writeFile(path.join(repository, "config.json"), "config-before\n", "utf8");
   await execFileAsync("git", ["add", "."], { cwd: repository });
   await execFileAsync("git", ["-c", "user.name=Biny Test", "-c", "user.email=biny@example.invalid", "commit", "--quiet", "-m", "initial"], { cwd: repository });
-  await execFileAsync("git", ["config", "diff.external", helper], { cwd: repository });
   await execFileAsync("git", ["config", "core.fsmonitor", helper], { cwd: repository });
   await writeFile(path.join(repository, "tracked.txt"), "after\n", "utf8");
-  await writeFile(path.join(repository, ".ssh", "id_rsa"), "-----BEGIN PRIVATE KEY-----\nnot-a-real-key\n", "utf8");
-  await writeFile(path.join(repository, "nested", ".npmrc"), "//registry.example/:_authToken=not-a-real-token\n", "utf8");
-  await writeFile(path.join(repository, "config.json"), "not-a-real-config-secret\n", "utf8");
-
-  const diff = await runnable(createGitDiffTool({ workspaceRoot: repository, ignore: [] }).resolveExecution({})).execute({ toolCallId: "git-diff" });
-  assert.match(diff.output, /tracked\.txt/);
-  assert.doesNotMatch(diff.output, /PRIVATE KEY|_authToken|config-secret|id_rsa|agent\.config/);
-  await runnable(createGitStatusTool({ workspaceRoot: repository, ignore: [] }).resolveExecution({})).execute({ toolCallId: "git-status" });
   await collectProjectContext(repository, []);
   await assert.rejects(access(sentinel));
 }

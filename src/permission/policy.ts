@@ -6,6 +6,7 @@
  */
 import type { ActionType, PermissionRequestContext, RiskLevel } from "./PermissionManager.js";
 import type { ToolRisk } from "../tools/types.js";
+import { preparedFileChange, type PreparedFileChange } from "../tools/file/fileChange.js";
 import { isProtectedCredentialPath } from "../utils/secrets.js";
 import path from "node:path";
 
@@ -13,23 +14,15 @@ export type ToolName =
   | "Read"
   | "read_tool_result"
   | "Write"
-  | "edit_file"
-  | "delete_file"
-  | "move_file"
+  | "Edit"
   | "Glob"
   | "Grep"
-  | "git_status"
-  | "git_diff"
-  | "git_commit"
   | "Bash"
-  | "start_process"
-  | "process_status"
-  | "read_process_output"
-  | "stop_process"
+  | "BashOutput"
+  | "KillShell"
   | "WebSearch"
   | "WebFetch"
-  | "TodoWrite"
-  | "update_emotion";
+  | "TodoWrite";
 
 export interface AnalyzePermissionInput {
   toolName: string;
@@ -37,10 +30,18 @@ export interface AnalyzePermissionInput {
   sessionId: string;
   projectRoot: string;
   toolRisk?: ToolRisk;
+  fileChange?: PreparedFileChange;
 }
 
 export function analyzePermissionRequest(input: AnalyzePermissionInput): PermissionRequestContext {
   const targetPath = normalizePermissionPath(getStringField(input.args, "path"));
+  const fileChange = input.fileChange ?? preparedFileChange(input.toolName, input.args);
+  if (fileChange?.server) {
+    return {
+      ...base(input), actionType: fileChange.operation === "delete" ? "delete" : "write",
+      riskLevel: "high", reason: `Remote file ${fileChange.operation} on ${fileChange.server}: ${fileChange.path}${fileChange.destinationPath ? ` -> ${fileChange.destinationPath}` : ""}`
+    };
+  }
 
   if (input.toolName === "Read") {
     return {
@@ -61,66 +62,38 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
     };
   }
 
-  if (input.toolName === "git_commit") {
-    // 提交会改写仓库历史，且默认分支上不可静默撤销，始终按高风险确认。
-    return {
-      ...base(input),
-      actionType: "git",
-      riskLevel: "high",
-      reason: "creates a git commit in this repository"
-    };
-  }
-
-  if (input.toolName === "git_status" || input.toolName === "git_diff") {
-    return {
-      ...base(input),
-      actionType: "git",
-      riskLevel: "low",
-      reason: input.toolName === "git_diff" ? "inspects git diff" : "inspects git status"
-    };
-  }
-
-  if (input.toolName === "Write" || input.toolName === "edit_file") {
-    return {
-      ...base(input),
-      actionType: "write",
-      riskLevel: fileWriteRisk(targetPath),
-      targetPath,
-      reason: fileWriteReason(targetPath)
-    };
-  }
-
-  if (input.toolName === "move_file") {
-    // from/to 都会改变工作区,两个路径都参与判定:风险取两者较高者,
-    // denyPaths 由 PermissionManager 对 targetPath/secondaryTargetPath 分别检查。
-    const fromPath = normalizePermissionPath(getStringField(input.args, "from"));
-    const toPath = normalizePermissionPath(getStringField(input.args, "to"));
-    const riskTarget = riskRank(fileWriteRisk(toPath)) > riskRank(fileWriteRisk(fromPath)) ? toPath : fromPath;
+  if (fileChange) {
+    const targetPath = normalizePermissionPath(fileChange.path) ?? "";
+    const secondaryTargetPath = fileChange.destinationPath
+      ? normalizePermissionPath(fileChange.destinationPath) ?? ""
+      : "";
+    if (fileChange.operation === "delete") {
+      return {
+        ...base(input),
+        actionType: "delete",
+        riskLevel: isSensitivePath(targetPath) ? "critical" : "high",
+        targetPath,
+        reason: isSensitivePath(targetPath) ? "deletes a sensitive file" : "deletes a workspace file"
+      };
+    }
+    const riskTarget = riskRank(fileWriteRisk(secondaryTargetPath)) > riskRank(fileWriteRisk(targetPath))
+      ? secondaryTargetPath
+      : targetPath;
     return {
       ...base(input),
       actionType: "write",
       riskLevel: fileWriteRisk(riskTarget),
-      targetPath: fromPath,
-      secondaryTargetPath: toPath || undefined,
+      targetPath,
+      secondaryTargetPath: secondaryTargetPath || undefined,
       reason: fileWriteReason(riskTarget)
     };
   }
 
-  if (input.toolName === "delete_file") {
-    return {
-      ...base(input),
-      actionType: "delete",
-      riskLevel: isSensitivePath(targetPath) ? "critical" : "high",
-      targetPath,
-      reason: isSensitivePath(targetPath) ? "deletes a sensitive file" : "deletes a workspace file"
-    };
-  }
-
-  if (input.toolName === "Bash" || input.toolName === "start_process") {
+  if (input.toolName === "Bash") {
     return analyzeCommand(input, getStringField(input.args, "command"));
   }
 
-  if (input.toolName === "process_status" || input.toolName === "read_process_output") {
+  if (input.toolName === "BashOutput") {
     return {
       ...base(input),
       actionType: "read",
@@ -129,7 +102,7 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
     };
   }
 
-  if (input.toolName === "stop_process") {
+  if (input.toolName === "KillShell") {
     return {
       ...base(input),
       actionType: "shell",
@@ -223,16 +196,6 @@ export function analyzePermissionRequest(input: AnalyzePermissionInput): Permiss
       actionType: "write",
       riskLevel: "low",
       reason: "saves a redacted note to the source-aware durable memory library"
-    };
-  }
-
-  if (input.toolName === "update_emotion") {
-    // 情绪只写入 Agent 自己的表达层状态，不改变工作区文件、任务目标或工具权限。
-    return {
-      ...base(input),
-      actionType: "write",
-      riskLevel: "low",
-      reason: "updates the agent's local expression state"
     };
   }
 

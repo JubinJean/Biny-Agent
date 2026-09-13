@@ -12,19 +12,20 @@ import { PermissionManager } from "../src/permission/PermissionManager.js";
 import { ToolPermission } from "../src/desktop/renderer/src/components/ToolActivity.js";
 import { PermissionDialog } from "../src/tui/components/dialogs.js";
 import { setTheme } from "../src/tui/theme/index.js";
+import { formatHashlineContent } from "../src/tools/file/hashline.js";
 
 const cases: Array<{ name: string; args: Record<string, unknown>; title: string }> = [
   { name: "Bash", args: { command: "rm -rf old" }, title: "允许运行此命令？" },
-  { name: "start_process", args: { command: "node server.js" }, title: "允许启动后台进程？" },
   { name: "Write", args: { path: "new.txt", content: "new content" }, title: "允许写入此文件？" },
-  { name: "edit_file", args: { path: "old.txt", oldText: "old", newText: "new" }, title: "允许编辑此文件？" },
-  { name: "move_file", args: { from: "old.txt", to: "moved.txt" }, title: "允许移动此文件？" },
-  { name: "delete_file", args: { path: "old.txt" }, title: "允许删除此文件？" },
+  { name: "apply_patch", args: { callId: "patch", operation: { type: "delete_file", path: "old.txt" } }, title: "允许删除此文件？" },
+  { name: "Edit", args: { path: "old.txt", old_string: "old", new_string: "new" }, title: "允许编辑此文件？" },
+  { name: "Edit", args: { operation: "update", path: "old.txt", edits: [{ op: "replace", pos: formatHashlineContent("old").split(":", 1)[0], lines: ["new"] }] }, title: "允许编辑此文件？" },
+  { name: "Edit", args: { operation: "move", path: "old.txt", to: "moved.txt" }, title: "允许移动此文件？" },
+  { name: "Edit", args: { operation: "delete", path: "old.txt" }, title: "允许删除此文件？" },
   { name: "skill_install", args: { name: "demo", repoOwner: "owner", repoName: "repo", directory: "skills/demo" }, title: "允许安装此技能？" },
   { name: "BrowserType", args: { selector: "#password", text: "secret-form-value" }, title: "允许填写此网页表单？" },
   { name: "Read", args: { path: ".env" }, title: "允许读取此文件？" },
-  { name: "git_commit", args: { message: "test" }, title: "允许创建 Git 提交？" },
-  { name: "stop_process", args: { processId: "process-1" }, title: "允许停止此进程？" },
+  { name: "KillShell", args: { processId: "process-1" }, title: "允许停止此后台命令？" },
   { name: "mcp_demo_custom", args: { apiKey: "secret-extension-value", target: "demo" }, title: "允许此次工具操作？" }
 ];
 
@@ -43,11 +44,11 @@ test("所有定制摘要和通用工具通过真实投影保持操作内容和�
       }));
       assert.ok(html.includes(item.title), item.name);
       assert.doesNotMatch(html, /secret-form-value|secret-extension-value|Sensitive command warning|等待输出/u);
-      if (item.name === "move_file") {
+      if ((item.args as { operation?: string }).operation === "move") {
         assert.match(view.details, /old\.txt -> moved\.txt/u);
         assert.doesNotMatch(request.preview!, /^Write/u);
       }
-      if (item.name === "delete_file") assert.match(html, /-old/u);
+      if ((item.args as { operation?: string }).operation === "delete") assert.match(html, /-old/u);
       if (item.name === "skill_install") assert.match(view.details, /来源：owner\/repo:skills\/demo/u);
     }
   } finally {

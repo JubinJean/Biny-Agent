@@ -1,49 +1,40 @@
-/** Model-facing tools for runtime-owned long-lived processes. */
+/**
+ * 后台 Shell 的模型工具。
+ *
+ * 启动职责已并入 Bash；这里仅保留读取/枚举和终止两个后续动作，底层生命周期、持久日志与
+ * 进程组清理由 ManagedProcessService 统一负责。
+ */
 import { z } from "zod";
 import {
   ManagedProcessService,
-  type LogReadinessProbe,
   type HttpReadinessProbe,
-  type ManagedProcessLifecycle,
+  type LogReadinessProbe,
   type ManagedProcessOutput,
   type ManagedProcessReadinessProbe,
   type ManagedProcessSnapshot,
   type TcpReadinessProbe
 } from "../../runtime/ManagedProcessService.js";
 import { ToolAccesses } from "../access.js";
-import type { Tool, ToolContext } from "../types.js";
-import { resolveWorkspaceDirectory } from "../../workspace/resolvePath.js";
+import type { Tool } from "../types.js";
 
-export interface StartProcessArgs {
-  command: string;
-  cwd?: string;
-  lifecycle?: ManagedProcessLifecycle;
-  url?: string;
-  readiness?: ManagedProcessReadinessProbe;
-}
-
-export interface ProcessIdArgs {
-  processId: string;
-}
-
-export interface ReadProcessOutputArgs extends ProcessIdArgs {
+export interface BashOutputArgs {
+  /** 省略时列出当前 runtime 记录的后台 Shell。 */
+  processId?: string;
+  includeExited?: boolean;
   offset?: number;
   maxBytes?: number;
   fromEnd?: boolean;
 }
 
-export interface StopProcessArgs extends ProcessIdArgs {
+export interface BashOutputResult {
+  processes?: ManagedProcessSnapshot[];
+  process?: ManagedProcessSnapshot;
+  output?: ManagedProcessOutput;
+}
+
+export interface KillShellArgs {
+  processId: string;
   reason?: string;
-}
-
-export interface ProcessStatusArgs {
-  /** 提供时只返回该进程；省略时列出全部受管进程。 */
-  processId?: string;
-  includeExited?: boolean;
-}
-
-export interface ProcessStatusResult {
-  processes: ManagedProcessSnapshot[];
 }
 
 const commonProbeProperties = {
@@ -75,208 +66,112 @@ const logProbeSchema = z.object({
   intervalMs: z.number().int().min(1).max(60_000).optional()
 }) satisfies z.ZodType<LogReadinessProbe>;
 
-const startProcessArgsSchema = z.object({
-  command: z.string().min(1),
-  cwd: z.string().min(1).optional(),
-  lifecycle: z.enum(["cleanup", "retain"]).optional(),
-  url: z.string().url().optional(),
-  readiness: z.discriminatedUnion("type", [httpProbeSchema, tcpProbeSchema, logProbeSchema]).optional()
-}) satisfies z.ZodType<StartProcessArgs>;
+export const managedProcessReadinessSchema = z.discriminatedUnion("type", [httpProbeSchema, tcpProbeSchema, logProbeSchema]) satisfies z.ZodType<ManagedProcessReadinessProbe>;
 
-export function createManagedProcessTools(
-  context: ToolContext,
-  service: ManagedProcessService
-): Array<Tool<unknown, unknown>> {
-  return [
-    createStartProcessTool(context, service),
-    createProcessStatusTool(service),
-    createReadProcessOutputTool(service),
-    createStopProcessTool(service)
-  ] as Array<Tool<unknown, unknown>>;
+export const managedProcessReadinessParameters = {
+  type: "object" as const,
+  properties: {
+    type: { type: "string" as const, enum: ["http", "tcp", "log"] },
+    url: { type: "string" as const, description: "HTTP readiness URL." },
+    expectedStatus: { type: "integer" as const, minimum: 100, maximum: 599, description: "Exact HTTP status required; defaults to 200." },
+    host: { type: "string" as const, description: "TCP readiness host." },
+    port: { type: "integer" as const, minimum: 1, maximum: 65_535, description: "TCP readiness port." },
+    pattern: { type: "string" as const, description: "Literal or regular-expression log pattern." },
+    regex: { type: "boolean" as const, description: "Interpret pattern as a regular expression." },
+    ...commonProbeProperties
+  },
+  required: ["type"],
+  additionalProperties: false,
+  description: "Optional background-process readiness probe. http requires url, tcp requires host and port, log requires pattern."
+};
+
+export function createManagedProcessTools(service: ManagedProcessService): Array<Tool<unknown, unknown>> {
+  return [createBashOutputTool(service), createKillShellTool(service)] as Array<Tool<unknown, unknown>>;
 }
 
-export function createStartProcessTool(
-  context: ToolContext,
-  service: ManagedProcessService
-): Tool<StartProcessArgs, ManagedProcessSnapshot> {
-  return {
-    name: "start_process",
-    description: "Start a long-running workspace process managed by Biny. Use this instead of Bash, &, nohup, or disown for servers. Optional HTTP, TCP, or log readiness is checked before the tool returns. Processes are cleaned up when the runtime closes unless lifecycle is explicitly set to retain.",
-    promptSnippet: "Start and readiness-check a long-running managed workspace process",
-    promptGuidelines: ["Use start_process for servers and other long-running commands; do not background them with &, nohup, or disown"],
-    parameters: {
-      type: "object",
-      properties: {
-        command: { type: "string", minLength: 1, description: "Foreground command that owns the long-running service." },
-        cwd: { type: "string", minLength: 1, description: "Workspace-relative working directory." },
-        lifecycle: { type: "string", enum: ["cleanup", "retain"], description: "cleanup (default) stops the process on runtime close; retain explicitly leaves it running." },
-        url: { type: "string", description: "Optional user-facing service URL." },
-        readiness: {
-          type: "object",
-          properties: {
-            type: { type: "string", enum: ["http", "tcp", "log"] },
-            url: { type: "string", description: "HTTP readiness URL." },
-            expectedStatus: { type: "integer", minimum: 100, maximum: 599, description: "Exact HTTP status required; defaults to 200." },
-            host: { type: "string", description: "TCP readiness host." },
-            port: { type: "integer", minimum: 1, maximum: 65_535, description: "TCP readiness port." },
-            pattern: { type: "string", description: "Literal or regular-expression log pattern." },
-            regex: { type: "boolean", description: "Interpret pattern as a regular expression." },
-            ...commonProbeProperties
-          },
-          required: ["type"],
-          additionalProperties: false,
-          description: "Readiness probe. http requires url, tcp requires host and port, log requires pattern."
-        }
-      },
-      required: ["command"],
-      additionalProperties: false
-    },
-    schema: startProcessArgsSchema,
-    capability: "process.start",
-    risk: "execute",
-    resolveExecution(args) {
-      const preview = args.command.length > 80 ? `${args.command.slice(0, 80)}...` : args.command;
-      const processCwd = resolveWorkspaceDirectory(context.workspaceRoot, args.cwd ?? ".", context.ignore);
-      return {
-        accesses: ToolAccesses.readWriteTree(processCwd),
-        display: {
-          kind: "generic",
-          summary: `Start managed process: ${preview}`,
-          detail: { command: args.command, cwd: processCwd, readiness: args.readiness }
-        },
-        description: `Start managed process: ${preview}`,
-        approvalRule: `start_process(${args.command})`,
-        async execute({ signal }) {
-          const currentCwd = resolveWorkspaceDirectory(context.workspaceRoot, args.cwd ?? ".", context.ignore);
-          if (currentCwd !== processCwd) throw new Error("The managed process working directory changed after the tool call was prepared.");
-          return await service.start({
-            command: args.command,
-            cwd: processCwd,
-            lifecycle: args.lifecycle,
-            url: args.url,
-            readiness: args.readiness,
-            signal
-          });
-        }
-      };
-    }
-  };
-}
-
-export function createProcessStatusTool(
-  service: ManagedProcessService
-): Tool<ProcessStatusArgs, ProcessStatusResult> {
+export function createBashOutputTool(service: ManagedProcessService): Tool<BashOutputArgs, BashOutputResult> {
   const schema = z.object({
     processId: z.string().uuid().optional(),
-    includeExited: z.boolean().optional()
-  }) satisfies z.ZodType<ProcessStatusArgs>;
-  return {
-    name: "process_status",
-    description: "List Biny-managed processes with current state, readiness evidence, PID/process group, URLs, log paths, and cleanup policy; or inspect one process in full when processId is given (exactly one entry).",
-    promptSnippet: "List managed processes, or inspect one and its readiness evidence",
-    parameters: {
-      type: "object",
-      properties: {
-        processId: { type: "string", description: "Opaque runtime process ID returned by start_process. Omit to list all managed processes instead." },
-        includeExited: { type: "boolean", description: "When listing, include stopped, failed, and naturally exited processes; defaults to true. Ignored when processId is given." }
-      },
-      additionalProperties: false
-    },
-    schema,
-    capability: "process.status",
-    risk: "read",
-    resolveExecution(args) {
-      const inspecting = args.processId !== undefined;
-      return {
-        accesses: ToolAccesses.none(),
-        display: { kind: "generic", summary: inspecting ? `Inspect managed process ${args.processId}` : "List managed processes" },
-        description: inspecting ? `Inspect managed process ${args.processId}` : "List managed processes",
-        approvalRule: inspecting ? `process_status(${args.processId})` : "list_processes",
-        async execute() {
-          if (args.processId !== undefined) {
-            return { processes: [await service.status(args.processId)] };
-          }
-          return { processes: await service.list({ includeExited: args.includeExited }) };
-        }
-      };
-    }
-  };
-}
-
-export function createReadProcessOutputTool(
-  service: ManagedProcessService
-): Tool<ReadProcessOutputArgs, ManagedProcessOutput> {
-  const schema = z.object({
-    processId: z.string().uuid(),
+    includeExited: z.boolean().optional(),
     offset: z.number().int().min(0).optional(),
     maxBytes: z.number().int().min(1).max(256 * 1024).optional(),
     fromEnd: z.boolean().optional()
-  }) satisfies z.ZodType<ReadProcessOutputArgs>;
+  }) satisfies z.ZodType<BashOutputArgs>;
   return {
-    name: "read_process_output",
-    description: "Read bounded output from a Biny-managed process log. Use nextOffset for incremental reads or fromEnd for a bounded tail.",
-    promptSnippet: "Read bounded output from a managed process",
+    name: "BashOutput",
+    description: "List background Bash processes, or return one process status together with a bounded page of its durable merged output log. Continue with output.nextOffset while output.hasMore is true.",
+    promptSnippet: "List background Bash processes or read paginated process output",
+    promptGuidelines: ["Omit processId to recover recent process IDs; use fromEnd for a tail or nextOffset for incremental reads"],
     parameters: {
       type: "object",
       properties: {
-        processId: { type: "string", description: "Opaque runtime process ID returned by start_process." },
-        offset: { type: "integer", minimum: 0, description: "Byte offset for incremental reading; defaults to 0." },
-        maxBytes: { type: "integer", minimum: 1, maximum: 256 * 1024, description: "Maximum bytes to return; defaults to 65536." },
-        fromEnd: { type: "boolean", description: "Read the last maxBytes instead of using offset." }
+        processId: { type: "string", description: "Opaque process ID returned by a background Bash call. Omit to list processes." },
+        includeExited: { type: "boolean", description: "When listing, include exited processes; defaults to true." },
+        offset: { type: "integer", minimum: 0, description: "Byte offset for output pagination; defaults to 0." },
+        maxBytes: { type: "integer", minimum: 1, maximum: 256 * 1024, description: "Maximum output bytes; defaults to 65536." },
+        fromEnd: { type: "boolean", description: "Read a bounded tail instead of using offset." }
       },
-      required: ["processId"],
       additionalProperties: false
     },
     schema,
-    capability: "process.output.read",
+    capability: "shell.output",
     risk: "read",
     resolveExecution(args) {
+      const inspecting = args.processId !== undefined;
+      if (!inspecting && (args.offset !== undefined || args.maxBytes !== undefined || args.fromEnd !== undefined)) {
+        throw new Error("BashOutput pagination options require processId.");
+      }
       return {
         accesses: ToolAccesses.none(),
-        display: { kind: "generic", summary: `Read managed process output ${args.processId}` },
-        description: `Read managed process output ${args.processId}`,
-        approvalRule: `read_process_output(${args.processId})`,
+        display: { kind: "generic", summary: inspecting ? `Read background Bash output ${args.processId}` : "List background Bash processes" },
+        description: inspecting ? `Read background Bash output ${args.processId}` : "List background Bash processes",
+        approvalRule: inspecting ? `BashOutput(${args.processId})` : "BashOutput",
         async execute() {
-          return await service.readOutput(args.processId, {
-            offset: args.offset,
-            maxBytes: args.maxBytes,
-            fromEnd: args.fromEnd
-          });
+          if (args.processId === undefined) {
+            return { processes: await service.list({ includeExited: args.includeExited }), process: undefined, output: undefined };
+          }
+          const [process, output] = await Promise.all([
+            service.status(args.processId),
+            service.readOutput(args.processId, {
+              offset: args.offset,
+              maxBytes: args.maxBytes,
+              fromEnd: args.fromEnd
+            })
+          ]);
+          return { processes: undefined, process, output };
         }
       };
     }
   };
 }
 
-export function createStopProcessTool(
-  service: ManagedProcessService
-): Tool<StopProcessArgs, ManagedProcessSnapshot> {
+export function createKillShellTool(service: ManagedProcessService): Tool<KillShellArgs, ManagedProcessSnapshot> {
   const schema = z.object({
     processId: z.string().uuid(),
     reason: z.string().min(1).max(500).optional()
-  }) satisfies z.ZodType<StopProcessArgs>;
+  }) satisfies z.ZodType<KillShellArgs>;
   return {
-    name: "stop_process",
-    description: "Stop an entire Biny-managed process group and record the cleanup result.",
-    promptSnippet: "Stop a managed process group",
+    name: "KillShell",
+    description: "Stop an entire background Bash process group and return its final lifecycle state.",
+    promptSnippet: "Stop a background Bash process group",
     parameters: {
       type: "object",
       properties: {
-        processId: { type: "string", description: "Opaque runtime process ID returned by start_process." },
+        processId: { type: "string", description: "Opaque process ID returned by a background Bash call." },
         reason: { type: "string", minLength: 1, maxLength: 500, description: "Optional cleanup reason." }
       },
       required: ["processId"],
       additionalProperties: false
     },
     schema,
-    capability: "process.stop",
+    capability: "shell.stop",
     risk: "execute",
     resolveExecution(args) {
       return {
         accesses: ToolAccesses.none(),
-        display: { kind: "generic", summary: `Stop managed process ${args.processId}`, detail: args.reason },
-        description: `Stop managed process ${args.processId}`,
-        approvalRule: `stop_process(${args.processId})`,
+        display: { kind: "generic", summary: `Stop background Bash ${args.processId}`, detail: args.reason },
+        description: `Stop background Bash ${args.processId}`,
+        approvalRule: `KillShell(${args.processId})`,
         async execute() {
           return await service.stop(args.processId, args.reason);
         }

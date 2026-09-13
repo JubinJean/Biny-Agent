@@ -13,12 +13,12 @@
  */
 import { randomBytes } from "node:crypto";
 import { constants, promises as fs, type BigIntStats } from "node:fs";
+import { StringDecoder } from "node:string_decoder";
 import type { FileHandle } from "node:fs/promises";
 import path from "node:path";
+import { FileChangeUncertainError } from "./fileChange.js";
 
-export const maxReadFileBytes = 1024 * 1024;
 export const maxEditFileBytes = 1024 * 1024;
-export const maxSearchFileBytes = 1024 * 1024;
 
 export interface FileSnapshot {
   device: bigint;
@@ -44,6 +44,78 @@ export interface BoundedFileRead {
   content: string;
   truncated: boolean;
   snapshot: FileSnapshot;
+}
+
+export interface Utf8LineVisitResult {
+  snapshot: FileSnapshot;
+  completed: boolean;
+  linesVisited: number;
+}
+
+const maxStreamedLineBytes = 1024 * 1024;
+
+/**
+ * 按行流式读取普通文件；不会因为文件总体很大而把全文放进内存。
+ * 回调返回 false 时安全停止，但仍会复核路径与已打开句柄是否指向同一版本。
+ */
+export async function visitBoundUtf8Lines(
+  filePath: string,
+  visit: (line: string, lineNumber: number) => boolean | void,
+  signal?: AbortSignal
+): Promise<Utf8LineVisitResult> {
+  signal?.throwIfAborted();
+  const handle = await openBoundRegularFile(filePath);
+  try {
+    const initial = await assertFileBinding(filePath, handle);
+    const decoder = new StringDecoder("utf8");
+    let pending = "";
+    let position = 0;
+    let lineNumber = 0;
+    let completed = true;
+    while (true) {
+      signal?.throwIfAborted();
+      const chunk = Buffer.allocUnsafe(64 * 1024);
+      const result = await handle.read(chunk, 0, chunk.length, position);
+      if (result.bytesRead === 0) break;
+      position += result.bytesRead;
+      pending += decoder.write(chunk.subarray(0, result.bytesRead));
+      if (Buffer.byteLength(pending, "utf8") > maxStreamedLineBytes && !pending.includes("\n")) {
+        throw new Error(`File contains a line exceeding the ${String(maxStreamedLineBytes)}-byte streamed line limit.`);
+      }
+      let newline = pending.indexOf("\n");
+      while (newline >= 0) {
+        signal?.throwIfAborted();
+        const rawLine = pending.slice(0, newline);
+        pending = pending.slice(newline + 1);
+        if (Buffer.byteLength(rawLine, "utf8") > maxStreamedLineBytes) {
+          throw new Error(`File contains a line exceeding the ${String(maxStreamedLineBytes)}-byte streamed line limit.`);
+        }
+        lineNumber += 1;
+        const line = rawLine.endsWith("\r") ? rawLine.slice(0, -1) : rawLine;
+        if (visit(line, lineNumber) === false) {
+          completed = false;
+          break;
+        }
+        newline = pending.indexOf("\n");
+      }
+      if (!completed) break;
+    }
+    if (completed) {
+      pending += decoder.end();
+      if (pending.length > 0) {
+        if (Buffer.byteLength(pending, "utf8") > maxStreamedLineBytes) {
+          throw new Error(`File contains a line exceeding the ${String(maxStreamedLineBytes)}-byte streamed line limit.`);
+        }
+        lineNumber += 1;
+        visit(pending, lineNumber);
+      }
+    }
+    const current = await assertFileBinding(filePath, handle);
+    if (!sameFileSnapshot(initial, current)) throw new Error("File changed while it was being read.");
+    return { snapshot: current, completed, linesVisited: lineNumber };
+  } finally {
+    await handle.close();
+  }
 }
 
 export class FileReadLimitError extends Error {
@@ -113,7 +185,7 @@ export async function atomicWriteUtf8File(
   content: string,
   expectedSnapshot: FileSnapshot | null | undefined,
   signal?: AbortSignal,
-  onCommit?: (evidence: string) => void
+  onCommit?: (evidence: string) => void | Promise<void>
 ): Promise<number> {
   signal?.throwIfAborted();
   const directory = path.dirname(filePath);
@@ -215,7 +287,7 @@ export async function atomicWriteUtf8File(
     // 走到这里文件已经提交成功。对目录 fsync 只是为了在支持的文件系统上提高断电耐久性，
     // 某些文件系统不允许同步目录，那种失败不能让已完成的写入被报成失败。
     await syncDirectory(directory).catch(() => undefined);
-    reportCommitted(onCommit, `Atomic file commit completed for ${path.basename(filePath)}.`);
+    await reportCommitted(onCommit, `Atomic file commit completed for ${path.basename(filePath)}.`);
     return Buffer.byteLength(content, "utf8");
   } finally {
     if (!committed && handle && temporarySnapshot) {
@@ -247,7 +319,7 @@ export async function atomicWriteWorkspaceUtf8File(
   content: string,
   expectedSnapshot: FileSnapshot | null | undefined,
   signal?: AbortSignal,
-  onCommit?: (evidence: string) => void
+  onCommit?: (evidence: string) => void | Promise<void>
 ): Promise<number> {
   signal?.throwIfAborted();
   const createdDirectories = await createMissingWorkspaceDirectories(workspaceRoot, path.dirname(filePath), signal);
@@ -283,7 +355,7 @@ export async function deleteBoundRegularFile(
   filePath: string,
   expectedSnapshot: FileSnapshot,
   signal?: AbortSignal,
-  onCommit?: (evidence: string) => void
+  onCommit?: (evidence: string) => void | Promise<void>
 ): Promise<void> {
   signal?.throwIfAborted();
   const directory = path.dirname(filePath);
@@ -316,7 +388,7 @@ export async function deleteBoundRegularFile(
     }
     await fs.unlink(quarantinePath);
     quarantined = false;
-    reportCommitted(onCommit, `Atomic file deletion completed for ${path.basename(filePath)}.`);
+    await reportCommitted(onCommit, `Atomic file deletion completed for ${path.basename(filePath)}.`);
     await syncDirectory(directory).catch(() => undefined);
   } catch (error) {
     if (quarantined) {
@@ -349,7 +421,7 @@ export async function moveBoundRegularFile(
   destinationPath: string,
   expectedSnapshot: FileSnapshot,
   signal?: AbortSignal,
-  onCommit?: (evidence: string) => void
+  onCommit?: (evidence: string) => void | Promise<void>
 ): Promise<void> {
   signal?.throwIfAborted();
   const source = path.resolve(sourcePath);
@@ -407,7 +479,7 @@ export async function moveBoundRegularFile(
     await fs.unlink(source);
     sourceRemoved = true;
     linked = false;
-    reportCommitted(onCommit, `Atomic file move committed from ${path.basename(source)} to ${path.basename(destination)}.`);
+    await reportCommitted(onCommit, `Atomic file move committed from ${path.basename(source)} to ${path.basename(destination)}.`);
     await syncDirectory(sourceDirectory).catch(() => undefined);
     if (destinationDirectory !== sourceDirectory) await syncDirectory(destinationDirectory).catch(() => undefined);
   } catch (error) {
@@ -426,11 +498,12 @@ export async function moveBoundRegularFile(
   }
 }
 
-function reportCommitted(onCommit: ((evidence: string) => void) | undefined, evidence: string): void {
+async function reportCommitted(onCommit: ((evidence: string) => void | Promise<void>) | undefined, evidence: string): Promise<void> {
+  // 调用时文件副作用已经提交，回调失败只能向上报告，不能触发文件回滚。
   try {
-    onCommit?.(evidence);
-  } catch {
-    // 审计回调不能改变已经提交的文件事务结果。
+    await onCommit?.(evidence);
+  } catch (error) {
+    throw new FileChangeUncertainError(`File side effect committed, but its evidence callback failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
   }
 }
 

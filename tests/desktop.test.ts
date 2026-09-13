@@ -3917,8 +3917,8 @@ function testLiveAssistantCompletionDoesNotDuplicateDelta(): void {
   const timeline = buildSessionTimeline([], [
     { ...base, type: "message.user", messageId: "message", content: "停止进程" },
     { ...base, type: "assistant.delta", content: "正文" },
-    { ...base, type: "tool.started", toolCallId: "tool", tool: "list_processes", args: {} },
-    { ...base, type: "tool.completed", toolCallId: "tool", tool: "list_processes", result: {}, durationMs: 10 },
+    { ...base, type: "tool.started", toolCallId: "tool", tool: "BashOutput", args: {} },
+    { ...base, type: "tool.completed", toolCallId: "tool", tool: "BashOutput", result: {}, durationMs: 10 },
     { ...base, type: "assistant.completed", content: "正文" },
     { ...base, type: "run.completed", durationMs: 20 }
   ]);
@@ -3983,14 +3983,16 @@ function testChangedFileProjection(): void {
   const completed = buildSessionTimeline([], [
     { ...base, type: "message.user", messageId: "message", content: "write" },
     { ...base, type: "tool.started", toolCallId: "write-tool", tool: "Write", args: { path: "hello.py" }, display: { kind: "file_io", operation: "write", path: "hello.py" } },
+    { ...base, type: "tool.change_committed", toolCallId: "write-tool", tool: "Write", operationId: "op-write", change: { operation: "create", path: "hello.py", committed: true, diff: "" } },
     { ...base, type: "tool.completed", toolCallId: "write-tool", tool: "Write", result: { path: "hello.py" }, durationMs: 10 }
   ]);
   assert.deepEqual(listChangedFiles(completed[0]!), [{ path: "hello.py", operation: "write", status: "completed" }]);
 
   const edited = buildSessionTimeline([], [
     { ...base, runId: "edit-run", type: "message.user", messageId: "edit-message", content: "edit" },
-    { ...base, runId: "edit-run", type: "tool.started", toolCallId: "edit-tool", tool: "edit_file", args: { path: "hello.py" }, display: { kind: "file_io", operation: "edit", path: "hello.py" } },
-    { ...base, runId: "edit-run", type: "tool.completed", toolCallId: "edit-tool", tool: "edit_file", result: { path: "hello.py" }, durationMs: 10 }
+    { ...base, runId: "edit-run", type: "tool.started", toolCallId: "edit-tool", tool: "Edit", args: { operation: "update", path: "hello.py" }, display: { kind: "file_io", operation: "update", path: "hello.py" } },
+    { ...base, runId: "edit-run", type: "tool.change_committed", toolCallId: "edit-tool", tool: "Edit", operationId: "op-edit", change: { operation: "update", path: "hello.py", committed: true, diff: "" } },
+    { ...base, runId: "edit-run", type: "tool.completed", toolCallId: "edit-tool", tool: "Edit", result: { path: "hello.py" }, durationMs: 10 }
   ]);
   assert.deepEqual(listTimelineFiles([completed[0]!, edited[0]!]), [{ path: "hello.py", operation: "edit", status: "completed" }]);
 }
@@ -3998,9 +4000,10 @@ function testChangedFileProjection(): void {
 function testLiveTimelineProjection(): void {
   const base = { sessionId: "session", runId: "run", timestamp: "2026-01-01T00:00:00.000Z" };
   const live: AgentHostEvent[] = [
-    { ...base, type: "message.user", messageId: "message", content: "show diff" },
-    { ...base, type: "tool.started", toolCallId: "tool", tool: "git_diff", args: {} },
-    { ...base, type: "tool.completed", toolCallId: "tool", tool: "git_diff", result: { output: "diff --git a/a.ts b/a.ts\n+const a = 1;" }, durationMs: 20 },
+    { ...base, type: "message.user", messageId: "message", content: "edit" },
+    { ...base, type: "tool.started", toolCallId: "tool", tool: "Edit", args: { operation: "update", path: "a.ts" } },
+    { ...base, type: "tool.change_committed", toolCallId: "tool", tool: "Edit", operationId: "op-edit", change: { operation: "update", path: "a.ts", committed: true, diff: "diff --git a/a.ts b/a.ts\n+const a = 1;" } },
+    { ...base, type: "tool.completed", toolCallId: "tool", tool: "Edit", result: { change: { operation: "update", path: "a.ts", committed: true, diff: "diff --git a/a.ts b/a.ts\n+const a = 1;" } }, durationMs: 20 },
     { ...base, type: "assistant.completed", content: "done" },
     { ...base, type: "run.completed", durationMs: 30 }
   ];

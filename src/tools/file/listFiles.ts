@@ -1,70 +1,106 @@
 /**
- * 文件列表工具模块。
+ * 工作区文件枚举工具。
  *
- * `Glob` 复用 workspace scanner，在 ignore 规则和数量限制内返回工作区文件列表。
- * 它用于让 agent 快速获得项目轮廓，而不是完整读取文件内容。
+ * `Glob` 以稳定的路径顺序返回文件，并通过最后一条路径作为游标继续分页。扫描始终复用
+ * workspace ignore 规则；path 只缩小搜索根，pattern 仍匹配工作区相对路径。
  */
-import { scanWorkspaceFiles } from "../../workspace/scanner.js";
 import path from "node:path";
 import { z } from "zod";
+import { scanWorkspaceFiles } from "../../workspace/scanner.js";
+import { resolveWorkspaceDirectory, toWorkspaceRelative } from "../../workspace/resolvePath.js";
 import { ToolAccesses } from "../access.js";
 import type { Tool, ToolContext } from "../types.js";
 
 export interface ListFilesArgs {
-  // limit 用于保护大型仓库，避免一次性把全部文件塞进响应。
-  limit?: number;
-  // pattern 使用标准 glob 语法筛选相对工作区根目录的文件路径。
+  path?: string;
   pattern?: string;
+  cursor?: string;
+  limit?: number;
 }
 
 export interface ListFilesResult {
   files: string[];
+  hasMore: boolean;
+  nextCursor?: string;
 }
 
+const defaultLimit = 200;
+const maxLimit = 1_000;
+
+const listSchema = z.object({
+  path: z.string().min(1).optional(),
+  pattern: z.string().min(1).optional(),
+  cursor: z.string().min(1).optional(),
+  limit: z.number().int().min(1).max(maxLimit).optional()
+}) satisfies z.ZodType<ListFilesArgs>;
+
 export function createListFilesTool(context: ToolContext): Tool<ListFilesArgs, ListFilesResult> {
-  // 文件枚举统一复用 workspace scanner，保证 CLI、搜索和项目上下文的忽略规则一致。
   return {
     name: "Glob",
-    description: "Expand a glob pattern to list workspace files.",
-    promptSnippet: "Expand a glob pattern to list workspace files",
+    description: "List workspace files in stable path order. Supports a workspace-relative root path, glob filtering, and cursor pagination.",
+    promptSnippet: "List workspace files with root, glob, and cursor pagination",
+    promptGuidelines: ["Continue with nextCursor when hasMore is true; pattern matches workspace-relative paths"],
     parameters: {
       type: "object",
       properties: {
-        pattern: { type: "string", minLength: 1, description: "Optional glob pattern relative to the workspace root." },
-        limit: { type: "integer", minimum: 1, maximum: 1000, description: "Maximum number of matching files to return." }
+        path: { type: "string", minLength: 1, description: "Workspace-relative directory to list. Defaults to the workspace root." },
+        pattern: { type: "string", minLength: 1, description: "Optional glob matched against workspace-relative file paths." },
+        cursor: { type: "string", minLength: 1, description: "Exclusive workspace-relative path cursor returned by a previous page." },
+        limit: { type: "integer", minimum: 1, maximum: maxLimit, description: `Maximum files to return. Defaults to ${String(defaultLimit)}.` }
       },
       required: [],
       additionalProperties: false
     },
-    schema: z.object({
-      pattern: z.string().min(1).optional(),
-      limit: z.number().int().positive().max(1000).optional()
-    }).default({}),
+    schema: listSchema,
     capability: "filesystem.list",
     risk: "read",
     resolveExecution(args) {
+      const listRoot = resolveWorkspaceDirectory(context.workspaceRoot, args.path ?? ".", context.ignore);
+      const relativeRoot = normalizePath(toWorkspaceRelative(context.workspaceRoot, listRoot));
       const pattern = args.pattern?.trim();
+      const cursor = args.cursor?.trim();
+      if (args.pattern !== undefined && !pattern) throw new Error("Glob requires a non-empty pattern.");
+      if (args.cursor !== undefined && !cursor) throw new Error("Glob requires a non-empty cursor.");
+      if (pattern) path.matchesGlob("validation-path", pattern);
       return {
-        accesses: ToolAccesses.searchTree(context.workspaceRoot),
-        display: { kind: "file_io", operation: "list", path: ".", detail: pattern ?? `limit ${String(args.limit ?? 200)}` },
-        description: pattern ? `Expand ${pattern}` : "List workspace files",
+        accesses: ToolAccesses.searchTree(listRoot),
+        display: { kind: "file_io", operation: "list", path: args.path ?? ".", detail: pattern ?? `limit ${String(args.limit ?? defaultLimit)}` },
+        description: pattern ? `Expand ${pattern} under ${args.path ?? "."}` : `List ${args.path ?? "."}`,
         approvalRule: "Glob",
         async execute({ signal }) {
-          if (args.pattern !== undefined && pattern === undefined) {
-            throw new Error("Glob requires a non-empty pattern.");
-          }
-          const files = await scanWorkspaceFiles(
+          signal?.throwIfAborted();
+          const currentRoot = resolveWorkspaceDirectory(context.workspaceRoot, args.path ?? ".", context.ignore);
+          if (currentRoot !== listRoot) throw new Error("The list root changed after the tool call was prepared.");
+          const limit = args.limit ?? defaultLimit;
+          const candidates = await scanWorkspaceFiles(
             context.workspaceRoot,
             context.ignore,
-            args.limit ?? 200,
+            limit + 1,
             signal,
-            pattern === undefined
-              ? undefined
-              : (relativePath) => path.matchesGlob(relativePath.split(path.sep).join("/"), pattern)
+            (relativePath) => {
+              const normalized = normalizePath(relativePath);
+              return isUnderRoot(normalized, relativeRoot)
+                && (pattern === undefined || path.matchesGlob(normalized, pattern))
+                && (cursor === undefined || normalized > cursor);
+            }
           );
-          return { files };
+          const files = candidates.slice(0, limit).map(normalizePath);
+          const hasMore = candidates.length > limit;
+          return {
+            files,
+            hasMore,
+            nextCursor: hasMore ? files.at(-1) : undefined
+          };
         }
       };
     }
   };
+}
+
+function normalizePath(value: string): string {
+  return value.split(path.sep).join("/");
+}
+
+function isUnderRoot(relativePath: string, relativeRoot: string): boolean {
+  return relativeRoot === "." || relativePath === relativeRoot || relativePath.startsWith(`${relativeRoot}/`);
 }

@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   await testModelErrorRecoveryRetriesBeforeAnyDelta();
   await testModelStreamWithoutFinishFails();
   await testNextTurnRefreshesModelAndTools();
-  await testLegacyToolNameIsRepaired();
+  await testRemovedToolNameIsRejected();
   await testUnknownToolCallStopsWithoutRetry();
   const calls: ModelStreamContext[] = [];
   const model: AgentModel = {
@@ -161,7 +161,7 @@ async function testUnknownToolCallStopsWithoutRetry(): Promise<void> {
   assert.match(failure?.error ?? "", /missing a function name/iu);
 }
 
-async function testLegacyToolNameIsRepaired(): Promise<void> {
+async function testRemovedToolNameIsRejected(): Promise<void> {
   let requests = 0;
   const tool: AgentTool = {
     name: "Write",
@@ -189,9 +189,9 @@ async function testLegacyToolNameIsRepaired(): Promise<void> {
     maxSteps: 2
   })) received.push(event);
 
-  assert.equal(requests, 2);
-  assert.equal(received.some((event) => event.type === "tool_execution_start"), true);
-  assert.equal(received.some((event) => event.type === "error"), false);
+  assert.equal(requests, 1);
+  assert.equal(received.some((event) => event.type === "tool_execution_start"), false);
+  assert.equal(received.some((event) => event.type === "error"), true);
 }
 
 async function testModelStreamWithoutFinishFails(): Promise<void> {

@@ -1,5 +1,6 @@
 /** 把 Biny 工具协议接到 Vercel AI SDK，并保留工具审计与进度事件。 */
 import { jsonSchema, tool, type ToolSet } from "ai";
+import { openai } from "@ai-sdk/openai";
 import type { JSONSchema7 } from "@ai-sdk/provider";
 import type { VercelLoopState } from "./vercelAgentLoop.js";
 import type { AgentToolResult } from "./types.js";
@@ -72,5 +73,17 @@ export function createVercelTools(state: VercelLoopState): ToolSet {
       }
     })
   ] as const);
-  return Object.fromEntries(entries) as ToolSet;
+  const tools = Object.fromEntries(entries) as ToolSet;
+  for (const agentTool of state.tools) {
+    if (agentTool.providerTool !== "openai-apply-patch") continue;
+    const execute = tools[agentTool.name]!.execute!;
+    tools[agentTool.name] = {
+      ...openai.tools.applyPatch({}),
+      execute: async (input, options) => {
+        const result = await execute(input, options) as AgentToolResult;
+        return { status: result.isError ? "failed" : "completed", output: result.content.map((part) => part.type === "text" ? part.text : "").join("\n") };
+      }
+    };
+  }
+  return tools;
 }

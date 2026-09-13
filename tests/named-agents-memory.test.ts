@@ -83,7 +83,7 @@ async function testSubagentDefinitionLoading(workspaceRoot: string): Promise<voi
     assert.ok(scout);
     assert.equal(scout.scope, "project");
     assert.equal(scout.model, "deepseek-v4-flash");
-    assert.deepEqual(scout.tools, ["Read", "Grep", "Write", "edit_file"]);
+    assert.deepEqual(scout.tools, ["Read", "Grep", "write_file", "multi_edit", "apply_patch"]);
     assert.match(scout.prompt, /exact paths with line ranges/);
     assert.equal(scout.path, path.join(".biny", "agents", "scout.md"));
 
@@ -93,7 +93,7 @@ async function testSubagentDefinitionLoading(workspaceRoot: string): Promise<voi
 
     const prompt = buildSubagentDefinitionsPrompt(definitions);
     assert.match(prompt, /Named subagents/);
-    assert.match(prompt, /scout \(project, model deepseek-v4-flash, tools Read\/Grep\/Write\/edit_file\)/);
+    assert.match(prompt, /scout \(project, model deepseek-v4-flash, tools Read\/Grep\/write_file\/multi_edit\/apply_patch\)/);
     assert.match(prompt, /Task/);
     assert.equal(buildSubagentDefinitionsPrompt([]), "");
   } finally {

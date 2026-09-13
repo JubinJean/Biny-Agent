@@ -8,6 +8,7 @@ import type { z } from "zod";
 import { createHash } from "node:crypto";
 import type { ToolAccessList } from "./access.js";
 import type { FileSnapshot } from "./file/safeFileIo.js";
+import type { PreparedFileChange, CommittedFileChange } from "./file/fileChange.js";
 import type { JsonObjectSchema } from "./schema.js";
 
 export type ToolSource = "builtin" | "mcp" | "skill" | "plugin" | "subagent";
@@ -63,16 +64,20 @@ export interface ToolExecutionContext {
   signal?: AbortSignal;
   onUpdate?: (update: ToolUpdate) => void;
   onExecutionState?: (state: ToolExecutionState, evidence?: string) => void;
+  onFileChangeCommitted?: (change: CommittedFileChange) => Promise<void>;
   approvedFile?: ApprovedFileSnapshot;
 }
 
 export type ToolInputDisplay =
-  | { kind: "file_io"; operation: "read" | "write" | "edit" | "list" | "search" | "grep" | "git"; path?: string; content?: string; before?: string; after?: string; detail?: string }
+  | { kind: "file_io"; operation: "read" | "write" | "update" | "delete" | "move" | "list" | "search" | "grep" | "git"; path?: string; destinationPath?: string; content?: string; before?: string; after?: string; detail?: string }
   | { kind: "command"; command: string; cwd?: string; description?: string; language?: string }
   | { kind: "generic"; summary: string; detail?: unknown };
 
 export interface RunnableToolExecution<TResult = unknown> {
   accesses?: ToolAccessList;
+  fileChange?: PreparedFileChange;
+  /** 仅用于全部工作就是一次文件变更的工具；局部提交不能证明整个工具成功。 */
+  fileChangeIsResult?: boolean;
   display?: ToolInputDisplay;
   description?: string;
   retrySafety?: ToolRetrySafety;
@@ -96,6 +101,7 @@ export interface Tool<TArgs = unknown, TResult = unknown> {
   source?: ToolSource;
   capability?: string;
   risk?: ToolRisk;
+  providerTool?: "openai-apply-patch";
   // resolveExecution 声明本次调用的展示信息、权限规则、资源访问范围和真正执行函数。
   resolveExecution(args: TArgs): ToolExecution<TResult> | Promise<ToolExecution<TResult>>;
 }

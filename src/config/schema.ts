@@ -37,13 +37,13 @@ const agentSchema = z.object({
 
 const permissionSchema = z.object({
   mode: z.enum(["ask", "read-only", "auto", "full-access"]).default("full-access"),
-  allowTools: z.array(z.string()).default(["Read", "Glob", "Grep", "git_status", "git_diff", "WebSearch", "save_memory", "update_emotion"]),
+  allowTools: z.array(z.string()).default(["Read", "Glob", "Grep", "WebSearch", "save_memory"]),
   allowPaths: z.array(z.string()).default([]),
   denyPaths: z.array(z.string()).default([".env", ".env.local", ".ssh/", "node_modules/"]),
   criticalAlwaysAsk: z.boolean().default(true)
 }).default({
   mode: "full-access",
-  allowTools: ["Read", "Glob", "Grep", "git_status", "git_diff", "WebSearch", "save_memory", "update_emotion"],
+  allowTools: ["Read", "Glob", "Grep", "WebSearch", "save_memory"],
   allowPaths: [],
   denyPaths: [".env", ".env.local", ".ssh/", "node_modules/"],
   criticalAlwaysAsk: true
@@ -81,6 +81,8 @@ export const compactionSchema = z.object({
  * maxOutputTokens 缺省跟随模型别名配置，显式配置后全局覆盖。
  */
 export const chatParamsSchema = z.object({
+  /** 实验开关：覆盖协议自动选择，让 Read/Edit 使用行哈希。 */
+  hashlineEdit: z.boolean().optional(),
   /** 采样温度 0–2；越低越确定，越高越发散。 */
   temperature: z.number().min(0).max(2).optional(),
   /** 单次回复的最大输出 token 数。 */
@@ -126,6 +128,23 @@ export const crystalSettingsSchema = z.object({
 });
 
 export type CrystalSettings = z.infer<typeof crystalSettingsSchema>;
+
+/**
+ * 心跳(Heartbeat)后台巡检的开关与节奏。默认关闭,由用户显式开启;默认节奏与
+ * Alma 对齐(30 分钟间隔、8–23 点活动时段)。未知键直接剥离,旧配置里的遗留
+ * heartbeat 对象可以安全落入新结构。
+ */
+export const heartbeatConfigSchema = z.object({
+  enabled: z.boolean().default(false),
+  intervalMinutes: z.number().int().min(1).max(1_440).default(30),
+  activeHoursStart: z.number().int().min(0).max(23).default(8),
+  activeHoursEnd: z.number().int().min(0).max(23).default(23)
+}).default({
+  enabled: false,
+  intervalMinutes: 30,
+  activeHoursStart: 8,
+  activeHoursEnd: 23
+});
 
 const contextSchema = z.object({
   // 不配置时按当前模型的上下文窗口自动推导；配置了就作为额外上限。
@@ -266,6 +285,8 @@ const providerConfigSchema = z.object({
   headers: z.record(z.string()).optional(),
   apiBackend: modelApiBackendSchema.optional(),
   compatibility: modelCompatibilitySchema.optional(),
+  /** 自定义 Responses 端点须明确声明，不根据模型名称推断协议支持。 */
+  applyPatchProtocol: z.enum(["openai-structured", "off"]).optional(),
   modelProfiles: z.record(z.string().trim().min(1).max(240), modelProfileSchema).optional(),
   /** 外部端点不得凭 URL 推断本地性；未来本地服务必须显式声明。 */
   dataResidency: activityDataResidencySchema.optional(),
@@ -321,6 +342,8 @@ const modelPricingSchema = z.object({
 });
 
 const mcpServerSchema = z.object({
+  /** 按服务端原始工具名显式启用固定契约，不依据远端 annotations 自动启用。 */
+  toolContracts: z.record(z.literal("file-change-v1")).optional(),
   /** 用于凭据 account 稳定关联；旧配置没有该字段时在下一次桌面保存时补齐。 */
   id: z.string().uuid().optional(),
   description: z.string().trim().max(2_000).optional(),
@@ -363,12 +386,8 @@ export const defaultSubagentAllowedTools = [
   "Read",
   "Glob",
   "Grep",
-  "git_status",
-  "git_diff",
   "Write",
-  "edit_file",
-  "delete_file",
-  "move_file",
+  "Edit",
   "Bash"
 ] as const;
 
@@ -615,6 +634,7 @@ const canonicalConfigSchema = z.object({
   models: z.record(modelAliasSchema),
   thinking: thinkingSchema,
   agent: agentSchema,
+  heartbeat: heartbeatConfigSchema,
   permission: permissionSchema,
   workspace: z.object({
     ignore: z.array(z.string())
@@ -746,6 +766,7 @@ const canonicalConfigSchema = z.object({
 export const configSchema = z.preprocess(rejectLegacyModelConfig, canonicalConfigSchema);
 
 export type AgentConfig = z.infer<typeof canonicalConfigSchema>;
+export type HeartbeatConfig = AgentConfig["heartbeat"];
 export type CompactionConfig = AgentConfig["context"]["compaction"];
 export type ChatParamsConfig = AgentConfig["chat"];
 export type ModelProvider = z.infer<typeof modelProviderSchema>;
@@ -833,9 +854,10 @@ export const defaultConfig: AgentConfig = {
     maxConcurrentTools: 4,
     maxQueuedToolCalls: 64
   },
+  heartbeat: { enabled: false, intervalMinutes: 30, activeHoursStart: 8, activeHoursEnd: 23 },
   permission: {
     mode: "full-access",
-    allowTools: ["Read", "Glob", "Grep", "git_status", "git_diff", "WebSearch", "save_memory", "update_emotion"],
+    allowTools: ["Read", "Glob", "Grep", "WebSearch", "save_memory"],
     allowPaths: [],
     denyPaths: [".env", ".env.local", ".ssh/", "node_modules/"],
     criticalAlwaysAsk: true

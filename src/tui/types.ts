@@ -82,6 +82,7 @@ export interface ToolTranscriptItem extends TranscriptItemBase {
   operationId?: string;
   recovered?: boolean;
   evidence?: string;
+  fileChange?: import("../tools/file/fileChange.js").CommittedFileChange;
 }
 
 export type TranscriptItem =
@@ -114,6 +115,7 @@ export interface TuiPermissionRequest {
   actionType: string;
   riskLevel: string;
   targetPath?: string;
+  secondaryTargetPath?: string;
   command?: string;
   reason?: string;
   changeSummary?: string;

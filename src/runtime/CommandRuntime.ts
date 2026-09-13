@@ -31,7 +31,6 @@ import type { McpToolHost } from "../extensions/mcp.js";
 import { createSubagentTool, runSubagentTask as executeSubagentTask, type SubagentOptions } from "../extensions/subagent.js";
 import { buildSubagentDefinitionsPrompt, loadSubagentDefinitions, type SubagentDefinition } from "../extensions/agents.js";
 import { createMemoryTools } from "../extensions/memory.js";
-import { createEmotionTool } from "../tools/emotion.js";
 import { createActivityReportTool } from "../tools/activity/report.js";
 import { createActivityDigestTool } from "../tools/activity/digest.js";
 import { createActivitySearchTool } from "../tools/activity/search.js";
@@ -297,10 +296,6 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
     )) {
       toolRegistry.registerBuiltinTool(tool);
     }
-    toolRegistry.registerBuiltinTool(createEmotionTool({
-      getStorage: () => agent?.getEmotionStorage(),
-      getFatigue: () => agent?.getFatigue() ?? 0
-    }));
     // Activity 回忆改为主动工具集：模型按需生成打工日记、时间线或搜索，而不是把脱敏事件
     // 注入每个回合。模型、策略与嵌入运行时都在调用时现取，不沿用装配时的快照。
     const loadActivitySettings = async (): Promise<ActivitySettings> =>
@@ -396,6 +391,12 @@ export async function createCommandRuntime(workspaceRoot: string, options: Comma
   });
   const heartbeat = new HeartbeatScheduler({
     configDir: undefined,
+    enabled: config.heartbeat.enabled,
+    schedule: {
+      intervalMinutes: config.heartbeat.intervalMinutes,
+      activeHoursStart: config.heartbeat.activeHoursStart,
+      activeHoursEnd: config.heartbeat.activeHoursEnd
+    },
     run: async (prompt, signal) => {
       await dailyDiaryAgent.runTask(prompt, { abortSignal: signal, runId: randomUUID(), turnId: randomUUID(), emotionAnalysis: false });
     }

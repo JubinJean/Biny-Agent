@@ -64,7 +64,7 @@ export async function modelMessages(state: VercelLoopState): Promise<ModelMessag
     await state.config.onRequestContext?.({ systemPrompt: state.context.systemPrompt, messages, tools: state.context.tools });
   }
   state.directPromptMessages = messages;
-  return toModelMessages(messages);
+  return toModelMessages(messages, state.context.tools.some((tool) => tool.providerTool === "openai-apply-patch"));
 }
 
 export async function recordDirectModelRequest(
@@ -345,7 +345,7 @@ async function collectGenerateResult(
   return { content, finishReason, usage, warnings: [] };
 }
 
-export function toModelMessages(messages: AgentMessage[]): ModelMessage[] {
+export function toModelMessages(messages: AgentMessage[], nativePatch = false): ModelMessage[] {
   return messages.map((message) => {
     if (message.role === "user") {
       if (typeof message.content === "string") return { role: "user", content: message.content };
@@ -362,9 +362,15 @@ export function toModelMessages(messages: AgentMessage[]): ModelMessage[] {
         content: message.content.map((part) => {
           if (part.type === "text") return { type: "text", text: part.text };
           if (part.type === "reasoning") return { type: "reasoning", text: part.text, providerMetadata: part.providerMetadata };
+          if (part.name === "apply_patch" && !nativePatch) return { type: "text", text: `Historical file patch request: ${JSON.stringify(part.arguments)}` };
           return { type: "tool-call", toolCallId: part.id, toolName: part.name, input: part.arguments };
         })
       };
+    }
+    if (message.toolName === "apply_patch") {
+      const text = message.content.map((part) => part.type === "text" ? part.text : "[binary content]").join("\n");
+      if (!nativePatch) return { role: "assistant", content: [{ type: "text", text: `Historical file patch result (${message.isError ? "failed" : "completed"}): ${text}` }] };
+      return { role: "tool", content: [{ type: "tool-result", toolCallId: message.toolCallId, toolName: message.toolName, output: { type: "json", value: { status: message.isError ? "failed" : "completed", output: text } } }] };
     }
     return {
       role: "tool",

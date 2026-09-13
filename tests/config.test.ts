@@ -29,8 +29,8 @@ await testGlobalPathResolution();
 await testLegacyGlobalStateMigration();
 testRunBudget();
 testMemoryEmbeddingDefaultsToE5();
-testBuiltInEmotionAndHeartbeatAreNotConfigurable();
-testLegacyToolNamesMigrateBeforeSchemaValidation();
+testEmotionStrippedAndHeartbeatDefaultsToDisabled();
+testRemovedToolNamesAreNotMigrated();
 testLegacySubagentDefaultMigration();
 testRemovedModelFormatsRequireManualUpdate();
 await testProjectOverridesAndGlobalPersistence();
@@ -101,26 +101,36 @@ function testRunBudget(): void {
   }), /Unrecognized key/u);
 }
 
-function testBuiltInEmotionAndHeartbeatAreNotConfigurable(): void {
+function testEmotionStrippedAndHeartbeatDefaultsToDisabled(): void {
   const document = structuredClone(defaultConfig) as unknown as Record<string, unknown>;
   const context = document.context as Record<string, unknown>;
   context.emotion = { enabled: false, allowModelUpdate: false, autoAnalyze: false };
-  document.heartbeat = { enabled: false, intervalMinutes: 1 };
+  // 遗留 heartbeat 对象（含未知键）落入新结构：未知键剥离，缺省键补默认值。
+  document.heartbeat = { enabled: true, intervalMinutes: 45, legacyPrompt: "outdated" };
   const migrated = migrateGlobalConfigDocument(document).document;
   const parsed = configSchema.parse(migrated);
   assert.equal("emotion" in parsed.context, false);
-  assert.equal("heartbeat" in parsed, false);
+  assert.deepEqual(parsed.heartbeat, { enabled: true, intervalMinutes: 45, activeHoursStart: 8, activeHoursEnd: 23 });
+
+  const withoutHeartbeat = structuredClone(defaultConfig) as unknown as Record<string, unknown>;
+  delete withoutHeartbeat.heartbeat;
+  assert.deepEqual(configSchema.parse(withoutHeartbeat).heartbeat, {
+    enabled: false,
+    intervalMinutes: 30,
+    activeHoursStart: 8,
+    activeHoursEnd: 23
+  });
 }
 
-function testLegacyToolNamesMigrateBeforeSchemaValidation(): void {
+function testRemovedToolNamesAreNotMigrated(): void {
   const document = structuredClone(defaultConfig) as unknown as Record<string, any>;
   document.permission.allowTools = ["read_file", "write_file", "multi_edit", "apply_patch", "Read"];
   document.extensions.subagent.allowedTools = ["read_file", "multi_edit", "apply_patch", "write_file"];
 
   const migrated = migrateGlobalConfigDocument(document).document;
-  const parsed = configSchema.parse(migrated);
-  assert.deepEqual(parsed.permission.allowTools, ["Read", "Write", "edit_file"]);
-  assert.deepEqual(parsed.extensions.subagent.allowedTools, ["Read", "edit_file", "Write"]);
+  assert.deepEqual((migrated as Record<string, any>).permission.allowTools, document.permission.allowTools);
+  assert.deepEqual((migrated as Record<string, any>).extensions.subagent.allowedTools, document.extensions.subagent.allowedTools);
+  assert.throws(() => configSchema.parse(migrated), /Invalid enum value/u);
 }
 
 function testLegacySubagentDefaultMigration(): void {

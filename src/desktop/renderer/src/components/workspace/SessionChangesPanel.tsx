@@ -68,6 +68,10 @@ function ChangeRow({ change, expanded, onToggle, onPreviewFile }: {
   onToggle(): void;
   onPreviewFile(path: string): void;
 }): React.JSX.Element {
+  const operationClass = change.operation === "create" ? "write" : "edit";
+  const operationLabel = change.operation === "create" ? "写入"
+    : change.operation === "delete" ? "删除"
+      : change.operation === "move" ? "移动" : "编辑";
   const name = change.path.slice(change.path.lastIndexOf("/") + 1);
   const dir = name === change.path ? "" : change.path.slice(0, change.path.lastIndexOf("/"));
   const hunks = useMemo(() => parseDiffHunks(change.diff), [change.diff]);
@@ -83,15 +87,15 @@ function ChangeRow({ change, expanded, onToggle, onPreviewFile }: {
         <span aria-hidden="true" className={`biny-session-change-chevron${expanded ? " is-open" : ""}`}>
           <Icon name="chevron" size={12} />
         </span>
-        <span className={`biny-session-change-icon is-${change.operation}`}>
-          <Icon name={change.operation === "write" ? "file-text" : "file-pen"} size={16} />
+        <span className={`biny-session-change-icon is-${operationClass}`}>
+          <Icon name={change.operation === "create" ? "file-text" : "file-pen"} size={16} />
         </span>
         <span className="biny-session-change-label">
-          <span className="biny-session-change-name">{name}</span>
+          <span className="biny-session-change-name">{change.sourcePath ? `${change.sourcePath} → ${change.path}` : name}</span>
           {dir !== "" ? <span className="biny-session-change-dir">{dir}</span> : null}
         </span>
-        <span className={`biny-session-change-chip${change.status === "writing" ? " is-active" : ""} is-${change.operation}`}>
-          {change.status === "writing" ? "处理中" : change.operation === "write" ? "写入" : "编辑"}
+        <span className={`biny-session-change-chip${change.status === "writing" ? " is-active" : ""} is-${operationClass}`}>
+          {change.status === "writing" ? "处理中" : operationLabel}
         </span>
         {change.add + change.del > 0 ? (
           <span className="diff-stats biny-session-change-stats">
@@ -104,10 +108,10 @@ function ChangeRow({ change, expanded, onToggle, onPreviewFile }: {
         <div className="biny-session-change-body">
           <div className="biny-session-change-detail-header">
             <span>{change.changeCount > 1 ? `${change.changeCount} 次操作记录` : "操作记录"}</span>
-            <button onClick={() => onPreviewFile(change.path)} type="button">
+            {change.operation !== "delete" ? <button onClick={() => onPreviewFile(change.path)} type="button">
               <Icon name="eye" size={13} />
               预览文件
-            </button>
+            </button> : null}
           </div>
           {hunks.length > 0 ? (
             <pre className="merged-edit-diff biny-session-change-diff"><code>

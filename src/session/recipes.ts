@@ -160,7 +160,7 @@ export function collectRecipeFacts(events: readonly SessionEvent[]): RecipeFacts
     const name = call.tool;
     if (isMcpTool(name)) facts.mcpToolNames.add(name);
     else facts.toolNames.add(name);
-    if (name === "Write" || name === "edit_file" || name === "Edit") {
+    if (name === "Write" || name === "Edit") {
       const filePath = stringField(call.args, "path") ?? stringField(call.args, "filePath") ?? stringField(call.result, "path");
       if (filePath && !facts.filesWritten.includes(filePath)) facts.filesWritten.push(filePath);
     }

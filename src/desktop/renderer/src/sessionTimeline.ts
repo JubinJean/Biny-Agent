@@ -10,6 +10,8 @@
  * 这里只做数据整形，不含任何渲染逻辑，方便单独测试。
  */
 import type { ToolInputDisplay, ToolUpdate } from "../../../tools/types.js";
+import type { CommittedFileChange } from "../../../tools/file/fileChange.js";
+import { parseFileChange } from "../../../tools/file/fileChange.js";
 import type { AgentPermissionEventRequest, AgentRunModel, AgentHostEvent } from "../../../runtime/agentEvents.js";
 import type { PermissionAction } from "../../../permission/PermissionManager.js";
 import { activitySummaryText } from "../../../runtime/activitySummary.js";
@@ -18,7 +20,6 @@ import { activeSessionEventsForPath, sessionMessageMetadata } from "../../../ses
 import type { SessionEvent } from "../../../session/recorder.js";
 import type { SessionUsage } from "../../../session/metadata.js";
 import { publicUserMessage } from "../../../session/publicMessage.js";
-import { canonicalCompatibleToolName } from "../../../tools/toolNames.js";
 
 export type TimelineRunStatus =
   | "idle"
@@ -69,6 +70,7 @@ export interface TimelineTool {
   recovered?: boolean;
   operationId?: string;
   evidence?: string;
+  fileChange?: CommittedFileChange;
 }
 
 export interface TimelineToolEntry {
@@ -138,6 +140,8 @@ export function timelineToolEntries(tools: TimelineTool[]): TimelineToolEntry[] 
 
 export function executionToolLabel(tool: string): string {
   if (tool === "Bash") return "Bash";
+  if (tool === "BashOutput") return "后台输出";
+  if (tool === "KillShell") return "停止命令";
   if (tool === "Skill" || tool === "skill_call") return "技能调用";
   return tool;
 }
@@ -348,7 +352,7 @@ function buildHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
     }
     if (event.type === "tool_call") {
       const turn = ensureTurn(event.time);
-      const toolName = canonicalCompatibleToolName(event.tool);
+      const toolName = event.tool;
       appendInvokedSkill(turn, toolName, event.args);
       const projection = historicalToolProjection(toolName, event.args);
       appendHistoricalReasoning(turn, event.reasoningContent);
@@ -369,13 +373,12 @@ function buildHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
     }
     if (event.type === "tool_result") {
       const turn = ensureTurn(event.time);
-      const toolName = canonicalCompatibleToolName(event.tool);
+      const toolName = event.tool;
       const tool = [...turn.tools].reverse().find((candidate) => candidate.id === event.toolCallId || (candidate.tool === toolName && candidate.result === undefined));
       if (tool) {
-        tool.result = event.result;
+        applyToolResult(tool, event.result);
         tool.status = timelineToolStatus(event.result, event.executionStatus);
         tool.error = resultError(event.result);
-        tool.diff = resultString(event.result, "output") ?? resultString(event.result, "diffPreview");
         tool.executionStatus = event.executionStatus;
         tool.recovered = event.recovered;
         tool.operationId = event.operationId;
@@ -384,7 +387,11 @@ function buildHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
       continue;
     }
     if (event.type === "agent_message") continue;
-    if (event.type === "tool_execution") continue;
+    if (event.type === "tool_execution") {
+      const tool = ensureTurn(event.time).tools.find((candidate) => candidate.id === event.toolCallId);
+      if (tool && event.change) applyCommittedChange(tool, event.change, event.operationId);
+      continue;
+    }
     if (event.type === "context_checkpoint") continue;
     if (event.type === "model_request") continue;
     if (event.type === "message_version_selected") continue;
@@ -525,7 +532,7 @@ function buildVersionedHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
     }
     if (event.type === "tool_call") {
       const turn = turnForEvent(event, event.time);
-      const toolName = canonicalCompatibleToolName(event.tool);
+      const toolName = event.tool;
       appendInvokedSkill(turn, toolName, event.args);
       const projection = historicalToolProjection(toolName, event.args);
       appendHistoricalReasoning(turn, event.reasoningContent);
@@ -546,13 +553,12 @@ function buildVersionedHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
     }
     if (event.type === "tool_result") {
       const turn = turnForEvent(event, event.time);
-      const toolName = canonicalCompatibleToolName(event.tool);
+      const toolName = event.tool;
       const tool = [...turn.tools].reverse().find((candidate) => candidate.id === event.toolCallId || (candidate.tool === toolName && candidate.result === undefined));
       if (tool) {
-        tool.result = event.result;
+        applyToolResult(tool, event.result);
         tool.status = timelineToolStatus(event.result, event.executionStatus);
         tool.error = resultError(event.result);
-        tool.diff = resultString(event.result, "output") ?? resultString(event.result, "diffPreview");
         tool.executionStatus = event.executionStatus;
         tool.recovered = event.recovered;
         tool.operationId = event.operationId;
@@ -560,7 +566,12 @@ function buildVersionedHistoricalTurns(events: SessionEvent[]): TimelineTurn[] {
       }
       continue;
     }
-    if (event.type === "agent_message" || event.type === "tool_execution" || event.type === "context_checkpoint" || event.type === "model_request" || event.type === "message_version_selected" || event.type === "message_metadata") continue;
+    if (event.type === "tool_execution") {
+      const tool = turnForEvent(event, event.time).tools.find((candidate) => candidate.id === event.toolCallId);
+      if (tool && event.change) applyCommittedChange(tool, event.change, event.operationId);
+      continue;
+    }
+    if (event.type === "agent_message" || event.type === "context_checkpoint" || event.type === "model_request" || event.type === "message_version_selected" || event.type === "message_metadata") continue;
     const turn = turnForEvent(event, event.time);
     turn.error = event.message;
     turn.durationMs = elapsedMs(turn.timestamp, event.time) ?? turn.durationMs;
@@ -832,6 +843,8 @@ function createLiveTimelineFold(initialUserMessageIndex: number): LiveTimelineFo
         if (event.update.kind === "stdout") tool.command.stdout += event.update.text;
         if (event.update.kind === "stderr") tool.command.stderr += event.update.text;
       }
+    } else if (event.type === "tool.change_committed") {
+      applyCommittedChange(toolFor(event, event.tool), event.change, event.operationId);
     } else if (event.type === "tool.completed") {
       const tool = toolFor(event, event.tool);
       applyToolResult(tool, event.result);
@@ -1225,11 +1238,26 @@ function resultNumber(result: unknown, key: string): number | undefined {
   return typeof value === "number" ? value : undefined;
 }
 
+function resultFileChange(result: unknown): CommittedFileChange | undefined {
+  if (typeof result !== "object" || result === null) return undefined;
+  return parseFileChange((result as Record<string, unknown>).change);
+}
+
+function applyCommittedChange(tool: TimelineTool, value: unknown, operationId?: string): void {
+  const change = parseFileChange(value);
+  if (!change) return;
+  tool.fileChange = change;
+  tool.diff = change.diff;
+  tool.operationId = operationId ?? tool.operationId;
+  if (!change.server) tool.path = change.destinationPath ?? change.path;
+}
+
 function applyToolResult(tool: TimelineTool, result: unknown): void {
   tool.result = result;
-  tool.diff = tool.tool === "git_diff"
-    ? resultString(result, "output")
-    : resultString(result, "diffPreview");
+  if (!tool.fileChange) {
+    const change = resultFileChange(result);
+    if (change && typeof result === "object" && result !== null && (result as { recovered?: boolean }).recovered === true) applyCommittedChange(tool, change);
+  }
   if (tool.command) tool.command.exitCode = resultNumber(result, "exitCode");
 }
 
@@ -1237,7 +1265,7 @@ function toolStatus(tool: string, display: ToolInputDisplay | undefined): string
   if (display?.kind === "command") return "正在运行命令";
   if (display?.kind === "file_io") {
     if (display.operation === "read") return "正在读取文件";
-    if (display.operation === "write" || display.operation === "edit") return "正在修改文件";
+    if (["write", "update", "delete", "move"].includes(display.operation)) return "正在修改文件";
     if (display.operation === "search" || display.operation === "grep") return "正在搜索项目";
     if (display.operation === "git") return "正在检查 Git 状态";
   }
@@ -1252,8 +1280,8 @@ function historicalToolProjection(tool: string, args: unknown): { display?: Tool
   const record = typeof args === "object" && args !== null ? args as Record<string, unknown> : undefined;
   const path = typeof record?.path === "string" ? record.path : undefined;
   const query = typeof record?.query === "string" ? record.query : undefined;
-  if (tool === "Read" || tool === "Write" || tool === "edit_file") {
-    const operation = tool === "Read" ? "read" : tool === "Write" ? "write" : "edit";
+  if (tool === "Read" || tool === "Write" || tool === "Edit") {
+    const operation = tool === "Read" ? "read" : tool === "Write" ? "write" : "update";
     return { path, display: { kind: "file_io", operation, path } };
   }
   if (tool === "Grep") {
@@ -1266,9 +1294,6 @@ function historicalToolProjection(tool: string, args: unknown): { display?: Tool
     return { path: undefined, display: query ? { kind: "generic", summary: query, detail: args } : undefined };
   }
   if (tool === "Glob") return { path: undefined, display: { kind: "file_io", operation: "list", path: "." } };
-  if (tool === "git_diff" || tool === "git_status") {
-    return { path: undefined, display: { kind: "file_io", operation: "git", path: ".", detail: tool === "git_diff" ? "git diff" : "git status --short" } };
-  }
   return { path: undefined, display: undefined };
 }
 
@@ -1277,11 +1302,11 @@ export function listChangedFiles(turn: TimelineTurn): TimelineChangedFile[] {
   for (const tool of turn.tools) {
     const operation = changedFileOperation(tool);
     const path = tool.path ?? (tool.display?.kind === "file_io" ? tool.display.path : undefined);
-    if (!operation || !path || tool.status === "failed" || tool.status === "denied" || tool.status === "aborted" || tool.status === "cancelled" || tool.status === "skipped" || tool.status === "unknown") continue;
+    if (!operation || !path || !tool.fileChange && ["failed", "denied", "aborted", "cancelled", "skipped", "unknown"].includes(tool.status)) continue;
     files.set(path, {
       path,
       operation,
-      status: tool.status === "success" ? "completed" : "writing"
+      status: tool.fileChange ? "completed" : "writing"
     });
   }
   return [...files.values()];
@@ -1300,9 +1325,12 @@ export function listTimelineFiles(turns: TimelineTurn[]): TimelineChangedFile[] 
 }
 
 function changedFileOperation(tool: TimelineTool): TimelineChangedFile["operation"] | undefined {
-  if (tool.display?.kind === "file_io" && (tool.display.operation === "write" || tool.display.operation === "edit")) return tool.display.operation;
-  if (tool.tool === "Write") return "write";
-  if (tool.tool === "edit_file") return "edit";
+  if (tool.fileChange?.server || tool.fileChange?.operation === "delete") return undefined;
+  if (tool.fileChange?.operation === "create") return "write";
+  if (tool.fileChange?.operation === "update" || tool.fileChange?.operation === "move") return "edit";
+  if (tool.status !== "running" && tool.status !== "waiting") return undefined;
+  if (tool.display?.kind === "file_io" && tool.display.operation === "write") return "write";
+  if (tool.display?.kind === "file_io" && (tool.display.operation === "update" || tool.display.operation === "move")) return "edit";
   return undefined;
 }
 

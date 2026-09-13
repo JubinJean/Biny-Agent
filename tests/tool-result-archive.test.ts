@@ -193,7 +193,7 @@ async function testProjectionBeforeTurnBudget(): Promise<void> {
     assert.equal(modelFacing.diffPreview, undefined);
 
     const completed = events.find((event) => event.type === "tool.completed");
-    assert.equal(completed?.type === "tool.completed" ? typeof completed.result.diffPreview : "undefined", "string");
+    assert.equal(completed?.type === "tool.completed" ? typeof completed.result.change.diff : "undefined", "string");
     const persisted = (await readFile(recorder.filePath, "utf8"))
       .split("\n")
       .filter(Boolean)
@@ -201,7 +201,7 @@ async function testProjectionBeforeTurnBudget(): Promise<void> {
       .find((event) => event.type === "tool_result");
     assert.equal(typeof persisted?.result?.archivePath, "string");
     const archive = JSON.parse(await readFile(path.join(agentDir(workspaceRoot), "tool-results", path.basename(String(persisted?.result?.archivePath))), "utf8")) as { output?: string };
-    assert.equal(JSON.parse(archive.output ?? "{}").diffPreview, `@@\n-${"old\n".repeat(12_000)}\n+new`);
+    assert.equal(JSON.parse(archive.output ?? "{}").change.diff, `@@\n-${"old\n".repeat(12_000)}\n+new`);
     await recorder.close();
   } finally {
     await recorder?.close().catch(() => undefined);
@@ -226,9 +226,8 @@ function projectedWriteTool(): Tool<{ path: string; content: string }, Record<st
         approvalRule: "projected_write",
         async execute() {
           return {
-            path: args.path,
-            bytes: Buffer.byteLength(args.content, "utf8"),
-            diffPreview: `@@\n-${"old\n".repeat(12_000)}\n+new`,
+            change: { operation: "update", path: args.path, committed: true,
+              bytes: Buffer.byteLength(args.content, "utf8"), diff: `@@\n-${"old\n".repeat(12_000)}\n+new` },
             changeSummary: `Overwrite ${args.path}`
           };
         }

@@ -13,6 +13,7 @@ import { providerDefinition } from "../ai/provider.js";
 import type { ModelCatalogEntry, ProviderDefinition } from "../ai/types.js";
 import type { AgentConfig, ModelAliasConfig, ModelApiBackend, ModelCompatibility, ModelProfile, ProviderConfig, ThinkingLevelMap } from "../config/schema.js";
 import { createNativeModel } from "./nativeModel.js";
+import { resolveNativePatchProtocol } from "../tools/file/editingMode.js";
 import { createVercelLanguageModel } from "./vercelModel.js";
 import { resolveProviderRequestRoute } from "./providerRequest.js";
 import { openAiCodexHeaders, refreshSubscriptionOAuthTokens } from "./subscriptionAuth.js";
@@ -30,6 +31,7 @@ import {
 const oauthRefreshWindowMs = 5 * 60 * 1_000;
 
 export interface NativeModelSettings {
+  applyPatchProtocol?: "openai-structured";
   model: AgentModel;
   /** 主 Agent 的直连 Vercel model；后台模型调用仍使用上面的 AgentModel。 */
   vercelModel?: LanguageModelV4;
@@ -276,6 +278,7 @@ export class ConfiguredProviderRuntime implements ProviderRuntime {
     };
     return {
       model: executable,
+      applyPatchProtocol: resolveNativePatchProtocol(api, baseUrl, normalizedModel.model, this.config.applyPatchProtocol),
       vercelModel: createVercelLanguageModel({
         providerAlias: this.id,
         providerType: this.config.type,

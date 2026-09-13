@@ -7,6 +7,7 @@
 import { constants, promises as fs, type Stats } from "node:fs";
 import type { FileHandle } from "node:fs/promises";
 import { z } from "zod";
+import { committedFileChangeSchema } from "../tools/file/fileChange.js";
 import {
   maxSessionEventLineBytes,
   maxSessionEvents,
@@ -169,6 +170,8 @@ const sessionEventSchema = z.discriminatedUnion("type", [
     sequence: z.number().finite(),
     operationId: z.string(),
     state: z.enum(["not_started", "running", "admitted", "side_effect_committed", "cancel_requested", "cancelled", "succeeded", "failed", "unknown"]),
+    change: committedFileChangeSchema.optional(),
+    fileChangeIsResult: z.boolean().optional(),
     evidence: z.string().optional(),
     retrySafety: z.enum(["safe", "idempotent", "unsafe", "unknown"]).optional(),
     time: z.string().optional()

@@ -225,7 +225,7 @@ export class PermissionDialog extends Container {
     const details: string[] = [];
     const view = permissionPresentation(this.request);
     if (this.request.command) details.push(this.request.command);
-    if (this.request.targetPath && this.request.tool !== "move_file") details.push(this.request.targetPath);
+    if (this.request.targetPath && !this.request.secondaryTargetPath) details.push(this.request.targetPath);
     if (view.details) details.push(...view.details.split(/\r?\n/u));
     if (view.reason) details.push(view.reason);
     if (this.detailsExpanded && this.request.preview) details.push(...this.request.preview.split(/\r?\n/u));

@@ -1,8 +1,8 @@
 /**
  * 周期心跳与 HEARTBEAT.md 文件协议。
  *
- * 心跳按内置节奏在活动时段触发；每次触发重新读取清单，避免运行中的 Agent 使用
- * 过期任务。执行回调由宿主提供，服务本身不持有模型或工具权限。
+ * 心跳按全局配置 `heartbeat` 的节奏在活动时段触发，默认关闭；每次触发重新读取清单，
+ * 避免运行中的 Agent 使用过期任务。执行回调由宿主提供，服务本身不持有模型或工具权限。
  */
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -12,18 +12,18 @@ export interface HeartbeatSchedule {
   intervalMinutes: number;
   activeHoursStart: number;
   activeHoursEnd: number;
-  baseEmotionRefreshHours: number;
 }
 
-/** 与 Alma 默认行为对齐；这是内置机制，不进入用户配置文件。 */
+/** 默认值与 Alma 对齐；开关与节奏由全局配置 `heartbeat` 提供，未配置时走这里。 */
 export const defaultHeartbeatSchedule: HeartbeatSchedule = Object.freeze({
   intervalMinutes: 30,
   activeHoursStart: 8,
-  activeHoursEnd: 23,
-  baseEmotionRefreshHours: 3
+  activeHoursEnd: 23
 });
 
 export interface HeartbeatStatus {
+  /** 心跳是否随运行时启动；关闭时只有 triggerNow 手动触发可用。 */
+  enabled: boolean;
   running: boolean;
   lastHeartbeatAt?: string;
   lastError?: string;
@@ -32,6 +32,10 @@ export interface HeartbeatStatus {
 
 export interface HeartbeatSchedulerOptions {
   run: (prompt: string, signal: AbortSignal) => void | Promise<void>;
+  /** 全局配置的开关；缺省关闭，与 Alma 默认行为一致。 */
+  enabled?: boolean;
+  /** 全局配置的节奏；缺省走 defaultHeartbeatSchedule。 */
+  schedule?: HeartbeatSchedule;
   configDir?: string;
   now?: () => Date;
   timers?: {
@@ -75,6 +79,7 @@ export class HeartbeatFileStore {
 
 export class HeartbeatScheduler {
   private readonly schedule: HeartbeatSchedule;
+  private readonly enabled: boolean;
   private readonly run: HeartbeatSchedulerOptions["run"];
   private readonly fileStore: HeartbeatFileStore;
   private readonly now: () => Date;
@@ -84,10 +89,10 @@ export class HeartbeatScheduler {
   private inFlight = false;
   private lastHeartbeatAt?: string;
   private lastError?: string;
-  private lastBaseEmotionRefresh = 0;
 
   constructor(options: HeartbeatSchedulerOptions) {
-    this.schedule = defaultHeartbeatSchedule;
+    this.schedule = options.schedule ?? defaultHeartbeatSchedule;
+    this.enabled = options.enabled ?? false;
     this.run = options.run;
     this.fileStore = new HeartbeatFileStore(options.configDir);
     this.now = options.now ?? (() => new Date());
@@ -95,7 +100,8 @@ export class HeartbeatScheduler {
   }
 
   start(): void {
-    if (this.timer) return;
+    // 关闭时不落 HEARTBEAT.md 也不起定时器；手动 triggerNow 仍可用于临时巡检。
+    if (this.timer || !this.enabled) return;
     this.abort = new AbortController();
     void this.fileStore.ensure().catch((error) => { this.lastError = errorMessage(error); });
     this.timer = this.timers.setInterval(() => { void this.tick(); }, this.schedule.intervalMinutes * 60_000);
@@ -115,6 +121,7 @@ export class HeartbeatScheduler {
 
   status(): HeartbeatStatus {
     return {
+      enabled: this.enabled,
       running: this.inFlight,
       lastHeartbeatAt: this.lastHeartbeatAt,
       lastError: this.lastError,
@@ -129,13 +136,10 @@ export class HeartbeatScheduler {
     this.lastError = undefined;
     try {
       const content = await this.fileStore.read();
-      const now = this.now();
       const promptParts = [
         content ? `HEARTBEAT.md (the user's checklist):\n${content}` : undefined,
         "This is a quiet background check. If nothing needs the user's personal attention, reply HEARTBEAT_OK."
       ].filter((value): value is string => Boolean(value));
-      const emotionPrompt = this.baseEmotionPrompt(this.schedule, now);
-      if (emotionPrompt) promptParts.splice(Math.max(0, promptParts.length - 1), 0, emotionPrompt);
       const prompt = promptParts.join("\n\n");
       await this.run(prompt, this.abort.signal);
       this.lastHeartbeatAt = this.now().toISOString();
@@ -147,17 +151,6 @@ export class HeartbeatScheduler {
       this.inFlight = false;
     }
   }
-
-  private baseEmotionPrompt(schedule: HeartbeatSchedule, now: Date): string | undefined {
-    const intervalMs = schedule.baseEmotionRefreshHours * 60 * 60 * 1_000;
-    if (now.getTime() - this.lastBaseEmotionRefresh < intervalMs) return undefined;
-    this.lastBaseEmotionRefresh = now.getTime();
-    return [
-      "---",
-      "BASE EMOTION REFRESH: Check whether recent activity justifies a persistent change. If it does, reflect briefly and use update_emotion with scope=base, mood, valence, energy, and a concise trigger. Never claim an update without the tool result."
-    ].join("\n");
-  }
-
 
 }
 

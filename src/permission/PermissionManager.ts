@@ -28,7 +28,7 @@ export interface PermissionRequestContext {
   actionType: ActionType;
   riskLevel: RiskLevel;
   targetPath?: string;
-  /** move_file 等双路径工具的第二个目标路径,与 targetPath 一样参与 denyPaths 判定。 */
+  /** 移动等双路径变更的第二个目标路径，与 targetPath 一样参与 denyPaths 判定。 */
   secondaryTargetPath?: string;
   command?: string;
   reason?: string;
@@ -96,7 +96,7 @@ export interface PermissionStatus {
 
 const defaultPolicy: ProjectPermissionPolicy = {
   mode: "full-access",
-  allowTools: ["Read", "Glob", "Grep", "git_status", "git_diff", "WebSearch", "save_memory", "update_emotion"],
+  allowTools: ["Read", "Glob", "Grep", "WebSearch", "save_memory"],
   allowPaths: [],
   denyPaths: [".env", ".ssh/", "node_modules/"],
   criticalAlwaysAsk: true

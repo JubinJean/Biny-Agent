@@ -40,7 +40,6 @@ import {
   type DirectCallDiagnostics
 } from "./vercelModelAdapter.js";
 import { createVercelTools } from "./vercelAgentTools.js";
-import { canonicalToolName } from "../../tools/toolNames.js";
 import { errorMessage, isRecord, providerMetadata, stringify } from "./vercelAgentUtils.js";
 
 export interface VercelLoopState {
@@ -322,7 +321,7 @@ function streamModelStep(state: VercelLoopState) {
     }
   });
   return streamText({
-    messages: toModelMessages(state.context.messages),
+    messages: toModelMessages(state.context.messages, state.context.tools.some((tool) => tool.providerTool === "openai-apply-patch")),
     abortSignal: state.signal,
     model,
     instructions: state.context.systemPrompt,
@@ -335,11 +334,6 @@ function streamModelStep(state: VercelLoopState) {
       state.streamFailure = errorMessage(state.directModelError);
     },
     ...callSettings,
-    repairToolCall: async ({ toolCall }) => {
-      const toolName = canonicalToolName(toolCall.toolName);
-      if (toolName === toolCall.toolName) return null;
-      return { ...toolCall, toolName };
-    },
     // SDK 只负责一个 provider step（含该 step 的工具执行）。跨 step 的边界
     // 由 Biny 管理，才能在 assistant turn 完整落库后再消费追问队列。
     stopWhen: [

@@ -16,6 +16,8 @@ import type { RequestOptions } from "@modelcontextprotocol/sdk/shared/protocol.j
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { ErrorCode, McpError, ToolListChangedNotificationSchema, type Prompt } from "@modelcontextprotocol/sdk/types.js";
 import type { AgentConfig, McpServerConfig } from "../config/schema.js";
+import { prepareMcpFileChange, readMcpFileChange } from "./mcpFileChange.js";
+import { FileChangeUncertainError } from "../tools/file/fileChange.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import type { JsonObjectSchema } from "../tools/schema.js";
 import type { Tool, ToolRisk } from "../tools/types.js";
@@ -121,7 +123,7 @@ export class McpToolHost {
   createTools(): Tool[] {
     return [...this.servers.values()]
       .filter((server) => server.status.connected)
-      .flatMap((server) => server.tools.map((tool) => createMcpTool(this, server.name, tool)));
+      .flatMap((server) => server.tools.map((tool) => createMcpTool(this, server.name, tool, server.config.toolContracts?.[tool.name])));
   }
 
   subscribe(listener: () => void): () => void {
@@ -178,14 +180,15 @@ export class McpToolHost {
   }
 
   /** 调用前可以重连；派发后的断线无法证明副作用未发生，不能自动重放。 */
-  async callServerTool(serverName: string, toolName: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+  async callServerTool(serverName: string, toolName: string, args: Record<string, unknown>, signal?: AbortSignal, rawResult = false): Promise<unknown> {
     signal?.throwIfAborted();
     const managed = this.requireServer(serverName);
     if (!managed.client || !managed.status.connected) await this.reconnect(managed);
     const client = managed.client;
     if (!client) throw new Error(`MCP server ${serverName} is not connected: ${managed.status.lastError ?? "unknown error"}`);
     try {
-      return normalizeMcpResult(await client.callTool({ name: toolName, arguments: args }, undefined, this.requestOptions(managed, signal)));
+      const result = await client.callTool({ name: toolName, arguments: args }, undefined, this.requestOptions(managed, signal));
+      return rawResult ? result : normalizeMcpResult(result);
     } catch (error) {
       if (signal?.aborted || !isConnectionError(error)) throw error;
       if (managed.client === client) {
@@ -450,7 +453,7 @@ export class McpToolHost {
     const warnings: string[] = [];
     for (const mcpTool of tools) {
       try {
-        if (registry) registry.registerMcpTool(createMcpTool(this, managed.name, mcpTool));
+        if (registry) registry.registerMcpTool(createMcpTool(this, managed.name, mcpTool, managed.config.toolContracts?.[mcpTool.name]));
         toolNames.push(`mcp_${normalizeName(managed.name)}_${normalizeName(mcpTool.name)}`);
       } catch (error) {
         // 归一化后重名（同名工具或跨服务器冲突）的工具跳过注册并记录警告，
@@ -668,13 +671,25 @@ function expandServerConfig(serverConfig: McpServerConfig): McpServerConfig {
   };
 }
 
-function createMcpTool(host: McpToolHost, serverName: string, definition: ListedMcpTool): Tool {
+function createMcpTool(host: McpToolHost, serverName: string, definition: ListedMcpTool, contract?: "file-change-v1"): Tool {
   const name = `mcp_${normalizeName(serverName)}_${normalizeName(definition.name)}`;
   const isIndexedSearch = definition.name === "zvec_grep_search";
   const capabilitySummary = compactMcpText(definition.description ?? definition.name);
+  const parameters = structuredClone(definition.inputSchema) as unknown as JsonObjectSchema;
+  if (contract) {
+    // operationId 只能由 runtime 注入；服务端 schema 中可要求它，但模型不负责生成。
+    if (parameters.properties) delete parameters.properties.operationId;
+    parameters.required = [...new Set([...(parameters.required ?? []).filter((key) => key !== "operationId"), "operation", "path"])];
+    parameters.properties = {
+      ...parameters.properties,
+      operation: { type: "string", enum: ["create", "update", "delete", "move"] },
+      path: { type: "string", minLength: 1 },
+      to: { type: "string", minLength: 1, description: "Destination path, required only for move." }
+    };
+  }
   // 注意：annotations 由服务器自报，属未验证提示（与主流客户端一致）。它只影响
   // 风险分级与 plan/read-only 模式筛选，ask 模式下 MCP 工具仍会走审批询问。
-  const risk: ToolRisk = isIndexedSearch
+  const risk: ToolRisk = contract ? "write" : isIndexedSearch
     ? "read"
     : definition.annotations?.readOnlyHint ? "read" : definition.annotations?.destructiveHint ? "write" : "execute";
   return {
@@ -692,19 +707,31 @@ function createMcpTool(host: McpToolHost, serverName: string, definition: Listed
         ]
         : [])
     ],
-    parameters: definition.inputSchema as unknown as JsonObjectSchema,
+    parameters,
     schema: z.unknown(),
     source: "mcp",
     capability: `mcp:${serverName}`,
     risk,
     resolveExecution(args: unknown) {
+      const fileChange = contract ? prepareMcpFileChange(serverName, args) : undefined;
       return {
+        fileChange,
+        fileChangeIsResult: contract !== undefined,
+        retrySafety: contract ? "unsafe" : undefined,
         accesses: ToolAccesses.all(),
         display: { kind: "generic", summary: `MCP ${serverName}/${definition.name}`, detail: args },
         description: definition.description ?? `Call MCP tool ${definition.name}`,
         approvalRule: `mcp:${serverName}:${definition.name}`,
-        async execute(context: { signal?: AbortSignal }): Promise<unknown> {
-          return await host.callServerTool(serverName, definition.name, asArguments(args), context.signal);
+        async execute(context): Promise<unknown> {
+          if (!fileChange) return await host.callServerTool(serverName, definition.name, asArguments(args), context.signal);
+          try {
+            const result = await host.callServerTool(serverName, definition.name, { ...asArguments(args), operationId: context.operationId }, context.signal, true);
+            const change = readMcpFileChange(result, context.operationId, fileChange);
+            await context.onFileChangeCommitted?.(change);
+            return { change };
+          } catch (error) {
+            throw new FileChangeUncertainError(`MCP file change outcome is unknown: ${errorText(error)}`);
+          }
         }
       };
     }

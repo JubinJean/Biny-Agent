@@ -13,12 +13,10 @@ import type {
   AgentToolResultMessage
 } from "./core/types.js";
 import { serializeToolResult } from "../session/toolResultArchive.js";
-import { canonicalCompatibleToolName } from "../tools/toolNames.js";
 
 const defaultProjectionThresholdBytes = 8 * 1024;
 const defaultKeepRecentResults = 2;
 const maxCommandStreamCharacters = 6_000;
-const maxGitOutputCharacters = 10_000;
 const maxReadContentCharacters = 10_000;
 const maxSearchMatchCharacters = 600;
 const maxSearchOutputBytes = 12 * 1024;
@@ -349,15 +347,17 @@ function projectValue(
   const large = Buffer.byteLength(entry.serialized, "utf8") > thresholdBytes;
   if (isArchivedValue(entry.value)) return { value: entry.value, archive: false };
 
-  if (tool === "write" || tool === "edit_file" || tool === "edit") {
+  if (tool === "write" || tool === "edit" || Object.keys(asRecord(asRecord(entry.value).change)).length > 0) {
     return { value: projectFileChange(entry), archive: large };
   }
   if (tool === "bash") {
+    if (asRecord(entry.value).background === true) return undefined;
     const value = projectRunCommand(entry, aggressive && large);
     return { value, archive: aggressive && large };
   }
-  if (tool === "git_diff" || tool === "git_status" || tool === "git_log" || tool === "git_show") {
-    return { value: projectGitResult(entry, aggressive && large), archive: aggressive && large };
+  if (tool === "bashoutput") {
+    if (!aggressive || !large) return undefined;
+    return { value: projectBashOutput(entry), archive: true };
   }
   if (tool === "read") {
     if (!aggressive || !large) return undefined;
@@ -372,33 +372,27 @@ function projectValue(
 
 function projectFileChange(entry: ToolResultEntry): Record<string, unknown> {
   const record = asRecord(entry.value);
-  const args = asRecord(entry.call?.args);
-  const path = stringField(record, "path") || stringField(args, "path") || stringField(args, "to");
-  const diff = stringField(record, "diffPreview") || stringField(record, "diff");
+  const change = asRecord(record.change);
+  const path = stringField(change, "path");
+  const diff = stringField(change, "diff");
   const diffCounts = diffLineCounts(diff);
-  const oldText = stringField(args, "oldText");
-  const newText = stringField(args, "newText");
-  const patch = stringField(args, "patch");
-  const patchCounts = patch
-    ? patchLineCounts(patch)
-    : { addedLines: undefined, deletedLines: undefined };
   const projected: Record<string, unknown> = {
     path: path || undefined,
     changeSummary: stringField(record, "changeSummary") || fileChangeSummary(entry.message.toolName, path),
-    addedLines: diffCounts.added ?? (newText ? lineCount(newText) : patchCounts.addedLines),
-    deletedLines: diffCounts.deleted ?? (oldText ? lineCount(oldText) : patchCounts.deletedLines),
+    addedLines: diffCounts.added,
+    deletedLines: diffCounts.deleted,
+    operation: stringField(change, "operation") || undefined,
+    ...copyFields(change, ["destinationPath", "committed", "server", "bytes", "edits", "firstChangedLine"]),
     ...copyFields(record, [
       "status",
       "executionStatus",
       "error",
       "reason",
-      "bytes",
-      "replacements",
-      "edits",
-      "hunks",
-      "changedLines",
       "diagnostics",
-      "stalePreview"
+      "stalePreview",
+      "operationId",
+      "recovered",
+      "durationMs"
     ])
   };
   return removeUndefined(projected);
@@ -443,22 +437,6 @@ function projectRunCommand(entry: ToolResultEntry, aggressive: boolean): Record<
   });
 }
 
-function projectGitResult(entry: ToolResultEntry, aggressive: boolean): Record<string, unknown> {
-  const record = asRecord(entry.value);
-  const output = stringField(record, "output");
-  const displayed = aggressive ? gitOutputPreview(output) : output;
-  const truncated = Buffer.byteLength(displayed, "utf8") < Buffer.byteLength(output, "utf8");
-  return removeUndefined({
-    ...copyFields(record, ["status", "error", "exitCode", "durationMs"]),
-    output: displayed,
-    outputBytes: Buffer.byteLength(output, "utf8"),
-    outputRetainedBytes: Buffer.byteLength(displayed, "utf8"),
-    outputTruncated: truncated,
-    outputTruncationDirection: truncated ? "tail" : undefined,
-    summary: truncated ? "Only the conclusion, errors, and tail of this Git output are shown; the full result is available via read_tool_result." : undefined
-  });
-}
-
 function projectReadFile(entry: ToolResultEntry): Record<string, unknown> {
   const record = asRecord(entry.value);
   const args = asRecord(entry.call?.args);
@@ -493,7 +471,32 @@ function projectReadFile(entry: ToolResultEntry): Record<string, unknown> {
       ?? numberField(argsRange, "endLine")
       ?? numberField(argsRange, "end"),
     offset: numberField(record, "offset") ?? numberField(args, "offset"),
-    limit: numberField(record, "limit") ?? numberField(args, "limit")
+    limit: numberField(record, "limit") ?? numberField(args, "limit"),
+    hasMore: typeof record.hasMore === "boolean" ? record.hasMore : undefined,
+    nextStartLine: numberField(record, "nextStartLine")
+  });
+}
+
+function projectBashOutput(entry: ToolResultEntry): Record<string, unknown> {
+  const record = asRecord(entry.value);
+  const output = asRecord(record.output);
+  const content = stringField(output, "content");
+  const displayed = tailText(content, maxCommandStreamCharacters);
+  const truncated = displayed.length < content.length;
+  return removeUndefined({
+    processes: Array.isArray(record.processes) ? record.processes : undefined,
+    process: Object.keys(asRecord(record.process)).length > 0 ? record.process : undefined,
+    output: Object.keys(output).length > 0
+      ? removeUndefined({
+          ...copyFields(output, ["processId", "logPath", "startOffset", "nextOffset", "totalBytes", "omittedBefore", "hasMore"]),
+          content: displayed,
+          contentTruncated: truncated ? true : undefined,
+          contentOriginalBytes: truncated ? Buffer.byteLength(content, "utf8") : undefined,
+          contentRetainedBytes: truncated ? Buffer.byteLength(displayed, "utf8") : undefined,
+          contentTruncationDirection: truncated ? "tail" : undefined
+        })
+      : undefined,
+    summary: truncated ? "Only the tail of this output page is shown; the full result is available via read_tool_result." : undefined
   });
 }
 
@@ -509,7 +512,11 @@ function projectSearchResult(entry: ToolResultEntry): Record<string, unknown> {
     const next = removeUndefined({
       path: stringField(item, "path") || undefined,
       line: numberField(item, "line"),
-      text: bounded
+      column: numberField(item, "column"),
+      anchor: stringField(item, "anchor") || undefined,
+      text: bounded,
+      before: projectSearchContext(item.before),
+      after: projectSearchContext(item.after)
     });
     const nextBytes = Buffer.byteLength(serializeToolResult(next), "utf8");
     if (retainedBytes + nextBytes > maxSearchOutputBytes && matches.length > 0) break;
@@ -520,10 +527,30 @@ function projectSearchResult(entry: ToolResultEntry): Record<string, unknown> {
   return removeUndefined({
     matches,
     matchCount: rawMatches.length,
-    truncatedFiles: Array.isArray(record.truncatedFiles) ? record.truncatedFiles : undefined,
+    ...copyFields(record, [
+      "offset",
+      "limit",
+      "hasMore",
+      "nextOffset",
+      "scannedFiles",
+      "skippedFiles",
+      "fileLimitReached"
+    ]),
     matchesTruncated: truncated ? true : undefined,
     matchesRetainedBytes: truncated ? retainedBytes : undefined,
     summary: truncated ? "Only bounded match locations and snippets are shown; the full search result is available via read_tool_result." : undefined
+  });
+}
+
+function projectSearchContext(value: unknown): unknown[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  return value.map((line) => {
+    const item = asRecord(line);
+    const text = stringField(item, "text");
+    return removeUndefined({
+      line: numberField(item, "line"),
+      text: text.length > maxSearchMatchCharacters ? `${safePrefix(text, maxSearchMatchCharacters)}…` : text
+    });
   });
 }
 
@@ -632,9 +659,9 @@ function rangeCovers(next: ReadRange, previous: ReadRange): boolean {
 
 function snapshotKind(entry: ToolResultEntry): string | undefined {
   const tool = normalizedToolName(entry.message.toolName);
-  if (tool === "git_status" || tool === "git_diff" || tool === "git_log" || tool === "git_show") return `${tool}\0.`;
   if (tool !== "bash") return undefined;
   const args = asRecord(entry.call?.args);
+  if (args.background === true) return undefined;
   const command = stringField(args, "command").trim().replace(/^(?:sudo\s+)/u, "");
   const match = command.match(/^(?:git\s+)(status|diff|log|show)(?:\s|$)/iu);
   if (!match?.[1]) return undefined;
@@ -695,19 +722,16 @@ function fileChangeSummary(tool: string, filePath: string): string {
 }
 
 function normalizedToolName(tool: string): string {
-  return canonicalCompatibleToolName(tool).toLowerCase().replace(/[\s-]+/gu, "_");
+  return tool.toLowerCase().replace(/[\s-]+/gu, "_");
 }
 
 function isKnownSemanticTool(entry: ToolResultEntry): boolean {
   const tool = normalizedToolName(entry.message.toolName);
   return tool === "write"
-    || tool === "edit_file"
     || tool === "edit"
     || tool === "bash"
-    || tool === "git_diff"
-    || tool === "git_status"
-    || tool === "git_log"
-    || tool === "git_show"
+    || tool === "bashoutput"
+    || tool === "killshell"
     || tool === "read"
     || tool === "grep";
 }
@@ -723,17 +747,6 @@ function diffLineCounts(diff: string): { added?: number; deleted?: number } {
     if (line.startsWith("-")) { deleted += 1; found = true; }
   }
   return found ? { added, deleted } : {};
-}
-
-function patchLineCounts(patch: string): { addedLines: number; deletedLines: number } {
-  const counts = diffLineCounts(patch);
-  return { addedLines: counts.added ?? 0, deletedLines: counts.deleted ?? 0 };
-}
-
-function lineCount(value: string): number {
-  if (!value) return 0;
-  const lines = value.split(/\r?\n/u);
-  return lines.at(-1) === "" ? lines.length - 1 : lines.length;
 }
 
 function commandSummary(
@@ -759,17 +772,6 @@ function stripCommandEcho(value: string, command: string): string {
         && normalized !== `Started: ${command.trim()}`;
     })
     .join("\n");
-}
-
-function gitOutputPreview(value: string): string {
-  if (value.length <= maxGitOutputCharacters) return value;
-  const lines = value.split(/\r?\n/u);
-  const important = lines.filter((line) => /\b(?:error|fatal|failed|warning|test|pass|fail)\b/iu.test(line)).slice(-24);
-  const marker = "\n… [Git output omitted] …\n";
-  const head = safePrefix(lines.slice(0, 12).join("\n"), 2_000);
-  const importantText = safePrefix(important.join("\n"), 2_500);
-  const tail = tailText(value, Math.max(0, maxGitOutputCharacters - head.length - importantText.length - marker.length));
-  return `${head}${marker}${importantText}\n${tail}`;
 }
 
 function tailText(value: string, maxCharacters: number): string {

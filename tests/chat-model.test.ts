@@ -39,20 +39,21 @@ test("classifyTool 把已知工具分类到对应变体", () => {
   assert.equal(classifyTool("Grep"), "search");
   assert.equal(classifyTool("mcp_zvec_grep_zvec_grep_search"), "search");
   assert.equal(classifyTool("Write"), "write");
-  assert.equal(classifyTool("edit_file"), "edit");
-  assert.equal(classifyTool("git_diff"), "git");
-  assert.equal(classifyTool("start_process"), "process");
+  assert.equal(classifyTool("Edit"), "edit");
+  assert.equal(classifyTool("git_diff"), "others");
+  assert.equal(classifyTool("BashOutput"), "process");
+  assert.equal(classifyTool("KillShell"), "process");
   assert.equal(classifyTool("Skill"), "skill");
   assert.equal(classifyTool("unknown_tool"), "others");
 });
-test("sessionTimeline 将历史删除工具显示为当前 edit_file", () => {
+test("sessionTimeline 保留历史工具的原始名称", () => {
   const timeline = buildSessionTimeline([
     { type: "user_message", content: "编辑" },
     { type: "tool_call", tool: "multi_edit", toolCallId: "legacy-edit", args: { path: "a.ts", edits: [] } },
     { type: "tool_result", tool: "multi_edit", toolCallId: "legacy-edit", result: { path: "a.ts", status: "completed" } }
   ] as never[], []);
-  assert.equal(timeline[0]?.tools[0]?.tool, "edit_file");
-  assert.equal(timeline[0]?.tools[0]?.display?.kind, "file_io");
+  assert.equal(timeline[0]?.tools[0]?.tool, "multi_edit");
+  assert.equal(timeline[0]?.tools[0]?.display, undefined);
 });
 test("VARIANT_TITLES 使用 DSH figma 字面量", () => {
   assert.equal(VARIANT_TITLES.bash, "Bash");
@@ -425,8 +426,8 @@ test("currentTurnActivity 从运行中的工具派生真实活动标签", () => 
     { label: "正在读取文件 · Read" },
   );
   assert.deepEqual(
-    currentTurnActivity(build("edit_file", { path: "a.ts" }, { kind: "file_io", operation: "edit", path: "a.ts" })),
-    { label: "正在修改文件 · edit_file" },
+    currentTurnActivity(build("Edit", { operation: "update", path: "a.ts" }, { kind: "file_io", operation: "update", path: "a.ts" })),
+    { label: "正在修改文件 · Edit" },
   );
   assert.deepEqual(
     currentTurnActivity(build("Grep", { query: "foo" }, { kind: "file_io", operation: "grep", path: "." })),
@@ -499,7 +500,7 @@ test("buildActivityPhases 把连续同相位步骤收成一相", () => {
     reasoningStep("r1"),
     toolStep("t1", "Read"),
     toolStep("t2", "Grep"),
-    toolStep("t3", "edit_file"),
+    toolStep("t3", "Edit"),
   ));
   assert.deepEqual(phases.map((phase) => phase.kind), ["thinking", "exploring", "making"]);
   assert.deepEqual(phases.map((phase) => phase.items.length), [1, 2, 1]);
@@ -519,7 +520,7 @@ test("phaseLabel 按相位与活体态给中文动宾", () => {
   assert.deepEqual(phaseLabel(exploring, true), { verb: "探索中", rest: "2 个文件" });
   const running = buildActivityPhases(itemsOf(toolStep("t1", "Bash"), toolStep("t2", "Bash")))[0]!;
   assert.deepEqual(phaseLabel(running, false), { verb: "已执行", rest: "2 条命令" });
-  const making = buildActivityPhases(itemsOf(toolStep("t1", "Write"), toolStep("t2", "edit_file")))[0]!;
+  const making = buildActivityPhases(itemsOf(toolStep("t1", "Write"), toolStep("t2", "Edit")))[0]!;
   assert.deepEqual(phaseLabel(making, false), { verb: "已修改", rest: "新建 1, 编辑 1" });
   const thinking = buildActivityPhases(itemsOf(reasoningStep("r1", { durationMs: 4200 })))[0]!;
   assert.deepEqual(phaseLabel(thinking, false, 4), { verb: "已思考", rest: "4 秒" });
@@ -541,12 +542,13 @@ test("activityToolRow 输出动宾行与 ± 行数", () => {
   const read = activityToolRow(toolStep("t", "Read", "success", { args: { path: "/Users/x/proj/src/app/main.ts" } }).tool);
   assert.deepEqual(read, { verb: "读取", object: "src/app/main.ts", running: false, error: false });
 
-  const edit = activityToolRow(toolStep("t", "edit_file", "success", {
-    args: { path: "a/b.ts", oldText: "1\n2\n3", newText: "1\n2\n3\n4" },
+  const edit = activityToolRow(toolStep("t", "Edit", "success", {
+    args: { path: "a/b.ts", edits: [{ op: "append", lines: ["4"] }] },
+    diff: "@@ -1,3 +1,4 @@\n 1\n 2\n 3\n+4",
   }).tool);
   assert.equal(edit.verb, "编辑");
-  assert.equal(edit.plus, 4);
-  assert.equal(edit.minus, 3);
+  assert.equal(edit.plus, 1);
+  assert.equal(edit.minus, 0);
 
   const skill = activityToolRow(toolStep("t", "Skill", "success", { args: { skill: "write-tui" } }).tool);
   assert.deepEqual({ verb: skill.verb, object: skill.object }, { verb: "使用技能", object: "write-tui" });
@@ -601,7 +603,7 @@ test("ActivitySegment 工具次数不包含思考相位", () => {
       reasoningStep("r1", { durationMs: 3200 }),
       toolStep("t1", "Read", "success", { args: { path: "src/app/main.ts" } }),
       toolStep("t2", "Read", "success", { args: { path: "src/app/other.ts" } }),
-      toolStep("t3", "edit_file", "success", { args: { path: "src/app/main.ts", oldText: "a\nb", newText: "a\nb\nc" } }),
+      toolStep("t3", "Edit", "success", { args: { path: "src/app/main.ts", edits: [{ op: "append", lines: ["c"] }] } }),
     ],
     running: false,
     thinkingSeconds: 3,

@@ -8,34 +8,51 @@ import { z } from "zod";
 import { resolveWorkspacePath } from "../../workspace/resolvePath.js";
 import { ToolAccesses } from "../access.js";
 import type { Tool, ToolContext } from "../types.js";
-import { maxReadFileBytes, readBoundedUtf8File } from "./safeFileIo.js";
+import { formatHashlineLine } from "./hashline.js";
+import { visitBoundUtf8Lines } from "./safeFileIo.js";
 
 export interface ReadFileArgs {
   // 工具层只接受相对路径；resolveWorkspacePath 会拒绝 ../ 和被忽略的目录。
   path: string;
+  startLine?: number;
+  lineCount?: number;
 }
 
 export interface ReadFileResult {
   path: string;
   content: string;
+  startLine: number;
+  endLine: number;
+  hasMore: boolean;
+  nextStartLine?: number;
 }
 
-export function createReadFileTool(context: ToolContext): Tool<ReadFileArgs, ReadFileResult> {
-  // Read 是最小只读工具：解析路径、读 utf8、按原路径返回内容。
+const defaultLineCount = 200;
+const maxLineCount = 2_000;
+const maxPageBytes = 1024 * 1024;
+
+export function createReadFileTool(context: ToolContext, hashline = false): Tool<ReadFileArgs, ReadFileResult> {
+  // 实验模式才附加编辑锚点；原始路径仍用于展示和后续 Edit。
   return {
     name: "Read",
-    description: `Read a UTF-8 file inside the workspace or a supplied attachment, up to ${String(maxReadFileBytes)} bytes. Larger files are rejected; use Grep to inspect their bounded prefix.`,
-    promptSnippet: "Read UTF-8 file contents from the workspace or supplied attachments",
-    promptGuidelines: ["Use Read instead of shell commands to read a file when its path is known"],
+    description: `Read a page of a UTF-8 workspace file or supplied attachment.${hashline ? " Lines are returned as LINE#HASH:text for use by Edit." : " Returns the original text without edit tags."} Use startLine and lineCount to page through large files.`,
+    promptSnippet: hashline ? "Read UTF-8 file contents with LINE#HASH edit anchors" : "Read UTF-8 file contents",
+    promptGuidelines: [hashline ? "Use Read before Edit and pass its LINE#HASH anchors unchanged; read again when an anchor is stale" : "Read before editing and copy the exact text including whitespace"],
     parameters: {
       type: "object",
       properties: {
-        path: { type: "string", minLength: 1, description: "Workspace-relative UTF-8 text file path to read." }
+        path: { type: "string", minLength: 1, description: "Workspace-relative UTF-8 text file path to read." },
+        startLine: { type: "integer", minimum: 1, description: "First one-based file line to return. Defaults to 1." },
+        lineCount: { type: "integer", minimum: 1, maximum: maxLineCount, description: `Maximum lines to return. Defaults to ${String(defaultLineCount)}.` }
       },
       required: ["path"],
       additionalProperties: false
     },
-    schema: z.object({ path: z.string().min(1) }),
+    schema: z.object({
+      path: z.string().min(1),
+      startLine: z.number().int().min(1).optional(),
+      lineCount: z.number().int().min(1).max(maxLineCount).optional()
+    }),
     capability: "filesystem.read",
     risk: "read",
     resolveExecution(args) {
@@ -49,8 +66,33 @@ export function createReadFileTool(context: ToolContext): Tool<ReadFileArgs, Rea
           signal?.throwIfAborted();
           const currentPath = resolveReadablePath(context, args.path);
           if (currentPath !== absolutePath) throw new Error("The read target changed after the tool call was prepared.");
-          const result = await readBoundedUtf8File(absolutePath, maxReadFileBytes, "reject", signal);
-          return { path: args.path, content: result.content };
+          const startLine = args.startLine ?? 1;
+          const lineCount = args.lineCount ?? defaultLineCount;
+          const formattedLines: string[] = [];
+          let pageBytes = 0;
+          let hasMore = false;
+          await visitBoundUtf8Lines(absolutePath, (line, lineNumber) => {
+            if (lineNumber < startLine) return;
+            if (formattedLines.length >= lineCount) {
+              hasMore = true;
+              return false;
+            }
+            const formatted = hashline ? formatHashlineLine(line, lineNumber) : line;
+            pageBytes += Buffer.byteLength(formatted, "utf8") + (formattedLines.length > 0 ? 1 : 0);
+            if (pageBytes > maxPageBytes) {
+              throw new Error(`Read page exceeds the ${String(maxPageBytes)}-byte output limit; request fewer lines.`);
+            }
+            formattedLines.push(formatted);
+          }, signal);
+          const endLine = formattedLines.length === 0 ? startLine - 1 : startLine + formattedLines.length - 1;
+          return {
+            path: args.path,
+            content: formattedLines.join("\n"),
+            startLine,
+            endLine,
+            hasMore,
+            nextStartLine: hasMore ? endLine + 1 : undefined
+          };
         }
       };
     }

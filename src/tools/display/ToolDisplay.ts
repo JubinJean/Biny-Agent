@@ -9,6 +9,10 @@ import type { PermissionPrompt, PermissionRequestContext } from "../../permissio
 import { createUnifiedDiff } from "../../utils/diff.js";
 import { redactSecrets, redactSensitiveValue } from "../../utils/secrets.js";
 import { resolveWorkspacePath } from "../../workspace/resolvePath.js";
+import { applyHashlineEdits } from "../file/hashline.js";
+import { applyStringEdit } from "../file/stringEdit.js";
+import { patchArgsSchema, patchContent } from "../file/applyPatch.js";
+import { editArgsSchema } from "../file/editFile.js";
 import { maxEditFileBytes, readBoundedUtf8File } from "../file/safeFileIo.js";
 export interface ToolCallInput {
   id: string;
@@ -67,6 +71,15 @@ export async function createToolPermissionRequest(
 }
 
 export const toolDisplayRules: Record<string, ToolDisplayRule> = {
+  apply_patch: {
+    title: "File patch request",
+    async summarize(args, context) {
+      const { operation } = patchArgsSchema.parse(args);
+      const content = await readExistingFileForDiff(operation.path, context);
+      const diff = createUnifiedDiff(operation.path, content, patchContent(content, operation));
+      return { details: `${operation.type}: ${operation.path}`, diff, preview: formatUnifiedDiffPreview(operation.path, diff, 16), requireFullYes: operation.type === "delete_file" };
+    }
+  },
   Bash: {
     title: "Command execution request",
     async summarize(args) {
@@ -75,18 +88,6 @@ export const toolDisplayRules: Record<string, ToolDisplayRule> = {
       return {
         details: [command, warnings.length ? `\nSensitive command warning: ${warnings.join(", ")}` : ""].join(""),
         changeSummary: `Run command: ${command}`,
-        requireFullYes: warnings.length > 0
-      };
-    }
-  },
-  start_process: {
-    title: "Managed process start request",
-    async summarize(args) {
-      const command = getStringField(args, "command");
-      const warnings = commandSafetyWarnings(command);
-      return {
-        details: [command, warnings.length ? `\nSensitive command warning: ${warnings.join(", ")}` : ""].join(""),
-        changeSummary: `Start managed process: ${command}`,
         requireFullYes: warnings.length > 0
       };
     }
@@ -109,54 +110,38 @@ export const toolDisplayRules: Record<string, ToolDisplayRule> = {
       };
     }
   },
-  edit_file: {
-    title: "File edit request",
+  Edit: {
+    title: "File change request",
     async summarize(args, context) {
-      const filePath = getStringField(args, "path");
-      const oldText = getStringField(args, "oldText");
-      const newText = getStringField(args, "newText");
+      const parsed = editArgsSchema.parse(args);
+      const filePath = parsed.path;
       const oldContent = await readExistingFileForDiff(filePath, context);
-      // 函数形式的替换值才会被原样插入；字符串形式会把 newText 里的 $$、$& 等序列当成模式解释，
-      // 导致预览 diff 与实际落盘内容不一致。
-      const nextContent = oldContent.includes(oldText) ? oldContent.replace(oldText, () => newText) : oldContent;
-      const diff = createUnifiedDiff(filePath, oldContent, nextContent);
+      if (parsed.operation === "delete") {
+        const diff = createUnifiedDiff(filePath, oldContent, "");
+        return {
+          details: `File: ${filePath}\nBytes: ${Buffer.byteLength(oldContent, "utf8")}`,
+          diff,
+          preview: formatUnifiedDiffPreview(filePath, diff, 16),
+          changeSummary: `Delete ${filePath}`,
+          requireFullYes: true
+        };
+      }
+      if (parsed.operation === "move") {
+        return {
+          details: `Move ${filePath} -> ${parsed.to}\nBytes: ${Buffer.byteLength(oldContent, "utf8")}`,
+          preview: formatFileContentPreview(filePath, oldContent, 12),
+          changeSummary: `Move ${filePath} to ${parsed.to}`,
+          requireFullYes: true
+        };
+      }
+      const next = "edits" in parsed ? applyHashlineEdits(oldContent, parsed.edits) : applyStringEdit(oldContent, parsed.old_string, parsed.new_string, parsed.replace_all);
+      const diff = createUnifiedDiff(filePath, oldContent, next.content);
       const preview = formatUnifiedDiffPreview(filePath, diff, 16);
       return {
-        details: `File: ${filePath}\nReplace bytes: ${Buffer.byteLength(oldText, "utf8")} -> ${Buffer.byteLength(newText, "utf8")}`,
+        details: `File: ${filePath}`,
         diff,
         preview,
         changeSummary: `Edit ${filePath}`
-      };
-    }
-  },
-  move_file: {
-    title: "File move request",
-    async summarize(args, context) {
-      const from = getStringField(args, "from");
-      const to = getStringField(args, "to");
-      const oldContent = await readExistingFileForDiff(from, context);
-      const preview = formatFileContentPreview(from, oldContent, 12);
-      return {
-        details: `Move ${from} -> ${to}\nBytes: ${Buffer.byteLength(oldContent, "utf8")}`,
-        preview,
-        changeSummary: `Move ${from} to ${to}`,
-        requireFullYes: true
-      };
-    }
-  },
-  delete_file: {
-    title: "File deletion request",
-    async summarize(args, context) {
-      const filePath = getStringField(args, "path");
-      const oldContent = await readExistingFileForDiff(filePath, context);
-      const diff = createUnifiedDiff(filePath, oldContent, "");
-      const preview = formatUnifiedDiffPreview(filePath, diff, 16);
-      return {
-        details: `File: ${filePath}\nBytes: ${Buffer.byteLength(oldContent, "utf8")}`,
-        diff,
-        preview,
-        changeSummary: `Delete ${filePath}`,
-        requireFullYes: true
       };
     }
   },

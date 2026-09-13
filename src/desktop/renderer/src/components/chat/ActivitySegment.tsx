@@ -303,7 +303,7 @@ export const ActivityToolRow = memo(function ActivityToolRow({
   onResolvePermission(requestId: string, result: PermissionResult): Promise<void>;
 }): React.JSX.Element {
   const row = activityToolRow(tool);
-  const [open, setOpen] = useState(["Bash", "Write", "edit_file"].includes(tool.tool));
+  const [open, setOpen] = useState(["Bash", "Write", "Edit"].includes(tool.tool));
   const running = row.running;
   return (
     <div data-activity-anchor="" className={`chat-tool-row-wrap${tool.permission ? " has-permission" : ""}`}>

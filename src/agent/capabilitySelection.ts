@@ -4,8 +4,6 @@
  * 本次消息的自定义选择。设置页只保存默认模式，具体数组只随当前消息传递，不写入会话配置。
  */
 import { z } from "zod";
-import { canonicalCompatibleToolName } from "../tools/toolNames.js";
-
 export const capabilitySelectionModeSchema = z.enum(["auto", "all", "none"]);
 const customCapabilityNamesSchema = z.array(z.string().trim().min(1).max(240)).max(512);
 export const capabilitySelectionValueSchema = z.union([capabilitySelectionModeSchema, customCapabilityNamesSchema]);
@@ -28,5 +26,5 @@ export function resolveCapabilityNames(
   if (chosen === "auto" || chosen === "all") return undefined;
   if (chosen === "none") return new Set();
   const available = new Set(availableNames);
-  return new Set(chosen.map(canonicalCompatibleToolName).filter((name) => available.has(name)));
+  return new Set(chosen.filter((name) => available.has(name)));
 }

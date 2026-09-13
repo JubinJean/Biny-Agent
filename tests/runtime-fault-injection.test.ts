@@ -188,6 +188,8 @@ async function testCanonicalFaultBoundaries(): Promise<void> {
       sequence: 1,
       operationId: "operation-write",
       state: "side_effect_committed",
+      fileChangeIsResult: true,
+      change: { operation: "create", path: "target.txt", committed: true, diff: "+new" },
       retrySafety: "unsafe",
       evidence: "atomic rename committed"
     });

@@ -10,7 +10,6 @@ import { isFullYesConfirmation } from "../../../../permission/confirmation.js";
 import type { PermissionAction, PermissionResult } from "../../../../permission/PermissionManager.js";
 import { permissionScopeForAlways } from "../../../../permission/permissionScope.js";
 import { tokenizeCommand } from "../commandHighlight.js";
-import { collapseContext, computeLineDiff } from "../lineDiff.js";
 import type { TimelineCommand, TimelineTool } from "../sessionTimeline.js";
 import { projectWebSearchView, type WebSearchResultView, type WebSearchView } from "../webSearchPresentation.js";
 import { CopyButton } from "./CopyButton.js";
@@ -27,18 +26,23 @@ interface ToolActivityDetailProps {
 
 export const ToolActivityDetail = memo(function ToolActivityDetail({ projectId, tool, onPreviewFile, onOpenExternal }: ToolActivityDetailProps): React.JSX.Element {
   const command = useMemo(() => commandDetails(tool), [tool]);
-  const diff = useMemo(() => tool.diff ? analyzeDiff(tool.diff) : undefined, [tool.diff]);
-  const fileChange = useMemo(() => fileChangeDetails(tool), [tool]);
+  const committedDiff = tool.fileChange?.diff;
+  const diff = useMemo(() => committedDiff ? analyzeDiff(committedDiff) : undefined, [committedDiff]);
   const webSearch = useMemo(() => tool.tool === "WebSearch" ? projectWebSearchView(tool.args, tool.result) : undefined, [tool.args, tool.result, tool.tool]);
   const errorText = meaningfulError(tool, command);
 
   return (
     <div className="tool-details" data-project-id={projectId}>
       {command ? <CommandLog command={command} running={tool.status === "running" && (!tool.permission || tool.permission.resolved)} /> : null}
-      {fileChange ? <FileChangeView change={fileChange} onPreviewFile={onPreviewFile} /> : null}
-      {diff && tool.diff && !fileChange ? <DiffView diff={tool.diff} info={diff} onPreviewFile={onPreviewFile} /> : null}
+      {tool.fileChange ? <section className="tool-section">
+        <h4 className="tool-section-label">{tool.fileChange.server ? `远端变更 · ${tool.fileChange.server}` : "已提交变更"}</h4>
+        <pre><code>{tool.fileChange.operation} {tool.fileChange.path}{tool.fileChange.destinationPath ? ` → ${tool.fileChange.destinationPath}` : ""}</code></pre>
+        {tool.fileChange.server && tool.fileChange.diff ? <pre><code>{tool.fileChange.diff}</code></pre> : null}
+      </section> : null}
+      {diff && committedDiff && !tool.fileChange?.server && tool.fileChange?.operation !== "delete" ? <DiffView diff={committedDiff} info={diff} onPreviewFile={onPreviewFile} /> : null}
+      {tool.fileChange?.operation === "delete" && !tool.fileChange.server ? <pre><code>{tool.fileChange.diff}</code></pre> : null}
       {webSearch ? <WebSearchLog onOpenExternal={onOpenExternal} tool={tool} view={webSearch} /> : null}
-      {!command && !diff && !webSearch && !fileChange ? <ToolPayload onPreviewFile={onPreviewFile} tool={tool} /> : null}
+      {!command && !diff && !webSearch && !tool.fileChange ? <ToolPayload onPreviewFile={onPreviewFile} tool={tool} /> : null}
       {errorText ? (
         <section className="tool-section">
           <h4 className="tool-section-label">错误</h4>
@@ -129,7 +133,7 @@ function PermissionCard({
         <h4 className="permission-headline">{title}</h4>
         <pre className="permission-preview">{[
           request.command,
-          request.tool !== "move_file" ? request.targetPath : undefined,
+          !request.secondaryTargetPath ? request.targetPath : undefined,
           details,
           !request.command ? request.diff ?? request.preview : undefined,
           reason
@@ -250,104 +254,6 @@ function CommandLog({ command, running }: { command: TimelineCommand; running: b
       {longOutput ? <button className="expand-output" onClick={() => setExpanded(!expanded)} type="button">{expanded ? "收起输出" : "展开全部输出"}</button> : null}
     </section>
   );
-}
-
-interface FileChangeDetails {
-  operation: "write" | "edit";
-  path?: string;
-  content?: string;
-  before?: string;
-  after?: string;
-}
-
-function fileChangeDetails(tool: TimelineTool): FileChangeDetails | undefined {
-  const display = tool.display?.kind === "file_io" ? tool.display : undefined;
-  const args = typeof tool.args === "object" && tool.args !== null ? tool.args as Record<string, unknown> : undefined;
-  const path = display?.path ?? tool.path ?? stringField(args, "path");
-  if (tool.tool === "Write" || display?.operation === "write") {
-    const content = display?.content ?? stringField(args, "content");
-    if (content === undefined) return undefined;
-    return { operation: "write", path, content };
-  }
-  if (tool.tool === "edit_file" || display?.operation === "edit") {
-    const before = display?.before ?? stringField(args, "oldText");
-    const after = display?.after ?? stringField(args, "newText");
-    if (before === undefined || after === undefined) return undefined;
-    return { operation: "edit", path, before, after };
-  }
-  return undefined;
-}
-
-const fileChangeVisibleLines = 40;
-
-/** edit 卡片：before/after 逐行对齐成行内 diff，ctx 收窄到变更附近 ±3 行。 */
-function FileChangeView({ change, onPreviewFile }: { change: FileChangeDetails; onPreviewFile(path: string): void }): React.JSX.Element {
-  const [showAll, setShowAll] = useState(false);
-  const lines = useMemo(
-    () => change.operation === "edit" ? collapseContext(computeLineDiff(change.before ?? "", change.after ?? "")) : [],
-    [change]
-  );
-  const stats = useMemo(() => diffEntryStats(lines), [lines]);
-  if (change.operation === "write") {
-    const total = countLines(change.content ?? "");
-    return (
-      <section className="tool-section">
-        <h4 className="tool-section-label">内容<span className="tool-section-meta">{String(total)} 行</span></h4>
-        <CodeView code={change.content ?? ""} filePath={change.path} onPreviewFile={change.path ? onPreviewFile : undefined} />
-      </section>
-    );
-  }
-  const visible = showAll ? lines : lines.slice(0, fileChangeVisibleLines);
-  const fileName = change.path?.replaceAll("\\", "/").split("/").at(-1);
-  return (
-    <section className="tool-section">
-      <h4 className="tool-section-label">
-        变更
-        <span className="diff-stats tool-section-meta">
-          <span className="diff-add">+{String(stats.add)}</span>
-          <span className="diff-delete">-{String(stats.del)}</span>
-        </span>
-      </h4>
-      <div className="code-card">
-        {change.path ? (
-          <button className="code-card-header" onClick={() => onPreviewFile(change.path ?? "")} title={`在右侧预览 ${change.path}`} type="button">
-            <Icon name="file" size={12} />
-            <span className="code-card-filename">{fileName}</span>
-          </button>
-        ) : null}
-        <div className="code-card-body">
-          <CopyButton className="copy-button" label="复制新内容" value={change.after ?? ""} />
-          <pre className="code-lines inline-diff"><code>
-            {visible.map((line, index) => line.kind === "gap" ? (
-              <span className="inline-diff-gap" key={String(index)}>⋯ {String(line.count)} 行未改动{"\n"}</span>
-            ) : (
-              <span className={`code-line is-${line.kind}`} key={`${String(index)}-${line.text.slice(0, 20)}`}>
-                <span className="code-line-sign">{line.kind === "add" ? "+" : line.kind === "del" ? "-" : " "}</span>
-                <span className="code-line-text">{line.text}</span>{"\n"}
-              </span>
-            ))}
-          </code></pre>
-        </div>
-        {lines.length > visible.length ? <button className="expand-output" onClick={() => setShowAll(true)} type="button">展开全部 {String(lines.length)} 行</button> : null}
-      </div>
-    </section>
-  );
-}
-
-function countLines(value: string): number {
-  const lines = value.split("\n");
-  if (lines.at(-1) === "") lines.pop();
-  return lines.length;
-}
-
-function diffEntryStats(entries: Array<{ kind: string }>): { add: number; del: number } {
-  let add = 0;
-  let del = 0;
-  for (const entry of entries) {
-    if (entry.kind === "add") add += 1;
-    if (entry.kind === "del") del += 1;
-  }
-  return { add, del };
 }
 
 function WebSearchLog({ view, tool, onOpenExternal }: { view: WebSearchView; tool: TimelineTool; onOpenExternal(url: string): void }): React.JSX.Element {
@@ -473,10 +379,16 @@ function commandDetails(tool: TimelineTool): TimelineCommand | undefined {
   const inferredCommand = tool.tool === "Bash" ? stringField(args, "command") : undefined;
   if (tool.display?.kind !== "command" && !inferredCommand) return undefined;
   const result = typeof tool.result === "object" && tool.result !== null ? tool.result as Record<string, unknown> : undefined;
+  const processResult = result?.background === true && typeof result.process === "object" && result.process !== null
+    ? result.process as Record<string, unknown>
+    : undefined;
+  const backgroundOutput = processResult
+    ? `Background process ${stringField(processResult, "processId") ?? "unknown"} ${stringField(processResult, "state") ?? "started"}`
+    : undefined;
   return {
     command: tool.display?.kind === "command" ? tool.display.command : inferredCommand ?? "",
     cwd: tool.display?.kind === "command" ? tool.display.cwd : stringField(args, "cwd"),
-    stdout: stringField(result, "stdout") ?? stringField(result, "output") ?? "",
+    stdout: backgroundOutput ?? stringField(result, "stdout") ?? stringField(result, "output") ?? "",
     stderr: stringField(result, "stderr") ?? "",
     exitCode: numberField(result, "exitCode")
   };

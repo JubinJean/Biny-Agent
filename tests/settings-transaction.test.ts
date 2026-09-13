@@ -388,12 +388,13 @@ async function testChatParamsOnlySaveCommits(): Promise<void> {
     const result = await transaction.save("project", {
       expectedPreferenceRevision: initial.preferenceRevision,
       expectedConfigRevision: initial.configRevision,
-      chatParams: { temperature: 0.4, maxOutputTokens: 8_192 }
+      chatParams: { temperature: 0.4, maxOutputTokens: 8_192, hashlineEdit: true }
     });
     assert.equal(result.status, "committed", JSON.stringify(result));
     assert.deepEqual(result.appliedFields, ["chatParams"]);
-    assert.deepEqual(agents.config.chat, { temperature: 0.4, maxOutputTokens: 8_192 });
+    assert.deepEqual(agents.config.chat, { temperature: 0.4, maxOutputTokens: 8_192, hashlineEdit: true });
     assert.equal(result.snapshot.chatParams.temperature, 0.4);
+    assert.equal(result.snapshot.chatParams.hashlineEdit, true);
   });
 }
 

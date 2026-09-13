@@ -72,6 +72,7 @@ export type AgentSessionUpdate =
 export type AgentToolEvent =
   | { type: "tool.started"; toolCallId: string; tool: string; args: unknown; description?: string; display?: ToolInputDisplay; operationId?: string }
   | { type: "tool.progress"; toolCallId: string; tool: string; update: ToolUpdate }
+  | { type: "tool.change_committed"; toolCallId: string; tool: string; operationId: string; change: import("../tools/file/fileChange.js").CommittedFileChange }
   | { type: "tool.completed"; toolCallId: string; tool: string; result: unknown; durationMs?: number; executionStatus?: ToolExecutionResultStatus; recovered?: boolean; operationId?: string; evidence?: string }
   | { type: "tool.failed"; toolCallId: string; tool: string; error: string; result?: unknown; durationMs?: number; executionStatus?: ToolExecutionResultStatus; recovered?: boolean; operationId?: string; evidence?: string };
 

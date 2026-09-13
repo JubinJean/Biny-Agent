@@ -6,12 +6,14 @@
  */
 import { createHash } from "node:crypto";
 import { ZodError } from "zod";
+import { routeEditingTools, type EditingMode } from "../tools/file/editingMode.js";
 import { confirmPermissionRequest } from "../permission/confirm.js";
 import { isFullYesConfirmation } from "../permission/confirmation.js";
 import { PermissionManager } from "../permission/PermissionManager.js";
 import { analyzePermissionRequest } from "../permission/policy.js";
 import { createToolPermissionRequest } from "../tools/display/ToolDisplay.js";
 import { ToolAccesses } from "../tools/access.js";
+import { assertMatchingFileChange, FileChangeUncertainError, parseFileChange, type CommittedFileChange } from "../tools/file/fileChange.js";
 import {
   maxEditFileBytes,
   readBoundedUtf8File,
@@ -207,11 +209,18 @@ export class ToolExecutionCoordinator {
   }
 
   /** Native model-facing tool envelope. */
-  createAgentTools(): AgentTool[] {
-    return this.context.toolRegistry.listEntries()
-      .filter(({ tool: registered }) => !this.allowedToolNames || this.allowedToolNames.has(registered.name))
+  createAgentTools(editing?: { mode: EditingMode; attachmentRoot?: string }): AgentTool[] {
+    let entries = this.context.toolRegistry.listEntries()
+      .filter(({ tool: registered }) => !this.allowedToolNames || this.allowedToolNames.has(registered.name));
+    if (editing) {
+      entries = routeEditingTools(entries, { workspaceRoot: this.context.workspaceRoot, ignore: this.context.config.workspace.ignore, attachmentRoot: editing.attachmentRoot }, editing.mode);
+    }
+    return entries
       .map(({ tool: registered, source }) => ({
         name: registered.name,
+        providerTool: registered.providerTool,
+        promptSnippet: registered.promptSnippet,
+        promptGuidelines: registered.promptGuidelines,
         description: registered.description,
         parameters: registered.parameters,
         executionMode: "parallel" as const,
@@ -251,6 +260,11 @@ export class ToolExecutionCoordinator {
 
   getExecutionCheckpoints(): ToolExecutionCheckpoint[] {
     return [...this.executionCheckpoints.values()].map((checkpoint) => ({ ...checkpoint }));
+  }
+
+  assertCanContinue(): void {
+    const unknown = [...this.executionCheckpoints.values()].find((checkpoint) => checkpoint.state === "unknown");
+    if (unknown) throw new Error(`Cannot continue: tool ${unknown.tool} (${unknown.operationId}) has an unknown side effect. Inspect its outcome before retrying.`);
   }
 
   observeToolCall(toolCallId: string): string | undefined {
@@ -348,6 +362,7 @@ export class ToolExecutionCoordinator {
     let retrySafety: ToolRetrySafety = "unknown";
     let executionStarted = false;
     let finishPromise: Promise<unknown> | undefined;
+    let committedChange: CommittedFileChange | undefined;
     const updateCheckpoint = (state: ToolExecutionState, evidence?: string): void => {
       latestState = state;
       latestEvidence = evidence ?? latestEvidence;
@@ -399,6 +414,9 @@ export class ToolExecutionCoordinator {
       auditOnly = false
     ): Promise<unknown> => {
       if (finishPromise) return finishPromise;
+      if (committedChange && typeof result === "object" && result !== null && !Array.isArray(result)) {
+        result = { ...result, change: committedChange };
+      }
       const status = executionStatus ?? terminalResultStatus(latestState, result);
       finishPromise = (async () => {
         const neverStarted = latestState === "not_started";
@@ -506,6 +524,7 @@ export class ToolExecutionCoordinator {
             signal,
             start: async () => {
               signal?.throwIfAborted();
+              this.assertCanContinue();
               if (permissionSnapshot.baseline) {
                 let currentSnapshot: PermissionSnapshot;
                 try {
@@ -550,12 +569,35 @@ export class ToolExecutionCoordinator {
                 retrySafety,
                 (state, evidence) => recordState(state, evidence),
                 () => { executionStarted = true; },
-                toolDefinition.parameters
+                toolDefinition.parameters,
+                async (change) => {
+                  try {
+                    if (!prepared.execution.fileChange) throw new Error("File change was not declared before execution.");
+                    assertMatchingFileChange(prepared.execution.fileChange, change);
+                    if (committedChange) {
+                      if (stableJson(committedChange) !== stableJson(change)) throw new Error("Conflicting file commit evidence.");
+                      return;
+                    }
+                    const event = await this.context.recorder.recordAndFlush({
+                      type: "tool_execution", tool: call.name, toolCallId: call.id, sequence, operationId,
+                      state: "side_effect_committed", change, fileChangeIsResult: prepared.execution.fileChangeIsResult === true,
+                      retrySafety
+                    });
+                    committedChange = change;
+                    updateCheckpoint("side_effect_committed");
+                    // 广播使用落盘后的脱敏记录，不能把原始文件内容绕过 recorder 发给界面。
+                    if (event.type === "tool_execution" && event.change) {
+                      this.emit({ type: "tool.change_committed", tool: call.name, toolCallId: call.id, operationId, change: event.change });
+                    }
+                  } catch (error) {
+                    updateCheckpoint("unknown", "File commit evidence could not be persisted.");
+                    throw new FileChangeUncertainError(`File side effect occurred, but commit evidence could not be recorded: ${formatToolError(call.name, error)}`);
+                  }
+                }
               );
             }
           });
-          const result = attachPermissionPreview(outcome.result, outcome.permissionRequest ?? permissionRequest);
-          const diagnosed = await this.attachDiagnostics(toolDefinition.risk, prepared.args, result, outcome.errorMessage, signal);
+          const diagnosed = await this.attachDiagnostics(toolDefinition.risk, prepared.args, outcome.result, outcome.errorMessage, signal);
           const hooked = await this.attachAfterToolHooks(call.name, prepared.args, diagnosed, signal);
           return await finish(
             hooked,
@@ -933,12 +975,14 @@ export class ToolExecutionCoordinator {
     retrySafety: ToolRetrySafety = "unknown",
     onExecutionState?: (state: ToolExecutionState, evidence?: string) => void,
     onStarted?: () => void,
-    capabilitySchema?: unknown
+    capabilitySchema?: unknown,
+    onFileChangeCommitted?: (change: CommittedFileChange) => Promise<void>
   ): Promise<ToolExecutionOutcome> {
     const startedAt = Date.now();
     let executionPromise: Promise<unknown> | undefined;
     let executionStarted = false;
     let latestExecutionState: ToolExecutionState = "running";
+    let committedChange: CommittedFileChange | undefined;
     const reportExecutionState = (state: ToolExecutionState, evidence?: string): void => {
       latestExecutionState = state;
       onExecutionState?.(state, evidence);
@@ -958,6 +1002,14 @@ export class ToolExecutionCoordinator {
           if (!executionSignal?.aborted) this.emit({ type: "tool.progress", toolCallId: call.id, tool: call.name, update });
         },
         onExecutionState: reportExecutionState,
+        onFileChangeCommitted: async (change) => {
+          // 解析会复制记录，防止扩展在 await 期间修改同一对象，令返回结果与落盘证据分叉。
+          const snapshot = parseFileChange(change);
+          if (!snapshot) throw new FileChangeUncertainError("Invalid file commit evidence after a possible side effect.");
+          await onFileChangeCommitted?.(snapshot);
+          committedChange = snapshot;
+          latestExecutionState = "side_effect_committed";
+        },
         approvedFile
       });
       executionPromise = (source === "mcp" || source === "plugin") && this.context.capabilities
@@ -978,6 +1030,12 @@ export class ToolExecutionCoordinator {
       const result = source === "builtin"
         ? await executionPromise
         : await waitForAbortWithDrain(executionPromise, signal, externalToolAbortDrainMs);
+      if (execution.fileChangeIsResult) {
+        const resultChange = typeof result === "object" && result !== null ? parseFileChange((result as { change?: unknown }).change) : undefined;
+        if (!committedChange || !resultChange || stableJson(committedChange) !== stableJson(resultChange)) {
+          throw new FileChangeUncertainError("File change result does not match durable commit evidence.");
+        }
+      }
       const summarized = attachToolSummary(result, Date.now() - startedAt);
       const executionFailure = failedToolResultMessage(summarized);
       reportExecutionState(executionFailure ? "failed" : "succeeded", executionFailure);
@@ -1007,7 +1065,7 @@ export class ToolExecutionCoordinator {
       }
       const message = formatToolError(call.name, error);
       const aborted = isAbortError(error, signal);
-      const status: ToolExecutionResultStatus = aborted
+      const status: ToolExecutionResultStatus = error instanceof FileChangeUncertainError ? "unknown" : aborted
         ? isSideEffectCommitted(latestExecutionState)
           ? "unknown"
           : !executionStarted || retrySafety === "safe" || retrySafety === "idempotent"
@@ -1038,7 +1096,8 @@ export class ToolExecutionCoordinator {
       args: permissionArgs,
       sessionId: this.context.recorder.sessionId,
       projectRoot: this.context.workspaceRoot,
-      toolRisk
+      toolRisk,
+      fileChange: execution.fileChange
     });
     const request = await createToolPermissionRequest({ id: call.id, name: call.name, args: permissionArgs }, {
       workspaceRoot: this.context.workspaceRoot,
@@ -1047,6 +1106,7 @@ export class ToolExecutionCoordinator {
     }, permissionContext);
     return {
       ...request,
+      requireFullYes: request.requireFullYes || execution.fileChange?.operation === "delete" || execution.fileChange?.operation === "move",
       approvalRule: permissionApprovalFingerprint(execution.approvalRule, permissionArgs),
       reason: execution.description ?? request.reason,
       changeSummary: request.changeSummary ?? displaySummary(execution.display)
@@ -1054,6 +1114,7 @@ export class ToolExecutionCoordinator {
   }
 
   private canonicalPermissionArgs(args: unknown, execution: RunnableToolExecution): unknown {
+    if (execution.fileChange?.server) return args;
     if (typeof args !== "object" || args === null || !("path" in args) || typeof args.path !== "string") return args;
     if (args.path.startsWith("@attachments/")) return args;
     const declaredPath = execution.accesses?.find((access) => access.kind === "file")?.path;
@@ -1072,14 +1133,14 @@ export class ToolExecutionCoordinator {
     signal?: AbortSignal
   ): Promise<PermissionSnapshot> {
     signal?.throwIfAborted();
-    const targetPath = this.resolvePermissionTarget(call.name, args, execution);
+    const targetPath = this.resolvePermissionTarget(execution);
     const before = await this.captureFileBaseline(targetPath, signal);
     signal?.throwIfAborted();
     const request = await this.buildPermissionRequest(call, args, execution, toolRisk);
     signal?.throwIfAborted();
     if (!before) return { request, baseline: undefined, targetPath: undefined };
 
-    const currentTargetPath = this.resolvePermissionTarget(call.name, args, execution);
+    const currentTargetPath = this.resolvePermissionTarget(execution);
     const after = await this.captureFileBaseline(currentTargetPath, signal);
     if (targetPath !== currentTargetPath || !sameFileBaseline(before, after)) {
       throw new Error("The target changed while the permission preview was being generated. Retry the tool call to review the current contents.");
@@ -1087,14 +1148,25 @@ export class ToolExecutionCoordinator {
     return { request, baseline: after, targetPath };
   }
 
-  private resolvePermissionTarget(toolName: string, args: unknown, execution: RunnableToolExecution): string | undefined {
-    if (toolName !== "Write" && toolName !== "edit_file" && toolName !== "delete_file" && toolName !== "move_file") return undefined;
-    const requestedPath = toolName === "move_file" ? readStringField(args, "from") : readStringField(args, "path");
-    if (!requestedPath) return undefined;
-    const resolvedPath = resolveWorkspacePath(this.context.workspaceRoot, requestedPath, this.context.config.workspace.ignore);
-    const declaredPath = execution.accesses?.find((access) => access.kind === "file")?.path;
+  private resolvePermissionTarget(execution: RunnableToolExecution): string | undefined {
+    if (execution.fileChange?.server) return undefined;
+    const declaredAccess = execution.accesses?.find((access) =>
+      access.kind === "file" && (access.operation === "write" || access.operation === "readwrite")
+    );
+    const declaredPath = declaredAccess?.kind === "file" ? declaredAccess.path : undefined;
+    // 内置文件工具用 fileChange 作为变更权威；扩展工具尚未提供协议元数据时，仍以已解析的
+    // 写访问声明建立授权快照，不能因此失去授权后的目标变化检查。
+    if (!execution.fileChange) return declaredAccess?.kind === "file" && !declaredAccess.recursive ? declaredPath : undefined;
+    const resolvedPath = resolveWorkspacePath(this.context.workspaceRoot, execution.fileChange.path, this.context.config.workspace.ignore);
     if (declaredPath && declaredPath !== resolvedPath) {
       throw new Error("The target path changed after the tool call was prepared. Retry the tool call to review the current target.");
+    }
+    if (!declaredPath) throw new Error("Local file change requires a matching file write access.");
+    if (execution.fileChange.destinationPath) {
+      const destination = resolveWorkspacePath(this.context.workspaceRoot, execution.fileChange.destinationPath, this.context.config.workspace.ignore);
+      if (!execution.accesses?.some((access) => access.kind === "file" && access.path === destination && (access.operation === "write" || access.operation === "readwrite"))) {
+        throw new Error("Move destination requires a matching file write access.");
+      }
     }
     return declaredPath ?? resolvedPath;
   }
@@ -1417,12 +1489,6 @@ function displaySummary(display: ToolInputDisplay | undefined): string | undefin
   return display.summary;
 }
 
-function attachPermissionPreview(result: unknown, request: AgentPermissionRequest): unknown {
-  if (!request.diff && !request.preview && !request.changeSummary) return result;
-  if (typeof result !== "object" || result === null || Array.isArray(result)) return { result, diffPreview: request.diff, contentPreview: request.preview, changeSummary: request.changeSummary };
-  return { ...(result as Record<string, unknown>), diffPreview: request.diff, contentPreview: request.preview, changeSummary: request.changeSummary };
-}
-
 function attachToolSummary(result: unknown, durationMs: number): unknown {
   if (typeof result !== "object" || result === null || Array.isArray(result)) return { result, durationMs };
   const record = result as Record<string, unknown>;
@@ -1439,13 +1505,14 @@ function attachToolSummary(result: unknown, durationMs: number): unknown {
   };
 }
 
-/** 写入类工具统一用 `path`（move_file 用 `from`/`to`）表达目标；取不到就不跑诊断。 */
+/** 文件变更统一用 `path` 表达源目标，移动额外用 `to`；取不到就不跑诊断。 */
 function mutatedFilePath(args: unknown): string | undefined {
   if (typeof args !== "object" || args === null) return undefined;
   const record = args as Record<string, unknown>;
-  for (const key of ["path", "to", "from"]) {
+  for (const key of ["path", "to"]) {
     const value = record[key];
     if (typeof value === "string" && value.trim()) return value;
   }
+  if (typeof record.operation === "object" && record.operation !== null && "path" in record.operation && typeof record.operation.path === "string") return record.operation.path;
   return undefined;
 }

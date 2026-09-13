@@ -23,7 +23,6 @@ import { BINY_AGENT_DIR_ENV } from "../src/config/paths.js";
 import { PermissionManager } from "../src/permission/PermissionManager.js";
 import { SessionRecorder } from "../src/session/recorder.js";
 import { ensureAgentDirs } from "../src/session/store.js";
-import { createEmotionTool } from "../src/tools/emotion.js";
 import { ToolRegistry } from "../src/tools/registry.js";
 import type { AgentModel } from "../src/agent/core/types.js";
 import { emotionSetBaseCommand, emotionSetContextCommand } from "../src/cli/commands/emotion.js";
@@ -33,7 +32,6 @@ const now = new Date("2026-08-30T03:00:00.000Z");
 await testBlendEmotion();
 await testEmotionStorage();
 testEmotionPromptAndSystemPrompt();
-await testEmotionTool();
 await testEmotionCliWritesLocalFiles();
 await testFatigueService();
 await testEmotionAnalysis();
@@ -208,52 +206,6 @@ function testEmotionPromptAndSystemPrompt(): void {
   assert.doesNotMatch(telemetry, /<biny_emotion omitted="true" \/>/u);
   assert.doesNotMatch(telemetry, /凌晨三点还在干活/u);
   assert.doesNotMatch(telemetry, /private identity text/u);
-}
-
-async function testEmotionTool(): Promise<void> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "biny-emotion-tool-test-"));
-    const storage = new EmotionStorage({ configDir: path.join(root, "agent"), now: () => now });
-  try {
-    const tool = createEmotionTool({
-      getStorage: () => storage,
-      getFatigue: () => 70,
-      now: () => now
-    });
-    const execution = await tool.resolveExecution({
-      scope: "context",
-      mood: "疲惫",
-      valence: 12,
-      energy: -2,
-      trigger: "连续处理多个问题"
-    });
-    assert.equal("isError" in execution, false);
-    if ("isError" in execution) return;
-    const result = await execution.execute({
-      toolCallId: "tool-1",
-      operationId: "operation-1",
-      sessionId: "session/one"
-    });
-    assert.equal(result.updated, true);
-    assert.equal(result.state.valence, 10);
-    assert.equal(result.state.energy, 0);
-    assert.equal(result.blended.energy, 7, "context 文件不覆盖 base energy，fatigue 不再硬限制 energy");
-    assert.equal((await storage.readContext("session/one"))?.mood, "疲惫");
-
-    const invalidSessionExecution = await tool.resolveExecution({
-      scope: "context",
-      mood: "正常",
-      valence: 5,
-      energy: 5,
-      trigger: undefined
-    });
-    if ("isError" in invalidSessionExecution) return;
-    await assert.rejects(
-      invalidSessionExecution.execute({ toolCallId: "tool-2", operationId: "operation-2" }),
-      /session is required/iu
-    );
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
 }
 
 async function testFatigueService(): Promise<void> {
@@ -481,7 +433,8 @@ async function testAgentSessionFatigue(): Promise<void> {
 function testBuiltInEmotionConfig(): void {
   const parsed = configSchema.parse(defaultConfig);
   assert.equal("emotion" in parsed.context, false);
-  assert.equal("heartbeat" in parsed, false);
+  // heartbeat 回归用户配置，默认关闭（与 Alma 默认行为对齐）。
+  assert.equal(parsed.heartbeat.enabled, false);
 }
 
 function emotion(

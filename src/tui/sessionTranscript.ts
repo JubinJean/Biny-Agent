@@ -6,13 +6,15 @@
  * a same-tool fallback for older sessions) instead of becoming system text.
  */
 import type { SessionEvent } from "../session/recorder.js";
+import { replaySessionEvents } from "../session/replay.js";
 import { activitySummaryText } from "../runtime/activitySummary.js";
 import { publicUserMessage } from "../session/publicMessage.js";
-import { canonicalCompatibleToolName } from "../tools/toolNames.js";
 import { completeToolItem, createRunningToolItem } from "./toolPresentation.js";
 import type { ToolTranscriptItem, TranscriptItem } from "./types.js";
 
 export function sessionEventsToTranscript(events: SessionEvent[]): TranscriptItem[] {
+  // 新文件协议的中断结果由同一个 recovery 决定，TUI 不再自行把已提交调用标记为 skipped。
+  if (events.some((event) => event.type === "tool_execution" && event.change)) events = replaySessionEvents(events).events;
   const items: TranscriptItem[] = [];
   const pendingTools: ToolTranscriptItem[] = [];
 
@@ -30,7 +32,7 @@ export function sessionEventsToTranscript(events: SessionEvent[]): TranscriptIte
     }
 
     if (event.type === "tool_call") {
-      const toolName = canonicalCompatibleToolName(event.tool);
+      const toolName = event.tool;
       appendActivity(items, event.assistantContent, index);
       pendingTools.push(createRunningToolItem({
         id: replayId(`tool-${toolName}`, index),
@@ -42,8 +44,14 @@ export function sessionEventsToTranscript(events: SessionEvent[]): TranscriptIte
       continue;
     }
 
+    if (event.type === "tool_execution" && event.change) {
+      const pending = pendingTools.find((tool) => tool.toolCallId === event.toolCallId);
+      if (pending) pending.fileChange = event.change;
+      continue;
+    }
+
     if (event.type === "tool_result") {
-      const toolName = canonicalCompatibleToolName(event.tool);
+      const toolName = event.tool;
       const pendingIndex = findPendingTool(pendingTools, event.toolCallId, toolName);
       const running = pendingIndex === -1
         ? createRunningToolItem({

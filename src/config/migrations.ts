@@ -4,8 +4,6 @@
  * 这里只转换 JSON shape，不读写文件。读取方在内存中使用当前结构；只有用户明确保存配置时
  * 才通过安全原子写入路径替换磁盘文档。
  */
-import { migrateToolNameList } from "../tools/toolNames.js";
-
 export const GLOBAL_CONFIG_FORMAT = "biny-config" as const;
 export const GLOBAL_CONFIG_VERSION = 1 as const;
 export const PROJECT_SETTINGS_FORMAT = "biny-project-settings" as const;
@@ -34,14 +32,13 @@ export function migrateGlobalConfigDocument(value: unknown): ConfigMigrationResu
   migrateMemoryEmbeddingPolicy(document);
   // 已移除的记忆策略仍可能存在于已版本化的配置；严格 schema 解析前必须无条件清理。
   migrateRemovedMemoryPolicyFields(document);
-  // 情绪和 Heartbeat 是 Biny 内置机制，不再作为用户配置暴露；严格 schema 解析前移除旧字段。
-  delete document.heartbeat;
+  // 情绪分析是 Biny 内置机制，不作为用户配置暴露；严格 schema 解析前移除旧字段。
+  // heartbeat 已恢复为用户配置（schema.heartbeatConfigSchema），遗留对象交给 schema 剥离未知键。
   const context = isRecord(document.context) ? document.context : undefined;
   if (context) delete context.emotion;
   // 人格预设与自定义指令已下线（改由内置 Soul 与 USER 承载）。顶层 personalization 块不再属于
   // 严格 schema，无条件剥离以兼容任何版本的存量配置文件。
   delete document.personalization;
-  migrateLegacyToolNames(document);
   return { document };
 }
 
@@ -142,20 +139,6 @@ function migrateMemoryEmbeddingPolicy(document: Record<string, unknown>): void {
   }
 }
 
-/** 旧工具名只存在于配置数据中，加载时迁移到当前工具名，不改变运行时注册表。 */
-function migrateLegacyToolNames(document: Record<string, unknown>): void {
-  const permission = isRecord(document.permission) ? document.permission : undefined;
-  if (permission && isStringArray(permission.allowTools)) {
-    permission.allowTools = migrateToolNameList(permission.allowTools);
-  }
-
-  const extensions = isRecord(document.extensions) ? document.extensions : undefined;
-  const subagent = extensions && isRecord(extensions.subagent) ? extensions.subagent : undefined;
-  if (subagent && isStringArray(subagent.allowedTools)) {
-    subagent.allowedTools = migrateToolNameList(subagent.allowedTools);
-  }
-}
-
 /** 旧配置没有 subagent 开关时沿用旧的默认行为；新配置仍由 schema 默认关闭。 */
 function migrateLegacySubagentDefault(document: Record<string, unknown>): void {
   const extensions = isRecord(document.extensions) ? document.extensions : undefined;
@@ -170,10 +153,6 @@ function migrateLegacySubagentDefault(document: Record<string, unknown>): void {
     return;
   }
   subagent.enabled = true;
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === "string");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

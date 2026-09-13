@@ -12,7 +12,8 @@ import {
 await testHeartbeatFileProtocol();
 await testHeartbeatActiveWindowAndForce();
 await testHeartbeatDoesNotOverlap();
-await testHeartbeatAddsEmotionAndDiaryPromptsOnce();
+await testHeartbeatOmitsUnrelatedBackgroundPrompts();
+await testHeartbeatEnabledGateAndCustomSchedule();
 console.log("heartbeat tests passed");
 
 async function testHeartbeatFileProtocol(): Promise<void> {
@@ -33,8 +34,7 @@ async function testHeartbeatActiveWindowAndForce(): Promise<void> {
   const schedule: HeartbeatSchedule = {
     intervalMinutes: 30,
     activeHoursStart: 22,
-    activeHoursEnd: 6,
-    baseEmotionRefreshHours: 3
+    activeHoursEnd: 6
   };
   assert.equal(isActiveHour(schedule, new Date(2026, 8, 5, 23)), true);
   assert.equal(isActiveHour(schedule, new Date(2026, 8, 5, 12)), false);
@@ -84,7 +84,7 @@ async function testHeartbeatDoesNotOverlap(): Promise<void> {
   }
 }
 
-async function testHeartbeatAddsEmotionAndDiaryPromptsOnce(): Promise<void> {
+async function testHeartbeatOmitsUnrelatedBackgroundPrompts(): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), "biny-heartbeat-prompts-"));
   try {
     let now = new Date(2026, 8, 6, 12);
@@ -95,13 +95,60 @@ async function testHeartbeatAddsEmotionAndDiaryPromptsOnce(): Promise<void> {
       run: async (prompt) => { prompts.push(prompt); }
     });
     assert.equal(await scheduler.triggerNow(), true);
-    assert.match(prompts[0] ?? "", /BASE EMOTION REFRESH/u);
+    assert.doesNotMatch(prompts[0] ?? "", /BASE EMOTION REFRESH/u);
     assert.doesNotMatch(prompts[0] ?? "", /MISSED DIARY CATCH-UP|DAILY DIARY TIME/u);
     now = new Date(2026, 8, 6, 13);
     assert.equal(await scheduler.triggerNow(), true);
     assert.doesNotMatch(prompts[1] ?? "", /BASE EMOTION REFRESH/u);
     assert.doesNotMatch(prompts[1] ?? "", /MISSED DIARY CATCH-UP/u);
     scheduler.stop();
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+}
+
+async function testHeartbeatEnabledGateAndCustomSchedule(): Promise<void> {
+  const root = await mkdtemp(path.join(os.tmpdir(), "biny-heartbeat-enabled-"));
+  try {
+    const prompts: string[] = [];
+    const timers: Array<{ callback: () => void; ms: number }> = [];
+    const intervalTimers = {
+      setInterval: (callback: () => void, ms: number) => {
+        timers.push({ callback, ms });
+        return timers.length as unknown as ReturnType<typeof setInterval>;
+      },
+      clearInterval: () => undefined
+    };
+    const now = () => new Date(2026, 8, 6, 12);
+
+    const disabled = new HeartbeatScheduler({
+      configDir: root,
+      enabled: false,
+      now,
+      timers: intervalTimers,
+      run: async (prompt) => { prompts.push(prompt); }
+    });
+    disabled.start();
+    assert.equal(timers.length, 0, "关闭时不启动定时器");
+    assert.equal(disabled.status().enabled, false);
+
+    const enabled = new HeartbeatScheduler({
+      configDir: root,
+      enabled: true,
+      schedule: { intervalMinutes: 45, activeHoursStart: 8, activeHoursEnd: 23 },
+      now,
+      timers: intervalTimers,
+      run: async (prompt) => { prompts.push(prompt); }
+    });
+    enabled.start();
+    assert.equal(timers.length, 1);
+    assert.equal(timers[0]?.ms, 45 * 60_000);
+    assert.equal(enabled.status().enabled, true);
+    timers[0]?.callback();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(prompts.length, 1, "启用后按配置节奏触发");
+    enabled.stop();
+    disabled.stop();
   } finally {
     await rm(root, { recursive: true, force: true });
   }

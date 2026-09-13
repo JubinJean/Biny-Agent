@@ -113,6 +113,7 @@ import type { SessionContextCheckpoint, SessionUsage, UsageOperation, UsageSumma
 import { defaultModelContextWindow } from "../ai/capabilities.js";
 import { modelCapabilities } from "../ai/capabilities.js";
 import { createNativeModelForConfig } from "../llm/nativeFactory.js";
+import { resolveEditingMode } from "../tools/file/editingMode.js";
 import { resolveMemoryModelAlias, resolveToolModelAlias, type MemoryModelField } from "../llm/toolModel.js";
 import { generateSessionTitle } from "../session/title.js";
 import type { NativeModelSettings } from "../llm/nativeFactory.js";
@@ -1059,12 +1060,7 @@ export class AgentSession {
     return this.identityStorage;
   }
 
-  /** 情绪状态由 AgentSession 统一持有，工具只通过这个句柄读写。 */
-  getEmotionStorage(): EmotionStorage {
-    return this.emotionStorage;
-  }
-
-  /** 模型更新情绪时读取当前 session 内存中的疲劳值。 */
+  /** 返回当前 session 的疲劳值，供状态展示和测试观察。 */
   getFatigue(): number {
     return this.fatigueService.getFatigue();
   }
@@ -1909,10 +1905,12 @@ export class AgentSession {
     );
     coordinatorRef.current = coordinator;
 
-    const initialTools = activeModelSettings.model.supportsTools === false ? [] : coordinator.createAgentTools();
+    const hashlineEdit = this.activeConfig.chat.hashlineEdit;
+    const editingTools = (settings: NativeModelSettings) => settings.model.supportsTools === false ? [] : coordinator.createAgentTools({ mode: resolveEditingMode(hashlineEdit, settings.applyPatchProtocol), attachmentRoot: this.options.attachmentRoot });
+    const initialTools = editingTools(activeModelSettings);
     systemPrompt = refreshRuntimeSystemPrompt(
       systemPrompt,
-      this.promptTools(allowedToolNames ? [...allowedToolNames] : initialTools.map((tool) => tool.name))
+      initialTools
     );
     refreshRuntimeTurnContext(messages, await this.currentEmotionPrompt());
     const nativeContext: AgentContext = { systemPrompt, messages: [...messages], tools: initialTools };
@@ -1965,14 +1963,15 @@ export class AgentSession {
         },
         maxSteps: runBudget.hardStepLimit - completedStepsBeforeRun,
         prepareNextTurn: async ({ context }) => {
+          coordinator.assertCanContinue();
           await this.options.modelManager?.preparePrompt(abortSignal);
           const settings = this.options.modelManager?.getModelSettings() ?? activeModelSettings;
           activeModelSettings = settings;
           this.contextMemory.observePromptModel(activeModelSettings.model.provider, activeModelSettings.model.modelId);
-          const tools = settings.model.supportsTools === false ? [] : coordinator.createAgentTools();
+          const tools = editingTools(settings);
           context.systemPrompt = refreshRuntimeSystemPrompt(
             context.systemPrompt,
-            this.promptTools(allowedToolNames ? [...allowedToolNames] : tools.map((tool) => tool.name))
+            tools
           );
           refreshRuntimeTurnContext(context.messages, await this.currentEmotionPrompt());
           this.contextMemory.recordToolSchema(tools);

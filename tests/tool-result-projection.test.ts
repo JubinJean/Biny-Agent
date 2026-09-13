@@ -4,11 +4,12 @@ import { runShellCommand } from "../src/tools/shell/runCommand.js";
 import type { AgentMessage, AgentToolResultMessage } from "../src/agent/core/types.js";
 
 await testFileAndCommandProjection();
-await testLegacyFileToolProjection();
+await testRemovedFileToolUsesGenericProjection();
 await testSemanticReplacementAndParallelIsolation();
 await testUnknownFailureIsNotMerged();
 await testArchiveFailureKeepsOriginal();
 await testRunCommandTruncationMetadata();
+await testBashOutputProjectionKeepsPagination();
 
 console.log("tool result projection tests passed");
 
@@ -17,10 +18,7 @@ async function testFileAndCommandProjection(): Promise<void> {
     { role: "user", content: "make the change" },
     assistantCall("write-1", "Write", { path: "src/example.ts", content: "new\ncontent\n" }),
     toolResult("write-1", "Write", {
-      path: "src/example.ts",
-      bytes: 12,
-      diffPreview: "@@ -1 +1,2 @@\n-old\n+new\n+content",
-      contentPreview: "new\ncontent",
+      change: { operation: "update", path: "src/example.ts", bytes: 12, committed: true, diff: "@@ -1 +1,2 @@\n-old\n+new\n+content" },
       changeSummary: "Overwrite src/example.ts"
     }),
     assistantCall("command-1", "Bash", { command: "pnpm test" }),
@@ -70,7 +68,7 @@ async function testFileAndCommandProjection(): Promise<void> {
   assert.equal(String((messages[4] as AgentToolResultMessage).details?.stdout).startsWith("pnpm test"), true);
 }
 
-async function testLegacyFileToolProjection(): Promise<void> {
+async function testRemovedFileToolUsesGenericProjection(): Promise<void> {
   const messages: AgentMessage[] = [
     { role: "user", content: "migrate legacy history" },
     assistantCall("legacy-write", "write_file", { path: "src/legacy.ts", content: "new" }),
@@ -79,11 +77,11 @@ async function testLegacyFileToolProjection(): Promise<void> {
       diffPreview: "@@ -1 +1 @@\n-old\n+new"
     })
   ];
-  const projected = await projectToolResultsForModel(messages, { thresholdBytes: 1 });
+  const projected = await projectToolResultsForModel(messages, { thresholdBytes: 512 });
   const result = resultDetails(projected[2]);
   assert.equal(result.path, "src/legacy.ts");
-  assert.equal(result.addedLines, 1);
-  assert.equal(result.deletedLines, 1);
+  assert.equal(result.addedLines, undefined);
+  assert.equal(result.deletedLines, undefined);
   assert.equal(result.modelProjection, undefined);
 }
 
@@ -94,10 +92,10 @@ async function testSemanticReplacementAndParallelIsolation(): Promise<void> {
     toolResult("read-old", "Read", { path: "src/index.ts", content: "old contents" }),
     assistantCall("read-new", "Read", { path: "src/index.ts" }),
     toolResult("read-new", "Read", { path: "src/index.ts", content: "new contents" }),
-    assistantCall("status-old", "git_status", {}),
-    toolResult("status-old", "git_status", { output: " M old.ts" }),
-    assistantCall("status-new", "git_status", {}),
-    toolResult("status-new", "git_status", { output: " M new.ts" }),
+    assistantCall("status-old", "Bash", { command: "git status --short" }),
+    toolResult("status-old", "Bash", { status: "completed", exitCode: 0, stdout: " M old.ts" }),
+    assistantCall("status-new", "Bash", { command: "git status --short" }),
+    toolResult("status-new", "Bash", { status: "completed", exitCode: 0, stdout: " M new.ts" }),
     assistantCall("unknown-old", "opaque_tool", { value: 7 }),
     toolResult("unknown-old", "opaque_tool", { result: "same" }),
     assistantCall("unknown-new", "opaque_tool", { value: 7 }),
@@ -155,6 +153,34 @@ async function testRunCommandTruncationMetadata(): Promise<void> {
   assert.equal(captured.stderrBytes, captured.stderrRetainedBytes);
   assert.equal(captured.stdout.length, 400_000);
   assert.equal(captured.stderr.length, 400_000);
+}
+
+async function testBashOutputProjectionKeepsPagination(): Promise<void> {
+  const original = {
+    process: { processId: "process-1", state: "running" },
+    output: {
+      processId: "process-1",
+      logPath: "/tmp/process.log",
+      content: "output\n".repeat(4_000),
+      startOffset: 0,
+      nextOffset: 28_000,
+      totalBytes: 40_000,
+      omittedBefore: false,
+      hasMore: true
+    }
+  };
+  const projected = await projectSingleToolResultForModel("BashOutput", { processId: "process-1" }, original, {
+    toolCallId: "bash-output",
+    archiveResult: async ({ output }) => ({
+      archivePath: `.biny/tool-results/tool-result-${"a".repeat(64)}.json`,
+      resultBytes: Buffer.byteLength(output, "utf8")
+    })
+  }) as Record<string, unknown>;
+  const output = projected.output as Record<string, unknown>;
+  assert.equal(output.hasMore, true);
+  assert.equal(output.nextOffset, 28_000);
+  assert.equal(output.contentTruncated, true);
+  assert.equal(String(output.content).length < original.output.content.length, true);
 }
 
 async function testArchiveFailureKeepsOriginal(): Promise<void> {

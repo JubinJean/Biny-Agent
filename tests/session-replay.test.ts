@@ -28,6 +28,7 @@ function main(): void {
     interrupted: true,
     recovered: true,
     executionStatus: "unknown",
+    change: undefined,
     operationId: replay.recoveredToolResults[0]?.operationId
   });
   const toolCall = replay.messages.find((message) => hasToolCall(message, "read-1"));
@@ -55,7 +56,7 @@ function main(): void {
   const sideEffectCommitted = replaySessionEvents([
     { type: "user_message", content: "write once" },
     { type: "tool_call", tool: "Write", args: { path: "a.txt" }, toolCallId: "write-1", sequence: 1 },
-    { type: "tool_execution", tool: "Write", toolCallId: "write-1", sequence: 1, operationId: "op-write-1", state: "side_effect_committed", evidence: "rename committed" }
+    { type: "tool_execution", tool: "Write", toolCallId: "write-1", sequence: 1, operationId: "op-write-1", state: "side_effect_committed", evidence: "rename committed", fileChangeIsResult: true, change: { operation: "create", path: "a.txt", committed: true, diff: "" } }
   ]);
   assert.equal(sideEffectCommitted.recoveredToolResults[0]?.result && typeof sideEffectCommitted.recoveredToolResults[0].result === "object"
     ? (sideEffectCommitted.recoveredToolResults[0].result as Record<string, unknown>).status
@@ -83,15 +84,15 @@ function main(): void {
     legacyNames.messages.flatMap((message) => message.role === "assistant"
       ? message.content.filter((part) => part.type === "toolCall").map((part) => part.name)
       : []),
-    ["Write"]
+    ["write_file", "apply_patch"]
   );
   assert.deepEqual(
     legacyNames.messages.filter((message) => message.role === "toolResult").map((message) => message.toolName),
-    ["Write"]
+    ["write_file", "apply_patch"]
   );
   assert.equal(legacyNames.messages.some((message) => message.role === "assistant"
-    && message.content.some((part) => part.type === "text" && part.text.includes("apply_patch 已从当前工具集中移除"))), true);
-  assert.equal(legacyNames.messages.some((message) => message.role === "toolResult" && message.toolName === "edit_file"), false);
+    && message.content.some((part) => part.type === "text" && part.text.includes("已从当前工具集中移除"))), false);
+  assert.equal(legacyNames.messages.some((message) => message.role === "toolResult" && message.toolName === "Edit"), false);
 
   const canonicalLegacy = sessionEventsToConversation([
     { type: "user_message", content: "canonical legacy call" },
@@ -113,8 +114,8 @@ function main(): void {
       }
     }
   ]);
-  assert.equal(canonicalLegacy.some((message) => message.role === "toolResult"), false);
-  assert.equal(canonicalLegacy.filter((message) => message.role === "assistant").length, 2);
+  assert.equal(canonicalLegacy.some((message) => message.role === "toolResult"), true);
+  assert.equal(canonicalLegacy.filter((message) => message.role === "assistant").length, 1);
 
   const mixedLegacyBatch = sessionEventsToConversation([
     { type: "user_message", content: "mixed legacy batch" },
@@ -125,12 +126,12 @@ function main(): void {
     { type: "tool_result", tool: "apply_patch", toolCallId: "patch", sequence: 2, result: "patched" },
     { type: "tool_result", tool: "Bash", toolCallId: "bash", sequence: 3, result: "workspace" }
   ]);
-  assert.deepEqual(mixedLegacyBatch.map((message) => message.role), ["user", "assistant", "toolResult", "toolResult", "assistant"]);
+  assert.deepEqual(mixedLegacyBatch.map((message) => message.role), ["user", "assistant", "toolResult", "toolResult", "toolResult"]);
   assert.deepEqual(
     mixedLegacyBatch.filter((message) => message.role === "assistant").flatMap((message) => message.content
       .filter((part) => part.type === "toolCall")
       .map((part) => part.name)),
-    ["Read", "Bash"]
+    ["Read", "apply_patch", "Bash"]
   );
 
   const mixedCanonicalBatch = sessionEventsToConversation([
@@ -164,8 +165,8 @@ function main(): void {
       }
     }
   ]);
-  assert.deepEqual(mixedCanonicalBatch.map((message) => message.role), ["user", "assistant", "toolResult", "assistant"]);
-  assert.equal(mixedCanonicalBatch[2]?.role === "toolResult" ? mixedCanonicalBatch[2].toolName : undefined, "Read");
+  assert.deepEqual(mixedCanonicalBatch.map((message) => message.role), ["user", "assistant", "toolResult", "toolResult"]);
+  assert.equal(mixedCanonicalBatch[2]?.role === "toolResult" ? mixedCanonicalBatch[2].toolName : undefined, "apply_patch");
   const canonicalBatch: SessionEvent[] = [
     { type: "user_message", content: "mixed canonical and audit events" },
     { type: "agent_message", message: { role: "assistant", content: [
@@ -189,8 +190,8 @@ function main(): void {
     canonicalBatch[0]!, ...historicalAudit, ...canonicalBatch.slice(1)
   ]), sessionEventsToConversation(canonicalBatch), "historical audit facts may precede canonical messages");
   assert.deepEqual(
-    [...(resolveCapabilityNames(["write_file", "multi_edit", "Read"], "none", ["Write", "edit_file", "Read"]) ?? [])],
-    ["Write", "edit_file", "Read"]
+    [...(resolveCapabilityNames(["write_file", "multi_edit", "Read"], "none", ["Write", "Edit", "Read"]) ?? [])],
+    ["Read"]
   );
 
   const unsigned = sessionEventsToConversation([

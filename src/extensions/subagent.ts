@@ -11,8 +11,10 @@ import { usageSnapshot } from "../session/metadata.js";
 import { ToolAccesses } from "../tools/access.js";
 import type { ToolRegistry } from "../tools/registry.js";
 import { ToolScheduler } from "../tools/scheduler.js";
+import { resolveEditingMode, routeEditingTools, type EditingMode } from "../tools/file/editingMode.js";
+import type { ToolContext } from "../tools/types.js";
 import { createToolOperationId, type RunnableToolExecution, type Tool } from "../tools/types.js";
-import { filterProtectedGitDiff, isProtectedCredentialPath, redactSecrets } from "../utils/secrets.js";
+import { isProtectedCredentialPath, redactSecrets } from "../utils/secrets.js";
 import { findSubagentDefinition, type SubagentDefinition } from "./agents.js";
 
 const subagentParameters = {
@@ -28,9 +30,7 @@ const subagentParameters = {
 const safeBuiltinCapabilities = new Set([
   "filesystem.read",
   "filesystem.list",
-  "filesystem.search",
-  "git.status",
-  "git.diff"
+  "filesystem.search"
 ]);
 const workspaceBuiltinCapabilities = new Set([
   ...safeBuiltinCapabilities,
@@ -130,7 +130,10 @@ async function runNativeSubagentTask(
     maxConcurrency: options.config.agent.maxConcurrentTools,
     maxQueuedTasks: options.config.agent.maxQueuedToolCalls
   });
-  const tools = createSubagentTools(options.toolRegistry, allowedTools, { accessMode, scheduler });
+  const tools = createSubagentTools(options.toolRegistry, allowedTools, {
+    accessMode, scheduler,
+    editing: { mode: resolveEditingMode(options.config.chat.hashlineEdit, modelSettings.applyPatchProtocol), context: { workspaceRoot: options.workspaceRoot, ignore: options.config.workspace.ignore } }
+  });
   const instructions = buildSubagentSystemPrompt(accessMode, definition);
   const usages: AgentUsage[] = [];
   const assistantTexts: string[] = [];
@@ -234,22 +237,21 @@ export function createSubagentTools(
   const allowed = new Set(allowedTools);
   const accessMode = options.accessMode ?? "read-only";
   const capabilities = accessMode === "workspace" ? workspaceBuiltinCapabilities : safeBuiltinCapabilities;
-  return registry.listEntries().flatMap(({ tool: entry, source }) => {
-    if (
-      source !== "builtin"
-      || !entry.capability
-      || !capabilities.has(entry.capability)
-      || (accessMode === "read-only" && entry.risk !== "read")
-      || !allowed.has(entry.name)
-    ) return [];
+  let entries = registry.listEntries().filter(({ tool: entry, source }) => source === "builtin"
+    && entry.capability && capabilities.has(entry.capability)
+    && (accessMode !== "read-only" || entry.risk === "read") && allowed.has(entry.name));
+  if (options.editing) entries = routeEditingTools(entries, options.editing.context, options.editing.mode);
+  return entries.flatMap(({ tool: entry }) => {
     const nativeTool: AgentTool = {
       name: entry.name,
+      providerTool: entry.providerTool,
       description: entry.description,
       parameters: entry.parameters,
       executionMode: entry.risk === "read" ? "parallel" : "sequential",
       execute: async (toolCallId, args, signal) => {
-        assertSafeToolInput(entry.name, args, accessMode);
-        const resolved = await entry.resolveExecution(args);
+        const parsed = entry.schema.parse(args);
+        assertSafeToolInput(entry.name, parsed, accessMode);
+        const resolved = await entry.resolveExecution(parsed);
         if ("isError" in resolved) {
           return { content: [{ type: "text", text: stringifySubagentValue(resolved.result) }], details: resolved.result, isError: true };
         }
@@ -327,6 +329,7 @@ async function resolveSubagentDefinition(options: SubagentOptions, agentName?: s
 }
 
 export interface CreateSubagentToolsOptions {
+  editing?: { mode: EditingMode; context: ToolContext };
   accessMode?: SubagentAccessMode;
   scheduler?: ToolScheduler<unknown>;
 }
@@ -386,11 +389,15 @@ export function isSensitiveSubagentPath(value: string): boolean {
 
 function assertSafeToolInput(toolName: string, input: unknown, accessMode: SubagentAccessMode): void {
   if (!isRecord(input)) return;
+  if (toolName === "apply_patch" && isRecord(input.operation)) {
+    assertSafeToolInput("Edit", input.operation, accessMode);
+  }
   if (typeof input.path === "string" && isSensitiveSubagentPath(input.path)) {
     throw new Error(`Subagent access denied for protected path: ${input.path}`);
   }
   if (toolName === "Bash") {
     if (accessMode !== "workspace") throw new Error("Subagent command execution is not available in read-only mode.");
+    if (input.background === true) throw new Error("Subagent Bash only permits finite foreground validation commands.");
     const command = typeof input.command === "string" ? input.command.trim() : "";
     if (!isAllowedSubagentValidationCommand(command)) {
       throw new Error("Subagent Bash only permits finite build, test, lint, and typecheck commands without shell operators.");
@@ -434,19 +441,7 @@ function sanitizeToolResult(toolName: string, result: unknown): unknown {
         .map(redactUnknown)
     };
   }
-  if ((toolName === "git_diff" || toolName === "git_status") && isRecord(result) && typeof result.output === "string") {
-    const output = toolName === "git_diff" ? filterProtectedGitDiff(result.output) : filterProtectedStatus(result.output);
-    return { ...result, output: redactSecrets(output) };
-  }
   return redactUnknown(result);
-}
-
-function filterProtectedStatus(output: string): string {
-  return output.split(/\r?\n/).filter((line) => {
-    if (!line) return false;
-    const path = line.slice(3).split(" -> ").at(-1) ?? "";
-    return !isSensitiveSubagentPath(path);
-  }).join("\n");
 }
 
 function redactUnknown(value: unknown): unknown {

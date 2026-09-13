@@ -10,13 +10,12 @@ export interface PermissionPresentationInput {
 }
 
 const toolTitles: Record<string, string> = {
-  Bash: "允许运行此命令？", start_process: "允许启动后台进程？", stop_process: "允许停止此进程？",
-  Read: "允许读取此文件？", Write: "允许写入此文件？", edit_file: "允许编辑此文件？",
-  delete_file: "允许删除此文件？", move_file: "允许移动此文件？",
+  Bash: "允许运行此命令？", KillShell: "允许停止此后台命令？",
+  Read: "允许读取此文件？", Write: "允许写入此文件？", Edit: "允许编辑此文件？",
   skill_install: "允许安装此技能？", Skill: "允许加载此技能？", read_skill_resource: "允许读取技能资源？",
-  BrowserType: "允许填写此网页表单？", git_commit: "允许创建 Git 提交？",
+  BrowserType: "允许填写此网页表单？",
   WebFetch: "允许读取此网页？", WebSearch: "允许搜索网页？", Task: "允许委派此任务？",
-  save_memory: "允许保存此记忆？", recall_memory: "允许检索记忆？", update_emotion: "允许更新表达状态？",
+  save_memory: "允许保存此记忆？", recall_memory: "允许检索记忆？",
   mcp_list_resources: "允许列出 MCP 资源？", mcp_read_resource: "允许读取 MCP 资源？"
 };
 const actionTitles: Record<string, string> = {
@@ -34,7 +33,7 @@ const reasonLabels: Record<string, string> = {
   "modifies a shell profile": "修改 Shell 启动配置", "modifies a sensitive file": "修改敏感文件",
   "modifies a lockfile": "修改依赖锁文件", "modifies a workspace file": "修改工作区文件",
   "deletes a sensitive file": "删除敏感文件", "deletes a workspace file": "删除工作区文件",
-  "searches or lists workspace files": "搜索或列出工作区文件", "creates a git commit in this repository": "在当前仓库创建 Git 提交",
+  "searches or lists workspace files": "搜索或列出工作区文件",
   "inspects git diff": "查看 Git 差异", "inspects git status": "查看 Git 状态",
   "inspects runtime-owned managed processes": "查看 Biny 管理的进程", "stops a runtime-owned managed process group": "停止 Biny 管理的进程组",
   "delegates a bounded workspace task with write and finite validation capabilities": "委派任务，可写入工作区并执行有限验证",
@@ -68,16 +67,19 @@ export function permissionPresentation(request: PermissionPresentationInput): { 
     // 通用扩展的 JSON 原样保留，避免修改键或参数值。
     if (request.tool === "skill_install") return line.replace(/^Skill: /u, "技能：").replace(/^Source: /u, "来源：").replace(/^Target: /u, "安装位置：");
     if (request.tool === "BrowserType") return line.replace(/^Selector: /u, "目标元素：").replace(/^Value: \[redacted before display\]$/u, "填写内容：已隐藏");
-    if (["Write", "edit_file", "move_file", "delete_file"].includes(request.tool)) return line.replace(/^File: /u, "文件：").replace(/^Bytes: /u, "大小（字节）：").replace(/^Replace bytes: /u, "替换字节数：").replace(/^Move /u, "移动：");
+    if (["Write", "Edit"].includes(request.tool)) return line.replace(/^File: /u, "文件：").replace(/^Bytes: /u, "大小（字节）：").replace(/^Operations: /u, "操作数：").replace(/^Move /u, "移动：");
     return line;
   }).join("\n").trim();
   const rawReason = request.reason?.trim();
   const reason = rawReason ? reasonLabels[rawReason] ?? rawReason : undefined;
   const repeated = rawReason === request.changeSummary || rawReason === request.command || rawReason === `Run ${request.command}` || rawReason === `Run command: ${request.command}`
-    || rawReason === `Start managed process: ${request.command}`
     || ["Read", "Write", "Edit", "Delete", "Create", "Overwrite"].some((verb) => rawReason === `${verb} ${request.targetPath}`);
   return {
-    title: toolTitles[request.tool] ?? (request.command ? "允许运行此命令？" : actionTitles[request.actionType] ?? "允许此次工具操作？"),
+    title: ["Edit", "apply_patch"].includes(request.tool) && (request.actionType === "delete" || request.changeSummary?.startsWith("Delete "))
+      ? "允许删除此文件？"
+      : request.tool === "Edit" && request.details.startsWith("Move ")
+        ? "允许移动此文件？"
+        : toolTitles[request.tool] ?? (request.command ? "允许运行此命令？" : actionTitles[request.actionType] ?? "允许此次工具操作？"),
     details,
     reason: reason && !repeated && !details.includes(reason) ? reason : undefined
   };

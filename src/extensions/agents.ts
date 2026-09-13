@@ -11,7 +11,6 @@ import { promises as fs } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { globalConfigDir } from "../config/paths.js";
-import { canonicalCompatibleToolName } from "../tools/toolNames.js";
 
 const maxAgentCount = 16;
 const maxAgentFileBytes = 32 * 1024;
@@ -177,7 +176,7 @@ function splitAgentFrontmatter(content: string): { frontmatter: AgentFrontmatter
 
 function parseToolList(value: string | undefined): string[] | undefined {
   if (!value) return undefined;
-  const tools = [...new Set(value.split(",").map((tool) => tool.trim()).filter(Boolean).map(canonicalCompatibleToolName))].slice(0, maxAgentToolCount);
+  const tools = [...new Set(value.split(",").map((tool) => tool.trim()).filter(Boolean))].slice(0, maxAgentToolCount);
   return tools.length ? tools : undefined;
 }
 

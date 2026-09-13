@@ -1334,6 +1334,11 @@ export class InteractiveAgentRuntime {
       return undefined;
     }
 
+    if (event.type === "tool.change_committed") {
+      this.emit({ ...this.eventBase(run), ...event });
+      return undefined;
+    }
+
     if (event.type === "tool.completed") {
       this.completeTool(run, event.toolCallId, event.tool, event.result, event.durationMs, event.executionStatus, event.recovered, event.operationId, event.evidence);
       return undefined;

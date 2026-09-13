@@ -35,7 +35,7 @@ export async function confirmPermissionRequest(
 ): Promise<PermissionResult> {
   const view = permissionPresentation(request);
   output.write(`\n${view.title} · ${request.tool}\n`);
-  if (request.targetPath && request.tool !== "move_file") output.write(`${request.targetPath}\n`);
+  if (request.targetPath && !request.secondaryTargetPath) output.write(`${request.targetPath}\n`);
   if (request.command) output.write(`${request.command}\n`);
   if (view.details) output.write(`${view.details}\n`);
   if (view.reason) output.write(`${view.reason}\n`);

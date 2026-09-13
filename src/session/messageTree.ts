@@ -5,7 +5,6 @@
  * 持久化回放负责把它接到模型消息上，时间线只使用消息 ID 和事件归属。
  */
 import type { AgentMessage } from "../agent/core/types.js";
-import { canonicalizeAgentMessageToolNames } from "../agent/modelMessages.js";
 import type { SessionEvent } from "./recorder.js";
 
 export interface SessionMessageNode {
@@ -64,7 +63,7 @@ export function sessionMessageTree(events: SessionEvent[]): SessionMessageNode[]
         parentId: event.parentMessageId,
         slotId: event.slotId ?? event.messageId,
         eventIndex,
-        message: canonicalizeAgentMessageToolNames(event.message)
+        message: event.message
       }];
     }
     return [];
