@@ -7,6 +7,7 @@ import type { SkillDefinition } from "../extensions/skills.js";
 import { generateNativeText, parseNativeJson } from "../llm/nativeJson.js";
 import { redactSecrets } from "../utils/secrets.js";
 import type { AgentCapabilitySelection } from "./capabilitySelection.js";
+import { toolSearchToolName } from "../tools/toolSearch.js";
 
 export interface CapabilityPreselectionInput {
   input: string;
@@ -19,7 +20,7 @@ export interface CapabilityPreselectionInput {
 
 const toolsResponseSchema = z.object({ tools: z.array(z.string()).max(512) });
 const skillsResponseSchema = z.object({ skillIds: z.array(z.string()).max(256) });
-const stableCodingToolNames = new Set(["Read", "Glob", "Grep", "Write", "Edit", "Bash", "BashOutput", "KillShell"]);
+export const stableCodingToolNames = new Set(["Read", "Glob", "Grep", "Write", "Edit", "Bash", "BashOutput", "KillShell"]);
 
 export async function preselectCapabilities(options: CapabilityPreselectionInput & {
   model?: AgentModel;
@@ -31,7 +32,7 @@ export async function preselectCapabilities(options: CapabilityPreselectionInput
   const skillsMode = options.selection?.skills ?? options.config.chat.defaultSkillSelection;
   if (toolsMode !== "auto" && skillsMode !== "auto") return { tools: toolsMode, skills: skillsMode };
   const tools = options.tools;
-  const optionalTools = tools.filter((tool) => !stableCodingToolNames.has(tool.name) && tool.name !== "read_tool_result");
+  const optionalTools = tools.filter((tool) => !stableCodingToolNames.has(tool.name) && tool.name !== "read_tool_result" && tool.name !== toolSearchToolName);
   const skills = options.skills;
   const selectedTools = new Set(
     toolsMode === "auto"
@@ -99,6 +100,7 @@ export async function preselectCapabilities(options: CapabilityPreselectionInput
   }
   options.signal?.throwIfAborted();
   if (toolsMode === "auto") {
+    if (tools.some((tool) => tool.name === toolSearchToolName)) selectedTools.add(toolSearchToolName);
     for (const pair of [["WebSearch", "WebFetch"], ["Bash", "BashOutput", "KillShell"]]) {
       if (pair.some((name) => selectedTools.has(name))) for (const name of pair) if (tools.some((tool) => tool.name === name)) selectedTools.add(name);
     }

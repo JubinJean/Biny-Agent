@@ -176,10 +176,11 @@ export class ToolExecutionCoordinator {
     private readonly permissionManager: PermissionManager,
     private readonly emit: (event: AgentToolEvent | Extract<AgentSessionEvent, { type: "error" }>) => void,
     private readonly getStepContext: () => AgentStepContext = () => ({}),
-    private readonly allowedToolNames?: ReadonlySet<string>,
+    allowedToolNames?: ReadonlySet<string>,
     private readonly executionBudget?: ToolExecutionBudget,
     private readonly onToolResultPersisted?: () => Promise<void>
   ) {
+    this.allowedToolNames = allowedToolNames ? new Set(allowedToolNames) : undefined;
     if (executionBudget) {
       assertPositiveSafeInteger(executionBudget.maxToolCalls, "maxToolCalls");
       assertPositiveSafeInteger(executionBudget.maxRepeatedActions, "maxRepeatedActions");
@@ -206,6 +207,21 @@ export class ToolExecutionCoordinator {
       // so this internal queue only needs room for those active pipelines.
       maxQueuedTasks: context.config.agent.maxConcurrentTools
     });
+  }
+
+  private readonly allowedToolNames?: Set<string>;
+
+  /** 只扩展到当前注册表中真实存在的工具；权限、预算和审计不会随 schema 扩展而放宽。 */
+  allowTools(names: readonly string[]): string[] {
+    if (!this.allowedToolNames) return [];
+    const registered = new Set(this.context.toolRegistry.list().map((tool) => tool.name));
+    const added: string[] = [];
+    for (const name of names) {
+      if (!registered.has(name) || this.allowedToolNames.has(name)) continue;
+      this.allowedToolNames.add(name);
+      added.push(name);
+    }
+    return added;
   }
 
   /** Native model-facing tool envelope. */

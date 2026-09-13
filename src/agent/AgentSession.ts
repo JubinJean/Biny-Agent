@@ -153,6 +153,8 @@ import type {
 } from "./context/memoryTypes.js";
 import { agentCapabilitySelectionSchema, resolveCapabilityNames, type AgentCapabilitySelection } from "./capabilitySelection.js";
 import type { CapabilityPreselectionInput } from "./capabilityPreselection.js";
+import { stableCodingToolNames } from "./capabilityPreselection.js";
+import { toolSearchResultNames, toolSearchToolName } from "../tools/toolSearch.js";
 
 export interface AgentSessionOptions {
   workspaceRoot: string;
@@ -693,11 +695,16 @@ export class AgentSession {
   }
 
   private selectedToolNames(capabilitySelection?: AgentCapabilitySelection): ReadonlySet<string> | undefined {
-    return resolveCapabilityNames(
+    const resolved = resolveCapabilityNames(
       capabilitySelection?.tools,
       this.activeConfig.chat.defaultToolSelection,
       this.options.toolRegistry.list().map((tool) => tool.name)
     );
+    const mode = capabilitySelection?.tools ?? this.activeConfig.chat.defaultToolSelection;
+    if (resolved || mode !== "auto" || this.options.toolRegistry.list().length <= 40) return resolved;
+    // auto 筛选器缺失或异常时绝不能把大目录整体下发；保留基础编码能力和自助发现入口。
+    const fallback = new Set([...stableCodingToolNames, toolSearchToolName, "read_tool_result"]);
+    return new Set(this.options.toolRegistry.list().map((tool) => tool.name).filter((name) => fallback.has(name)));
   }
 
   private async prepareCapabilities(options: {
@@ -1962,8 +1969,12 @@ export class AgentSession {
           requestContext: modelRequestContext(completedStepsBeforeRun + 1)
         },
         maxSteps: runBudget.hardStepLimit - completedStepsBeforeRun,
-        prepareNextTurn: async ({ context }) => {
+        prepareNextTurn: async ({ context, toolResults }) => {
           coordinator.assertCanContinue();
+          const discovered = toolResults
+            .filter((result) => result.toolName === toolSearchToolName && !result.isError)
+            .flatMap((result) => toolSearchResultNames(result.details));
+          coordinator.allowTools(discovered);
           await this.options.modelManager?.preparePrompt(abortSignal);
           const settings = this.options.modelManager?.getModelSettings() ?? activeModelSettings;
           activeModelSettings = settings;
