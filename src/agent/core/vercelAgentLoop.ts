@@ -374,12 +374,23 @@ function completeStep(state: VercelLoopState, step: StepResult<ToolSet>): void {
   state.activeStepRecord = record;
   state.lastStep = record;
   updateStepReasoningMetadata(state, record);
-  const invalidToolCall = step.toolCalls.find((call) => call.invalid
-    || !call.toolName.trim()
+  const invalidToolCall = step.toolCalls.find((call) => call.invalid);
+  const unavailableToolCall = step.toolCalls.find((call) => !call.toolName.trim()
     || !state.tools.some((candidate) => candidate.name === call.toolName));
   if (invalidToolCall) {
-    const error = invalidToolCall.toolName.trim()
-      ? `Tool ${invalidToolCall.toolName} not found.`
+    // 长度截断可能留下不完整的工具参数。此时停止本轮且绝不执行残缺调用，
+    // 但保留 length 结束原因，让上层将任务标记为可恢复的 model_length。
+    state.stopRequested = true;
+    if (step.finishReason !== "length") {
+      const name = invalidToolCall.toolName.trim();
+      const error = name
+        ? `Tool call for ${name} is invalid.`
+        : "Tool call is missing a function name.";
+      state.pendingEvents.push({ type: "error", error, fatal: true });
+    }
+  } else if (unavailableToolCall) {
+    const error = unavailableToolCall.toolName.trim()
+      ? `Tool ${unavailableToolCall.toolName} not found.`
       : "Tool call is missing a function name.";
     state.pendingEvents.push({ type: "error", error, fatal: true });
     state.stopRequested = true;

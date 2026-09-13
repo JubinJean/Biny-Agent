@@ -24,6 +24,7 @@ async function main(): Promise<void> {
   await testNextTurnRefreshesModelAndTools();
   await testRemovedToolNameIsRejected();
   await testUnknownToolCallStopsWithoutRetry();
+  await testTruncatedInvalidToolCallPreservesLength();
   const calls: ModelStreamContext[] = [];
   const model: AgentModel = {
     provider: "test",
@@ -159,6 +160,49 @@ async function testUnknownToolCallStopsWithoutRetry(): Promise<void> {
   const failure = received.find((event): event is Extract<AgentEvent, { type: "error" }> => event.type === "error");
   assert.equal(failure?.fatal, true);
   assert.match(failure?.error ?? "", /missing a function name/iu);
+}
+
+async function testTruncatedInvalidToolCallPreservesLength(): Promise<void> {
+  let requests = 0;
+  let executions = 0;
+  const tool: AgentTool = {
+    name: "Write",
+    description: "Write a file.",
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" }, content: { type: "string" } },
+      required: ["path", "content"],
+      additionalProperties: false
+    },
+    execute: async () => {
+      executions += 1;
+      return { content: [] };
+    }
+  };
+  const model: AgentModel = {
+    provider: "truncated-tool-test",
+    modelId: "truncated-tool-model",
+    stream: async () => {
+      requests += 1;
+      return events([
+        { type: "tool-call", id: "truncated-write", name: "Write", arguments: {} },
+        { type: "finish", reason: "length" }
+      ]);
+    }
+  };
+  const received: AgentEvent[] = [];
+  for await (const event of agentLoop([{ role: "user", content: "write" }], { messages: [], tools: [tool] }, {
+    model,
+    tools: [tool],
+    maxSteps: 4
+  })) received.push(event);
+
+  assert.equal(requests, 1, "a truncated tool call must not trigger another provider request");
+  assert.equal(executions, 0, "a truncated tool call must never execute");
+  assert.equal(received.some((event) => event.type === "error"), false);
+  const assistant = received.find((event): event is Extract<AgentEvent, { type: "message_end" }> =>
+    event.type === "message_end" && event.message.role === "assistant");
+  assert.equal(assistant?.message.role === "assistant" ? assistant.message.stopReason : undefined, "length");
 }
 
 async function testRemovedToolNameIsRejected(): Promise<void> {
