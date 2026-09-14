@@ -18,6 +18,7 @@ import { createManagedProcessTools } from "./process/managedProcesses.js";
 import { createWebFetchTool } from "./web/fetch.js";
 import { createWebSearchTool } from "./web/search.js";
 import { createToolSearchTool } from "./toolSearch.js";
+import type { AgentModel } from "../agent/core/types.js";
 import type { ManagedProcessService } from "../runtime/ManagedProcessService.js";
 
 export interface RegisteredTool {
@@ -92,11 +93,12 @@ export function createToolRegistry(
   managedProcessService?: ManagedProcessService,
   webFetchConfig?: WebFetchConfig,
   sandboxConfig?: SandboxConfig,
-  webCookiesConfig?: WebCookiesConfig
+  webCookiesConfig?: WebCookiesConfig,
+  getToolSearchModel?: () => AgentModel | undefined
 ): ToolRegistry {
   // 这里集中注册内置工具；外部扩展在 CommandRuntime 装配完成后追加到同一 registry。
   const registry = new ToolRegistry();
-  registry.register(createToolSearchTool(() => registry.listEntries()));
+  registry.register(createToolSearchTool(() => registry.listEntries(), getToolSearchModel));
   registry.register(createReadFileTool(context));
   registry.register(createReadToolResultTool(context));
   registry.register(createListFilesTool(context));
