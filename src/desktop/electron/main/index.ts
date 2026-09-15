@@ -49,6 +49,7 @@ if (!app.requestSingleInstanceLock()) {
 } else {
   void startDesktopApplication().catch((error: unknown) => {
     const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    console.error(message);
     dialog.showErrorBox("Biny 无法启动", message);
     app.quit();
   });
