@@ -124,6 +124,7 @@ await testSidebarSizing();
 testSidebarLayoutState();
 await testDesktopThemePreference();
 await testDesktopActiveViewPersistence();
+await testDesktopDragRegionStyles();
 await testDesktopMemoryV3CasAndOriginFilters();
 await testDesktopSettingsTransaction();
 await testDesktopSetDefaultModelImmediate();
@@ -183,6 +184,17 @@ testDesktopRendererStateProjection();
 testDesktopRendererSidebarProjection();
 testDesktopRendererRootRefreshDropsDeletedSession();
 testDesktopRendererProjectOrder();
+
+async function testDesktopDragRegionStyles(): Promise<void> {
+  const css = await readFile(new URL("../src/desktop/renderer/src/styles/biny.css", import.meta.url), "utf8");
+  const toolbar = css.match(/\.biny-chat-toolbar\s*\{(?<body>[^}]*)\}/)?.groups?.body;
+  const scroll = css.match(/\.biny-chat-scroll\s*\{(?<body>[^}]*)\}/)?.groups?.body;
+
+  assert.ok(toolbar, "聊天工具栏样式必须存在");
+  assert.match(toolbar, /-webkit-app-region:\s*drag;/, "聊天工具栏必须保留原生窗口拖动区");
+  assert.ok(scroll, "聊天滚动层样式必须存在");
+  assert.doesNotMatch(scroll, /(?:-webkit-)?app-region:\s*no-drag;/, "全高滚动层不能覆盖顶部窗口拖动区");
+}
 
 async function testInteractiveRuntimeProtocol(): Promise<void> {
   const runtime = new InteractiveAgentRuntime(fakeCommandRuntime());

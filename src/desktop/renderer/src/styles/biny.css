@@ -4983,8 +4983,8 @@ div:has(> .astryx-trigger-menu) {
   padding: 56px 0 32px;
   scrollbar-color: transparent transparent;
   scrollbar-width: thin;
-  -webkit-app-region: no-drag;
-  app-region: no-drag;
+  /* 滚动层通高且排在固定工具栏之后，不能再显式声明 no-drag，否则会把顶栏的
+     原生拖动命中区挖掉。普通内容默认不可拖，交互不依赖这条声明。 */
 }
 
 .biny-chat-scroll::-webkit-scrollbar {
