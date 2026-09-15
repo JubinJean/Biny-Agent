@@ -12,8 +12,9 @@ import {
   type StepResult,
   type ToolSet
 } from "ai";
-import type {
-  LanguageModelV4CallOptions,
+import {
+  APICallError,
+  type LanguageModelV4CallOptions,
 } from "@ai-sdk/provider";
 import { LocalPromptProjectionCache, type PromptShapeDiagnostic } from "../../llm/promptCache.js";
 import type {
@@ -315,7 +316,7 @@ function streamModelStep(state: VercelLoopState) {
         catch (error) {
           attempt.error = errorMessage(error);
           attempt.durationMs = Math.max(0, Date.now() - attempt.startedAtMs);
-          throw error;
+          throw retryableEmptySuccessfulResponse(error);
         }
       }
     }
@@ -357,6 +358,33 @@ function streamModelStep(state: VercelLoopState) {
   });
 }
 
+/**
+ * 部分 Anthropic 兼容端点会在 HTTP 200 后直接结束空 SSE 流。
+ * 这类错误发生在首个事件之前，重放同一个模型步骤不会重复工具副作用，
+ * 因此把它标记成可重试，让 AI SDK 的 maxRetries 真正覆盖该故障。
+ */
+function retryableEmptySuccessfulResponse(error: unknown): unknown {
+  if (!APICallError.isInstance(error)
+    || error.isRetryable
+    || error.statusCode === undefined
+    || error.statusCode < 200
+    || error.statusCode >= 300
+    || error.message !== "Failed to process successful response") {
+    return error;
+  }
+  return new APICallError({
+    message: error.message,
+    url: error.url,
+    requestBodyValues: error.requestBodyValues,
+    statusCode: error.statusCode,
+    responseHeaders: error.responseHeaders,
+    responseBody: error.responseBody,
+    cause: error.cause,
+    data: error.data,
+    isRetryable: true
+  });
+}
+
 function completeStep(state: VercelLoopState, step: StepResult<ToolSet>): void {
   const message = assistantFromStep(step);
   const toolResults = step.toolCalls.map((call) => toolResultMessage(
@@ -379,8 +407,8 @@ function completeStep(state: VercelLoopState, step: StepResult<ToolSet>): void {
   const unavailableToolCall = step.toolCalls.find((call) => !call.toolName.trim()
     || !state.tools.some((candidate) => candidate.name === call.toolName));
   if (invalidToolCall || truncatedToolCall) {
-    // 长度截断可能留下不完整的工具参数。此时停止本轮且绝不执行残缺调用，
-    // 但保留 length 结束原因，让上层将任务标记为可恢复的 model_length。
+    // AI SDK 只在 stop/tool-calls 时执行客户端工具，length 下即使参数通过 schema 也不会执行；
+    // 这里负责停止 Biny 续环并保留 length，让上层将任务标记为可恢复的 model_length。
     state.stopRequested = true;
     if (invalidToolCall && step.finishReason !== "length") {
       const name = invalidToolCall.toolName.trim();

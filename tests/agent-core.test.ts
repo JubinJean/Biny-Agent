@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import type { LanguageModelV4, LanguageModelV4StreamPart } from "@ai-sdk/provider";
 import type { AgentAssistantMessage, AgentContext, AgentEvent, AgentLoopConfig, AgentMessage, AgentModel, AgentTool, ModelStreamContext, ModelStreamEvent } from "../src/agent/core/types.js";
 import { vercelAgentLoopContinue } from "../src/agent/core/vercelAgentLoop.js";
 
@@ -25,6 +26,8 @@ async function main(): Promise<void> {
   await testRemovedToolNameIsRejected();
   await testUnknownToolCallStopsWithoutRetry();
   await testTruncatedInvalidToolCallPreservesLength();
+  await testTruncatedValidToolCallDoesNotExecute();
+  await testDirectProviderTruncatedValidToolCallDoesNotExecute();
   const calls: ModelStreamContext[] = [];
   const model: AgentModel = {
     provider: "test",
@@ -203,6 +206,106 @@ async function testTruncatedInvalidToolCallPreservesLength(): Promise<void> {
   const assistant = received.find((event): event is Extract<AgentEvent, { type: "message_end" }> =>
     event.type === "message_end" && event.message.role === "assistant");
   assert.equal(assistant?.message.role === "assistant" ? assistant.message.stopReason : undefined, "length");
+}
+
+async function testTruncatedValidToolCallDoesNotExecute(): Promise<void> {
+  let requests = 0;
+  let executions = 0;
+  const tool: AgentTool = {
+    name: "Write",
+    description: "Write a file.",
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" }, content: { type: "string" } },
+      required: ["path", "content"],
+      additionalProperties: false
+    },
+    execute: async () => {
+      executions += 1;
+      return { content: [{ type: "text", text: "written" }] };
+    }
+  };
+  const model: AgentModel = {
+    provider: "truncated-valid-tool-test",
+    modelId: "truncated-valid-tool-model",
+    stream: async () => {
+      requests += 1;
+      return events([
+        { type: "tool-call", id: "complete-write", name: "Write", arguments: { path: "result.txt", content: "complete" } },
+        { type: "finish", reason: "length" }
+      ]);
+    }
+  };
+  const received: AgentEvent[] = [];
+  for await (const event of agentLoop([{ role: "user", content: "write" }], { messages: [], tools: [tool] }, {
+    model,
+    tools: [tool],
+    maxSteps: 4
+  })) received.push(event);
+
+  assert.equal(requests, 1, "a length-limited tool call must not trigger another provider request");
+  assert.equal(executions, 0, "a length-limited step must not execute even a schema-valid tool call");
+  assert.equal(received.some((event) => event.type === "tool_execution_start"), false);
+}
+
+async function testDirectProviderTruncatedValidToolCallDoesNotExecute(): Promise<void> {
+  let executions = 0;
+  const tool: AgentTool = {
+    name: "Write",
+    description: "Write a file.",
+    parameters: {
+      type: "object",
+      properties: { path: { type: "string" }, content: { type: "string" } },
+      required: ["path", "content"],
+      additionalProperties: false
+    },
+    execute: async () => {
+      executions += 1;
+      return { content: [{ type: "text", text: "written" }] };
+    }
+  };
+  const parts: LanguageModelV4StreamPart[] = [
+    { type: "stream-start", warnings: [] },
+    { type: "tool-call", toolCallId: "direct-complete-write", toolName: "Write", input: JSON.stringify({ path: "result.txt", content: "complete" }) },
+    {
+      type: "finish",
+      finishReason: { unified: "length", raw: "length" },
+      usage: {
+        inputTokens: { total: 1, noCache: 1, cacheRead: 0, cacheWrite: 0 },
+        outputTokens: { total: 1, text: 1, reasoning: 0 }
+      }
+    }
+  ];
+  const provider: LanguageModelV4 = {
+    specificationVersion: "v4",
+    provider: "direct-truncated-valid-tool-test",
+    modelId: "direct-truncated-valid-tool-model",
+    supportedUrls: {},
+    doGenerate: async () => { throw new Error("unexpected generate"); },
+    doStream: async () => ({
+      stream: new ReadableStream({
+        start(controller) {
+          for (const part of parts) controller.enqueue(part);
+          controller.close();
+        }
+      })
+    })
+  };
+  const model: AgentModel = {
+    provider: provider.provider,
+    modelId: provider.modelId,
+    stream: async () => events([{ type: "finish", reason: "stop" }])
+  };
+  const received: AgentEvent[] = [];
+  for await (const event of agentLoop([{ role: "user", content: "write" }], { messages: [], tools: [tool] }, {
+    model,
+    vercelModel: provider,
+    tools: [tool],
+    maxSteps: 4
+  })) received.push(event);
+
+  assert.equal(executions, 0, "a direct provider length-limited step must not execute a schema-valid tool call");
+  assert.equal(received.some((event) => event.type === "tool_execution_start"), false);
 }
 
 async function testRemovedToolNameIsRejected(): Promise<void> {

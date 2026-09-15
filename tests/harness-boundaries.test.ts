@@ -101,7 +101,7 @@ async function testDirectProviderMetrics(): Promise<void> {
   const errors: unknown[][] = [];
   console.error = (...args: unknown[]) => { errors.push(args); };
   try {
-    for (const scenario of ["success", "request-error", "stream-error", "abort", "timeout", "retry"] as const) {
+    for (const scenario of ["success", "request-error", "stream-error", "abort", "timeout", "retry", "empty-success-response"] as const) {
       let calls = 0;
       const abort = new AbortController();
       const metrics: ModelRequestMetrics[] = [];
@@ -112,6 +112,12 @@ async function testDirectProviderMetrics(): Promise<void> {
           calls += 1;
           if (scenario === "request-error") throw new TypeError("synthetic network failure");
           if (scenario === "retry" && calls === 1) throw new APICallError({ message: "synthetic retry", url: "https://audit.invalid", requestBodyValues: {}, statusCode: 503, isRetryable: true });
+          if (scenario === "empty-success-response" && calls === 1) throw new APICallError({
+            message: "Failed to process successful response",
+            url: "https://audit.invalid",
+            requestBodyValues: {},
+            statusCode: 200
+          });
           if (scenario === "abort" || scenario === "timeout") {
             if (scenario === "abort") setTimeout(() => abort.abort(new Error("synthetic user stop")), 5);
             return await new Promise<never>((_resolve, reject) => {
@@ -137,7 +143,8 @@ async function testDirectProviderMetrics(): Promise<void> {
       const received: AgentEvent[] = [];
       const run = async (): Promise<void> => {
         for await (const event of vercelAgentLoopContinue({ messages: [{ role: "user", content: "audit" }], tools: [] }, {
-          model: textModel(), vercelModel: provider, tools: [], maxSteps: 1, maxRetries: scenario === "retry" ? 1 : 0,
+          model: textModel(), vercelModel: provider, tools: [], maxSteps: 1,
+          maxRetries: scenario === "retry" || scenario === "empty-success-response" ? 1 : 0,
           modelOptions: { timeoutMs: scenario === "timeout" ? 20 : undefined, onRequestMetrics: (value) => { metrics.push(value); } }
         }, abort.signal)) received.push(event);
       };
@@ -147,11 +154,11 @@ async function testDirectProviderMetrics(): Promise<void> {
         else await run();
       } finally { clearTimeout(watchdog); }
       assert.equal(metrics.length, 1, scenario);
-      if (scenario === "success" || scenario === "retry") assert.equal(metrics[0]?.finishReason, "stop", scenario);
+      if (scenario === "success" || scenario === "retry" || scenario === "empty-success-response") assert.equal(metrics[0]?.finishReason, "stop", scenario);
       else assert.ok(metrics[0]?.error, scenario);
       if (scenario === "abort" || scenario === "timeout") assert.equal(metrics[0]?.errorCode, scenario === "abort" ? "aborted" : "timeout");
       if (scenario === "stream-error") assert.equal(metrics[0]?.errorPhase, "stream");
-      if (scenario === "retry") {
+      if (scenario === "retry" || scenario === "empty-success-response") {
         assert.equal(calls, 2);
         assert.equal(metrics[0]?.attempts.length, 2);
         assert.deepEqual(metrics[0]?.attempts.map((attempt) => attempt.willRetry), [true, false]);

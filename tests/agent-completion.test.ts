@@ -35,16 +35,26 @@ async function testNaturalCompletion(scenario: "answer" | "write" | "recovery" |
       assert.ok(context.tools.length > 0, "ordinary runs must not invoke a tool-free completion judge");
       assert.equal(context.tools.some((tool) => tool.name === "attempt_completion"), false);
       assert.ok(requests <= 3, "natural completion must not inject continuation prompts");
-      if (requests > 1) assert.equal(context.messages.at(-1)?.role, "toolResult");
+      if (requests > 1 && !(scenario === "length" && requests === 2)) {
+        assert.equal(context.messages.at(-1)?.role, "toolResult");
+      }
+      if (scenario === "length" && requests === 2) assert.equal(context.messages.at(-1)?.role, "user");
       const response: ModelStreamEvent[] = [];
       if ((scenario === "write" || scenario === "limit") && requests === 1) {
         response.push({ type: "tool-call", id: "write", name: "Write", arguments: { path: "result.txt", content: "written" } });
+      } else if (scenario === "length" && requests <= 2) {
+        response.push({ type: "tool-call", id: `length-write-${String(requests)}`, name: "Write", arguments: { path: "result.txt", content: "written" } });
       } else if (scenario === "recovery" && requests <= 2) {
         response.push({ type: "tool-call", id: `check-${requests}`, name: "check", arguments: { command: requests === 1 ? "wrong" : "correct" } });
       } else {
         response.push({ type: "text-delta", text: "已完成，结果已检查。" });
       }
-      response.push({ type: "finish", reason: response[0]?.type === "tool-call" ? "tool-calls" : scenario === "length" ? "length" : "stop" });
+      response.push({
+        type: "finish",
+        reason: scenario === "length" && requests === 1
+          ? "length"
+          : response[0]?.type === "tool-call" ? "tool-calls" : "stop"
+      });
       return (async function* () { yield* response; })();
     }
   };
@@ -65,10 +75,22 @@ async function testNaturalCompletion(scenario: "answer" | "write" | "recovery" |
       assert.equal(outcome.resumable, true);
     }
     if (scenario === "write" || scenario === "limit") assert.equal(await readFile(path.join(workspaceRoot, "result.txt"), "utf8"), "written");
+    if (scenario === "length") {
+      await assert.rejects(readFile(path.join(workspaceRoot, "result.txt"), "utf8"), { code: "ENOENT" });
+      let resumedOutcome;
+      for await (const event of agent.continueInterruptedTurn({
+        confirmPermission: async () => ({ approved: true, scope: "once" })
+      })) {
+        if (event.type === "done") resumedOutcome = event.outcome;
+      }
+      assert.equal(resumedOutcome?.status, "completed", JSON.stringify(resumedOutcome));
+      assert.equal(requests, 3);
+      assert.equal(await readFile(path.join(workspaceRoot, "result.txt"), "utf8"), "written");
+    }
     await recorder.flush();
     const stored = (await readFile(recorder.filePath, "utf8")).trim().split("\n").map((line) => JSON.parse(line) as { type: string });
     for (const type of ["user_message", "assistant_message"]) assert.ok(stored.some((event) => event.type === type));
-    if (scenario === "write" || scenario === "recovery" || scenario === "limit") {
+    if (scenario === "write" || scenario === "recovery" || scenario === "limit" || scenario === "length") {
       for (const type of ["tool_call", "tool_result"]) assert.ok(stored.some((event) => event.type === type));
     }
   } finally {
