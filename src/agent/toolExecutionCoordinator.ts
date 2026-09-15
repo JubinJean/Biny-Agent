@@ -239,7 +239,8 @@ export class ToolExecutionCoordinator {
         promptGuidelines: registered.promptGuidelines,
         description: registered.description,
         parameters: registered.parameters,
-        executionMode: "parallel" as const,
+        // 写入工具的准备、权限确认和实际执行必须保持同一顺序，避免并发预览互相失效。
+        executionMode: registered.risk === "write" ? "sequential" as const : "parallel" as const,
         execute: async (toolCallId: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<AgentToolResult> => {
           const result = await this.trackExecution(this.execute(
             registered,
@@ -551,6 +552,7 @@ export class ToolExecutionCoordinator {
                   const message = `The target changed after the permission preview: ${formatToolError(call.name, error)} Retry the tool call to review and approve the current target.`;
                   return {
                     result: { status: "permission_required", approved: false, stalePreview: true, reason: message },
+                    executionStatus: "failed" as const,
                     errorMessage: message
                   };
                 }
@@ -561,6 +563,7 @@ export class ToolExecutionCoordinator {
                   const message = "The target changed after the permission preview. Retry the tool call to review and approve the updated contents.";
                   return {
                     result: { status: "permission_required", approved: false, stalePreview: true, reason: message },
+                    executionStatus: "failed" as const,
                     errorMessage: message,
                     permissionRequest: currentSnapshot.request
                   };

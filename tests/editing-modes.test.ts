@@ -16,7 +16,7 @@ import { applyStringEdit } from "../src/tools/file/stringEdit.js";
 import { createApplyPatchTool } from "../src/tools/file/applyPatch.js";
 import { vercelAgentLoopContinue } from "../src/agent/core/vercelAgentLoop.js";
 import { toModelMessages } from "../src/agent/core/vercelModelAdapter.js";
-import type { AgentMessage, AgentModel } from "../src/agent/core/types.js";
+import type { AgentMessage, AgentModel, ModelStreamEvent } from "../src/agent/core/types.js";
 
 assert.equal(resolveEditingMode(true, "openai-structured"), "hashline");
 assert.equal(resolveEditingMode(false, "openai-structured"), "patch");
@@ -44,6 +44,34 @@ const coordinator = new ToolExecutionCoordinator(runtime, new PermissionManager(
 try {
   await writeFile(path.join(root, "text.txt"), "alpha\nbeta\n");
   const replaceTools = coordinator.createAgentTools({ mode: "replace" });
+  assert.equal(replaceTools.find((tool) => tool.name === "Read")?.executionMode, "parallel");
+  assert.equal(replaceTools.find((tool) => tool.name === "Write")?.executionMode, "sequential");
+  assert.equal(replaceTools.find((tool) => tool.name === "Edit")?.executionMode, "sequential");
+  await writeFile(path.join(root, "parallel-edit.txt"), "left\nright\n");
+  let parallelEditRequests = 0;
+  const parallelEditModel: AgentModel = {
+    provider: "fixture",
+    modelId: "parallel-edit",
+    async stream() {
+      parallelEditRequests += 1;
+      return streamEvents(parallelEditRequests === 1
+        ? [
+            { type: "start" },
+            { type: "tool-call", id: "edit-left", name: "Edit", arguments: { path: "parallel-edit.txt", old_string: "left", new_string: "first" } },
+            { type: "tool-call", id: "edit-right", name: "Edit", arguments: { path: "parallel-edit.txt", old_string: "right", new_string: "second" } },
+            { type: "finish", reason: "tool-calls" }
+          ]
+        : [{ type: "start" }, { type: "finish", reason: "stop" }]);
+    }
+  };
+  for await (const event of vercelAgentLoopContinue(
+    { messages: [{ role: "user", content: "edit both lines" }], tools: replaceTools },
+    { model: parallelEditModel, tools: replaceTools, maxSteps: 2 }
+  )) {
+    if (event.type === "error") throw new Error(event.error);
+  }
+  assert.equal(parallelEditRequests, 2);
+  assert.equal(await readFile(path.join(root, "parallel-edit.txt"), "utf8"), "first\nsecond\n");
   const read = await replaceTools.find((tool) => tool.name === "Read")!.execute("read-plain", { path: "text.txt" });
   assert.equal((read.details as { content: string }).content, "alpha\nbeta");
   const edit = await replaceTools.find((tool) => tool.name === "Edit")!.execute("edit-string", { path: "text.txt", old_string: "alpha", new_string: "gamma" });
@@ -59,6 +87,7 @@ try {
 
   const patchTools = coordinator.createAgentTools({ mode: "patch" });
   assert.ok(patchTools.some((tool) => tool.providerTool === "openai-apply-patch"));
+  assert.equal(patchTools.find((tool) => tool.providerTool === "openai-apply-patch")?.executionMode, "sequential");
   assert.ok(!patchTools.some((tool) => ["Write", "Edit"].includes(tool.name)));
   const restricted = new ToolExecutionCoordinator(runtime, new PermissionManager(config.permission), () => undefined, undefined, new Set(["Write"]));
   assert.deepEqual(restricted.createAgentTools({ mode: "patch" }).map((tool) => tool.name), ["Write"]);
@@ -112,5 +141,9 @@ try {
   await rm(root, { recursive: true, force: true });
   if (previousAgentDir === undefined) delete process.env.BINY_AGENT_DIR;
   else process.env.BINY_AGENT_DIR = previousAgentDir;
+}
+
+async function* streamEvents(events: ModelStreamEvent[]): AsyncGenerator<ModelStreamEvent, void, void> {
+  for (const event of events) yield event;
 }
 console.log("editing modes tests passed");

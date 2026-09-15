@@ -448,7 +448,12 @@ async function testPermissionTargetChangeDoesNotExecute(): Promise<void> {
     await coordinator.waitForIdle();
     assert.equal(executions, 0);
     assert.equal(await readFile(target, "utf8"), "changed-after-preview");
-    assert.equal((result.details as { stalePreview?: boolean } | undefined)?.stalePreview, true);
+    const details = result.details as { stalePreview?: boolean } | undefined;
+    assert.equal(details?.stalePreview, true);
+    const events = await readSessionEvents(recorder.filePath);
+    const toolResult = events.find((event) => event.type === "tool_result" && event.toolCallId === "permission-call");
+    assert.equal(toolResult?.type === "tool_result" ? toolResult.executionStatus : undefined, "failed");
+    assert.doesNotThrow(() => coordinator.assertCanContinue());
     await recorder.close();
   } finally {
     await rm(root, { recursive: true, force: true });
