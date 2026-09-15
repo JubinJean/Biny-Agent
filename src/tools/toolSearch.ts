@@ -14,6 +14,8 @@ import type { RegisteredTool } from "./registry.js";
 import type { Tool, ToolSource } from "./types.js";
 
 export const toolSearchToolName = "ToolSearch";
+/** 修改目录披露格式、选择 prompt 或验证语义时同步递增。 */
+const toolSearchProtocolVersion = "1";
 const defaultMaxResults = 8;
 const maxResults = 20;
 const cacheTtlMs = 30 * 60 * 1000;
@@ -41,12 +43,20 @@ export interface ToolSearchMatch {
 }
 
 export interface ToolSearchResult {
+  status: "completed" | "failed";
   query: string;
   found: number;
   tools: ToolSearchMatch[];
   reasoning?: string;
+  code?: ToolSearchErrorCode;
   error?: string;
 }
+
+export type ToolSearchErrorCode =
+  | "tool_search_model_unavailable"
+  | "tool_search_timeout"
+  | "tool_search_invalid_response"
+  | "tool_search_request_failed";
 
 interface CachedSearch {
   expiresAt: number;
@@ -54,11 +64,17 @@ interface CachedSearch {
 }
 
 const searchCache = new Map<string, CachedSearch>();
+const inFlightSearches = new Map<string, Promise<ToolSearchResult>>();
+const signalIds = new WeakMap<AbortSignal, number>();
+let nextSearchInstanceId = 0;
+let nextSignalId = 0;
 
 export function createToolSearchTool(
   getTools: () => readonly RegisteredTool[],
   getModel: () => AgentModel | undefined = () => undefined
 ): Tool<ToolSearchArgs, ToolSearchResult> {
+  // 模块级缓存按工具实例隔离，避免不同 runtime、工作区或安全域共享辅助模型结果。
+  const cacheNamespace = `tool-search-${String(++nextSearchInstanceId)}`;
   return {
     name: toolSearchToolName,
     description: "Semantically search currently registered built-in, MCP, Skill, plugin, and subagent tools. Matching tools become available on the next model step; call this when the current tool set cannot complete the request.",
@@ -94,56 +110,93 @@ export function createToolSearchTool(
               source,
               capability: tool.capability
             }));
-          const cacheKey = searchCacheKey(args.query, type, limit, candidates);
-          const cached = getCachedSearch(cacheKey);
-          if (cached) return cached;
           const model = getModel();
-          if (!model) return emptyResult(args.query, "No tool model configured.");
-          try {
-            const messages: AgentMessage[] = [{ role: "user", content: `Search query: ${JSON.stringify(args.query)}` }];
-            const response = await generateNativeText(model, messages, {
-              systemPrompt: toolSearchPrompt(candidates, type, limit),
-              signal: context.signal,
-              timeoutMs: 15_000,
-              maxOutputTokens: 2048,
-              reasoning: "off"
-            });
-            const parsed = modelResponseSchema.parse(parseNativeJson(response.text));
-            const byName = new Map(candidates.map((candidate) => [candidate.name, candidate]));
-            const selected: ToolSearchMatch[] = [];
-            const seen = new Set<string>();
-            for (const name of parsed.tools) {
-              const candidate = byName.get(name);
-              if (!candidate || seen.has(name)) continue;
-              seen.add(name);
-              selected.push(candidate);
-              if (selected.length >= limit) break;
-            }
-            const result: ToolSearchResult = {
-              query: args.query,
-              found: selected.length,
-              tools: selected,
-              reasoning: parsed.reasoning
-            };
-            setCachedSearch(cacheKey, result);
-            return result;
-          } catch (error) {
-            context.signal?.throwIfAborted();
-            return emptyResult(args.query, error instanceof Error ? error.message : String(error));
+          if (!model) {
+            return failedResult(args.query, "tool_search_model_unavailable", "No tool model configured.");
           }
+          const cacheKey = searchCacheKey(cacheNamespace, model, args.query, type, limit, candidates);
+          const cached = getCachedSearch(cacheKey);
+          if (cached) return cloneSearchResult(cached, args.query);
+          const inFlightKey = `${cacheKey}\0${signalKey(context.signal)}`;
+          let request = inFlightSearches.get(inFlightKey);
+          if (!request) {
+            request = searchWithModel(model, candidates, args.query, type, limit, context.signal);
+            inFlightSearches.set(inFlightKey, request);
+            void request.finally(() => {
+              if (inFlightSearches.get(inFlightKey) === request) inFlightSearches.delete(inFlightKey);
+            }).catch(() => undefined);
+          }
+          const result = await request;
+          if (result.status === "completed") setCachedSearch(cacheKey, result);
+          return cloneSearchResult(result, args.query);
         }
       };
     }
   };
 }
 
+async function searchWithModel(
+  model: AgentModel,
+  candidates: readonly ToolSearchMatch[],
+  query: string,
+  type: ToolSearchArgs["type"] | "all",
+  limit: number,
+  signal?: AbortSignal
+): Promise<ToolSearchResult> {
+  try {
+    // 工具目录会披露给辅助模型；description 必须先脱敏，并始终按不可信目录数据处理。
+    const messages: AgentMessage[] = [{ role: "user", content: `Search query: ${JSON.stringify(query)}` }];
+    const response = await generateNativeText(model, messages, {
+      systemPrompt: toolSearchPrompt(candidates, type, limit),
+      signal,
+      timeoutMs: 15_000,
+      maxOutputTokens: 2048,
+      reasoning: "off"
+    });
+    const parsed = modelResponseSchema.parse(parseNativeJson(response.text));
+    const byName = new Map(candidates.map((candidate) => [candidate.name, candidate]));
+    const selected: ToolSearchMatch[] = [];
+    const seen = new Set<string>();
+    for (const name of parsed.tools) {
+      const candidate = byName.get(name);
+      if (!candidate || seen.has(name)) continue;
+      seen.add(name);
+      selected.push(candidate);
+      if (selected.length >= limit) break;
+    }
+    return {
+      status: "completed",
+      query,
+      found: selected.length,
+      tools: selected,
+      reasoning: parsed.reasoning
+    };
+  } catch (error) {
+    signal?.throwIfAborted();
+    const code = toolSearchErrorCode(error);
+    return failedResult(query, code, error instanceof Error ? error.message : String(error));
+  }
+}
+
 export function toolSearchResultNames(value: unknown): string[] {
-  if (typeof value !== "object" || value === null || !Array.isArray((value as { tools?: unknown }).tools)) return [];
-  return (value as { tools: unknown[] }).tools.flatMap((entry) => {
+  if (typeof value !== "object" || value === null) return [];
+  const result = value as { status?: unknown; error?: unknown; tools?: unknown };
+  if (result.status === "failed" || typeof result.error === "string" || !Array.isArray(result.tools)) return [];
+  return result.tools.flatMap((entry) => {
     if (typeof entry !== "object" || entry === null) return [];
     const name = (entry as { name?: unknown }).name;
     return typeof name === "string" && name.trim() ? [name] : [];
   });
+}
+
+/** 从持久化 continuation 恢复成功发现的精确工具名；实际白名单仍由当前注册表校验。 */
+export function toolSearchResultNamesFromMessages(messages: readonly AgentMessage[]): string[] {
+  const names = messages.flatMap((message) => message.role === "toolResult"
+    && message.toolName === toolSearchToolName
+    && message.isError !== true
+    ? toolSearchResultNames(message.details)
+    : []);
+  return [...new Set(names)];
 }
 
 function toolSearchPrompt(candidates: readonly ToolSearchMatch[], type: ToolSearchArgs["type"] | "all", limit: number): string {
@@ -157,9 +210,26 @@ function toolSearchPrompt(candidates: readonly ToolSearchMatch[], type: ToolSear
   ].join("\n");
 }
 
-function searchCacheKey(query: string, type: string, limit: number, candidates: readonly ToolSearchMatch[]): string {
+function searchCacheKey(
+  namespace: string,
+  model: AgentModel,
+  query: string,
+  type: string,
+  limit: number,
+  candidates: readonly ToolSearchMatch[]
+): string {
   const inventory = createHash("sha256").update(JSON.stringify(candidates)).digest("hex");
-  return `${type}\0${String(limit)}\0${query.trim()}\0${inventory}`;
+  return [
+    namespace,
+    toolSearchProtocolVersion,
+    model.provider,
+    model.providerAlias ?? "",
+    model.modelId,
+    normalizeQuery(query),
+    type,
+    String(limit),
+    inventory
+  ].join("\0");
 }
 
 function getCachedSearch(key: string): ToolSearchResult | undefined {
@@ -171,11 +241,11 @@ function getCachedSearch(key: string): ToolSearchResult | undefined {
   }
   searchCache.delete(key);
   searchCache.set(key, cached);
-  return cached.result;
+  return cloneSearchResult(cached.result, cached.result.query);
 }
 
 function setCachedSearch(key: string, result: ToolSearchResult): void {
-  searchCache.set(key, { expiresAt: Date.now() + cacheTtlMs, result });
+  searchCache.set(key, { expiresAt: Date.now() + cacheTtlMs, result: cloneSearchResult(result, result.query) });
   while (searchCache.size > maxCacheEntries) {
     const oldest = searchCache.keys().next().value;
     if (oldest === undefined) break;
@@ -183,6 +253,34 @@ function setCachedSearch(key: string, result: ToolSearchResult): void {
   }
 }
 
-function emptyResult(query: string, error: string): ToolSearchResult {
-  return { query, found: 0, tools: [], error };
+function failedResult(query: string, code: ToolSearchErrorCode, error: string): ToolSearchResult {
+  return { status: "failed", query, found: 0, tools: [], code, error };
+}
+
+function toolSearchErrorCode(error: unknown): ToolSearchErrorCode {
+  if (error instanceof Error && error.name === "TimeoutError") return "tool_search_timeout";
+  if (error instanceof SyntaxError || error instanceof z.ZodError) return "tool_search_invalid_response";
+  return "tool_search_request_failed";
+}
+
+function normalizeQuery(query: string): string {
+  return query.normalize("NFKC").trim().toLowerCase();
+}
+
+function signalKey(signal: AbortSignal | undefined): string {
+  if (!signal) return "no-signal";
+  let id = signalIds.get(signal);
+  if (id === undefined) {
+    id = ++nextSignalId;
+    signalIds.set(signal, id);
+  }
+  return `signal-${String(id)}`;
+}
+
+function cloneSearchResult(result: ToolSearchResult, query: string): ToolSearchResult {
+  return {
+    ...result,
+    query,
+    tools: result.tools.map((tool) => ({ ...tool }))
+  };
 }

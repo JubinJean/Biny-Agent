@@ -154,7 +154,11 @@ import type {
 import { agentCapabilitySelectionSchema, resolveCapabilityNames, type AgentCapabilitySelection } from "./capabilitySelection.js";
 import type { CapabilityPreselectionInput } from "./capabilityPreselection.js";
 import { stableCodingToolNames } from "./capabilityPreselection.js";
-import { toolSearchResultNames, toolSearchToolName } from "../tools/toolSearch.js";
+import {
+  toolSearchResultNames,
+  toolSearchResultNamesFromMessages,
+  toolSearchToolName
+} from "../tools/toolSearch.js";
 
 export interface AgentSessionOptions {
   workspaceRoot: string;
@@ -1911,6 +1915,11 @@ export class AgentSession {
       persistToolResultCheckpoint
     );
     coordinatorRef.current = coordinator;
+    if (runOptions.continueFrom?.length) {
+      // ToolSearch 的成功结果已经属于 continuation 事实；重建 coordinator 后恢复 schema，
+      // allowTools 会再次按当前注册表精确校验，已注销或伪造名称保持不可见。
+      coordinator.allowTools(toolSearchResultNamesFromMessages(runOptions.continueFrom));
+    }
 
     const hashlineEdit = this.activeConfig.chat.hashlineEdit;
     const editingTools = (settings: NativeModelSettings) => settings.model.supportsTools === false ? [] : coordinator.createAgentTools({ mode: resolveEditingMode(hashlineEdit, settings.applyPatchProtocol), attachmentRoot: this.options.attachmentRoot });
